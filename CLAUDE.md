@@ -17,11 +17,13 @@ The two are not connected via workspaces or a root package.json — they must be
 
 Frontend-to-backend connection: `frontend/vite.config.ts` proxies `/api/*` requests to `http://localhost:4000` during development, so frontend code should call relative paths like `fetch('/api/...')` rather than hardcoding the backend origin. In production there is no proxy yet — the frontend build and backend are not currently served together, so this will need a real reverse proxy or CORS/origin setup before deploying.
 
-Backend routes live in `backend/src/index.ts`. There is currently one endpoint, `GET /api/health`, used by the frontend to confirm connectivity. As routes grow, split them out of `index.ts` rather than keeping everything in one file.
+Backend entry point is `backend/src/index.ts`: sets up middleware, mounts one router per resource from `backend/src/routes/`, and registers the global `errorHandler` last. Keep growing routes as separate files under `routes/`, not inline in `index.ts`.
 
 ### Data layer
 
-PostgreSQL via Prisma. Schema is `backend/prisma/schema.prisma`, with three models:
+PostgreSQL via Prisma, connected through the `@prisma/adapter-pg` driver adapter — Prisma 7 requires an explicit adapter, plain `new PrismaClient()` throws `PrismaClientInitializationError`. The singleton client lives in `backend/src/db.ts`, which loads `.env` itself via `import "dotenv/config"` (the Prisma CLI loads `.env` automatically for `migrate`/`generate`, but the app process does not, so this import is required for `npm run dev`/`start` to see `DATABASE_URL`).
+
+Schema is `backend/prisma/schema.prisma`, with three models:
 
 - `Asset`, `Threat` — reference data.
 - `RiskScenario` — pairs an Asset and a Threat and holds the FAIR inputs as PERT estimates (`min`/`mostLikely`/`max` triples) for three parameters: Threat Event Frequency (`tef*`, annual rate), Vulnerability (`vuln*`, probability 0-1), and Loss Magnitude (`lm*`, currency impact per event). These are ranges, not single numbers, because they're expert estimates, not known quantities — don't collapse them to a single value anywhere in the stack.
@@ -36,7 +38,17 @@ The Prisma client is generated to `backend/src/generated/prisma` (gitignored, re
 - `statistics.ts` — `quantile`, `mean`, `conditionalValueAtRisk` over a sorted sample array.
 - `simulate.ts` — `runSimulation(input, options)`: for each of `options.iterations` (default 10,000) simulated years, samples a threat-event count from Poisson(TEF), rolls vulnerability per event to decide if it becomes a loss event, and sums sampled loss magnitudes into that year's annual loss. Returns `{ ale, percentiles: {p10,p50,p90,p95,p99}, cvar95, min, max, iterations }`.
 
-Pass `options.seed` for a reproducible run (used throughout the test suite); omit it for a real, non-deterministic simulation. This module is not yet wired to an API endpoint or to Prisma — it takes a plain `RiskScenarioInput`, not a database record.
+Pass `options.seed` for a reproducible run (used throughout the test suite); omit it for a real, non-deterministic simulation. `simulate.ts` itself takes a plain `RiskScenarioInput`, not a database record — the mapping from Prisma's flat `tef*`/`vuln*`/`lm*` columns to that nested shape happens in `routes/riskScenarios.ts` (`toDto`).
+
+### API
+
+Validation is per-route Zod schemas (not centralized) — see `routes/*.ts`. `errorHandler.ts` maps `ZodError` to 400 (with `issues`), Prisma `P2025` (record not found on update/delete) to 404, and Prisma `P2003` (foreign key violation, e.g. an unknown `assetId`/`threatId`) to 400; anything else is logged and returned as a generic 500. Route handlers can stay `async` and throw/reject freely — Express 5 forwards rejected promises to `errorHandler` automatically.
+
+Endpoints, all under `/api`:
+- `GET/POST /assets`, `GET/PATCH/DELETE /assets/:id`
+- `GET/POST /threats`, `GET/PATCH/DELETE /threats/:id`
+- `GET/POST /risk-scenarios`, `GET/PATCH/DELETE /risk-scenarios/:id` — request/response bodies use the nested PERT shape (`threatEventFrequency`/`vulnerability`/`lossMagnitude`, each `{min, mostLikely, max}`), not the flat DB columns
+- `POST /risk-scenarios/:id/simulate` — body `{ iterations?, seed? }`, runs the FAIR engine against that scenario's stored parameters and returns a `SimulationResult`
 
 ## Commands
 
@@ -51,7 +63,7 @@ Backend (`cd backend`):
 - `npm run dev` — start with `tsx watch` (auto-reload on file changes)
 - `npm run build` — compile TypeScript to `dist/`
 - `npm run start` — run the compiled `dist/index.js`
-- `npm test` — run the Vitest suite (currently covers `src/fair/*`); add `-- -t <name>` to run a single test, or `npx vitest run src/fair/simulate.test.ts` for a single file
+- `npm test` — run the Vitest suite (currently covers `src/fair/*`, no route/integration tests yet); add `-- -t <name>` to run a single test, or `npx vitest run src/fair/simulate.test.ts` for a single file
 - `npx prisma migrate dev --name <description>` — create and apply a migration after editing `schema.prisma`
 - `npx prisma studio` — browse the database
 
