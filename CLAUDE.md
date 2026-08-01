@@ -17,11 +17,11 @@ The two are not connected via workspaces or a root package.json — they must be
 
 Frontend-to-backend connection: `frontend/vite.config.ts` proxies `/api/*` requests to `http://localhost:4000` during development, so frontend code should call relative paths like `fetch('/api/...')` rather than hardcoding the backend origin. In production there is no proxy yet — the frontend build and backend are not currently served together, so this will need a real reverse proxy or CORS/origin setup before deploying.
 
-Backend entry point is `backend/src/index.ts`: sets up middleware, mounts one router per resource from `backend/src/routes/`, and registers the global `errorHandler` last. Keep growing routes as separate files under `routes/`, not inline in `index.ts`.
+The Express app itself lives in `backend/src/app.ts` (middleware, one router per resource from `backend/src/routes/`, the global `errorHandler` last) with no `.listen()` call, so integration tests can import `app` directly and drive it with `supertest` instead of binding a real port. `backend/src/index.ts` is just the entry point: import `app`, call `.listen()`. Keep growing routes as separate files under `routes/`, not inline in `app.ts`.
 
 ### Data layer
 
-PostgreSQL via Prisma, connected through the `@prisma/adapter-pg` driver adapter — Prisma 7 requires an explicit adapter, plain `new PrismaClient()` throws `PrismaClientInitializationError`. The singleton client lives in `backend/src/db.ts`, which loads `.env` itself via `import "dotenv/config"` (the Prisma CLI loads `.env` automatically for `migrate`/`generate`, but the app process does not, so this import is required for `npm run dev`/`start` to see `DATABASE_URL`).
+PostgreSQL via Prisma, connected through the `@prisma/adapter-pg` driver adapter — Prisma 7 requires an explicit adapter, plain `new PrismaClient()` throws `PrismaClientInitializationError`. The singleton client lives in `backend/src/db.ts`, which loads `.env` itself via `import "dotenv/config"` (the Prisma CLI loads `.env` automatically for `migrate`/`generate`, but the app process does not, so this import is required for `npm run dev`/`start` to see `DATABASE_URL`), and throws a clear error immediately if `DATABASE_URL` ends up unset rather than letting Prisma/pg fail later with an opaque connection error.
 
 Schema is `backend/prisma/schema.prisma`, with five models:
 
@@ -78,7 +78,7 @@ Endpoints, all under `/api`:
 
 Client-side routing via `react-router-dom` (`BrowserRouter` in `main.tsx`, routes in `App.tsx`) — declarative mode only (`Routes`/`Route`/`Link`/`useNavigate`/`useParams`), no data router (`createBrowserRouter`), no loaders/actions, no SSR. Most of the CVEs `npm audit` reports against `react-router` target that unused surface (SSR, RSC, single-fetch, framework-mode server actions); they don't apply to how this app uses the library, which is why the dependency is pinned to latest rather than downgraded.
 
-- `src/api/` — `types.ts` (DTOs mirroring the backend's nested shape, including `LossCategory`/`SensitivityFactor`) and `client.ts` (thin `fetch` wrapper, one function per endpoint; throws on non-2xx using the backend's `{ error }` body).
+- `src/api/` — `types.ts` (DTOs mirroring the backend's nested shape, including `LossCategory`/`SensitivityFactor`), `request.ts` (the shared `fetch` wrapper — throws on non-2xx using the backend's `{ error }` body), one file per resource (`assets.ts`, `threats.ts`, `riskScenarios.ts`, `treatments.ts`, `dashboard.ts`) each owning its `*Input` types and its slice of the API, and `client.ts` which just spreads all the resource objects into one `api` and re-exports the `*Input` types — the single import surface every page uses (`import { api } from "../api/client"`), so adding a resource never means touching an unrelated one.
 - `src/fair/lossCategories.ts` — frontend's copy of the fixed 9 categories; must match `backend/src/fair/lossCategories.ts` exactly.
 - `src/fair/profiles.ts` — attacker/defense presets ported from the original prototype (`ATTACKER_PROFILES`, `DEFENSE_PROFILES`, each a named set of 0-100 factors) plus `CONFIDENCE_SPREAD` (alto/medio/bajo → a range-width multiplier). `computeVulnerability(attackerScore, defenseScore, confidence)` derives vulnerability's min/mostLikely/max automatically (`mostLikely% = attackerScore × (1 − defenseScore/100)`, clamped 1-99%, range width set by confidence) instead of the user guessing three numbers by hand — purely a frontend convenience, nothing is persisted about which profile/confidence produced the values, so it's a one-way fill-and-adjust, not a stored relationship.
 - `src/components/PertEstimateInput.tsx` — the min/mostLikely/max input group, reused for TEF, vulnerability, and each of the 9 loss categories on the scenario form.
@@ -112,6 +112,23 @@ A language-only global toggle (`mode/`), not a calculation difference — both m
 - `components/useChartTooltip.ts` / `ChartTooltip.tsx` — shared hover/focus tooltip. Use `showTooltipAt(x, y, data)` when the mark's own geometry is already known (SVG bars/points — more precise than their DOM rect, and correct even when the hit target is deliberately larger than the mark); use `showTooltipFromEvent(e, data)` when it isn't (HTML cells). Tooltips render in a non-clipping wrapper *outside* the horizontally-scrollable chart area — an earlier version anchored them to the scrollable container and got clipped at its edges.
 - Number formatting lives in `src/format.ts`. `currencyCompact` is a hand-rolled K/M formatter, not `Intl.NumberFormat(..., { notation: "compact" })` — `es-AR`'s compact CLDR data mixes `K`/`k` case at the 10,000 boundary (e.g. `7,3 K` vs `67,7 k`), which reads as a formatting bug on a dashboard of financial figures.
 
+## Adding a new resource
+
+The `risk-scenarios`/`treatments` split is the pattern to follow for anything with real validation or mapping logic (a new risk-catalog entity, for instance); plain reference data can stay single-file like `assets`/`threats`. End to end:
+
+Backend:
+1. Add the model to `prisma/schema.prisma`, run `npx prisma migrate dev --name <description>`, then `npx prisma generate` (this project's `migrate dev` doesn't reliably auto-run `generate` in every environment — check `src/generated/prisma` picked up the new model).
+2. `src/routes/<resource>.schema.ts` — Zod input schema(s) only.
+3. `src/routes/<resource>.mapping.ts` — Prisma row ↔ API/engine shape, no Express/HTTP.
+4. `src/routes/<resource>.ts` — the router (validate → Prisma → map → respond); mount it in `src/app.ts`, not `index.ts`.
+5. `src/routes/<resource>.test.ts` — supertest against `app`, fixtures from `src/test/fixtures.ts` (add a new fixture helper there if the resource needs one), `afterEach(resetDb)`; extend `src/test/db.ts`'s `resetDb()` delete order if the new model has FK relations.
+
+Frontend:
+1. `src/api/<resource>.ts` — its `*Input` type(s) plus a `<resource>Api` object (one function per endpoint), following `src/api/assets.ts` as the template; import the shared `request()` from `src/api/request.ts`.
+2. Spread `<resource>Api` into `client.ts`'s `api` object and re-export its `*Input` types from there — every page keeps importing from `"../api/client"` only.
+3. Add the DTO(s) to `src/api/types.ts`.
+4. Build the page/components; reuse `PertEstimateInput`, `RiskBadge`, the chart primitives in `components/`, and `mode/labels.ts` (`t()`) for any new FAIR-jargon strings instead of hardcoding copy.
+
 ## Commands
 
 Frontend (`cd frontend`):
@@ -119,16 +136,28 @@ Frontend (`cd frontend`):
 - `npm run dev` — start Vite dev server (http://localhost:5173)
 - `npm run build` — type-check (`tsc -b`) and build production bundle to `dist/`
 - `npm run lint` — run oxlint
+- `npm test` — run the Vitest suite (pure logic only — `fair/profiles.ts`, `components/statusScale.ts`/`sequentialScale.ts`/`colorContrast.ts` — no component/DOM tests yet); `npx vitest run src/fair/profiles.test.ts` for a single file
 
 Backend (`cd backend`):
 - `npm install` — install deps
 - `npm run dev` — start with `tsx watch` (auto-reload on file changes)
 - `npm run build` — compile TypeScript to `dist/`
 - `npm run start` — run the compiled `dist/index.js`
-- `npm test` — run the Vitest suite (currently covers `src/fair/*`, no route/integration tests yet); add `-- -t <name>` to run a single test, or `npx vitest run src/fair/simulate.test.ts` for a single file
+- `npm test` — run the Vitest suite: `src/fair/*` unit tests plus integration tests per route file (`src/routes/*.test.ts`) that drive `app` (from `app.ts`) with `supertest` against a real Postgres test database; add `-- -t <name>` to run a single test, or `npx vitest run src/fair/simulate.test.ts` for a single file
 - `npx prisma migrate dev --name <description>` — create and apply a migration after editing `schema.prisma`
 - `npx prisma studio` — browse the database
 
 Backend requires a running PostgreSQL instance reachable via `DATABASE_URL` in `backend/.env` (see `backend/.env.example`). Locally: `service postgresql start`, then a one-time `createuser`/`createdb` matching that URL.
+
+### Backend integration tests
+
+Route tests live next to their router (`src/routes/*.test.ts`) and hit a **separate** database from dev, configured in `backend/.env.test` (gitignored; copy from the committed `backend/.env.test.example`, matching how `.env`/`.env.example` already work) — create the DB once (`createdb appfair_test` or equivalent) and apply migrations with `DATABASE_URL=<test url> npx prisma migrate deploy`.
+
+- `src/test/setupEnv.ts` (Vitest `setupFiles`) loads `.env.test` with `override: true` before any test imports `db.ts`, so the test run never touches the dev database.
+- `src/test/fixtures.ts` — `createAsset`/`createThreat`/`createRiskScenario`/`fullLossCategories` helpers that POST through `app` (not direct Prisma writes) so fixtures exercise the same validation path as real requests.
+- `src/test/db.ts` — `resetDb()`, called in an `afterEach` in every test file, deletes in FK-safe order (`riskScenario` first — cascades `LossCategory`/`Treatment` — then `asset`, then `threat`).
+- `vitest.config.ts` sets `fileParallelism: false`: all test files share the one physical test database and a global `resetDb()`, so running files in parallel workers (Vitest's default) lets one file's cleanup wipe rows a different file's test is mid-assertion on — this was a real bug, not a preventive guess. Serial execution costs nothing that matters (the whole suite runs in a few seconds).
+
+Adding a test for a new route: put it in `src/routes/<resource>.test.ts`, import `app` from `../app.js` and `resetDb` from `../test/db.js` with an `afterEach(resetDb)`, and reach for the `src/test/fixtures.ts` helpers instead of hand-rolling Prisma writes.
 
 To develop with both connected, run `npm run dev` in `backend/` and `npm run dev` in `frontend/` in parallel, then open http://localhost:5173.
