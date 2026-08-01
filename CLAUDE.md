@@ -50,6 +50,16 @@ Endpoints, all under `/api`:
 - `GET/POST /risk-scenarios`, `GET/PATCH/DELETE /risk-scenarios/:id` — request/response bodies use the nested PERT shape (`threatEventFrequency`/`vulnerability`/`lossMagnitude`, each `{min, mostLikely, max}`), not the flat DB columns
 - `POST /risk-scenarios/:id/simulate` — body `{ iterations?, seed? }`, runs the FAIR engine against that scenario's stored parameters and returns a `SimulationResult`
 
+### Frontend
+
+Client-side routing via `react-router-dom` (`BrowserRouter` in `main.tsx`, routes in `App.tsx`) — declarative mode only (`Routes`/`Route`/`Link`/`useNavigate`/`useParams`), no data router (`createBrowserRouter`), no loaders/actions, no SSR. Most of the CVEs `npm audit` reports against `react-router` target that unused surface (SSR, RSC, single-fetch, framework-mode server actions); they don't apply to how this app uses the library, which is why the dependency is pinned to latest rather than downgraded.
+
+- `src/api/` — `types.ts` (DTOs mirroring the backend's nested PERT shape) and `client.ts` (thin `fetch` wrapper, one function per endpoint; throws on non-2xx using the backend's `{ error }` body).
+- `src/components/PertEstimateInput.tsx` — the min/mostLikely/max input group, reused for all three FAIR parameters on the scenario form.
+- `src/pages/` — one page per resource (`AssetsPage`, `ThreatsPage`, `ScenariosPage`) combining a create form with a list, plus `ScenarioDetailPage` (shows a scenario's parameters and a "run simulation" button that calls `/simulate` and renders the result).
+
+State management is local `useState`/`useEffect` per page, no shared cache/query library — each page re-fetches on mount. Revisit this if pages start needing to share or invalidate the same data.
+
 ## Commands
 
 Frontend (`cd frontend`):

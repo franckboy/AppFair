@@ -1,27 +1,30 @@
-import { useEffect, useState } from 'react'
-import './App.css'
+import { NavLink, Navigate, Route, Routes } from "react-router-dom";
+import "./App.css";
+import { AssetsPage } from "./pages/AssetsPage";
+import { ScenarioDetailPage } from "./pages/ScenarioDetailPage";
+import { ScenariosPage } from "./pages/ScenariosPage";
+import { ThreatsPage } from "./pages/ThreatsPage";
 
 function App() {
-  const [status, setStatus] = useState<'checking' | 'ok' | 'error'>('checking')
-
-  useEffect(() => {
-    fetch('/api/health')
-      .then((res) => res.json())
-      .then((data) => setStatus(data.status === 'ok' ? 'ok' : 'error'))
-      .catch(() => setStatus('error'))
-  }, [])
-
   return (
-    <div>
-      <h1>AppFair</h1>
-      <p>
-        Backend status:{' '}
-        {status === 'checking' && 'checking...'}
-        {status === 'ok' && 'connected'}
-        {status === 'error' && 'not reachable (is the backend running?)'}
-      </p>
-    </div>
-  )
+    <>
+      <nav className="topnav">
+        <span className="brand">AppFair</span>
+        <NavLink to="/assets">Activos</NavLink>
+        <NavLink to="/threats">Amenazas</NavLink>
+        <NavLink to="/scenarios">Escenarios</NavLink>
+      </nav>
+      <main>
+        <Routes>
+          <Route path="/" element={<Navigate to="/scenarios" replace />} />
+          <Route path="/assets" element={<AssetsPage />} />
+          <Route path="/threats" element={<ThreatsPage />} />
+          <Route path="/scenarios" element={<ScenariosPage />} />
+          <Route path="/scenarios/:id" element={<ScenarioDetailPage />} />
+        </Routes>
+      </main>
+    </>
+  );
 }
 
-export default App
+export default App;
