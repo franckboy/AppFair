@@ -33,6 +33,11 @@ export interface RiskScenario {
   updatedAt: string;
 }
 
+/** GET list/detail responses add a freshly-simulated ALE (create/update via `RiskScenario` don't). */
+export interface RiskScenarioSummary extends RiskScenario {
+  ale: number;
+}
+
 export interface SimulationResult {
   ale: number;
   percentiles: {

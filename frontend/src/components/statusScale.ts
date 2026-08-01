@@ -35,3 +35,21 @@ export function riskLevelFor(likelihoodBin: number, severityBin: number): RiskLe
   if (score >= 2) return "medium";
   return "low";
 }
+
+/**
+ * Classifies a single ALE value against fixed absolute thresholds, for the
+ * "criticality" badge shown wherever a scenario's ALE appears on its own
+ * (list rows, a scenario's own detail page, a treatment's residual ALE) —
+ * unlike `riskLevelFor`, which bins a *portfolio* of scenarios relative to
+ * each other for the dashboard's risk matrix.
+ *
+ * Thresholds are provisional defaults (aligned to a low of $50k and a
+ * critical floor of $250k), not yet user-configurable. Replace with the
+ * organization's own "Criterios de Riesgo" once that feature exists.
+ */
+export function riskLevelForAle(ale: number): RiskLevel {
+  if (ale > 250_000) return "critical";
+  if (ale > 125_000) return "high";
+  if (ale > 50_000) return "medium";
+  return "low";
+}

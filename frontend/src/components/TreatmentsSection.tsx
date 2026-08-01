@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { TreatmentStrategy, TreatmentWithEvaluation } from "../api/types";
 import { currencyFull, percent1 } from "../format";
+import { RiskBadge } from "./RiskBadge";
+import { riskLevelForAle } from "./statusScale";
 
 const STRATEGY_LABEL: Record<TreatmentStrategy, string> = {
   MITIGATE: "Mitigar",
@@ -152,7 +154,9 @@ export function TreatmentsSection({ scenarioId }: TreatmentsSectionProps) {
                 <td>{t.name}</td>
                 <td>{currencyFull.format(t.annualCost)}</td>
                 <td>{currencyFull.format(t.evaluation.aleBefore)}</td>
-                <td>{currencyFull.format(t.evaluation.aleAfter)}</td>
+                <td>
+                  {currencyFull.format(t.evaluation.aleAfter)} <RiskBadge level={riskLevelForAle(t.evaluation.aleAfter)} />
+                </td>
                 <td>{currencyFull.format(t.evaluation.riskReduction)}</td>
                 <td>{t.evaluation.rosi !== null ? `${percent1.format(t.evaluation.rosi * 100)}%` : "—"}</td>
                 <td>

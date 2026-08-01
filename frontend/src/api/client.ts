@@ -3,6 +3,7 @@ import type {
   Dashboard,
   PertEstimate,
   RiskScenario,
+  RiskScenarioSummary,
   SimulationResult,
   Threat,
   Treatment,
@@ -71,8 +72,8 @@ export const api = {
     request<Threat>(`/threats/${id}`, { method: "PATCH", body: JSON.stringify(input) }),
   deleteThreat: (id: string) => request<void>(`/threats/${id}`, { method: "DELETE" }),
 
-  listRiskScenarios: () => request<RiskScenario[]>("/risk-scenarios"),
-  getRiskScenario: (id: string) => request<RiskScenario>(`/risk-scenarios/${id}`),
+  listRiskScenarios: () => request<RiskScenarioSummary[]>("/risk-scenarios"),
+  getRiskScenario: (id: string) => request<RiskScenarioSummary>(`/risk-scenarios/${id}`),
   createRiskScenario: (input: RiskScenarioInput) =>
     request<RiskScenario>("/risk-scenarios", { method: "POST", body: JSON.stringify(input) }),
   updateRiskScenario: (id: string, input: Partial<RiskScenarioInput>) =>

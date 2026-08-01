@@ -31,6 +31,16 @@
   border-bottom: 2px solid currentColor;
 }
 
+.mode-toggle {
+  margin-left: auto;
+  padding: 0.3rem 0.8rem;
+  border-radius: 999px;
+  border: 1px solid #ccc;
+  background: #f3f3f3;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
 .stacked-form {
   display: flex;
   flex-direction: column;
@@ -144,4 +154,13 @@ table td {
 
 .best-rosi {
   font-weight: 600;
+}
+
+.risk-badge {
+  display: inline-block;
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
 }

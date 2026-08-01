@@ -1,7 +1,9 @@
+import type { ReactNode } from "react";
+
 interface StatTileProps {
   label: string;
   value: string;
-  hint?: string;
+  hint?: ReactNode;
 }
 
 /** Figure contract: label (sentence case) + semibold value in proportional figures. No delta/trend yet — the dashboard has no historical series. */

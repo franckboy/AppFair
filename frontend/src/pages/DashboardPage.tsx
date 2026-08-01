@@ -3,7 +3,9 @@ import { api } from "../api/client";
 import type { Dashboard } from "../api/types";
 import { RiskHeatmap } from "../components/RiskHeatmap";
 import { ParetoChart } from "../components/ParetoChart";
+import { RiskBadge } from "../components/RiskBadge";
 import { StatTile } from "../components/StatTile";
+import { riskLevelForAle } from "../components/statusScale";
 import { currencyCompact, currencyFull } from "../format";
 import "./Dashboard.css";
 
@@ -40,7 +42,13 @@ export function DashboardPage() {
             <StatTile
               label="Escenario de mayor riesgo"
               value={totals.topRisk ? currencyCompact.format(totals.topRisk.ale) : "—"}
-              hint={totals.topRisk?.name}
+              hint={
+                totals.topRisk && (
+                  <>
+                    {totals.topRisk.name} <RiskBadge level={riskLevelForAle(totals.topRisk.ale)} />
+                  </>
+                )
+              }
             />
             <StatTile
               label="Peor caso individual (CVaR 95%)"

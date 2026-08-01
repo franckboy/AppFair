@@ -5,8 +5,11 @@ import { DashboardPage } from "./pages/DashboardPage";
 import { ScenarioDetailPage } from "./pages/ScenarioDetailPage";
 import { ScenariosPage } from "./pages/ScenariosPage";
 import { ThreatsPage } from "./pages/ThreatsPage";
+import { useMode } from "./mode/useMode";
 
 function App() {
+  const { mode, toggleMode } = useMode();
+
   return (
     <>
       <nav className="topnav">
@@ -15,6 +18,14 @@ function App() {
         <NavLink to="/assets">Activos</NavLink>
         <NavLink to="/threats">Amenazas</NavLink>
         <NavLink to="/scenarios">Escenarios</NavLink>
+        <button
+          type="button"
+          className="mode-toggle"
+          onClick={toggleMode}
+          title="Cambia el lenguaje de la app entre sencillo y técnico. Los cálculos son exactamente los mismos en ambos modos."
+        >
+          {mode === "simple" ? "Modo Simple" : "Modo Técnico"}
+        </button>
       </nav>
       <main>
         <Routes>

@@ -1,15 +1,19 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
-import type { Asset, PertEstimate, RiskScenario, Threat } from "../api/types";
+import type { Asset, PertEstimate, RiskScenario, RiskScenarioSummary, Threat } from "../api/types";
 import { PertEstimateInput } from "../components/PertEstimateInput";
+import { RiskBadge } from "../components/RiskBadge";
+import { riskLevelForAle } from "../components/statusScale";
+import { useMode } from "../mode/useMode";
 
 const DEFAULT_TEF: PertEstimate = { min: 1, mostLikely: 3, max: 6 };
 const DEFAULT_VULNERABILITY: PertEstimate = { min: 0.05, mostLikely: 0.15, max: 0.3 };
 const DEFAULT_LOSS_MAGNITUDE: PertEstimate = { min: 1_000, mostLikely: 10_000, max: 50_000 };
 
 export function ScenariosPage() {
-  const [scenarios, setScenarios] = useState<RiskScenario[]>([]);
+  const { t } = useMode();
+  const [scenarios, setScenarios] = useState<RiskScenarioSummary[]>([]);
   const [assets, setAssets] = useState<Asset[]>([]);
   const [threats, setThreats] = useState<Threat[]>([]);
   const [loading, setLoading] = useState(true);
@@ -143,16 +147,10 @@ export function ScenariosPage() {
             </select>
           </label>
 
+          <PertEstimateInput label={t("tefFieldLabel")} value={tef} onChange={setTef} min={0} step={0.1} />
           <PertEstimateInput
-            label="Frecuencia de eventos de amenaza (por año)"
-            value={tef}
-            onChange={setTef}
-            min={0}
-            step={0.1}
-          />
-          <PertEstimateInput
-            label="Vulnerabilidad"
-            hint="probabilidad 0-1 de que el evento se convierta en pérdida"
+            label={t("vulnFieldLabel")}
+            hint={t("vulnFieldHint")}
             value={vulnerability}
             onChange={setVulnerability}
             min={0}
@@ -160,8 +158,8 @@ export function ScenariosPage() {
             step={0.01}
           />
           <PertEstimateInput
-            label="Magnitud de pérdida"
-            hint="impacto económico por evento"
+            label={t("lmFieldLabel")}
+            hint={t("lmFieldHint")}
             value={lossMagnitude}
             onChange={setLossMagnitude}
             min={0}
@@ -189,6 +187,7 @@ export function ScenariosPage() {
               <th>Nombre</th>
               <th>Activo</th>
               <th>Amenaza</th>
+              <th>Nivel</th>
               <th></th>
             </tr>
           </thead>
@@ -200,6 +199,9 @@ export function ScenariosPage() {
                 </td>
                 <td>{assetName(scenario.assetId)}</td>
                 <td>{threatName(scenario.threatId)}</td>
+                <td>
+                  <RiskBadge level={riskLevelForAle(scenario.ale)} />
+                </td>
                 <td className="row-actions">
                   <button onClick={() => startEdit(scenario)}>Editar</button>
                   <button onClick={() => handleDelete(scenario.id)}>Eliminar</button>
@@ -208,7 +210,7 @@ export function ScenariosPage() {
             ))}
             {scenarios.length === 0 && (
               <tr>
-                <td colSpan={4}>No hay escenarios registrados todavía.</td>
+                <td colSpan={5}>No hay escenarios registrados todavía.</td>
               </tr>
             )}
           </tbody>

@@ -56,7 +56,7 @@ Validation is per-route Zod schemas (not centralized) — see `routes/*.ts`. `er
 Endpoints, all under `/api`:
 - `GET/POST /assets`, `GET/PATCH/DELETE /assets/:id`
 - `GET/POST /threats`, `GET/PATCH/DELETE /threats/:id`
-- `GET/POST /risk-scenarios`, `GET/PATCH/DELETE /risk-scenarios/:id` — request/response bodies use the nested PERT shape (`threatEventFrequency`/`vulnerability`/`lossMagnitude`, each `{min, mostLikely, max}`), not the flat DB columns
+- `GET/POST /risk-scenarios`, `GET/PATCH/DELETE /risk-scenarios/:id` — request/response bodies use the nested PERT shape (`threatEventFrequency`/`vulnerability`/`lossMagnitude`, each `{min, mostLikely, max}`), not the flat DB columns. The **GET** list/detail responses additionally include a freshly-simulated `ale` (`riskScenarios.ts`'s `withAle`) so the frontend can show a criticality badge next to a scenario without a separate call; POST/PATCH don't compute it.
 - `POST /risk-scenarios/:id/simulate` — body `{ iterations?, seed? }`, runs the FAIR engine against that scenario's stored parameters and returns a `SimulationResult`
 - `GET /dashboard` (`routes/dashboard.ts`) — for every risk scenario, runs the FAIR engine fresh (no persistence of simulation runs) and returns `{ scenarios: [...ale, cvar95, assetName, threatName, likelihood, severity], totals: { scenarioCount, ale, worstCaseCvar95, topRisk } }`. `totals.ale` is a valid sum (linearity of expectation holds regardless of correlation); deliberately **not** a summed CVaR95 (tail expectations aren't additive) — `worstCaseCvar95` is the max across scenarios instead, to avoid reporting a statistically meaningless portfolio "CVaR". `likelihood` is Loss Event Frequency (`tefMostLikely * vulnMostLikely`, annual) and `severity` is `lmMostLikely` — the two axes the frontend's risk matrix bins scenarios into.
 - `GET/POST /risk-scenarios/:scenarioId/treatments` (`routes/treatments.ts`, `scenarioTreatmentsRouter`) — list (each annotated with an `evaluation` from `evaluateTreatment`) and create. Mounted as its own path (not nested inside `riskScenariosRouter`) using `Router({ mergeParams: true })`; falls through to it correctly because none of `riskScenariosRouter`'s routes (`/:id`, `/:id/simulate`) match a path ending in `/treatments`.
@@ -72,6 +72,18 @@ Client-side routing via `react-router-dom` (`BrowserRouter` in `main.tsx`, route
 - `components/TreatmentsSection.tsx` — per-scenario treatment CRUD plus a comparison table (strategy, cost, ALE before/after, risk reduction, ROSI); the reduction-% field only appears for MITIGATE/TRANSFER (AVOID/ACCEPT don't use it). Highlights the highest-ROSI treatment, including correctly picking the least-negative one when every option's cost outweighs the risk it addresses.
 
 State management is local `useState`/`useEffect` per page, no shared cache/query library — each page re-fetches on mount. Revisit this if pages start needing to share or invalidate the same data.
+
+### Modo Simple / Modo Técnico
+
+A language-only global toggle (`mode/`), not a calculation difference — both modes read the exact same numbers, only the field/result labels change (Técnico: standard FAIR terminology; Simple: plain conversational Spanish, e.g. "Vulnerabilidad" ↔ "¿Qué tan probable es que funcione, si lo intentan?"). Modeled after the original HTML prototype's `Modo Simple`/`Modo Técnico` toggle.
+
+- `mode/context.ts` — the raw `ModeContext` + types only (no components), `mode/ModeContext.tsx` — `ModeProvider` (wraps `<App>` in `main.tsx`; persists to `localStorage` under `appfair-mode`, defaults to `simple`), `mode/useMode.ts` — the `useMode()` hook. Split into three files instead of one because oxlint's `react-refresh` rule flags mixing context/hook exports with the provider component in a single file.
+- `mode/labels.ts` — the `LABELS` dictionary (`{ tecnico, simple }` per key). Add new FAIR-jargon strings here rather than hardcoding them; `t(key)` in a component resolves the current mode's copy.
+- Currently applied to the scenario form's PERT field labels/hints (`ScenariosPage`) and the scenario detail page's parameter table, simulate button, and result labels (`ScenarioDetailPage`) — the same scope the original prototype toggled. Plain CRUD strings (asset/threat "Nombre"/"Descripción", etc.) aren't FAIR jargon and aren't wired to it.
+
+### Criticality badges
+
+`components/RiskBadge.tsx` renders a small colored pill from the fixed status palette (`statusScale.ts`), used consistently wherever a *single* scenario's ALE is shown on its own: the scenario list's "Nivel" column, the scenario detail page's title and simulation result, a treatment's residual ALE, and the dashboard's "Escenario de mayor riesgo" KPI tile. Classification is `riskLevelForAle(ale)` — fixed absolute thresholds (documented in `statusScale.ts`: low ≤ $50k, critical > $250k), deliberately different from `riskLevelFor(likelihoodBin, severityBin)` used by the dashboard's risk matrix, which bins a *portfolio* of scenarios relative to each other instead of against an absolute scale. Both are provisional defaults pending a future configurable "Criterios de Riesgo" (risk acceptance thresholds) feature, not hardcoded organizational policy.
 
 ### Dashboard & charts
 

@@ -1,14 +1,18 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
-import type { Asset, RiskScenario, SimulationResult, Threat } from "../api/types";
+import type { Asset, RiskScenarioSummary, SimulationResult, Threat } from "../api/types";
+import { RiskBadge } from "../components/RiskBadge";
+import { riskLevelForAle } from "../components/statusScale";
 import { TreatmentsSection } from "../components/TreatmentsSection";
+import { useMode } from "../mode/useMode";
 
 const currency = new Intl.NumberFormat("es-AR", { maximumFractionDigits: 0 });
 
 export function ScenarioDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const [scenario, setScenario] = useState<RiskScenario | null>(null);
+  const { t } = useMode();
+  const [scenario, setScenario] = useState<RiskScenarioSummary | null>(null);
   const [asset, setAsset] = useState<Asset | null>(null);
   const [threat, setThreat] = useState<Threat | null>(null);
   const [loading, setLoading] = useState(true);
@@ -52,7 +56,9 @@ export function ScenarioDetailPage() {
       <p>
         <Link to="/scenarios">&larr; Volver a escenarios</Link>
       </p>
-      <h1>{scenario.name}</h1>
+      <h1>
+        {scenario.name} <RiskBadge level={riskLevelForAle(scenario.ale)} />
+      </h1>
       <p>
         Activo: <strong>{asset?.name ?? scenario.assetId}</strong> — Amenaza:{" "}
         <strong>{threat?.name ?? scenario.threatId}</strong>
@@ -69,19 +75,19 @@ export function ScenarioDetailPage() {
         </thead>
         <tbody>
           <tr>
-            <td>Frecuencia anual</td>
+            <td>{t("scenarioParamFrequency")}</td>
             <td>{scenario.threatEventFrequency.min}</td>
             <td>{scenario.threatEventFrequency.mostLikely}</td>
             <td>{scenario.threatEventFrequency.max}</td>
           </tr>
           <tr>
-            <td>Vulnerabilidad</td>
+            <td>{t("scenarioParamVulnerability")}</td>
             <td>{scenario.vulnerability.min}</td>
             <td>{scenario.vulnerability.mostLikely}</td>
             <td>{scenario.vulnerability.max}</td>
           </tr>
           <tr>
-            <td>Magnitud de pérdida</td>
+            <td>{t("scenarioParamLossMagnitude")}</td>
             <td>{currency.format(scenario.lossMagnitude.min)}</td>
             <td>{currency.format(scenario.lossMagnitude.mostLikely)}</td>
             <td>{currency.format(scenario.lossMagnitude.max)}</td>
@@ -90,7 +96,7 @@ export function ScenarioDetailPage() {
       </table>
 
       <button onClick={handleSimulate} disabled={simulating}>
-        {simulating ? "Simulando..." : "Ejecutar simulación Monte Carlo"}
+        {simulating ? "Simulando..." : t("runSimulationButton")}
       </button>
 
       {error && <p className="error">{error}</p>}
@@ -99,7 +105,8 @@ export function ScenarioDetailPage() {
         <div className="simulation-result">
           <h2>Resultado</h2>
           <p className="ale">
-            Pérdida Anual Esperada (ALE): <strong>{currency.format(result.ale)}</strong>
+            {t("aleResultLabel")}: <strong>{currency.format(result.ale)}</strong>{" "}
+            <RiskBadge level={riskLevelForAle(result.ale)} />
           </p>
           <table className="params-table">
             <thead>
@@ -109,7 +116,7 @@ export function ScenarioDetailPage() {
                 <th>P90</th>
                 <th>P95</th>
                 <th>P99</th>
-                <th>CVaR 95%</th>
+                <th>{t("cvarResultLabel")}</th>
               </tr>
             </thead>
             <tbody>
@@ -124,8 +131,8 @@ export function ScenarioDetailPage() {
             </tbody>
           </table>
           <p className="hint">
-            Rango simulado: {currency.format(result.min)} – {currency.format(result.max)} ({result.iterations.toLocaleString()}{" "}
-            iteraciones)
+            {t("simulatedRangeLabel")}: {currency.format(result.min)} – {currency.format(result.max)} (
+            {result.iterations.toLocaleString()} iteraciones)
           </p>
         </div>
       )}

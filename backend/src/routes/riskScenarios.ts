@@ -96,9 +96,19 @@ function toPrismaUpdateData(input: Partial<RiskScenarioInput>) {
 
 export const riskScenariosRouter = Router();
 
+/** Adds a freshly-simulated ALE to a scenario DTO — used only by the list/detail GETs, where UI shows a criticality badge next to the scenario, not by create/update. */
+function withAle(dto: ReturnType<typeof toDto>) {
+  const { ale } = runSimulation({
+    threatEventFrequency: dto.threatEventFrequency,
+    vulnerability: dto.vulnerability,
+    lossMagnitude: dto.lossMagnitude,
+  });
+  return { ...dto, ale };
+}
+
 riskScenariosRouter.get("/", async (_req, res) => {
   const scenarios = await prisma.riskScenario.findMany({ orderBy: { createdAt: "desc" } });
-  res.json(scenarios.map(toDto));
+  res.json(scenarios.map(toDto).map(withAle));
 });
 
 riskScenariosRouter.get("/:id", async (req, res) => {
@@ -107,7 +117,7 @@ riskScenariosRouter.get("/:id", async (req, res) => {
     res.status(404).json({ error: "Risk scenario not found" });
     return;
   }
-  res.json(toDto(scenario));
+  res.json(withAle(toDto(scenario)));
 });
 
 riskScenariosRouter.post("/", async (req, res) => {
