@@ -47,3 +47,24 @@ export interface SimulationResult {
   max: number;
   iterations: number;
 }
+
+export interface DashboardScenarioSummary {
+  id: string;
+  name: string;
+  assetId: string;
+  assetName: string;
+  threatId: string;
+  threatName: string;
+  ale: number;
+  cvar95: number;
+}
+
+export interface Dashboard {
+  scenarios: DashboardScenarioSummary[];
+  totals: {
+    scenarioCount: number;
+    ale: number;
+    worstCaseCvar95: number;
+    topRisk: DashboardScenarioSummary | null;
+  };
+}

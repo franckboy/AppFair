@@ -2,6 +2,7 @@ import cors from "cors";
 import express from "express";
 import { errorHandler } from "./errorHandler.js";
 import { assetsRouter } from "./routes/assets.js";
+import { dashboardRouter } from "./routes/dashboard.js";
 import { riskScenariosRouter } from "./routes/riskScenarios.js";
 import { threatsRouter } from "./routes/threats.js";
 
@@ -18,6 +19,7 @@ app.get("/api/health", (_req, res) => {
 app.use("/api/assets", assetsRouter);
 app.use("/api/threats", threatsRouter);
 app.use("/api/risk-scenarios", riskScenariosRouter);
+app.use("/api/dashboard", dashboardRouter);
 
 app.use(errorHandler);
 

@@ -1,0 +1,236 @@
+.dashboard {
+  color-scheme: light;
+  --surface-1: #fcfcfb;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #898781;
+  --gridline: #e1e0d9;
+  --baseline: #c3c2b7;
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --border-ring: rgba(11, 11, 11, 0.1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) .dashboard {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted: #898781;
+    --gridline: #2c2c2a;
+    --baseline: #383835;
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --border-ring: rgba(255, 255, 255, 0.1);
+  }
+}
+
+:root[data-theme="dark"] .dashboard {
+  color-scheme: dark;
+  --surface-1: #1a1a19;
+  --text-primary: #ffffff;
+  --text-secondary: #c3c2b7;
+  --text-muted: #898781;
+  --gridline: #2c2c2a;
+  --baseline: #383835;
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --border-ring: rgba(255, 255, 255, 0.1);
+}
+
+.kpi-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1px;
+  background: var(--gridline);
+  border: 1px solid var(--gridline);
+  border-radius: 8px;
+  overflow: hidden;
+  margin-bottom: 1.5rem;
+}
+
+.stat-tile {
+  background: var(--surface-1);
+  padding: 1rem 1.1rem;
+}
+
+.stat-tile-label {
+  margin: 0 0 0.35rem;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.stat-tile-value {
+  margin: 0;
+  font-size: 1.6rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: proportional-nums;
+}
+
+.stat-tile-hint {
+  margin: 0.3rem 0 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.chart-card {
+  background: var(--surface-1);
+  border: 1px solid var(--gridline);
+  border-radius: 8px;
+  padding: 1rem 1.25rem 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.chart-card-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.chart-card-header h3 {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+  color: var(--text-primary);
+}
+
+.link-button {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--series-1);
+  font-size: 0.85rem;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.chart-legend {
+  display: flex;
+  gap: 1.25rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.legend-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  display: inline-block;
+}
+
+.legend-key {
+  width: 14px;
+  height: 2px;
+  display: inline-block;
+}
+
+.chart-scroll {
+  overflow-x: auto;
+}
+
+.chart-gridline {
+  stroke: var(--gridline);
+  stroke-width: 1;
+}
+
+.chart-axis-label {
+  fill: var(--text-muted);
+  font-size: 10px;
+}
+
+.chart-direct-label {
+  fill: var(--text-primary);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.chart-tooltip {
+  position: absolute;
+  transform: translate(-50%, calc(-100% - 10px));
+  background: var(--text-primary);
+  color: var(--surface-1);
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.chart-tooltip strong {
+  font-size: 0.9rem;
+}
+
+.empty-state {
+  color: var(--text-muted);
+}
+
+/* The heatmap's sequential fill uses the documented light-mode ramp only (palette.md
+   doesn't specify separate dark-mode sequential steps), so this card stays on a
+   light surface regardless of the page theme rather than inventing undocumented hexes. */
+.heatmap-scale {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.78rem;
+  color: #52514e;
+}
+
+.heatmap-scale-bar {
+  flex: 1;
+  max-width: 240px;
+  height: 8px;
+  border-radius: 4px;
+}
+
+.heatmap-grid {
+  display: grid;
+  gap: 2px;
+  background: #fcfcfb;
+  min-width: fit-content;
+}
+
+.heatmap-corner {
+  background: #fcfcfb;
+}
+
+.heatmap-col-header,
+.heatmap-row-header {
+  background: #fcfcfb;
+  color: #52514e;
+  font-size: 0.75rem;
+  padding: 0.4rem 0.5rem;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.heatmap-row-header {
+  font-weight: 600;
+  color: #0b0b0b;
+}
+
+.heatmap-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem 0.3rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  min-height: 40px;
+  cursor: default;
+}

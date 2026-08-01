@@ -49,6 +49,7 @@ Endpoints, all under `/api`:
 - `GET/POST /threats`, `GET/PATCH/DELETE /threats/:id`
 - `GET/POST /risk-scenarios`, `GET/PATCH/DELETE /risk-scenarios/:id` — request/response bodies use the nested PERT shape (`threatEventFrequency`/`vulnerability`/`lossMagnitude`, each `{min, mostLikely, max}`), not the flat DB columns
 - `POST /risk-scenarios/:id/simulate` — body `{ iterations?, seed? }`, runs the FAIR engine against that scenario's stored parameters and returns a `SimulationResult`
+- `GET /dashboard` (`routes/dashboard.ts`) — for every risk scenario, runs the FAIR engine fresh (no persistence of simulation runs) and returns `{ scenarios: [...ale, cvar95, assetName, threatName], totals: { scenarioCount, ale, worstCaseCvar95, topRisk } }`. `totals.ale` is a valid sum (linearity of expectation holds regardless of correlation); deliberately **not** a summed CVaR95 (tail expectations aren't additive) — `worstCaseCvar95` is the max across scenarios instead, to avoid reporting a statistically meaningless portfolio "CVaR".
 
 ### Frontend
 
@@ -59,6 +60,16 @@ Client-side routing via `react-router-dom` (`BrowserRouter` in `main.tsx`, route
 - `src/pages/` — one page per resource (`AssetsPage`, `ThreatsPage`, `ScenariosPage`) combining a single form with a list, plus `ScenarioDetailPage` (shows a scenario's parameters and a "run simulation" button that calls `/simulate` and renders the result). The form doubles as create and edit: an `editingId` state (`null` = create) is set by each row's "Editar" button, which pre-fills the fields and switches the submit handler to call the PATCH endpoint instead of POST; "Cancelar" clears it back to create mode.
 
 State management is local `useState`/`useEffect` per page, no shared cache/query library — each page re-fetches on mount. Revisit this if pages start needing to share or invalidate the same data.
+
+### Dashboard & charts
+
+`DashboardPage` (`/dashboard`, the app's default route) follows the project's dataviz skill: charts are hand-built SVG/HTML (no charting library), colors come only from the documented palette (`components/sequentialScale.ts` for the sequential ramp, CSS custom properties in `pages/Dashboard.css` for the categorical pair), and every chart has a table-view toggle as its accessibility twin.
+
+- `components/StatTile.tsx` — the 4 KPI tiles (portfolio ALE, scenario count, top risk, worst-case CVaR95).
+- `components/ParetoChart.tsx` — bars are each scenario's ALE as a **% of portfolio total**, the line is cumulative %, both sharing one 0–100% axis. This isn't the classic dual-axis Pareto (raw ALE bars + a % line on a second axis) on purpose — a dual-axis chart invents a correlation that isn't in the data (see the dataviz skill's anti-patterns); indexing both series to a shared % axis is the fix it recommends, and it happens to be exactly what a Pareto chart needs.
+- `components/RiskHeatmap.tsx` — Asset × Threat grid, cell color = sequential blue ramp by ALE (assets/threats built from whichever scenarios exist; a cell with no scenario renders as a muted "—", outside the color scale). **The heatmap card stays on a light surface even in dark mode** — `palette.md` only documents light-mode sequential ramp steps, and inventing undocumented dark steps would violate the "documented palette only" rule, so this is a deliberate, commented scope limit rather than a bug.
+- `components/useChartTooltip.ts` / `ChartTooltip.tsx` — shared hover/focus tooltip. Use `showTooltipAt(x, y, data)` when the mark's own geometry is already known (SVG bars/points — more precise than their DOM rect, and correct even when the hit target is deliberately larger than the mark); use `showTooltipFromEvent(e, data)` when it isn't (HTML cells). Tooltips render in a non-clipping wrapper *outside* the horizontally-scrollable chart area — an earlier version anchored them to the scrollable container and got clipped at its edges.
+- Number formatting lives in `src/format.ts`. `currencyCompact` is a hand-rolled K/M formatter, not `Intl.NumberFormat(..., { notation: "compact" })` — `es-AR`'s compact CLDR data mixes `K`/`k` case at the 10,000 boundary (e.g. `7,3 K` vs `67,7 k`), which reads as a formatting bug on a dashboard of financial figures.
 
 ## Commands
 

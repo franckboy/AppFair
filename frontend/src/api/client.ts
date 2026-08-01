@@ -1,4 +1,4 @@
-import type { Asset, PertEstimate, RiskScenario, SimulationResult, Threat } from "./types";
+import type { Asset, Dashboard, PertEstimate, RiskScenario, SimulationResult, Threat } from "./types";
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, {
@@ -66,4 +66,6 @@ export const api = {
       method: "POST",
       body: JSON.stringify(options),
     }),
+
+  getDashboard: () => request<Dashboard>("/dashboard"),
 };
