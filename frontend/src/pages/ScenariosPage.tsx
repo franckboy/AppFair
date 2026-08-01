@@ -4,6 +4,10 @@ import { api } from "../api/client";
 import type { Asset, PertEstimate, RiskScenario, Threat } from "../api/types";
 import { PertEstimateInput } from "../components/PertEstimateInput";
 
+const DEFAULT_TEF: PertEstimate = { min: 1, mostLikely: 3, max: 6 };
+const DEFAULT_VULNERABILITY: PertEstimate = { min: 0.05, mostLikely: 0.15, max: 0.3 };
+const DEFAULT_LOSS_MAGNITUDE: PertEstimate = { min: 1_000, mostLikely: 10_000, max: 50_000 };
+
 export function ScenariosPage() {
   const [scenarios, setScenarios] = useState<RiskScenario[]>([]);
   const [assets, setAssets] = useState<Asset[]>([]);
@@ -11,12 +15,13 @@ export function ScenariosPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [assetId, setAssetId] = useState("");
   const [threatId, setThreatId] = useState("");
-  const [tef, setTef] = useState<PertEstimate>({ min: 1, mostLikely: 3, max: 6 });
-  const [vulnerability, setVulnerability] = useState<PertEstimate>({ min: 0.05, mostLikely: 0.15, max: 0.3 });
-  const [lossMagnitude, setLossMagnitude] = useState<PertEstimate>({ min: 1_000, mostLikely: 10_000, max: 50_000 });
+  const [tef, setTef] = useState<PertEstimate>(DEFAULT_TEF);
+  const [vulnerability, setVulnerability] = useState<PertEstimate>(DEFAULT_VULNERABILITY);
+  const [lossMagnitude, setLossMagnitude] = useState<PertEstimate>(DEFAULT_LOSS_MAGNITUDE);
   const [submitting, setSubmitting] = useState(false);
 
   function load() {
@@ -35,20 +40,45 @@ export function ScenariosPage() {
 
   useEffect(load, []);
 
+  function resetForm() {
+    setEditingId(null);
+    setName("");
+    setAssetId(assets[0]?.id ?? "");
+    setThreatId(threats[0]?.id ?? "");
+    setTef(DEFAULT_TEF);
+    setVulnerability(DEFAULT_VULNERABILITY);
+    setLossMagnitude(DEFAULT_LOSS_MAGNITUDE);
+  }
+
+  function startEdit(scenario: RiskScenario) {
+    setEditingId(scenario.id);
+    setName(scenario.name);
+    setAssetId(scenario.assetId);
+    setThreatId(scenario.threatId);
+    setTef(scenario.threatEventFrequency);
+    setVulnerability(scenario.vulnerability);
+    setLossMagnitude(scenario.lossMagnitude);
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
     setError(null);
+    const input = {
+      name,
+      assetId,
+      threatId,
+      threatEventFrequency: tef,
+      vulnerability,
+      lossMagnitude,
+    };
     try {
-      await api.createRiskScenario({
-        name,
-        assetId,
-        threatId,
-        threatEventFrequency: tef,
-        vulnerability,
-        lossMagnitude,
-      });
-      setName("");
+      if (editingId) {
+        await api.updateRiskScenario(editingId, input);
+      } else {
+        await api.createRiskScenario(input);
+      }
+      resetForm();
       load();
     } catch (e) {
       setError((e as Error).message);
@@ -61,6 +91,7 @@ export function ScenariosPage() {
     setError(null);
     try {
       await api.deleteRiskScenario(id);
+      if (editingId === id) resetForm();
       load();
     } catch (e) {
       setError((e as Error).message);
@@ -136,9 +167,16 @@ export function ScenariosPage() {
             min={0}
           />
 
-          <button type="submit" disabled={submitting}>
-            {submitting ? "Guardando..." : "Crear escenario"}
-          </button>
+          <div className="form-actions">
+            <button type="submit" disabled={submitting}>
+              {submitting ? "Guardando..." : editingId ? "Guardar cambios" : "Crear escenario"}
+            </button>
+            {editingId && (
+              <button type="button" onClick={resetForm}>
+                Cancelar
+              </button>
+            )}
+          </div>
         </form>
       )}
 
@@ -162,7 +200,8 @@ export function ScenariosPage() {
                 </td>
                 <td>{assetName(scenario.assetId)}</td>
                 <td>{threatName(scenario.threatId)}</td>
-                <td>
+                <td className="row-actions">
+                  <button onClick={() => startEdit(scenario)}>Editar</button>
                   <button onClick={() => handleDelete(scenario.id)}>Eliminar</button>
                 </td>
               </tr>

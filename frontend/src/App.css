@@ -53,8 +53,17 @@
 }
 
 .stacked-form button {
-  align-self: flex-start;
   padding: 0.5rem 1rem;
+}
+
+.form-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.row-actions {
+  display: flex;
+  gap: 0.5rem;
 }
 
 fieldset.pert-input {

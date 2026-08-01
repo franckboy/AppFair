@@ -56,7 +56,7 @@ Client-side routing via `react-router-dom` (`BrowserRouter` in `main.tsx`, route
 
 - `src/api/` — `types.ts` (DTOs mirroring the backend's nested PERT shape) and `client.ts` (thin `fetch` wrapper, one function per endpoint; throws on non-2xx using the backend's `{ error }` body).
 - `src/components/PertEstimateInput.tsx` — the min/mostLikely/max input group, reused for all three FAIR parameters on the scenario form.
-- `src/pages/` — one page per resource (`AssetsPage`, `ThreatsPage`, `ScenariosPage`) combining a create form with a list, plus `ScenarioDetailPage` (shows a scenario's parameters and a "run simulation" button that calls `/simulate` and renders the result).
+- `src/pages/` — one page per resource (`AssetsPage`, `ThreatsPage`, `ScenariosPage`) combining a single form with a list, plus `ScenarioDetailPage` (shows a scenario's parameters and a "run simulation" button that calls `/simulate` and renders the result). The form doubles as create and edit: an `editingId` state (`null` = create) is set by each row's "Editar" button, which pre-fills the fields and switches the submit handler to call the PATCH endpoint instead of POST; "Cancelar" clears it back to create mode.
 
 State management is local `useState`/`useEffect` per page, no shared cache/query library — each page re-fetches on mount. Revisit this if pages start needing to share or invalidate the same data.
 

@@ -43,17 +43,23 @@ export const api = {
   listAssets: () => request<Asset[]>("/assets"),
   createAsset: (input: AssetInput) =>
     request<Asset>("/assets", { method: "POST", body: JSON.stringify(input) }),
+  updateAsset: (id: string, input: Partial<AssetInput>) =>
+    request<Asset>(`/assets/${id}`, { method: "PATCH", body: JSON.stringify(input) }),
   deleteAsset: (id: string) => request<void>(`/assets/${id}`, { method: "DELETE" }),
 
   listThreats: () => request<Threat[]>("/threats"),
   createThreat: (input: ThreatInput) =>
     request<Threat>("/threats", { method: "POST", body: JSON.stringify(input) }),
+  updateThreat: (id: string, input: Partial<ThreatInput>) =>
+    request<Threat>(`/threats/${id}`, { method: "PATCH", body: JSON.stringify(input) }),
   deleteThreat: (id: string) => request<void>(`/threats/${id}`, { method: "DELETE" }),
 
   listRiskScenarios: () => request<RiskScenario[]>("/risk-scenarios"),
   getRiskScenario: (id: string) => request<RiskScenario>(`/risk-scenarios/${id}`),
   createRiskScenario: (input: RiskScenarioInput) =>
     request<RiskScenario>("/risk-scenarios", { method: "POST", body: JSON.stringify(input) }),
+  updateRiskScenario: (id: string, input: Partial<RiskScenarioInput>) =>
+    request<RiskScenario>(`/risk-scenarios/${id}`, { method: "PATCH", body: JSON.stringify(input) }),
   deleteRiskScenario: (id: string) => request<void>(`/risk-scenarios/${id}`, { method: "DELETE" }),
   simulateRiskScenario: (id: string, options: SimulateOptions = {}) =>
     request<SimulationResult>(`/risk-scenarios/${id}/simulate`, {

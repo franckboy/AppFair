@@ -7,6 +7,7 @@ export function AssetsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [value, setValue] = useState("");
@@ -23,19 +24,36 @@ export function AssetsPage() {
 
   useEffect(load, []);
 
+  function resetForm() {
+    setEditingId(null);
+    setName("");
+    setDescription("");
+    setValue("");
+  }
+
+  function startEdit(asset: Asset) {
+    setEditingId(asset.id);
+    setName(asset.name);
+    setDescription(asset.description ?? "");
+    setValue(asset.value != null ? String(asset.value) : "");
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
     setError(null);
+    const input = {
+      name,
+      description: description || undefined,
+      value: value ? Number(value) : undefined,
+    };
     try {
-      await api.createAsset({
-        name,
-        description: description || undefined,
-        value: value ? Number(value) : undefined,
-      });
-      setName("");
-      setDescription("");
-      setValue("");
+      if (editingId) {
+        await api.updateAsset(editingId, input);
+      } else {
+        await api.createAsset(input);
+      }
+      resetForm();
       load();
     } catch (e) {
       setError((e as Error).message);
@@ -48,6 +66,7 @@ export function AssetsPage() {
     setError(null);
     try {
       await api.deleteAsset(id);
+      if (editingId === id) resetForm();
       load();
     } catch (e) {
       setError((e as Error).message);
@@ -72,9 +91,16 @@ export function AssetsPage() {
           Valor económico estimado
           <input type="number" min={0} value={value} onChange={(e) => setValue(e.target.value)} />
         </label>
-        <button type="submit" disabled={submitting}>
-          {submitting ? "Guardando..." : "Agregar activo"}
-        </button>
+        <div className="form-actions">
+          <button type="submit" disabled={submitting}>
+            {submitting ? "Guardando..." : editingId ? "Guardar cambios" : "Agregar activo"}
+          </button>
+          {editingId && (
+            <button type="button" onClick={resetForm}>
+              Cancelar
+            </button>
+          )}
+        </div>
       </form>
 
       {loading ? (
@@ -95,7 +121,8 @@ export function AssetsPage() {
                 <td>{asset.name}</td>
                 <td>{asset.description}</td>
                 <td>{asset.value != null ? asset.value.toLocaleString() : "—"}</td>
-                <td>
+                <td className="row-actions">
+                  <button onClick={() => startEdit(asset)}>Editar</button>
                   <button onClick={() => handleDelete(asset.id)}>Eliminar</button>
                 </td>
               </tr>

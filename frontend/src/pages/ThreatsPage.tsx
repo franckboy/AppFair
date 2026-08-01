@@ -7,6 +7,7 @@ export function ThreatsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -22,14 +23,30 @@ export function ThreatsPage() {
 
   useEffect(load, []);
 
+  function resetForm() {
+    setEditingId(null);
+    setName("");
+    setDescription("");
+  }
+
+  function startEdit(threat: Threat) {
+    setEditingId(threat.id);
+    setName(threat.name);
+    setDescription(threat.description ?? "");
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
     setError(null);
+    const input = { name, description: description || undefined };
     try {
-      await api.createThreat({ name, description: description || undefined });
-      setName("");
-      setDescription("");
+      if (editingId) {
+        await api.updateThreat(editingId, input);
+      } else {
+        await api.createThreat(input);
+      }
+      resetForm();
       load();
     } catch (e) {
       setError((e as Error).message);
@@ -42,6 +59,7 @@ export function ThreatsPage() {
     setError(null);
     try {
       await api.deleteThreat(id);
+      if (editingId === id) resetForm();
       load();
     } catch (e) {
       setError((e as Error).message);
@@ -62,9 +80,16 @@ export function ThreatsPage() {
           Descripción
           <input value={description} onChange={(e) => setDescription(e.target.value)} />
         </label>
-        <button type="submit" disabled={submitting}>
-          {submitting ? "Guardando..." : "Agregar amenaza"}
-        </button>
+        <div className="form-actions">
+          <button type="submit" disabled={submitting}>
+            {submitting ? "Guardando..." : editingId ? "Guardar cambios" : "Agregar amenaza"}
+          </button>
+          {editingId && (
+            <button type="button" onClick={resetForm}>
+              Cancelar
+            </button>
+          )}
+        </div>
       </form>
 
       {loading ? (
@@ -83,7 +108,8 @@ export function ThreatsPage() {
               <tr key={threat.id}>
                 <td>{threat.name}</td>
                 <td>{threat.description}</td>
-                <td>
+                <td className="row-actions">
+                  <button onClick={() => startEdit(threat)}>Editar</button>
                   <button onClick={() => handleDelete(threat.id)}>Eliminar</button>
                 </td>
               </tr>
