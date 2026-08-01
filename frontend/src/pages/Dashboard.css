@@ -177,60 +177,70 @@
   color: var(--text-muted);
 }
 
-/* The heatmap's sequential fill uses the documented light-mode ramp only (palette.md
-   doesn't specify separate dark-mode sequential steps), so this card stays on a
-   light surface regardless of the page theme rather than inventing undocumented hexes. */
-.heatmap-scale {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.75rem;
-  font-size: 0.78rem;
-  color: #52514e;
-}
-
-.heatmap-scale-bar {
-  flex: 1;
-  max-width: 240px;
-  height: 8px;
-  border-radius: 4px;
-}
-
-.heatmap-grid {
+/* Status colors (statusScale.ts) are validated for both surfaces in palette.md, so
+   unlike a sequential ramp this grid's fills don't need a light-only fallback. */
+.risk-matrix-layout {
   display: grid;
-  gap: 2px;
-  background: #fcfcfb;
-  min-width: fit-content;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: 1fr auto;
+  gap: 0.5rem;
+  max-width: 480px;
 }
 
-.heatmap-corner {
-  background: #fcfcfb;
-}
-
-.heatmap-col-header,
-.heatmap-row-header {
-  background: #fcfcfb;
-  color: #52514e;
-  font-size: 0.75rem;
-  padding: 0.4rem 0.5rem;
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.heatmap-row-header {
-  font-weight: 600;
-  color: #0b0b0b;
-}
-
-.heatmap-cell {
+.risk-matrix-yaxis {
+  grid-column: 1;
+  grid-row: 1;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  align-self: stretch;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0.5rem 0.3rem;
-  font-size: 0.75rem;
+}
+
+.risk-matrix-xaxis {
+  grid-column: 2;
+  grid-row: 2;
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.risk-matrix-grid {
+  grid-column: 2;
+  grid-row: 1;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 2px;
+  aspect-ratio: 1 / 1;
+}
+
+.risk-matrix-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  border-radius: 4px;
+  font-size: 0.8rem;
   font-weight: 600;
-  min-height: 40px;
   cursor: default;
+}
+
+.risk-matrix-badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--surface-1);
+  color: var(--text-primary);
+  font-size: 0.7rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }

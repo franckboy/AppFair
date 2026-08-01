@@ -26,6 +26,11 @@ dashboardRouter.get("/", async (_req, res) => {
       threatName: scenario.threat.name,
       ale: result.ale,
       cvar95: result.cvar95,
+      // Loss Event Frequency (annual): the "likelihood" axis of a risk matrix — how often
+      // the threat event is expected to actually become a loss, not just occur.
+      likelihood: scenario.tefMostLikely * scenario.vulnMostLikely,
+      // Most-likely per-event impact: the "severity" axis.
+      severity: scenario.lmMostLikely,
     };
   });
 

@@ -57,6 +57,8 @@ export interface DashboardScenarioSummary {
   threatName: string;
   ale: number;
   cvar95: number;
+  likelihood: number;
+  severity: number;
 }
 
 export interface Dashboard {

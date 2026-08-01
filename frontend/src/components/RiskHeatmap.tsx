@@ -1,149 +1,152 @@
-import { Fragment, useState } from "react";
-import { currencyCompact, currencyFull } from "../format";
+import { useState } from "react";
+import { currencyFull } from "../format";
 import { ChartTooltip } from "./ChartTooltip";
-import { SEQUENTIAL_STEPS, sequentialColor, textColorFor } from "./sequentialScale";
+import { textColorFor } from "./colorContrast";
+import { RISK_LEVEL_COLOR, RISK_LEVEL_LABEL, riskLevelFor } from "./statusScale";
 import { useChartTooltip } from "./useChartTooltip";
 
-export interface HeatmapCell {
-  assetId: string;
-  threatId: string;
+export interface RiskMatrixScenario {
+  id: string;
+  name: string;
   ale: number;
-  scenarioNames: string[];
+  likelihood: number;
+  severity: number;
 }
 
 interface RiskHeatmapProps {
-  assets: { id: string; name: string }[];
-  threats: { id: string; name: string }[];
-  cells: HeatmapCell[];
+  scenarios: RiskMatrixScenario[];
 }
 
-export function RiskHeatmap({ assets, threats, cells }: RiskHeatmapProps) {
+const BINS = 4;
+
+function binIndex(value: number, min: number, max: number): number {
+  if (max <= min) return 0;
+  const t = (value - min) / (max - min);
+  return Math.min(BINS - 1, Math.floor(t * BINS));
+}
+
+export function RiskHeatmap({ scenarios }: RiskHeatmapProps) {
   const [showTable, setShowTable] = useState(false);
   const { containerRef, tooltip, showTooltipFromEvent, hideTooltip } = useChartTooltip<{
-    assetName: string;
-    threatName: string;
-    ale: number | null;
-    scenarioNames: string[];
+    level: string;
+    scenarios: RiskMatrixScenario[];
   }>();
 
-  if (assets.length === 0 || threats.length === 0) {
+  if (scenarios.length === 0) {
     return <p className="empty-state">No hay escenarios simulados todavía.</p>;
   }
 
-  const cellByKey = new Map(cells.map((c) => [`${c.assetId}:${c.threatId}`, c]));
-  const maxAle = cells.reduce((max, c) => Math.max(max, c.ale), 0);
+  const likelihoods = scenarios.map((s) => s.likelihood);
+  const severities = scenarios.map((s) => s.severity);
+  const minL = Math.min(...likelihoods);
+  const maxL = Math.max(...likelihoods);
+  const minS = Math.min(...severities);
+  const maxS = Math.max(...severities);
 
-  const gradient = `linear-gradient(to right, ${SEQUENTIAL_STEPS.join(", ")})`;
+  const cellsByKey = new Map<string, RiskMatrixScenario[]>();
+  const scenarioBins = scenarios.map((s) => {
+    const likelihoodBin = binIndex(s.likelihood, minL, maxL);
+    const severityBin = binIndex(s.severity, minS, maxS);
+    const key = `${likelihoodBin}:${severityBin}`;
+    const bucket = cellsByKey.get(key);
+    if (bucket) bucket.push(s);
+    else cellsByKey.set(key, [s]);
+    return { ...s, likelihoodBin, severityBin };
+  });
+
+  const severityRowsTopDown = [3, 2, 1, 0];
+  const likelihoodColsLeftRight = [0, 1, 2, 3];
 
   return (
     <div className="chart-card">
       <div className="chart-card-header">
-        <h3>Mapa de calor: activo × amenaza (ALE)</h3>
+        <h3>Matriz de riesgo (probabilidad × severidad)</h3>
         <button type="button" className="link-button" onClick={() => setShowTable((v) => !v)}>
           {showTable ? "Ver mapa" : "Ver tabla"}
         </button>
+      </div>
+
+      <div className="chart-legend">
+        {(["low", "medium", "high", "critical"] as const).map((level) => (
+          <span key={level} className="legend-item">
+            <span className="legend-swatch" style={{ background: RISK_LEVEL_COLOR[level] }} />
+            {RISK_LEVEL_LABEL[level]}
+          </span>
+        ))}
       </div>
 
       {showTable ? (
         <table className="params-table">
           <thead>
             <tr>
-              <th>Activo</th>
-              <th>Amenaza</th>
+              <th>Escenario</th>
               <th>ALE</th>
+              <th>Probabilidad (LEF/año)</th>
+              <th>Severidad</th>
+              <th>Nivel</th>
             </tr>
           </thead>
           <tbody>
-            {[...cells]
+            {[...scenarioBins]
               .sort((a, b) => b.ale - a.ale)
-              .map((cell) => (
-                <tr key={`${cell.assetId}:${cell.threatId}`}>
-                  <td>{assets.find((a) => a.id === cell.assetId)?.name}</td>
-                  <td>{threats.find((t) => t.id === cell.threatId)?.name}</td>
-                  <td>{currencyFull.format(cell.ale)}</td>
+              .map((s) => (
+                <tr key={s.id}>
+                  <td>{s.name}</td>
+                  <td>{currencyFull.format(s.ale)}</td>
+                  <td>{s.likelihood.toFixed(2)}</td>
+                  <td>{currencyFull.format(s.severity)}</td>
+                  <td>{RISK_LEVEL_LABEL[riskLevelFor(s.likelihoodBin, s.severityBin)]}</td>
                 </tr>
               ))}
           </tbody>
         </table>
       ) : (
-        <>
-          <div className="heatmap-scale">
-            <span className="heatmap-scale-label">0</span>
-            <span className="heatmap-scale-bar" style={{ background: gradient }} />
-            <span className="heatmap-scale-label">{currencyCompact.format(maxAle)}</span>
+        <div ref={containerRef} style={{ position: "relative" }}>
+          <div className="risk-matrix-layout">
+            <div className="risk-matrix-yaxis">Severidad</div>
+            <div className="risk-matrix-grid">
+              {severityRowsTopDown.map((severityBin) =>
+                likelihoodColsLeftRight.map((likelihoodBin) => {
+                  const key = `${likelihoodBin}:${severityBin}`;
+                  const cellScenarios = cellsByKey.get(key) ?? [];
+                  const level = riskLevelFor(likelihoodBin, severityBin);
+                  const color = RISK_LEVEL_COLOR[level];
+                  return (
+                    <div
+                      key={key}
+                      className="risk-matrix-cell"
+                      style={{ background: color, color: textColorFor(color) }}
+                      tabIndex={0}
+                      onMouseEnter={(e) => showTooltipFromEvent(e, { level: RISK_LEVEL_LABEL[level], scenarios: cellScenarios })}
+                      onFocus={(e) => showTooltipFromEvent(e, { level: RISK_LEVEL_LABEL[level], scenarios: cellScenarios })}
+                      onMouseLeave={hideTooltip}
+                      onBlur={hideTooltip}
+                    >
+                      <span>{RISK_LEVEL_LABEL[level]}</span>
+                      {cellScenarios.length > 0 && <span className="risk-matrix-badge">{cellScenarios.length}</span>}
+                    </div>
+                  );
+                }),
+              )}
+            </div>
+            <div className="risk-matrix-xaxis">Probabilidad</div>
           </div>
 
-          <div ref={containerRef} style={{ position: "relative" }}>
-            <div style={{ overflowX: "auto" }}>
-            <div
-              className="heatmap-grid"
-              style={{ gridTemplateColumns: `160px repeat(${threats.length}, minmax(90px, 1fr))` }}
-            >
-              <div className="heatmap-corner" />
-              {threats.map((threat) => (
-                <div key={threat.id} className="heatmap-col-header" title={threat.name}>
-                  {threat.name}
-                </div>
-              ))}
-              {assets.map((asset) => (
-                <Fragment key={asset.id}>
-                  <div className="heatmap-row-header">{asset.name}</div>
-                  {threats.map((threat) => {
-                    const cell = cellByKey.get(`${asset.id}:${threat.id}`);
-                    const color = cell ? sequentialColor(cell.ale, maxAle) : "var(--gridline)";
-                    return (
-                      <div
-                        key={`${asset.id}:${threat.id}`}
-                        className="heatmap-cell"
-                        style={{ background: color, color: cell ? textColorFor(color) : "var(--text-muted)" }}
-                        tabIndex={0}
-                        onMouseEnter={(e) =>
-                          showTooltipFromEvent(e, {
-                            assetName: asset.name,
-                            threatName: threat.name,
-                            ale: cell?.ale ?? null,
-                            scenarioNames: cell?.scenarioNames ?? [],
-                          })
-                        }
-                        onFocus={(e) =>
-                          showTooltipFromEvent(e, {
-                            assetName: asset.name,
-                            threatName: threat.name,
-                            ale: cell?.ale ?? null,
-                            scenarioNames: cell?.scenarioNames ?? [],
-                          })
-                        }
-                        onMouseLeave={hideTooltip}
-                        onBlur={hideTooltip}
-                      >
-                        {cell ? currencyCompact.format(cell.ale) : "—"}
-                      </div>
-                    );
-                  })}
-                </Fragment>
-              ))}
-            </div>
-            </div>
-
-            {tooltip && (
-              <ChartTooltip x={tooltip.x} y={tooltip.y}>
-                {tooltip.data.ale != null ? (
-                  <>
-                    <strong>{currencyFull.format(tooltip.data.ale)}</strong>
-                    <span>
-                      {tooltip.data.assetName} · {tooltip.data.threatName}
-                    </span>
-                    <span>{tooltip.data.scenarioNames.join(", ")}</span>
-                  </>
-                ) : (
-                  <span>
-                    {tooltip.data.assetName} · {tooltip.data.threatName} — sin escenario registrado
+          {tooltip && (
+            <ChartTooltip x={tooltip.x} y={tooltip.y}>
+              <strong>{tooltip.data.level}</strong>
+              {tooltip.data.scenarios.length === 0 ? (
+                <span>Sin escenarios en esta zona</span>
+              ) : (
+                tooltip.data.scenarios.map((s) => (
+                  <span key={s.id}>
+                    {s.name} · {currencyFull.format(s.ale)}
                   </span>
-                )}
-              </ChartTooltip>
-            )}
-          </div>
-        </>
+                ))
+              )}
+            </ChartTooltip>
+          )}
+        </div>
       )}
     </div>
   );

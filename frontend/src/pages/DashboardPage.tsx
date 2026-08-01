@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { Dashboard } from "../api/types";
-import type { HeatmapCell } from "../components/RiskHeatmap";
 import { RiskHeatmap } from "../components/RiskHeatmap";
 import { ParetoChart } from "../components/ParetoChart";
 import { StatTile } from "../components/StatTile";
@@ -26,25 +25,6 @@ export function DashboardPage() {
   if (!dashboard) return null;
 
   const { scenarios, totals } = dashboard;
-
-  const assetsById = new Map<string, { id: string; name: string }>();
-  const threatsById = new Map<string, { id: string; name: string }>();
-  for (const s of scenarios) {
-    assetsById.set(s.assetId, { id: s.assetId, name: s.assetName });
-    threatsById.set(s.threatId, { id: s.threatId, name: s.threatName });
-  }
-
-  const cellMap = new Map<string, HeatmapCell>();
-  for (const s of scenarios) {
-    const key = `${s.assetId}:${s.threatId}`;
-    const existing = cellMap.get(key);
-    if (existing) {
-      existing.ale += s.ale;
-      existing.scenarioNames.push(s.name);
-    } else {
-      cellMap.set(key, { assetId: s.assetId, threatId: s.threatId, ale: s.ale, scenarioNames: [s.name] });
-    }
-  }
 
   return (
     <div className="dashboard">
@@ -72,9 +52,7 @@ export function DashboardPage() {
           <ParetoChart items={scenarios.map((s) => ({ id: s.id, name: s.name, ale: s.ale }))} />
 
           <RiskHeatmap
-            assets={[...assetsById.values()]}
-            threats={[...threatsById.values()]}
-            cells={[...cellMap.values()]}
+            scenarios={scenarios.map((s) => ({ id: s.id, name: s.name, ale: s.ale, likelihood: s.likelihood, severity: s.severity }))}
           />
         </>
       )}
