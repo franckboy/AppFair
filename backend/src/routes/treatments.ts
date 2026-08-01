@@ -1,39 +1,19 @@
+/** HTTP routing for the treatments resource only — see riskScenarios.ts for the same split rationale. */
 import { Router } from "express";
-import { z } from "zod";
 import { prisma } from "../db.js";
 import { evaluateTreatment } from "../fair/treatment.js";
-import type { Treatment } from "../generated/prisma/client.js";
-
-const treatmentBase = z.object({
-  strategy: z.enum(["MITIGATE", "TRANSFER", "AVOID", "ACCEPT"]),
-  name: z.string().min(1),
-  annualCost: z.number().nonnegative(),
-  reductionPct: z.number().min(0).max(100).optional(),
-});
-
-const treatmentInput = treatmentBase.refine(
-  (t) => (t.strategy === "MITIGATE" || t.strategy === "TRANSFER" ? t.reductionPct !== undefined : true),
-  { message: "reductionPct is required for MITIGATE and TRANSFER strategies" },
-);
-
-function toDto(treatment: Treatment) {
-  return {
-    id: treatment.id,
-    riskScenarioId: treatment.riskScenarioId,
-    strategy: treatment.strategy,
-    name: treatment.name,
-    annualCost: treatment.annualCost,
-    reductionPct: treatment.reductionPct,
-    createdAt: treatment.createdAt,
-    updatedAt: treatment.updatedAt,
-  };
-}
+import { toDto as toScenarioDto, toEngineInput } from "./riskScenarios.mapping.js";
+import { toDto } from "./treatments.mapping.js";
+import { treatmentBase, treatmentInput } from "./treatments.schema.js";
 
 /** Scoped under /api/risk-scenarios/:scenarioId/treatments — list and create. */
 export const scenarioTreatmentsRouter = Router({ mergeParams: true });
 
 scenarioTreatmentsRouter.get<{ scenarioId: string }>("/", async (req, res) => {
-  const scenario = await prisma.riskScenario.findUnique({ where: { id: req.params.scenarioId } });
+  const scenario = await prisma.riskScenario.findUnique({
+    where: { id: req.params.scenarioId },
+    include: { lossCategories: true },
+  });
   if (!scenario) {
     res.status(404).json({ error: "Risk scenario not found" });
     return;
@@ -44,16 +24,7 @@ scenarioTreatmentsRouter.get<{ scenarioId: string }>("/", async (req, res) => {
     orderBy: { createdAt: "asc" },
   });
 
-  const lossCategories = await prisma.lossCategory.findMany({ where: { riskScenarioId: req.params.scenarioId } });
-
-  const scenarioInput = {
-    threatEventFrequency: { min: scenario.tefMin, mostLikely: scenario.tefMostLikely, max: scenario.tefMax },
-    vulnerability: { min: scenario.vulnMin, mostLikely: scenario.vulnMostLikely, max: scenario.vulnMax },
-    lossMagnitudeCategories: lossCategories.map((c) => ({
-      key: c.key,
-      estimate: { min: c.min, mostLikely: c.mostLikely, max: c.max },
-    })),
-  };
+  const scenarioInput = toEngineInput(toScenarioDto(scenario));
 
   const withEvaluation = treatments.map((treatment) => ({
     ...toDto(treatment),

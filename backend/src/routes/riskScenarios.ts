@@ -1,108 +1,17 @@
+/**
+ * HTTP routing for the risk-scenarios resource only — request/response validation
+ * lives in riskScenarios.schema.ts, DB<->API shape translation in
+ * riskScenarios.mapping.ts. A handler here should read as "validate, hit Prisma,
+ * map, respond"; if it's doing more than that, that logic likely belongs in one
+ * of the other two files instead.
+ */
 import { Router } from "express";
-import { z } from "zod";
 import { prisma } from "../db.js";
-import { LOSS_CATEGORY_KEYS, LOSS_CATEGORY_LABEL, type LossCategoryKey } from "../fair/lossCategories.js";
+import { LOSS_CATEGORY_LABEL } from "../fair/lossCategories.js";
 import { computeSensitivity } from "../fair/sensitivity.js";
 import { runSimulation } from "../fair/simulate.js";
-import type { LossCategory, RiskScenario } from "../generated/prisma/client.js";
-
-const pertEstimate = z
-  .object({
-    min: z.number(),
-    mostLikely: z.number(),
-    max: z.number(),
-  })
-  .refine((p) => p.min <= p.mostLikely && p.mostLikely <= p.max, {
-    message: "must satisfy min <= mostLikely <= max",
-  });
-
-const nonNegativePertEstimate = pertEstimate.refine((p) => p.min >= 0, {
-  message: "must be non-negative",
-});
-
-const probabilityPertEstimate = pertEstimate.refine((p) => p.min >= 0 && p.max <= 1, {
-  message: "must be within [0, 1]",
-});
-
-/** Every scenario carries exactly the fixed set of loss categories (see fair/lossCategories.ts) — no more, no fewer. */
-const lossCategoriesInput = z
-  .array(z.object({ key: z.enum(LOSS_CATEGORY_KEYS as [LossCategoryKey, ...LossCategoryKey[]]), estimate: nonNegativePertEstimate }))
-  .refine(
-    (categories) => {
-      const keys = new Set(categories.map((c) => c.key));
-      return keys.size === LOSS_CATEGORY_KEYS.length && LOSS_CATEGORY_KEYS.every((k) => keys.has(k));
-    },
-    { message: `must include exactly these categories: ${LOSS_CATEGORY_KEYS.join(", ")}` },
-  );
-
-const riskScenarioInput = z.object({
-  name: z.string().min(1),
-  assetId: z.string().min(1),
-  threatId: z.string().min(1),
-  threatEventFrequency: nonNegativePertEstimate,
-  vulnerability: probabilityPertEstimate,
-  lossCategories: lossCategoriesInput,
-});
-
-const simulateOptions = z.object({
-  iterations: z.number().int().positive().max(200_000).optional(),
-  seed: z.number().int().optional(),
-});
-
-type RiskScenarioWithCategories = RiskScenario & { lossCategories: LossCategory[] };
-
-/** Maps the flat Prisma columns + related rows to the nested shape the API and the FAIR engine use. */
-function toDto(scenario: RiskScenarioWithCategories) {
-  return {
-    id: scenario.id,
-    name: scenario.name,
-    assetId: scenario.assetId,
-    threatId: scenario.threatId,
-    threatEventFrequency: { min: scenario.tefMin, mostLikely: scenario.tefMostLikely, max: scenario.tefMax },
-    vulnerability: { min: scenario.vulnMin, mostLikely: scenario.vulnMostLikely, max: scenario.vulnMax },
-    lossCategories: scenario.lossCategories.map((c) => ({
-      key: c.key,
-      label: LOSS_CATEGORY_LABEL[c.key as LossCategoryKey] ?? c.key,
-      estimate: { min: c.min, mostLikely: c.mostLikely, max: c.max },
-    })),
-    createdAt: scenario.createdAt,
-    updatedAt: scenario.updatedAt,
-  };
-}
-
-type RiskScenarioInput = z.infer<typeof riskScenarioInput>;
-
-function scalarFields(input: Partial<RiskScenarioInput>) {
-  const data: Record<string, string | number> = {};
-  if (input.name !== undefined) data.name = input.name;
-  if (input.assetId !== undefined) data.assetId = input.assetId;
-  if (input.threatId !== undefined) data.threatId = input.threatId;
-  if (input.threatEventFrequency) {
-    data.tefMin = input.threatEventFrequency.min;
-    data.tefMostLikely = input.threatEventFrequency.mostLikely;
-    data.tefMax = input.threatEventFrequency.max;
-  }
-  if (input.vulnerability) {
-    data.vulnMin = input.vulnerability.min;
-    data.vulnMostLikely = input.vulnerability.mostLikely;
-    data.vulnMax = input.vulnerability.max;
-  }
-  return data;
-}
-
-function toEngineInput(dto: ReturnType<typeof toDto>) {
-  return {
-    threatEventFrequency: dto.threatEventFrequency,
-    vulnerability: dto.vulnerability,
-    lossMagnitudeCategories: dto.lossCategories.map((c) => ({ key: c.key, estimate: c.estimate })),
-  };
-}
-
-/** Adds a freshly-simulated ALE to a scenario DTO — used only by the list/detail GETs, where UI shows a criticality badge next to the scenario, not by create/update. */
-function withAle(dto: ReturnType<typeof toDto>) {
-  const { ale } = runSimulation(toEngineInput(dto));
-  return { ...dto, ale };
-}
+import { scalarFields, toDto, toEngineInput, withAle } from "./riskScenarios.mapping.js";
+import { riskScenarioInput, simulateOptions } from "./riskScenarios.schema.js";
 
 export const riskScenariosRouter = Router();
 
