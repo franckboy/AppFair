@@ -23,10 +23,11 @@ Backend entry point is `backend/src/index.ts`: sets up middleware, mounts one ro
 
 PostgreSQL via Prisma, connected through the `@prisma/adapter-pg` driver adapter — Prisma 7 requires an explicit adapter, plain `new PrismaClient()` throws `PrismaClientInitializationError`. The singleton client lives in `backend/src/db.ts`, which loads `.env` itself via `import "dotenv/config"` (the Prisma CLI loads `.env` automatically for `migrate`/`generate`, but the app process does not, so this import is required for `npm run dev`/`start` to see `DATABASE_URL`).
 
-Schema is `backend/prisma/schema.prisma`, with three models:
+Schema is `backend/prisma/schema.prisma`, with four models:
 
 - `Asset`, `Threat` — reference data.
 - `RiskScenario` — pairs an Asset and a Threat and holds the FAIR inputs as PERT estimates (`min`/`mostLikely`/`max` triples) for three parameters: Threat Event Frequency (`tef*`, annual rate), Vulnerability (`vuln*`, probability 0-1), and Loss Magnitude (`lm*`, currency impact per event). These are ranges, not single numbers, because they're expert estimates, not known quantities — don't collapse them to a single value anywhere in the stack.
+- `Treatment` — a candidate response to a `RiskScenario` (`strategy`: `MITIGATE`/`TRANSFER`/`AVOID`/`ACCEPT`, `name`, `annualCost`, optional `reductionPct`). A scenario can hold several side by side so their ROSI can be compared. See `fair/treatment.ts`.
 
 The Prisma client is generated to `backend/src/generated/prisma` (gitignored, regenerate with `npx prisma generate` after `npm install` or after editing the schema).
 
@@ -40,6 +41,14 @@ The Prisma client is generated to `backend/src/generated/prisma` (gitignored, re
 
 Pass `options.seed` for a reproducible run (used throughout the test suite); omit it for a real, non-deterministic simulation. `simulate.ts` itself takes a plain `RiskScenarioInput`, not a database record — the mapping from Prisma's flat `tef*`/`vuln*`/`lm*` columns to that nested shape happens in `routes/riskScenarios.ts` (`toDto`).
 
+`treatment.ts` — `evaluateTreatment(scenario, treatment, options)` compares a scenario's baseline ALE against its ALE with a treatment applied, reusing `runSimulation` unchanged rather than adding new engine machinery:
+- `MITIGATE` scales the scenario's `vulnerability` PERT triple down by `reductionPct`% (fewer threat events become loss events), then re-simulates.
+- `TRANSFER` scales `lossMagnitude` down by `reductionPct`% instead (models a third party, e.g. insurance, absorbing that share of each event's cost) — a simplification of real insurance mechanics (no deductible/policy-limit modeling), chosen so this strategy reuses the exact same "scale a PERT input, re-run `runSimulation`" pattern as MITIGATE instead of needing a bespoke per-event transform inside the engine.
+- `AVOID` short-circuits `aleAfter` to 0 (risk eliminated) without re-simulating.
+- `ACCEPT` is the do-nothing baseline: `aleAfter = aleBefore`, and by convention `annualCost = 0`.
+
+Before/after simulations share one seed (common random numbers) so the comparison isn't muddied by independent Monte Carlo noise. ROSI = `(aleBefore - aleAfter - annualCost) / annualCost`, `null` when `annualCost` is 0 (division by zero — ACCEPT's baseline has no ROSI, it's the thing being compared against).
+
 ### API
 
 Validation is per-route Zod schemas (not centralized) — see `routes/*.ts`. `errorHandler.ts` maps `ZodError` to 400 (with `issues`), Prisma `P2025` (record not found on update/delete) to 404, and Prisma `P2003` (foreign key violation, e.g. an unknown `assetId`/`threatId`) to 400; anything else is logged and returned as a generic 500. Route handlers can stay `async` and throw/reject freely — Express 5 forwards rejected promises to `errorHandler` automatically.
@@ -50,6 +59,8 @@ Endpoints, all under `/api`:
 - `GET/POST /risk-scenarios`, `GET/PATCH/DELETE /risk-scenarios/:id` — request/response bodies use the nested PERT shape (`threatEventFrequency`/`vulnerability`/`lossMagnitude`, each `{min, mostLikely, max}`), not the flat DB columns
 - `POST /risk-scenarios/:id/simulate` — body `{ iterations?, seed? }`, runs the FAIR engine against that scenario's stored parameters and returns a `SimulationResult`
 - `GET /dashboard` (`routes/dashboard.ts`) — for every risk scenario, runs the FAIR engine fresh (no persistence of simulation runs) and returns `{ scenarios: [...ale, cvar95, assetName, threatName, likelihood, severity], totals: { scenarioCount, ale, worstCaseCvar95, topRisk } }`. `totals.ale` is a valid sum (linearity of expectation holds regardless of correlation); deliberately **not** a summed CVaR95 (tail expectations aren't additive) — `worstCaseCvar95` is the max across scenarios instead, to avoid reporting a statistically meaningless portfolio "CVaR". `likelihood` is Loss Event Frequency (`tefMostLikely * vulnMostLikely`, annual) and `severity` is `lmMostLikely` — the two axes the frontend's risk matrix bins scenarios into.
+- `GET/POST /risk-scenarios/:scenarioId/treatments` (`routes/treatments.ts`, `scenarioTreatmentsRouter`) — list (each annotated with an `evaluation` from `evaluateTreatment`) and create. Mounted as its own path (not nested inside `riskScenariosRouter`) using `Router({ mergeParams: true })`; falls through to it correctly because none of `riskScenariosRouter`'s routes (`/:id`, `/:id/simulate`) match a path ending in `/treatments`.
+- `PATCH/DELETE /treatments/:id` (`treatmentsRouter`) — flat, independent of the parent scenario route.
 
 ### Frontend
 
@@ -57,7 +68,8 @@ Client-side routing via `react-router-dom` (`BrowserRouter` in `main.tsx`, route
 
 - `src/api/` — `types.ts` (DTOs mirroring the backend's nested PERT shape) and `client.ts` (thin `fetch` wrapper, one function per endpoint; throws on non-2xx using the backend's `{ error }` body).
 - `src/components/PertEstimateInput.tsx` — the min/mostLikely/max input group, reused for all three FAIR parameters on the scenario form.
-- `src/pages/` — one page per resource (`AssetsPage`, `ThreatsPage`, `ScenariosPage`) combining a single form with a list, plus `ScenarioDetailPage` (shows a scenario's parameters and a "run simulation" button that calls `/simulate` and renders the result). The form doubles as create and edit: an `editingId` state (`null` = create) is set by each row's "Editar" button, which pre-fills the fields and switches the submit handler to call the PATCH endpoint instead of POST; "Cancelar" clears it back to create mode.
+- `src/pages/` — one page per resource (`AssetsPage`, `ThreatsPage`, `ScenariosPage`) combining a single form with a list, plus `ScenarioDetailPage` (shows a scenario's parameters, a "run simulation" button that calls `/simulate` and renders the result, and `components/TreatmentsSection.tsx`). The list-page forms double as create and edit: an `editingId` state (`null` = create) is set by each row's "Editar" button, which pre-fills the fields and switches the submit handler to call the PATCH endpoint instead of POST; "Cancelar" clears it back to create mode.
+- `components/TreatmentsSection.tsx` — per-scenario treatment CRUD plus a comparison table (strategy, cost, ALE before/after, risk reduction, ROSI); the reduction-% field only appears for MITIGATE/TRANSFER (AVOID/ACCEPT don't use it). Highlights the highest-ROSI treatment, including correctly picking the least-negative one when every option's cost outweighs the risk it addresses.
 
 State management is local `useState`/`useEffect` per page, no shared cache/query library — each page re-fetches on mount. Revisit this if pages start needing to share or invalidate the same data.
 

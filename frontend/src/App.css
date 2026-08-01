@@ -131,3 +131,17 @@ table td {
   opacity: 0.7;
   font-size: 0.85rem;
 }
+
+.empty-state {
+  opacity: 0.7;
+}
+
+.treatments-section {
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid #ddd;
+}
+
+.best-rosi {
+  font-weight: 600;
+}

@@ -70,3 +70,28 @@ export interface Dashboard {
     topRisk: DashboardScenarioSummary | null;
   };
 }
+
+export type TreatmentStrategy = "MITIGATE" | "TRANSFER" | "AVOID" | "ACCEPT";
+
+export interface Treatment {
+  id: string;
+  riskScenarioId: string;
+  strategy: TreatmentStrategy;
+  name: string;
+  annualCost: number;
+  reductionPct: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TreatmentEvaluation {
+  aleBefore: number;
+  aleAfter: number;
+  riskReduction: number;
+  /** (risk reduction - annual cost) / annual cost; null when annualCost is 0. */
+  rosi: number | null;
+}
+
+export interface TreatmentWithEvaluation extends Treatment {
+  evaluation: TreatmentEvaluation;
+}

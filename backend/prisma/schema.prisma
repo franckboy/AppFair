@@ -57,9 +57,44 @@ model RiskScenario {
   lmMostLikely Float
   lmMax        Float
 
+  treatments Treatment[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([assetId])
   @@index([threatId])
+}
+
+enum TreatmentStrategy {
+  MITIGATE
+  TRANSFER
+  AVOID
+  ACCEPT
+}
+
+// A candidate response to a RiskScenario. Scenarios can hold several treatments
+// side by side (e.g. a control vs. an insurance policy vs. doing nothing) so
+// their ROSI can be compared before picking one.
+model Treatment {
+  id             String            @id @default(cuid())
+  riskScenarioId String
+  riskScenario   RiskScenario      @relation(fields: [riskScenarioId], references: [id])
+  strategy       TreatmentStrategy
+  name           String
+
+  // Annualized cost of this treatment (0 for ACCEPT, which is the do-nothing baseline).
+  annualCost Float
+
+  // Meaning depends on strategy: for MITIGATE, the % reduction applied to the
+  // scenario's vulnerability (fewer threat events become loss events); for
+  // TRANSFER, the % of each loss event's magnitude covered by a third party
+  // (e.g. insurance). Not applicable to AVOID (risk eliminated entirely) or
+  // ACCEPT (unchanged).
+  reductionPct Float?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([riskScenarioId])
 }

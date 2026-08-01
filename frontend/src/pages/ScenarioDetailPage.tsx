@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import type { Asset, RiskScenario, SimulationResult, Threat } from "../api/types";
+import { TreatmentsSection } from "../components/TreatmentsSection";
 
 const currency = new Intl.NumberFormat("es-AR", { maximumFractionDigits: 0 });
 
@@ -128,6 +129,8 @@ export function ScenarioDetailPage() {
           </p>
         </div>
       )}
+
+      <TreatmentsSection scenarioId={scenario.id} />
     </div>
   );
 }
