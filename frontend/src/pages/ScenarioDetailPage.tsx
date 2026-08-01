@@ -8,6 +8,7 @@ import { TreatmentsSection } from "../components/TreatmentsSection";
 import { useMode } from "../mode/useMode";
 
 const currency = new Intl.NumberFormat("es-AR", { maximumFractionDigits: 0 });
+const percent1 = new Intl.NumberFormat("es-AR", { maximumFractionDigits: 1 });
 
 export function ScenarioDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -86,12 +87,28 @@ export function ScenarioDetailPage() {
             <td>{scenario.vulnerability.mostLikely}</td>
             <td>{scenario.vulnerability.max}</td>
           </tr>
+        </tbody>
+      </table>
+
+      <h3>{t("scenarioParamLossMagnitude")} por categoría</h3>
+      <table className="params-table">
+        <thead>
           <tr>
-            <td>{t("scenarioParamLossMagnitude")}</td>
-            <td>{currency.format(scenario.lossMagnitude.min)}</td>
-            <td>{currency.format(scenario.lossMagnitude.mostLikely)}</td>
-            <td>{currency.format(scenario.lossMagnitude.max)}</td>
+            <th>Categoría</th>
+            <th>Mínimo</th>
+            <th>Más probable</th>
+            <th>Máximo</th>
           </tr>
+        </thead>
+        <tbody>
+          {scenario.lossCategories.map((c) => (
+            <tr key={c.key}>
+              <td>{c.label}</td>
+              <td>{currency.format(c.estimate.min)}</td>
+              <td>{currency.format(c.estimate.mostLikely)}</td>
+              <td>{currency.format(c.estimate.max)}</td>
+            </tr>
+          ))}
         </tbody>
       </table>
 
@@ -134,6 +151,31 @@ export function ScenarioDetailPage() {
             {t("simulatedRangeLabel")}: {currency.format(result.min)} – {currency.format(result.max)} (
             {result.iterations.toLocaleString()} iteraciones)
           </p>
+
+          {result.sensitivity && result.sensitivity.length > 0 && (
+            <div className="sensitivity">
+              <h3>Análisis de sensibilidad</h3>
+              <p className="hint">Qué tanto influye cada variable en el resultado (correlación con la pérdida anual).</p>
+              {(() => {
+                const maxAbs = Math.max(...result.sensitivity.map((f) => Math.abs(f.correlation)), 0.0001);
+                return result.sensitivity.map((factor) => {
+                  const pct = Math.max(2, Math.round((Math.abs(factor.correlation) / maxAbs) * 100));
+                  const color = factor.correlation >= 0 ? "#2a78d6" : "#e34948";
+                  return (
+                    <div key={factor.name} className="sensitivity-row">
+                      <div className="sensitivity-label">
+                        <span>{factor.name}</span>
+                        <span>{percent1.format(factor.correlation * 100)}%</span>
+                      </div>
+                      <div className="sensitivity-track">
+                        <div className="sensitivity-bar" style={{ width: `${pct}%`, background: color }} />
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+          )}
         </div>
       )}
 

@@ -102,6 +102,39 @@ fieldset.pert-input label {
   flex: 1;
 }
 
+.attacker-defense {
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.attacker-defense legend {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.attacker-defense button {
+  align-self: flex-start;
+  padding: 0.4rem 0.8rem;
+}
+
+.loss-categories {
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.loss-categories legend {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
 fieldset.pert-input input {
   padding: 0.3rem;
 }
@@ -154,6 +187,35 @@ table td {
 
 .best-rosi {
   font-weight: 600;
+}
+
+.sensitivity {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid #eee;
+}
+
+.sensitivity-row {
+  margin-bottom: 0.6rem;
+}
+
+.sensitivity-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  margin-bottom: 0.2rem;
+}
+
+.sensitivity-track {
+  background: #eee;
+  border-radius: 4px;
+  height: 8px;
+  overflow: hidden;
+}
+
+.sensitivity-bar {
+  height: 100%;
+  border-radius: 4px;
 }
 
 .risk-badge {

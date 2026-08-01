@@ -5,11 +5,23 @@ import type { Asset, PertEstimate, RiskScenario, RiskScenarioSummary, Threat } f
 import { PertEstimateInput } from "../components/PertEstimateInput";
 import { RiskBadge } from "../components/RiskBadge";
 import { riskLevelForAle } from "../components/statusScale";
+import { LOSS_CATEGORIES } from "../fair/lossCategories";
+import {
+  ATTACKER_PROFILES,
+  CONFIDENCE_LABEL,
+  DEFENSE_PROFILES,
+  computeVulnerability,
+  profileAverage,
+  type ConfidenceLevel,
+} from "../fair/profiles";
 import { useMode } from "../mode/useMode";
 
 const DEFAULT_TEF: PertEstimate = { min: 1, mostLikely: 3, max: 6 };
 const DEFAULT_VULNERABILITY: PertEstimate = { min: 0.05, mostLikely: 0.15, max: 0.3 };
-const DEFAULT_LOSS_MAGNITUDE: PertEstimate = { min: 1_000, mostLikely: 10_000, max: 50_000 };
+const DEFAULT_LOSS_ESTIMATE: PertEstimate = { min: 1_000, mostLikely: 10_000, max: 50_000 };
+const DEFAULT_LOSS_CATEGORIES: Record<string, PertEstimate> = Object.fromEntries(
+  LOSS_CATEGORIES.map((c) => [c.key, DEFAULT_LOSS_ESTIMATE]),
+);
 
 export function ScenariosPage() {
   const { t } = useMode();
@@ -25,8 +37,13 @@ export function ScenariosPage() {
   const [threatId, setThreatId] = useState("");
   const [tef, setTef] = useState<PertEstimate>(DEFAULT_TEF);
   const [vulnerability, setVulnerability] = useState<PertEstimate>(DEFAULT_VULNERABILITY);
-  const [lossMagnitude, setLossMagnitude] = useState<PertEstimate>(DEFAULT_LOSS_MAGNITUDE);
+  const [lossCategories, setLossCategories] = useState<Record<string, PertEstimate>>(DEFAULT_LOSS_CATEGORIES);
   const [submitting, setSubmitting] = useState(false);
+
+  const [attackerKey, setAttackerKey] = useState(Object.keys(ATTACKER_PROFILES)[0]);
+  const [defenseKey, setDefenseKey] = useState(Object.keys(DEFENSE_PROFILES)[0]);
+  const [confidence, setConfidence] = useState<ConfidenceLevel>("medio");
+  const [vulnExplanation, setVulnExplanation] = useState<string | null>(null);
 
   function load() {
     setLoading(true);
@@ -51,7 +68,16 @@ export function ScenariosPage() {
     setThreatId(threats[0]?.id ?? "");
     setTef(DEFAULT_TEF);
     setVulnerability(DEFAULT_VULNERABILITY);
-    setLossMagnitude(DEFAULT_LOSS_MAGNITUDE);
+    setLossCategories(DEFAULT_LOSS_CATEGORIES);
+    setVulnExplanation(null);
+  }
+
+  function handleAutoVulnerability() {
+    const attackerScore = profileAverage(ATTACKER_PROFILES[attackerKey]);
+    const defenseScore = profileAverage(DEFENSE_PROFILES[defenseKey]);
+    const { explanation, ...estimate } = computeVulnerability(attackerScore, defenseScore, confidence);
+    setVulnerability(estimate);
+    setVulnExplanation(explanation);
   }
 
   function startEdit(scenario: RiskScenario) {
@@ -61,7 +87,7 @@ export function ScenariosPage() {
     setThreatId(scenario.threatId);
     setTef(scenario.threatEventFrequency);
     setVulnerability(scenario.vulnerability);
-    setLossMagnitude(scenario.lossMagnitude);
+    setLossCategories(Object.fromEntries(scenario.lossCategories.map((c) => [c.key, c.estimate])));
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -74,7 +100,7 @@ export function ScenariosPage() {
       threatId,
       threatEventFrequency: tef,
       vulnerability,
-      lossMagnitude,
+      lossCategories: LOSS_CATEGORIES.map((c) => ({ key: c.key, estimate: lossCategories[c.key] })),
     };
     try {
       if (editingId) {
@@ -148,6 +174,46 @@ export function ScenariosPage() {
           </label>
 
           <PertEstimateInput label={t("tefFieldLabel")} value={tef} onChange={setTef} min={0} step={0.1} />
+
+          <fieldset className="attacker-defense">
+            <legend>Perfil de atacante y defensa (opcional)</legend>
+            <p className="hint">Calcula la vulnerabilidad automáticamente en vez de estimarla a mano.</p>
+            <label>
+              Perfil de atacante
+              <select value={attackerKey} onChange={(e) => setAttackerKey(e.target.value)}>
+                {Object.entries(ATTACKER_PROFILES).map(([key, profile]) => (
+                  <option key={key} value={key}>
+                    {profile.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Nivel de defensa
+              <select value={defenseKey} onChange={(e) => setDefenseKey(e.target.value)}>
+                {Object.entries(DEFENSE_PROFILES).map(([key, profile]) => (
+                  <option key={key} value={key}>
+                    {profile.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Nivel de confianza en la estimación
+              <select value={confidence} onChange={(e) => setConfidence(e.target.value as ConfidenceLevel)}>
+                {Object.entries(CONFIDENCE_LABEL).map(([key, label]) => (
+                  <option key={key} value={key}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button type="button" onClick={handleAutoVulnerability}>
+              Calcular vulnerabilidad automáticamente
+            </button>
+            {vulnExplanation && <p className="hint">{vulnExplanation}</p>}
+          </fieldset>
+
           <PertEstimateInput
             label={t("vulnFieldLabel")}
             hint={t("vulnFieldHint")}
@@ -157,13 +223,20 @@ export function ScenariosPage() {
             max={1}
             step={0.01}
           />
-          <PertEstimateInput
-            label={t("lmFieldLabel")}
-            hint={t("lmFieldHint")}
-            value={lossMagnitude}
-            onChange={setLossMagnitude}
-            min={0}
-          />
+
+          <fieldset className="loss-categories">
+            <legend>{t("lmFieldLabel")}</legend>
+            <p className="hint">{t("lmFieldHint")} — una entrada por categoría, se suman por evento</p>
+            {LOSS_CATEGORIES.map((category) => (
+              <PertEstimateInput
+                key={category.key}
+                label={category.label}
+                value={lossCategories[category.key]}
+                onChange={(v) => setLossCategories((prev) => ({ ...prev, [category.key]: v }))}
+                min={0}
+              />
+            ))}
+          </fieldset>
 
           <div className="form-actions">
             <button type="submit" disabled={submitting}>

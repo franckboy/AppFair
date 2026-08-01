@@ -21,6 +21,12 @@ export interface PertEstimate {
   max: number;
 }
 
+export interface LossCategory {
+  key: string;
+  label: string;
+  estimate: PertEstimate;
+}
+
 export interface RiskScenario {
   id: string;
   name: string;
@@ -28,7 +34,7 @@ export interface RiskScenario {
   threatId: string;
   threatEventFrequency: PertEstimate;
   vulnerability: PertEstimate;
-  lossMagnitude: PertEstimate;
+  lossCategories: LossCategory[];
   createdAt: string;
   updatedAt: string;
 }
@@ -51,6 +57,12 @@ export interface SimulationResult {
   min: number;
   max: number;
   iterations: number;
+  sensitivity?: SensitivityFactor[];
+}
+
+export interface SensitivityFactor {
+  name: string;
+  correlation: number;
 }
 
 export interface DashboardScenarioSummary {

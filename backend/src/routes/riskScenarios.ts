@@ -1,8 +1,10 @@
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../db.js";
+import { LOSS_CATEGORY_KEYS, LOSS_CATEGORY_LABEL, type LossCategoryKey } from "../fair/lossCategories.js";
+import { computeSensitivity } from "../fair/sensitivity.js";
 import { runSimulation } from "../fair/simulate.js";
-import type { RiskScenario } from "../generated/prisma/client.js";
+import type { LossCategory, RiskScenario } from "../generated/prisma/client.js";
 
 const pertEstimate = z
   .object({
@@ -22,13 +24,24 @@ const probabilityPertEstimate = pertEstimate.refine((p) => p.min >= 0 && p.max <
   message: "must be within [0, 1]",
 });
 
+/** Every scenario carries exactly the fixed set of loss categories (see fair/lossCategories.ts) — no more, no fewer. */
+const lossCategoriesInput = z
+  .array(z.object({ key: z.enum(LOSS_CATEGORY_KEYS as [LossCategoryKey, ...LossCategoryKey[]]), estimate: nonNegativePertEstimate }))
+  .refine(
+    (categories) => {
+      const keys = new Set(categories.map((c) => c.key));
+      return keys.size === LOSS_CATEGORY_KEYS.length && LOSS_CATEGORY_KEYS.every((k) => keys.has(k));
+    },
+    { message: `must include exactly these categories: ${LOSS_CATEGORY_KEYS.join(", ")}` },
+  );
+
 const riskScenarioInput = z.object({
   name: z.string().min(1),
   assetId: z.string().min(1),
   threatId: z.string().min(1),
   threatEventFrequency: nonNegativePertEstimate,
   vulnerability: probabilityPertEstimate,
-  lossMagnitude: nonNegativePertEstimate,
+  lossCategories: lossCategoriesInput,
 });
 
 const simulateOptions = z.object({
@@ -36,8 +49,10 @@ const simulateOptions = z.object({
   seed: z.number().int().optional(),
 });
 
-/** Maps the flat Prisma columns to the nested PERT-estimate shape the API and the FAIR engine use. */
-function toDto(scenario: RiskScenario) {
+type RiskScenarioWithCategories = RiskScenario & { lossCategories: LossCategory[] };
+
+/** Maps the flat Prisma columns + related rows to the nested shape the API and the FAIR engine use. */
+function toDto(scenario: RiskScenarioWithCategories) {
   return {
     id: scenario.id,
     name: scenario.name,
@@ -45,7 +60,11 @@ function toDto(scenario: RiskScenario) {
     threatId: scenario.threatId,
     threatEventFrequency: { min: scenario.tefMin, mostLikely: scenario.tefMostLikely, max: scenario.tefMax },
     vulnerability: { min: scenario.vulnMin, mostLikely: scenario.vulnMostLikely, max: scenario.vulnMax },
-    lossMagnitude: { min: scenario.lmMin, mostLikely: scenario.lmMostLikely, max: scenario.lmMax },
+    lossCategories: scenario.lossCategories.map((c) => ({
+      key: c.key,
+      label: LOSS_CATEGORY_LABEL[c.key as LossCategoryKey] ?? c.key,
+      estimate: { min: c.min, mostLikely: c.mostLikely, max: c.max },
+    })),
     createdAt: scenario.createdAt,
     updatedAt: scenario.updatedAt,
   };
@@ -53,25 +72,7 @@ function toDto(scenario: RiskScenario) {
 
 type RiskScenarioInput = z.infer<typeof riskScenarioInput>;
 
-function toPrismaData(input: RiskScenarioInput) {
-  return {
-    name: input.name,
-    assetId: input.assetId,
-    threatId: input.threatId,
-    tefMin: input.threatEventFrequency.min,
-    tefMostLikely: input.threatEventFrequency.mostLikely,
-    tefMax: input.threatEventFrequency.max,
-    vulnMin: input.vulnerability.min,
-    vulnMostLikely: input.vulnerability.mostLikely,
-    vulnMax: input.vulnerability.max,
-    lmMin: input.lossMagnitude.min,
-    lmMostLikely: input.lossMagnitude.mostLikely,
-    lmMax: input.lossMagnitude.max,
-  };
-}
-
-/** Only includes columns for the fields present in a partial update; each PERT estimate is replaced as a whole. */
-function toPrismaUpdateData(input: Partial<RiskScenarioInput>) {
+function scalarFields(input: Partial<RiskScenarioInput>) {
   const data: Record<string, string | number> = {};
   if (input.name !== undefined) data.name = input.name;
   if (input.assetId !== undefined) data.assetId = input.assetId;
@@ -86,33 +87,38 @@ function toPrismaUpdateData(input: Partial<RiskScenarioInput>) {
     data.vulnMostLikely = input.vulnerability.mostLikely;
     data.vulnMax = input.vulnerability.max;
   }
-  if (input.lossMagnitude) {
-    data.lmMin = input.lossMagnitude.min;
-    data.lmMostLikely = input.lossMagnitude.mostLikely;
-    data.lmMax = input.lossMagnitude.max;
-  }
   return data;
+}
+
+function toEngineInput(dto: ReturnType<typeof toDto>) {
+  return {
+    threatEventFrequency: dto.threatEventFrequency,
+    vulnerability: dto.vulnerability,
+    lossMagnitudeCategories: dto.lossCategories.map((c) => ({ key: c.key, estimate: c.estimate })),
+  };
+}
+
+/** Adds a freshly-simulated ALE to a scenario DTO — used only by the list/detail GETs, where UI shows a criticality badge next to the scenario, not by create/update. */
+function withAle(dto: ReturnType<typeof toDto>) {
+  const { ale } = runSimulation(toEngineInput(dto));
+  return { ...dto, ale };
 }
 
 export const riskScenariosRouter = Router();
 
-/** Adds a freshly-simulated ALE to a scenario DTO — used only by the list/detail GETs, where UI shows a criticality badge next to the scenario, not by create/update. */
-function withAle(dto: ReturnType<typeof toDto>) {
-  const { ale } = runSimulation({
-    threatEventFrequency: dto.threatEventFrequency,
-    vulnerability: dto.vulnerability,
-    lossMagnitude: dto.lossMagnitude,
-  });
-  return { ...dto, ale };
-}
-
 riskScenariosRouter.get("/", async (_req, res) => {
-  const scenarios = await prisma.riskScenario.findMany({ orderBy: { createdAt: "desc" } });
+  const scenarios = await prisma.riskScenario.findMany({
+    include: { lossCategories: true },
+    orderBy: { createdAt: "desc" },
+  });
   res.json(scenarios.map(toDto).map(withAle));
 });
 
 riskScenariosRouter.get("/:id", async (req, res) => {
-  const scenario = await prisma.riskScenario.findUnique({ where: { id: req.params.id } });
+  const scenario = await prisma.riskScenario.findUnique({
+    where: { id: req.params.id },
+    include: { lossCategories: true },
+  });
   if (!scenario) {
     res.status(404).json({ error: "Risk scenario not found" });
     return;
@@ -122,16 +128,55 @@ riskScenariosRouter.get("/:id", async (req, res) => {
 
 riskScenariosRouter.post("/", async (req, res) => {
   const input = riskScenarioInput.parse(req.body);
-  const scenario = await prisma.riskScenario.create({ data: toPrismaData(input) });
+  const scenario = await prisma.riskScenario.create({
+    data: {
+      name: input.name,
+      assetId: input.assetId,
+      threatId: input.threatId,
+      tefMin: input.threatEventFrequency.min,
+      tefMostLikely: input.threatEventFrequency.mostLikely,
+      tefMax: input.threatEventFrequency.max,
+      vulnMin: input.vulnerability.min,
+      vulnMostLikely: input.vulnerability.mostLikely,
+      vulnMax: input.vulnerability.max,
+      lossCategories: {
+        create: input.lossCategories.map((c) => ({
+          key: c.key,
+          min: c.estimate.min,
+          mostLikely: c.estimate.mostLikely,
+          max: c.estimate.max,
+        })),
+      },
+    },
+    include: { lossCategories: true },
+  });
   res.status(201).json(toDto(scenario));
 });
 
 riskScenariosRouter.patch("/:id", async (req, res) => {
   const input = riskScenarioInput.partial().parse(req.body);
-  const scenario = await prisma.riskScenario.update({
-    where: { id: req.params.id },
-    data: toPrismaUpdateData(input),
+  const { lossCategories, ...rest } = input;
+
+  const scenario = await prisma.$transaction(async (tx) => {
+    if (lossCategories) {
+      await tx.lossCategory.deleteMany({ where: { riskScenarioId: req.params.id } });
+      await tx.lossCategory.createMany({
+        data: lossCategories.map((c) => ({
+          riskScenarioId: req.params.id,
+          key: c.key,
+          min: c.estimate.min,
+          mostLikely: c.estimate.mostLikely,
+          max: c.estimate.max,
+        })),
+      });
+    }
+    return tx.riskScenario.update({
+      where: { id: req.params.id },
+      data: scalarFields(rest),
+      include: { lossCategories: true },
+    });
   });
+
   res.json(toDto(scenario));
 });
 
@@ -142,21 +187,21 @@ riskScenariosRouter.delete("/:id", async (req, res) => {
 
 riskScenariosRouter.post("/:id/simulate", async (req, res) => {
   const options = simulateOptions.parse(req.body ?? {});
-  const scenario = await prisma.riskScenario.findUnique({ where: { id: req.params.id } });
+  const scenario = await prisma.riskScenario.findUnique({
+    where: { id: req.params.id },
+    include: { lossCategories: true },
+  });
   if (!scenario) {
     res.status(404).json({ error: "Risk scenario not found" });
     return;
   }
 
   const dto = toDto(scenario);
-  const result = runSimulation(
-    {
-      threatEventFrequency: dto.threatEventFrequency,
-      vulnerability: dto.vulnerability,
-      lossMagnitude: dto.lossMagnitude,
-    },
-    options,
-  );
+  const result = runSimulation(toEngineInput(dto), { ...options, trackFactors: true });
 
-  res.json(result);
+  const sensitivity = result.factorSamples
+    ? computeSensitivity(result.factorSamples, LOSS_CATEGORY_LABEL, result.losses!)
+    : undefined;
+
+  res.json({ ...result, sensitivity, factorSamples: undefined, losses: undefined });
 });

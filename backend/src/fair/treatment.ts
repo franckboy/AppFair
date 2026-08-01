@@ -35,7 +35,13 @@ function applyTreatment(scenario: RiskScenarioInput, treatment: TreatmentInput):
     case "MITIGATE":
       return { ...scenario, vulnerability: scalePert(scenario.vulnerability, factor) };
     case "TRANSFER":
-      return { ...scenario, lossMagnitude: scalePert(scenario.lossMagnitude, factor) };
+      return {
+        ...scenario,
+        lossMagnitudeCategories: scenario.lossMagnitudeCategories.map((category) => ({
+          ...category,
+          estimate: scalePert(category.estimate, factor),
+        })),
+      };
     case "ACCEPT":
     case "AVOID":
       return scenario;

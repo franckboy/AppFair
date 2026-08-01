@@ -52,10 +52,11 @@ model RiskScenario {
   vulnMostLikely Float
   vulnMax        Float
 
-  // Loss Magnitude: economic impact (in currency units) of a single loss event.
-  lmMin        Float
-  lmMostLikely Float
-  lmMax        Float
+  // Loss Magnitude: broken into named categories (productivity, response costs,
+  // reputational damage, ...) rather than one aggregate figure — a single loss
+  // event typically triggers costs across several of them at once, and expressing
+  // them separately is what a sensitivity analysis can attribute variance to.
+  lossCategories LossCategory[]
 
   treatments Treatment[]
 
@@ -64,6 +65,22 @@ model RiskScenario {
 
   @@index([assetId])
   @@index([threatId])
+}
+
+// One loss-magnitude category for a RiskScenario (a PERT estimate on its own).
+// `key` is one of the fixed set in fair/lossCategories.ts (e.g. "productividad"),
+// enforced at the API layer, not by a DB enum, so new categories don't need a migration.
+model LossCategory {
+  id             String       @id @default(cuid())
+  riskScenarioId String
+  riskScenario   RiskScenario @relation(fields: [riskScenarioId], references: [id], onDelete: Cascade)
+  key            String
+  min            Float
+  mostLikely     Float
+  max            Float
+
+  @@unique([riskScenarioId, key])
+  @@index([riskScenarioId])
 }
 
 enum TreatmentStrategy {
@@ -79,7 +96,7 @@ enum TreatmentStrategy {
 model Treatment {
   id             String            @id @default(cuid())
   riskScenarioId String
-  riskScenario   RiskScenario      @relation(fields: [riskScenarioId], references: [id])
+  riskScenario   RiskScenario      @relation(fields: [riskScenarioId], references: [id], onDelete: Cascade)
   strategy       TreatmentStrategy
   name           String
 

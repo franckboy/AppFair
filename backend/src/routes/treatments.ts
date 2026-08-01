@@ -44,10 +44,15 @@ scenarioTreatmentsRouter.get<{ scenarioId: string }>("/", async (req, res) => {
     orderBy: { createdAt: "asc" },
   });
 
+  const lossCategories = await prisma.lossCategory.findMany({ where: { riskScenarioId: req.params.scenarioId } });
+
   const scenarioInput = {
     threatEventFrequency: { min: scenario.tefMin, mostLikely: scenario.tefMostLikely, max: scenario.tefMax },
     vulnerability: { min: scenario.vulnMin, mostLikely: scenario.vulnMostLikely, max: scenario.vulnMax },
-    lossMagnitude: { min: scenario.lmMin, mostLikely: scenario.lmMostLikely, max: scenario.lmMax },
+    lossMagnitudeCategories: lossCategories.map((c) => ({
+      key: c.key,
+      estimate: { min: c.min, mostLikely: c.mostLikely, max: c.max },
+    })),
   };
 
   const withEvaluation = treatments.map((treatment) => ({

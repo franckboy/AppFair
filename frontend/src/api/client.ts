@@ -42,7 +42,7 @@ export interface RiskScenarioInput {
   threatId: string;
   threatEventFrequency: PertEstimate;
   vulnerability: PertEstimate;
-  lossMagnitude: PertEstimate;
+  lossCategories: { key: string; estimate: PertEstimate }[];
 }
 
 export interface SimulateOptions {

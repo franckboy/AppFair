@@ -9,7 +9,10 @@ function fixed(value: number) {
 const scenario: RiskScenarioInput = {
   threatEventFrequency: fixed(10),
   vulnerability: fixed(0.5),
-  lossMagnitude: fixed(1_000),
+  lossMagnitudeCategories: [
+    { key: "reemplazo", estimate: fixed(700) },
+    { key: "reputacion", estimate: fixed(300) },
+  ],
 };
 
 describe("evaluateTreatment", () => {
