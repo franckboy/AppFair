@@ -1,0 +1,65 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Asset {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  // Estimated economic value of the asset, used as a reference for loss magnitude.
+  value       Float?
+  scenarios   RiskScenario[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Threat {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  scenarios   RiskScenario[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// A risk scenario pairs an asset with a threat and holds the FAIR inputs
+// needed to run a Monte Carlo simulation: each parameter is a PERT
+// distribution (min, most likely, max) rather than a single number,
+// since these are expert estimates, not known quantities.
+model RiskScenario {
+  id       String @id @default(cuid())
+  name     String
+  assetId  String
+  asset    Asset  @relation(fields: [assetId], references: [id])
+  threatId String
+  threat   Threat @relation(fields: [threatId], references: [id])
+
+  // Threat Event Frequency: how many times per year the threat acts against the asset.
+  tefMin        Float
+  tefMostLikely Float
+  tefMax        Float
+
+  // Vulnerability: probability (0-1) that a threat event becomes a loss event.
+  vulnMin        Float
+  vulnMostLikely Float
+  vulnMax        Float
+
+  // Loss Magnitude: economic impact (in currency units) of a single loss event.
+  lmMin        Float
+  lmMostLikely Float
+  lmMax        Float
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([assetId])
+  @@index([threatId])
+}
