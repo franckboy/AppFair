@@ -615,8 +615,12 @@
                         </div>
 
                         <h3 class="text-lg font-semibold text-gray-800 mb-2">Mapa de Calor Consolidado</h3>
-                        <div style="height: 400px;" class="mb-8">
-                            <canvas id="fair-register-chart"></canvas>
+                        <p class="description-text mb-2">Cada punto lleva un número — la lista de al lado dice qué riesgo es cada uno.</p>
+                        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+                            <div style="height: 400px;" class="md:col-span-3">
+                                <canvas id="fair-register-chart"></canvas>
+                            </div>
+                            <div id="fair-register-legend" class="text-sm md:col-span-1"></div>
                         </div>
 
                         <h3 class="text-lg font-semibold text-gray-800 mb-2">Análisis 80-20 (Pareto)</h3>
@@ -3154,7 +3158,11 @@ document.addEventListener('DOMContentLoaded', () => {
             if (state.fair.pendingAutocalc) {
                 try { await state.fair.pendingAutocalc; } catch (e) { /* el propio autocálculo ya avisó del error */ }
             }
-            if (!force && !state.fair.stepValidations[state.fair.currentStep]()) {
+            // stepValidations solo tiene entradas para 1-3 (avanzar hacia el Paso 4 es lo único
+            // que necesita validarse) — el Paso 4 no tiene validador, así que sin este chequeo
+            // "Anterior" desde ahí llamaba a undefined() y tronaba.
+            const validator = state.fair.stepValidations[state.fair.currentStep];
+            if (!force && validator && !validator()) {
                 this.displayFairValidationErrors();
                 return;
             }
@@ -3968,6 +3976,31 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             };
 
+            // Cada punto lleva su número (1, 2, 3...) encima, en el mismo orden que el registro
+            // — así se puede identificar cuál riesgo es cuál sin adivinar por posición o color.
+            // Se dibuja después de los puntos (afterDatasetsDraw) para que quede legible arriba,
+            // no debajo del círculo morado.
+            const pointNumberPlugin = {
+                id: 'fairRegisterPointNumbers',
+                afterDatasetsDraw(chart) {
+                    const { ctx, scales: { x, y } } = chart;
+                    ctx.save();
+                    ctx.font = 'bold 11px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillStyle = '#fff';
+                    register.forEach((r, i) => {
+                        ctx.fillText(String(i + 1), x.getPixelForValue(r.impactPercent), y.getPixelForValue(r.probabilityPercent));
+                    });
+                    ctx.restore();
+                }
+            };
+            document.getElementById('fair-register-legend').innerHTML = `
+                <p class="font-semibold text-gray-700 mb-2">Riesgos en el mapa</p>
+                <ol class="space-y-1">
+                    ${register.map((r, i) => `<li><strong>${i + 1}.</strong> ${sanitizeHTML(r.riskName)}</li>`).join('')}
+                </ol>`;
+
             if (state.fair.registerChart) state.fair.registerChart.destroy();
             state.fair.registerChart = new Chart(canvas, {
                 type: 'scatter',
@@ -3991,12 +4024,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         legend: { display: false },
                         tooltip: {
                             callbacks: {
-                                label: (context) => `${context.raw.name}: Impacto ${context.raw.x.toFixed(0)}%, Probabilidad ${context.raw.y.toFixed(0)}%`
+                                label: (context) => `${context.dataIndex + 1}. ${context.raw.name}: Impacto ${context.raw.x.toFixed(0)}%, Probabilidad ${context.raw.y.toFixed(0)}%`
                             }
                         }
                     }
                 },
-                plugins: [matrixBackgroundPlugin]
+                plugins: [matrixBackgroundPlugin, pointNumberPlugin]
             });
 
             this.renderParetoChart();
@@ -4091,6 +4124,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const heatmapImg = document.getElementById('fair-register-chart').toDataURL('image/png');
             const paretoImg = document.getElementById('fair-pareto-chart').toDataURL('image/png');
             const sensitivityHTML = document.getElementById('fair-consolidated-sensitivity-list').innerHTML;
+            // Mismo orden que los puntos numerados del mapa de calor (ver renderRiskRegister),
+            // para que el número en el mapa corresponda al mismo riesgo en esta lista.
+            const heatmapLegendHTML = register.map((r, i) => `<li>${i + 1}. ${sanitizeHTML(r.riskName)}</li>`).join('');
 
             // El backend guarda ale/cvar95 como números crudos + la moneda de cada riesgo (no
             // strings ya formateados) — el formateo es presentación, se hace aquí por entrada.
@@ -4148,7 +4184,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
                 <div class="print-section">
                     <h2>Mapa de Calor Consolidado</h2>
-                    <img src="${heatmapImg}" alt="Mapa de calor consolidado">
+                    <table style="border:none;">
+                        <tr>
+                            <td style="width:65%; vertical-align:top; border:none; padding:0;"><img src="${heatmapImg}" alt="Mapa de calor consolidado" style="max-width:100%;"></td>
+                            <td style="width:35%; vertical-align:top; border:none; padding:0 0 0 12px;">
+                                <strong style="font-size:12px;">Riesgos:</strong>
+                                <ol style="margin:4px 0 0 16px; padding:0; font-size:11px;">${heatmapLegendHTML}</ol>
+                            </td>
+                        </tr>
+                    </table>
                 </div>
                 <div class="print-section">
                     <h2>Análisis 80-20 (Pareto)</h2>
