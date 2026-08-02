@@ -62,6 +62,10 @@ cliente sin antes moverte a una base de datos real o a un plan con disco persist
 
 ## Despliegue en Render
 
+**Ya está desplegado en:** https://motor-riesgos-fair-backend.onrender.com — `ALLOWED_ORIGIN`
+apunta al frontend publicado en GitHub Pages (`https://franckboy.github.io`). Los pasos de
+abajo quedan documentados por si hay que recrear el servicio desde cero.
+
 Este repo incluye `render.yaml` en la raíz (un [Blueprint de
 Render](https://render.com/docs/blueprint-spec)) que ya sabe que el backend vive en `backend/`,
 usa `npm install` / `npm start`, y expone `/api/health` como health check.
