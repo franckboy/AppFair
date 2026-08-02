@@ -2791,7 +2791,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 this.setVulnManualOverride(!!data.vulnManualOverride);
             }
             if (data.lossForms) {
-                this.setLossMagnitudeManualOverride(!!data.lmManualOverride);
+                this.setLossMagnitudeManualOverride(!!data.lmManualOverride, true);
                 Object.entries(data.lossForms).forEach(([key, vals]) => {
                     const minEl = document.getElementById(`lm-${key}-min`);
                     const modeEl = document.getElementById(`lm-${key}-mode`);
@@ -2799,6 +2799,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (minEl) minEl.value = vals.min;
                     if (modeEl) modeEl.value = vals.mode;
                     if (maxEl) maxEl.value = vals.max;
+                    this.refreshLossMagnitudeCompactDisplay(key);
                 });
             }
 
@@ -3096,6 +3097,8 @@ document.addEventListener('DOMContentLoaded', () => {
             minInput.value = values[0];
             modeInput.value = values[1];
             maxInput.value = values[2];
+
+            if (prefix.startsWith('lm-')) this.refreshLossMagnitudeCompactDisplay(prefix.slice(3));
         },
 
         receiveData(data) {
@@ -3146,7 +3149,8 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('lm-respuesta-mode').value = avgCost.toFixed(0);
             document.getElementById('lm-respuesta-min').value = data.costoMinImpacto.toFixed(0);
             document.getElementById('lm-respuesta-max').value = data.costoMaxImpacto.toFixed(0);
-            
+            this.refreshLossMagnitudeCompactDisplay('respuesta');
+
             const tefMode = data.ARO_raw > 1 ? Math.round(data.ARO_raw * 5) : 10;
             document.getElementById('tef-min').value = Math.max(1, Math.round(tefMode * 0.2));
             document.getElementById('tef-mode').value = tefMode;
@@ -3231,12 +3235,21 @@ document.addEventListener('DOMContentLoaded', () => {
                         document.getElementById(`lm-${key}-mode`).classList.add('input-error');
                         document.getElementById(`lm-${key}-max`).classList.add('input-error');
                     } else {
+                        document.getElementById(`lm-${key}-min`).classList.remove('input-error');
+                        document.getElementById(`lm-${key}-mode`).classList.remove('input-error');
+                        document.getElementById(`lm-${key}-max`).classList.remove('input-error');
                         // mode === 0 es una categoría que no aplica a este riesgo (el usuario la
                         // dejó en blanco a propósito) — no es una "incertidumbre eliminada" que
                         // valga la pena advertir. Sin este filtro, cada categoría sin usar
                         // mostraba la misma advertencia (hasta 7-8 a la vez en un caso típico).
                         const warningEl = document.getElementById(`lm-warning-${key}`);
                         if (mode !== 0 && min === mode && mode === max) {
+                            // Se fija el texto aquí (no solo la visibilidad) porque este mismo
+                            // <span> se reutiliza para el mensaje de "rango inválido" de arriba —
+                            // sin esto, una vez que esa rama lo pisaba una vez, este mensaje se
+                            // quedaba con el texto equivocado para siempre (bug reportado: un
+                            // rango válido mostraba "Rango numérico inválido").
+                            warningEl.textContent = 'Advertencia: Min, Modo y Max son iguales. Esto elimina la incertidumbre para este factor.';
                             warningEl.classList.remove('hidden');
                         } else {
                             warningEl.classList.add('hidden');
@@ -3246,6 +3259,12 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         },
 
+        // El Mín/Máx son un cálculo derivado de "caso típico" (ver _applyLossMagnitudeAuto) —
+        // pedirlos como 3 cajas de texto completas por categoría (9 categorías) era mucho scroll
+        // para 2 valores que el usuario ni siquiera puede tocar en el caso normal. Por default
+        // (automático) solo se pide el dato principal y Mín/Máx se muestran como texto compacto
+        // al lado; las 3 cajas editables completas solo aparecen si activa "Editar manualmente"
+        // (ver setLossMagnitudeManualOverride).
         populateLossMagnitudeForms() {
             const container = document.getElementById('loss-magnitude-forms');
             const isSimple = App.UIMode.mode === 'simple';
@@ -3254,14 +3273,15 @@ document.addEventListener('DOMContentLoaded', () => {
             container.innerHTML = LOSS_FORMS_KEYS.map(key => `
                 <div class="fair-section bg-gray-50">
                     <h5 class="font-semibold text-gray-700" id="lm-title-${key}">${titles[key]}</h5>
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-2">
+                    <div class="input-group mt-2">
+                        <label for="lm-${key}-mode" id="lm-${key}-mode-label">${fieldLabels.mode}</label>
+                        <input type="number" id="lm-${key}-mode" class="form-input fair-range-input" data-mode="true" data-key="${key}" value="0" min="0" oninput="validity.valid||(value='');">
+                    </div>
+                    <p class="text-sm text-gray-500 mt-1" id="lm-${key}-compact-summary">Mín: <span id="lm-${key}-min-display">$0</span> · Máx: <span id="lm-${key}-max-display">$0</span></p>
+                    <div class="hidden grid grid-cols-1 md:grid-cols-2 gap-4 mt-2" id="lm-${key}-minmax-full">
                         <div class="input-group">
                             <label for="lm-${key}-min" id="lm-${key}-min-label">${fieldLabels.min}</label>
                             <input type="number" id="lm-${key}-min" class="form-input fair-range-input bg-gray-100" data-min="true" data-key="${key}" value="0" min="0" readonly oninput="validity.valid||(value='');">
-                        </div>
-                        <div class="input-group">
-                            <label for="lm-${key}-mode" id="lm-${key}-mode-label">${fieldLabels.mode}</label>
-                            <input type="number" id="lm-${key}-mode" class="form-input fair-range-input" data-mode="true" data-key="${key}" value="0" min="0" oninput="validity.valid||(value='');">
                         </div>
                         <div class="input-group">
                             <label for="lm-${key}-max" id="lm-${key}-max-label">${fieldLabels.max}</label>
@@ -3271,6 +3291,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <span id="lm-warning-${key}" class="range-warning hidden">Advertencia: Min, Modo y Max son iguales. Esto elimina la incertidumbre para este factor.</span>
                 </div>`
             ).join('');
+            this.refreshAllLossMagnitudeCompactDisplays();
             document.querySelectorAll('.fair-range-input').forEach(input => {
                 if (input.dataset.key) {
                     input.addEventListener('change', async () => {
@@ -3288,6 +3309,23 @@ document.addEventListener('DOMContentLoaded', () => {
                     });
                 }
             });
+        },
+
+        // Refleja el valor actual de los inputs Mín/Máx (ocultos en modo automático, ver arriba)
+        // en el resumen compacto de una sola línea — se llama cada vez que esos inputs cambian
+        // de valor por cualquier vía (autocálculo, restaurar borrador, plantilla, Análisis Rápido).
+        refreshLossMagnitudeCompactDisplay(key) {
+            const minDisplay = document.getElementById(`lm-${key}-min-display`);
+            const maxDisplay = document.getElementById(`lm-${key}-max-display`);
+            if (!minDisplay || !maxDisplay) return;
+            const currency = state.quickUI.domElements.inputs.currencySelect.value;
+            const fmt = (v) => new Intl.NumberFormat('en-US', { style: 'currency', currency, minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v);
+            minDisplay.textContent = fmt(getSafeNumber(document.getElementById(`lm-${key}-min`)));
+            maxDisplay.textContent = fmt(getSafeNumber(document.getElementById(`lm-${key}-max`)));
+        },
+
+        refreshAllLossMagnitudeCompactDisplays() {
+            LOSS_FORMS_KEYS.forEach(key => this.refreshLossMagnitudeCompactDisplay(key));
         },
 
         // Mismo criterio que Vulnerabilidad: el usuario solo da el valor "Más Probable" y el
@@ -3324,16 +3362,34 @@ document.addEventListener('DOMContentLoaded', () => {
                 const maxEl = document.getElementById(`lm-${key}-max`);
                 if (minEl) minEl.value = range.min;
                 if (maxEl) maxEl.value = range.max;
+                this.refreshLossMagnitudeCompactDisplay(key);
             });
         },
 
-        setLossMagnitudeManualOverride(isManual) {
+        // Alterna entre el resumen compacto de una línea (automático — la caja de Mín/Máx
+        // completa se esconde, solo se ve el texto calculado) y las 3 cajas editables completas
+        // (manual — el usuario necesita poder tocar las 3). El input de "caso típico" (Modo)
+        // siempre es visible y editable en ambos modos, arriba de esto.
+        // `skipAutocalc` lo usan restoreFairAnalysis/duplicateFromTemplate: ahí los valores
+        // exactos de Mín/Máx ya vienen guardados y se van a escribir a continuación — disparar
+        // un recálculo aquí leería el campo "Modo" todavía en 0 (no restaurado aún) y esa
+        // respuesta, al llegar, pisaría los valores recién restaurados con un 0/0 fantasma.
+        setLossMagnitudeManualOverride(isManual, skipAutocalc = false) {
             document.getElementById('lm-manual-override').checked = isManual;
             document.querySelectorAll('#loss-magnitude-forms input[data-min="true"], #loss-magnitude-forms input[data-max="true"]').forEach(el => {
                 el.readOnly = !isManual;
                 el.classList.toggle('bg-gray-100', !isManual);
             });
-            if (!isManual) this._trackPendingAutocalc(this.updateAllLossMagnitudeAuto());
+            LOSS_FORMS_KEYS.forEach(key => {
+                const fullBox = document.getElementById(`lm-${key}-minmax-full`);
+                const compactSummary = document.getElementById(`lm-${key}-compact-summary`);
+                if (fullBox) fullBox.classList.toggle('hidden', !isManual);
+                if (compactSummary) compactSummary.classList.toggle('hidden', isManual);
+            });
+            if (!isManual && !skipAutocalc) {
+                this.refreshAllLossMagnitudeCompactDisplays();
+                this._trackPendingAutocalc(this.updateAllLossMagnitudeAuto());
+            }
         },
         
         resetForm(confirm = true) {
@@ -3866,7 +3922,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     this.setVulnManualOverride(!!data.vulnManualOverride);
                 }
                 if (data.lossForms) {
-                    this.setLossMagnitudeManualOverride(!!data.lmManualOverride);
+                    this.setLossMagnitudeManualOverride(!!data.lmManualOverride, true);
                     Object.entries(data.lossForms).forEach(([key, vals]) => {
                         const minEl = document.getElementById(`lm-${key}-min`);
                         const modeEl = document.getElementById(`lm-${key}-mode`);
@@ -3874,6 +3930,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         if (minEl) minEl.value = vals.min;
                         if (modeEl) modeEl.value = vals.mode;
                         if (maxEl) maxEl.value = vals.max;
+                        this.refreshLossMagnitudeCompactDisplay(key);
                     });
                 }
                 document.getElementById('fair-costoControlAnual').value = data.costoControlAnual || '0';
