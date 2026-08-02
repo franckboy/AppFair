@@ -305,7 +305,7 @@
                             <p class="description-text mb-4 advanced-only">Estime qué tan seguido ocurrirá el evento de pérdida. Ingrese un rango (mínimo, más probable, máximo) para cada factor.</p>
 
                             <div class="fair-section bg-blue-50">
-                                <h4>Perfil del Atacante y Nivel de Defensa <i class="fas fa-info-circle text-blue-500 cursor-pointer ml-1" title="Estos perfiles son una referencia para calibrar tu estimado de Frecuencia. No sobrescriben nada automáticamente."></i></h4>
+                                <h4><span id="attacker-defense-section-title">Perfil del Atacante y Nivel de Defensa</span> <i class="fas fa-info-circle text-blue-500 cursor-pointer ml-1" title="Estos perfiles son una referencia para calibrar tu estimado de Frecuencia. No sobrescriben nada automáticamente."></i></h4>
                                 <p class="description-text mb-4">Elige el perfil que mejor describa a este atacante y tu nivel de defensa actual. Es informativo y opcional: te ayuda a calibrar el rango de Frecuencia de abajo, pero tú mantienes el control de los números finales.</p>
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div class="input-group">
@@ -458,7 +458,7 @@
                                         <canvas id="fair-results-chart"></canvas>
                                     </div>
                                     <div class="p-4 bg-blue-50 rounded-lg">
-                                        <h4 class="text-lg font-semibold text-blue-800 mb-3">Métricas Clave de Riesgo</h4>
+                                        <h4 class="text-lg font-semibold text-blue-800 mb-3" id="metrics-panel-title">Métricas Clave de Riesgo</h4>
                                         <ul class="space-y-2 text-gray-700">
                                             <li class="flex justify-between"><span id="ale-label">Pérdida Anual Promedio (Simulada):</span> <strong id="ale-result" class="text-blue-700"></strong></li>
                                             <li class="flex justify-between"><span id="median-label">Pérdida Anual Mediana (Percentil 50):</span> <strong id="median-loss-result"></strong></li>
@@ -496,15 +496,15 @@
                                     </p>
 
                                     <div class="fair-section bg-white">
-                                        <h4>1. Mitigar (reducir probabilidad o impacto)</h4>
+                                        <h4 id="fair-mitigar-title">1. Mitigar (reducir probabilidad o impacto)</h4>
                                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                             <div class="input-group">
-                                                <label for="fair-costoControlAnual">Costo Anual del Control:</label>
+                                                <label for="fair-costoControlAnual" id="fair-costoControlAnual-label">Costo Anual del Control:</label>
                                                 <input type="number" id="fair-costoControlAnual" class="form-input" value="0" min="0" oninput="validity.valid||(value='');">
                                             </div>
                                             <div class="input-group">
                                                 <label for="fair-mitigar-defensa-objetivo">
-                                                    Nivel de Defensa Objetivo con este Control
+                                                    <span id="fair-mitigar-defensa-objetivo-label">Nivel de Defensa Objetivo con este Control</span>
                                                     <i class="fas fa-info-circle text-blue-500 cursor-pointer ml-1" title="A qué nivel de defensa subirías con este control. La Reducción de ALE se calcula sola comparando tu nivel actual contra este objetivo."></i>
                                                 </label>
                                                 <select id="fair-mitigar-defensa-objetivo" class="form-select">
@@ -517,9 +517,9 @@
                                             <div class="input-group">
                                                 <label class="flex items-center">
                                                     <input type="checkbox" id="fair-reduccionALE-manual-override" class="form-checkbox mr-2">
-                                                    Escribir la Reducción de ALE (%) manualmente
+                                                    <span id="fair-reduccionALE-override-label">Escribir la Reducción de ALE (%) manualmente</span>
                                                 </label>
-                                                <label for="fair-reduccionALE" class="mt-1">Reducción Estimada de ALE (%) — calculada</label>
+                                                <label for="fair-reduccionALE" class="mt-1" id="fair-reduccionALE-label">Reducción Estimada de ALE (%) — calculada</label>
                                                 <input type="number" id="fair-reduccionALE" class="form-input bg-gray-100" value="0" min="0" max="100" readonly oninput="validity.valid||(value='');">
                                                 <p id="fair-reduccionALE-explanation" class="description-text mt-1"></p>
                                             </div>
@@ -550,26 +550,26 @@
                                     </div>
 
                                     <div class="fair-section bg-white">
-                                        <h4>2. Transferir / Compartir (seguro)</h4>
+                                        <h4 id="fair-seguro-title">2. Transferir / Compartir (seguro)</h4>
                                         <p class="description-text mb-2">Simula cómo cambia la pérdida retenida al aplicar un deducible y un límite de cobertura sobre cada uno de los escenarios simulados (no una aproximación sobre el promedio).</p>
                                         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                                             <div class="input-group">
-                                                <label for="fair-seguro-prima">Prima Anual:</label>
+                                                <label for="fair-seguro-prima" id="fair-seguro-prima-label">Prima Anual:</label>
                                                 <input type="number" id="fair-seguro-prima" class="form-input" value="0" min="0" oninput="validity.valid||(value='');">
                                             </div>
                                             <div class="input-group">
-                                                <label for="fair-seguro-deducible">Deducible por Evento:</label>
+                                                <label for="fair-seguro-deducible" id="fair-seguro-deducible-label">Deducible por Evento:</label>
                                                 <input type="number" id="fair-seguro-deducible" class="form-input" value="0" min="0" oninput="validity.valid||(value='');">
                                             </div>
                                             <div class="input-group">
                                                 <label for="fair-seguro-limite">
-                                                    Límite de Cobertura
+                                                    <span id="fair-seguro-limite-label">Límite de Cobertura</span>
                                                     <i class="fas fa-info-circle text-blue-500 cursor-pointer ml-1" title="Cuánto paga la aseguradora como máximo por evento, por encima del deducible."></i>
                                                 </label>
                                                 <input type="number" id="fair-seguro-limite" class="form-input" value="0" min="0" oninput="validity.valid||(value='');">
                                                 <label class="flex items-center mt-1 text-sm">
                                                     <input type="checkbox" id="fair-seguro-sin-limite" class="form-checkbox mr-2">
-                                                    Cobertura ilimitada (sin tope) arriba del deducible
+                                                    <span id="fair-seguro-sin-limite-label">Cobertura ilimitada (sin tope) arriba del deducible</span>
                                                 </label>
                                             </div>
                                             <div class="input-group advanced-only">
@@ -596,10 +596,10 @@
                                     </div>
 
                                     <div class="fair-section bg-white">
-                                        <h4>3. Evitar (eliminar la fuente del riesgo)</h4>
+                                        <h4 id="fair-evitar-title">3. Evitar (eliminar la fuente del riesgo)</h4>
                                         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                                             <div class="input-group">
-                                                <label for="fair-evitar-costo">Costo Anualizado de Eliminar la Actividad/Fuente:</label>
+                                                <label for="fair-evitar-costo" id="fair-evitar-costo-label">Costo Anualizado de Eliminar la Actividad/Fuente:</label>
                                                 <input type="number" id="fair-evitar-costo" class="form-input" value="0" min="0" oninput="validity.valid||(value='');">
                                             </div>
                                             <div class="input-group advanced-only">
@@ -626,10 +626,10 @@
                                     </div>
 
                                     <div class="fair-section bg-white">
-                                        <h4>4. Aceptar / Retener (sin tratamiento)</h4>
-                                        <p class="description-text mb-2">ISO 31000 exige que aceptar un riesgo sea una decisión documentada y deliberada, no la ausencia de una decisión. Escribe la justificación.</p>
+                                        <h4 id="fair-aceptar-title">4. Aceptar / Retener (sin tratamiento)</h4>
+                                        <p class="description-text mb-2" id="fair-aceptar-description">ISO 31000 exige que aceptar un riesgo sea una decisión documentada y deliberada, no la ausencia de una decisión. Escribe la justificación.</p>
                                         <div class="input-group">
-                                            <label for="fair-aceptar-justificacion">Justificación de la aceptación:</label>
+                                            <label for="fair-aceptar-justificacion" id="fair-aceptar-justificacion-label">Justificación de la aceptación:</label>
                                             <textarea id="fair-aceptar-justificacion" class="form-textarea" rows="2" placeholder="Ej. El costo de tratamiento supera la pérdida esperada; se acepta y se revisará en 12 meses."></textarea>
                                         </div>
                                         <div class="mt-2 text-sm grid grid-cols-2 md:grid-cols-4 gap-2">
@@ -761,6 +761,34 @@ document.addEventListener('DOMContentLoaded', () => {
     // de ningún perfil configurable), y coinciden exactamente con backend/src/data/profiles.js
     // (lossFormsKeys) — un solo lugar en vez de repetir este arreglo por todo el archivo.
     const LOSS_FORMS_KEYS = ['productividad', 'respuesta', 'reemplazo', 'multas', 'reputacion', 'investigacion', 'oportunidad', 'comunitario', 'ambiental'];
+
+    // Diccionario Modo Simple/Técnico para las 9 categorías de Magnitud de Pérdida — mismo
+    // patrón que App.UIMode.STEP_LABELS/RESULT_LABELS, pero aparte porque estos elementos se
+    // generan dinámicamente en App.FairAnalysis.populateLossMagnitudeForms() en vez de existir
+    // ya en el HTML. Técnico usa el nombre FAIR/contable de cada forma de pérdida; Simple lo
+    // convierte en la pregunta que de verdad hay que responder.
+    const LOSS_FORM_LABELS = {
+        tecnico: {
+            productividad: '1. Pérdida de Productividad', respuesta: '2. Costos de Respuesta', reemplazo: '3. Costos de Reemplazo',
+            multas: '4. Multas y Sanciones', reputacion: '5. Daño Reputacional', investigacion: '6. Costos de Investigación',
+            oportunidad: '7. Pérdida de Oportunidad', comunitario: '8. Impacto Comunitario/Societario', ambiental: '9. Impacto Ambiental',
+        },
+        simple: {
+            productividad: '1. ¿Cuánto perderías por gente que no puede trabajar mientras pasa esto?',
+            respuesta: '2. ¿Cuánto costaría responder de inmediato (investigar, contener, avisar)?',
+            reemplazo: '3. ¿Cuánto costaría reemplazar o reparar lo dañado o robado?',
+            multas: '4. ¿Tendrías que pagar alguna multa o sanción legal?',
+            reputacion: '5. ¿Cuánto te costaría recuperar tu imagen o la confianza de tus clientes?',
+            investigacion: '6. ¿Cuánto costaría investigar a fondo qué pasó?',
+            oportunidad: '7. ¿Cuánto negocio o ventas perderías mientras esto pasa?',
+            comunitario: '8. ¿Afectaría a la comunidad de alguna forma que cueste dinero?',
+            ambiental: '9. ¿Habría algún costo ambiental (limpieza, remediación, multas)?',
+        },
+    };
+    const LOSS_FIELD_LABELS = {
+        tecnico: { min: 'Costo (min) — calculado', mode: 'Costo (Más Probable)', max: 'Costo (max) — calculado' },
+        simple: { min: 'En el mejor caso (calculado)', mode: '¿Cuánto costaría en el caso típico?', max: 'En el peor caso (calculado)' },
+    };
 
     // --- State Management ---
     const state = {
@@ -1196,6 +1224,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 'tef-max-label': 'Contacto/Año (Máx)',
                 'fair-data-confidence-label': 'Nivel de Confianza en los Estimados:',
                 'run-simulation-btn-label': 'Ejecutar Simulación Monte Carlo',
+                'attacker-defense-section-title': 'Perfil del Atacante y Nivel de Defensa',
+                'metrics-panel-title': 'Métricas Clave de Riesgo',
+                'fair-mitigar-title': '1. Mitigar (reducir probabilidad o impacto)',
+                'fair-costoControlAnual-label': 'Costo Anual del Control:',
+                'fair-mitigar-defensa-objetivo-label': 'Nivel de Defensa Objetivo con este Control',
+                'fair-reduccionALE-override-label': 'Escribir la Reducción de ALE (%) manualmente',
+                'fair-reduccionALE-label': 'Reducción Estimada de ALE (%) — calculada',
+                'fair-seguro-title': '2. Transferir / Compartir (seguro)',
+                'fair-seguro-prima-label': 'Prima Anual:',
+                'fair-seguro-deducible-label': 'Deducible por Evento:',
+                'fair-seguro-limite-label': 'Límite de Cobertura',
+                'fair-seguro-sin-limite-label': 'Cobertura ilimitada (sin tope) arriba del deducible',
+                'fair-evitar-title': '3. Evitar (eliminar la fuente del riesgo)',
+                'fair-evitar-costo-label': 'Costo Anualizado de Eliminar la Actividad/Fuente:',
+                'fair-aceptar-title': '4. Aceptar / Retener (sin tratamiento)',
+                'fair-aceptar-description': 'ISO 31000 exige que aceptar un riesgo sea una decisión documentada y deliberada, no la ausencia de una decisión. Escribe la justificación.',
+                'fair-aceptar-justificacion-label': 'Justificación de la aceptación:',
             },
             simple: {
                 'fair-step1-title': 'Paso 1: Cuéntanos qué riesgo vamos a analizar',
@@ -1207,6 +1252,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 'tef-max-label': 'En el peor caso (más veces)',
                 'fair-data-confidence-label': '¿Qué tan seguro estás de estos números?',
                 'run-simulation-btn-label': 'Ver Qué Tan Probable Es Que Esto Me Cueste Caro',
+                'attacker-defense-section-title': '¿Quién podría hacer esto, y qué tan preparada está tu defensa?',
+                'metrics-panel-title': 'Lo que necesitas saber',
+                'fair-mitigar-title': '1. Poner un control (que pase menos o duela menos)',
+                'fair-costoControlAnual-label': '¿Cuánto cuesta ese control al año?',
+                'fair-mitigar-defensa-objetivo-label': '¿A qué nivel de seguridad llegarías con este control?',
+                'fair-reduccionALE-override-label': 'Prefiero escribir yo cuánto reduce la pérdida (%)',
+                'fair-reduccionALE-label': 'Cuánto reduce la pérdida esperada (%) — calculado',
+                'fair-seguro-title': '2. Contratar un seguro',
+                'fair-seguro-prima-label': '¿Cuánto pagarías al año por el seguro?',
+                'fair-seguro-deducible-label': '¿Cuánto pagas tú antes de que el seguro cubra algo?',
+                'fair-seguro-limite-label': '¿Cuál es el máximo que cubre el seguro?',
+                'fair-seguro-sin-limite-label': 'El seguro cubre todo, sin límite, arriba de lo que yo pago',
+                'fair-evitar-title': '3. Dejar de hacer la actividad que causa el riesgo',
+                'fair-evitar-costo-label': '¿Cuánto te costaría al año dejar de hacerlo?',
+                'fair-aceptar-title': '4. No hacer nada y asumir el riesgo',
+                'fair-aceptar-description': 'Si decides no hacer nada, igual tienes que dejarlo por escrito y explicar por qué — no es lo mismo decidir aceptar el riesgo que simplemente no decidir nada.',
+                'fair-aceptar-justificacion-label': '¿Por qué decides no hacer nada al respecto?',
             },
         },
 
@@ -1319,6 +1381,34 @@ document.addEventListener('DOMContentLoaded', () => {
                 const el = document.getElementById(id);
                 if (el) el.textContent = text;
             });
+
+            // Categorías de Magnitud de Pérdida (Paso 3): solo cambia el texto de sus
+            // etiquetas, nunca se re-renderiza el formulario completo — así no se pierde lo
+            // que el usuario ya haya escrito al cambiar de Modo Simple/Técnico.
+            const lossTitles = isSimple ? LOSS_FORM_LABELS.simple : LOSS_FORM_LABELS.tecnico;
+            const lossFields = isSimple ? LOSS_FIELD_LABELS.simple : LOSS_FIELD_LABELS.tecnico;
+            LOSS_FORMS_KEYS.forEach(key => {
+                const titleEl = document.getElementById(`lm-title-${key}`);
+                if (titleEl) titleEl.textContent = lossTitles[key];
+                ['min', 'mode', 'max'].forEach(part => {
+                    const labelEl = document.getElementById(`lm-${key}-${part}-label`);
+                    if (labelEl) labelEl.textContent = lossFields[part];
+                });
+            });
+
+            this.applyProbThresholdLabel();
+        },
+
+        // Aparte de applyLabels() porque su texto lleva un valor calculado (el umbral en
+        // dinero) que solo existe después de simular — ver dónde se llama en
+        // App.FairAnalysis.displaySimulationResults().
+        applyProbThresholdLabel() {
+            const thresholdK = state.fair && state.fair.lastThresholdK;
+            const el = document.getElementById('prob-threshold-label');
+            if (!el || !thresholdK) return;
+            el.textContent = this.mode === 'simple'
+                ? `¿Qué tan seguido perderías más de ${thresholdK} en un año?`
+                : `Prob. de superar ${thresholdK}/año:`;
         }
     };
 
@@ -3148,25 +3238,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
         populateLossMagnitudeForms() {
             const container = document.getElementById('loss-magnitude-forms');
-            const lossForms = {
-                'productividad': '1. Pérdida de Productividad', 'respuesta': '2. Costos de Respuesta', 'reemplazo': '3. Costos de Reemplazo',
-                'multas': '4. Multas y Sanciones', 'reputacion': '5. Daño Reputacional', 'investigacion': '6. Costos de Investigación',
-                'oportunidad': '7. Pérdida de Oportunidad', 'comunitario': '8. Impacto Comunitario/Societario', 'ambiental': '9. Impacto Ambiental',
-            };
-            container.innerHTML = Object.entries(lossForms).map(([key, title]) => `
+            const isSimple = App.UIMode.mode === 'simple';
+            const titles = isSimple ? LOSS_FORM_LABELS.simple : LOSS_FORM_LABELS.tecnico;
+            const fieldLabels = isSimple ? LOSS_FIELD_LABELS.simple : LOSS_FIELD_LABELS.tecnico;
+            container.innerHTML = LOSS_FORMS_KEYS.map(key => `
                 <div class="fair-section bg-gray-50">
-                    <h5 class="font-semibold text-gray-700">${title}</h5>
+                    <h5 class="font-semibold text-gray-700" id="lm-title-${key}">${titles[key]}</h5>
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-2">
                         <div class="input-group">
-                            <label for="lm-${key}-min">Costo (min) — calculado</label>
+                            <label for="lm-${key}-min" id="lm-${key}-min-label">${fieldLabels.min}</label>
                             <input type="number" id="lm-${key}-min" class="form-input fair-range-input bg-gray-100" data-min="true" data-key="${key}" value="0" min="0" readonly oninput="validity.valid||(value='');">
                         </div>
                         <div class="input-group">
-                            <label for="lm-${key}-mode">Costo (Más Probable)</label>
+                            <label for="lm-${key}-mode" id="lm-${key}-mode-label">${fieldLabels.mode}</label>
                             <input type="number" id="lm-${key}-mode" class="form-input fair-range-input" data-mode="true" data-key="${key}" value="0" min="0" oninput="validity.valid||(value='');">
                         </div>
                         <div class="input-group">
-                            <label for="lm-${key}-max">Costo (max) — calculado</label>
+                            <label for="lm-${key}-max" id="lm-${key}-max-label">${fieldLabels.max}</label>
                             <input type="number" id="lm-${key}-max" class="form-input fair-range-input bg-gray-100" data-max="true" data-key="${key}" value="0" min="0" readonly oninput="validity.valid||(value='');">
                         </div>
                     </div>
@@ -3727,7 +3815,11 @@ document.addEventListener('DOMContentLoaded', () => {
             ).join('');
             document.getElementById('fair-review-history-container').classList.toggle('hidden', state.fair.reviewHistory.length < 2);
 
-            document.getElementById('prob-threshold-label').textContent = `Prob. de superar ${currencySymbol}${(summary.exceedanceThreshold / 1000)}k/año:`;
+            // Se guarda en state para que App.UIMode.applyLabels() pueda recalcular este texto
+            // si el usuario cambia de Modo Simple/Técnico DESPUÉS de simular — si no, se
+            // quedaría con la redacción de cuando corrió la simulación hasta la próxima corrida.
+            state.fair.lastThresholdK = `${currencySymbol}${(summary.exceedanceThreshold / 1000)}k`;
+            App.UIMode.applyProbThresholdLabel();
             document.getElementById('prob-threshold-result').textContent = `${summary.probExceedance.toFixed(1)}%`;
             await this.saveToRiskRegister(summary, evaluation);
 
