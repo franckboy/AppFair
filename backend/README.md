@@ -55,6 +55,32 @@ esperas muchas escrituras concurrentes, reemplaza `src/store/jsonStore.js` por u
 datos real (PostgreSQL, MongoDB, etc.) — la interfaz (`get`, `set`, `upsertRiskInRegister`,
 `deleteRiskFromRegister`) está pensada para que el resto del código no tenga que cambiar.
 
+**Nota si despliegas en un nivel gratis con disco efímero (ej. Render free tier):**
+`data/db.json` se borra en cada redeploy y cada vez que el servicio se reinicia tras dormirse
+por inactividad. Aceptable para una demo/portafolio; no uses ese nivel para datos reales de un
+cliente sin antes moverte a una base de datos real o a un plan con disco persistente.
+
+## Despliegue en Render
+
+Este repo incluye `render.yaml` en la raíz (un [Blueprint de
+Render](https://render.com/docs/blueprint-spec)) que ya sabe que el backend vive en `backend/`,
+usa `npm install` / `npm start`, y expone `/api/health` como health check.
+
+1. En [render.com](https://render.com) (no pide tarjeta para el nivel gratis): **New +** →
+   **Blueprint** → conecta este repositorio de GitHub. Render detecta `render.yaml` solo.
+2. Te va a pedir valores para `API_KEY` y `ALLOWED_ORIGIN` (quedaron sin valor a propósito en
+   el Blueprint, para no committear secretos):
+   - `API_KEY`: genera una con `node -e "console.log(require('crypto').randomBytes(24).toString('hex'))"`.
+   - `ALLOWED_ORIGIN`: si todavía no tienes el frontend publicado, déjala vacía (CORS queda
+     abierto, igual que en local) — puedes volver a **Settings → Environment** y ponerla
+     después, sin necesidad de otro deploy de código.
+3. Deploy. Cada push a la rama que conectaste redespliega solo — no hay que repetir estos pasos.
+4. Prueba con `curl https://tu-servicio.onrender.com/api/health`.
+
+**Nivel gratis de Render**: el servicio se duerme tras ~15 min sin tráfico; la primera
+petición después de eso tarda ~30-50s en responder mientras arranca de nuevo (arranques
+posteriores son instantáneos hasta que se vuelva a dormir).
+
 ## Estructura del proyecto
 
 ```

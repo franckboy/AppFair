@@ -26,6 +26,15 @@ Abre `frontend/app_fair.html` directamente en el navegador (no necesita servidor
 en el botón **Conexión API** de la esquina superior, ingresa la URL del backend (por defecto
 `http://localhost:3000`) y la API key que te imprimió la consola al arrancar.
 
+## Desplegarlo (portafolio / demo)
+
+- **Backend**: `render.yaml` en la raíz deja el despliegue en [Render](https://render.com)
+  en unos clics (nivel gratis, sin tarjeta) — ver "Despliegue en Render" en
+  `backend/README.md` para el paso a paso.
+- **Frontend**: `frontend/app_fair.html` es estático — GitHub Pages lo sirve tal cual, sin
+  build. Una vez que sepas la URL de Pages, ponla como `ALLOWED_ORIGIN` en las variables de
+  entorno del backend en Render (Settings → Environment, sin necesidad de otro deploy).
+
 ## Licencia
 
 [MIT](LICENSE).

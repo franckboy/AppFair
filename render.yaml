@@ -1,0 +1,23 @@
+# Blueprint de Render (https://render.com/docs/blueprint-spec) — permite desplegar el backend
+# con "New + > Blueprint" en vez de configurar cada campo a mano en el panel. El repo es un
+# monorepo (frontend/ + backend/); rootDir le dice a Render que solo le importa backend/.
+services:
+  - type: web
+    name: motor-riesgos-fair-backend
+    runtime: node
+    plan: free
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      # sync: false = Render te pide el valor en el panel al crear el servicio (o después, en
+      # Settings > Environment) en vez de leerlo de este archivo — así el API_KEY nunca queda
+      # committeado en el repo. Ver backend/README.md para cómo generar uno.
+      - key: API_KEY
+        sync: false
+      # Déjala vacía al desplegar por primera vez (CORS queda abierto, como en local); una vez
+      # que sepas la URL real de tu frontend publicado (ej. GitHub Pages), vuelve a Settings >
+      # Environment y ponla ahí — no hace falta volver a desplegar el código para este cambio.
+      - key: ALLOWED_ORIGIN
+        sync: false
