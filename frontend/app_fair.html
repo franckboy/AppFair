@@ -396,7 +396,9 @@
                                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                                     <div class="p-4 bg-gray-50 rounded-lg">
                                         <h4 class="text-lg font-semibold text-gray-800 mb-3" id="chart-title">Distribución de Pérdida Anual</h4>
-                                        <canvas id="fair-results-chart"></canvas>
+                                        <div style="height: 320px;">
+                                            <canvas id="fair-results-chart"></canvas>
+                                        </div>
                                     </div>
                                     <div class="p-4 bg-blue-50 rounded-lg">
                                         <h4 class="text-lg font-semibold text-blue-800 mb-3" id="metrics-panel-title">Métricas Clave de Riesgo</h4>
@@ -4015,6 +4017,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const canvas = document.getElementById('fair-pareto-chart');
             if (state.fair.paretoChart) state.fair.paretoChart.destroy();
             state.fair.paretoChart = new Chart(canvas, {
+                // Chart.js exige un "type" a nivel raíz incluso en gráficos mixtos (cada dataset
+                // ya trae el suyo) — sin esto no lanza error, simplemente no dibuja nada, que es
+                // justo lo que pasaba aquí.
+                type: 'bar',
                 data: {
                     labels: pareto.risks.map(r => r.riskName),
                     datasets: [
