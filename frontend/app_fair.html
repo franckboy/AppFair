@@ -800,6 +800,11 @@ document.addEventListener('DOMContentLoaded', () => {
             pendingRisks: [],
             riskRegister: [],
             currentStep: 1,
+            // Promesa del autocálculo (Vulnerabilidad/Magnitud/etc.) en vuelo, si hay uno — lo
+            // fija _trackPendingAutocalc() y navigateWizard() lo espera antes de validar, para
+            // no bloquear "Siguiente" con datos todavía en 0 mientras la llamada al backend
+            // sigue en camino (ver bindEvents()).
+            pendingAutocalc: null,
             stepValidations: {
                 1: () => document.getElementById('fair-riskName').value.trim() !== '',
                 2: () => {
@@ -2728,11 +2733,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 this.updateTreatmentView();
             });
             document.getElementById('fair-aceptar-justificacion').addEventListener('input', () => this.persistFairAnalysis());
-            document.getElementById('fair-attacker-profile').addEventListener('change', () => this.updateAttackerDefenseSummary());
-            document.getElementById('fair-defense-profile').addEventListener('change', () => this.updateAttackerDefenseSummary());
+            document.getElementById('fair-attacker-profile').addEventListener('change', () => this._trackPendingAutocalc(this.updateAttackerDefenseSummary()));
+            document.getElementById('fair-defense-profile').addEventListener('change', () => this._trackPendingAutocalc(this.updateAttackerDefenseSummary()));
             document.getElementById('fair-data-confidence').addEventListener('change', () => {
-                this.updateVulnerabilityAuto();
-                this.updateAllLossMagnitudeAuto();
+                this._trackPendingAutocalc(Promise.all([this.updateVulnerabilityAuto(), this.updateAllLossMagnitudeAuto()]));
             });
             document.getElementById('lm-manual-override').addEventListener('change', (e) => {
                 this.setLossMagnitudeManualOverride(e.target.checked);
@@ -2758,7 +2762,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (manual) {
                     showToast('Ahora puedes editar la Vulnerabilidad manualmente.');
                 } else {
-                    this.updateVulnerabilityAuto();
+                    this._trackPendingAutocalc(this.updateVulnerabilityAuto());
                     showToast('Vulnerabilidad calculada automáticamente de nuevo.');
                 }
             });
@@ -3039,7 +3043,21 @@ document.addEventListener('DOMContentLoaded', () => {
             this.navigateWizard(1, true);
         },
 
-        navigateWizard(step, force = false) {
+        // Registra la promesa de un autocálculo disparado por un listener "fire and forget"
+        // (change de un <select>/checkbox no se espera con await) para que navigateWizard()
+        // pueda esperarla antes de validar, en vez de validar contra datos todavía viejos.
+        _trackPendingAutocalc(promise) {
+            state.fair.pendingAutocalc = promise;
+            promise.finally(() => {
+                if (state.fair.pendingAutocalc === promise) state.fair.pendingAutocalc = null;
+            });
+            return promise;
+        },
+
+        async navigateWizard(step, force = false) {
+            if (state.fair.pendingAutocalc) {
+                try { await state.fair.pendingAutocalc; } catch (e) { /* el propio autocálculo ya avisó del error */ }
+            }
             if (!force && !state.fair.stepValidations[state.fair.currentStep]()) {
                 this.displayFairValidationErrors();
                 return;
@@ -3089,8 +3107,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         document.getElementById(`lm-${key}-mode`).classList.add('input-error');
                         document.getElementById(`lm-${key}-max`).classList.add('input-error');
                     } else {
+                        // mode === 0 es una categoría que no aplica a este riesgo (el usuario la
+                        // dejó en blanco a propósito) — no es una "incertidumbre eliminada" que
+                        // valga la pena advertir. Sin este filtro, cada categoría sin usar
+                        // mostraba la misma advertencia (hasta 7-8 a la vez en un caso típico).
                         const warningEl = document.getElementById(`lm-warning-${key}`);
-                        if (min === mode && mode === max) {
+                        if (mode !== 0 && min === mode && mode === max) {
                             warningEl.classList.remove('hidden');
                         } else {
                             warningEl.classList.add('hidden');
@@ -3134,8 +3156,10 @@ document.addEventListener('DOMContentLoaded', () => {
                             // Hay que esperar a que el backend devuelva min/max antes de
                             // reordenar — si no, validateAndFixRange ordena con el min/max
                             // viejo (aún no actualizado) y termina pisando el "Más Probable"
-                            // que el usuario acaba de escribir.
-                            await this.updateLossMagnitudeAuto(input.dataset.key);
+                            // que el usuario acaba de escribir. Se registra en
+                            // pendingAutocalc para que navigateWizard() también la espere si
+                            // el usuario da clic en "Siguiente" antes de que esto termine.
+                            await this._trackPendingAutocalc(this.updateLossMagnitudeAuto(input.dataset.key));
                         }
                         this.validateAndFixRange(`lm-${input.dataset.key}`);
                         this.displayFairValidationErrors();
@@ -3187,7 +3211,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 el.readOnly = !isManual;
                 el.classList.toggle('bg-gray-100', !isManual);
             });
-            if (!isManual) this.updateAllLossMagnitudeAuto();
+            if (!isManual) this._trackPendingAutocalc(this.updateAllLossMagnitudeAuto());
         },
         
         resetForm(confirm = true) {
