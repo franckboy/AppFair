@@ -14,7 +14,7 @@ servidor.
 npm install
 npm start          # arranca en http://localhost:3000
 npm run dev         # con recarga automática al guardar cambios
-npm test            # corre las 15 pruebas automatizadas del motor de cálculo
+npm test            # corre las 36 pruebas automatizadas (motor de cálculo + rutas HTTP)
 ```
 
 Variables de entorno (vía `.env` — copia `.env.example` — o el entorno del sistema):
@@ -81,7 +81,8 @@ src/
     treatment.js                 /api/treatment/*
     register.js                  /api/register/*
 test/
-  lib.test.js                    13 pruebas del motor de cálculo (node --test)
+  lib.test.js                    15 pruebas del motor de cálculo puro (node --test)
+  routes.test.js                 21 pruebas de integración HTTP (auth, validación, contratos)
 ```
 
 ## Endpoints
