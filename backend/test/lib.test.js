@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 
-const { mulberry32 } = require('../src/lib/random');
+const { mulberry32, getTriangularRandom } = require('../src/lib/random');
 const { runMonteCarloSimulation, summarizeLosses, pearsonCorrelation } = require('../src/lib/simulation');
 const { calculateVulnerability, calculateReduccionALE } = require('../src/lib/autocalc');
 const { calculateInsuranceRetainedALE, calculateROSI } = require('../src/lib/treatment');
@@ -86,4 +86,46 @@ test('evaluateFairThreat: clasifica correctamente como Crítico por encima del u
     const fmt = (n) => `$${n}`;
     const result = evaluateFairThreat(300000, 100000, criteria, fmt);
     assert.strictEqual(result.severity, 'critico');
+});
+
+// --- Validación estadística del muestreador triangular ---
+// Las pruebas de arriba verifican comportamiento puntual (casos concretos). Estas verifican
+// que, a gran escala, el muestreador reproduce las propiedades teóricas conocidas de la
+// distribución triangular — media = (min+moda+max)/3, varianza = (min²+moda²+max²-min·moda-
+// min·max-moda·max)/18 — en vez de solo confiar en que la fórmula "se ve bien" en el código.
+test('getTriangularRandom: la media y varianza muestral convergen a las teóricas de la distribución triangular', () => {
+    const rng = mulberry32(2026);
+    const cases = [
+        { min: 0, mode: 50, max: 100 },   // simétrica
+        { min: 10, mode: 20, max: 100 },  // sesgada a la derecha
+    ];
+    const n = 200000;
+
+    for (const { min, mode, max } of cases) {
+        const samples = new Array(n);
+        for (let i = 0; i < n; i++) samples[i] = getTriangularRandom(min, mode, max, rng);
+
+        const mean = samples.reduce((a, b) => a + b, 0) / n;
+        const theoreticalMean = (min + mode + max) / 3;
+        const meanRelError = Math.abs(mean - theoreticalMean) / theoreticalMean;
+
+        const variance = samples.reduce((sum, x) => sum + (x - mean) ** 2, 0) / n;
+        const theoreticalVariance = (min ** 2 + mode ** 2 + max ** 2 - min * mode - min * max - mode * max) / 18;
+        const varianceRelError = Math.abs(variance - theoreticalVariance) / theoreticalVariance;
+
+        assert.ok(meanRelError < 0.01,
+            `min=${min} moda=${mode} max=${max}: media muestral ${mean.toFixed(2)} vs teórica ${theoreticalMean.toFixed(2)} (error ${(meanRelError * 100).toFixed(2)}%)`);
+        assert.ok(varianceRelError < 0.05,
+            `min=${min} moda=${mode} max=${max}: varianza muestral ${variance.toFixed(2)} vs teórica ${theoreticalVariance.toFixed(2)} (error ${(varianceRelError * 100).toFixed(2)}%)`);
+    }
+});
+
+test('pearsonCorrelation: dos variables independientes dan una correlación cercana a 0', () => {
+    const rngX = mulberry32(11);
+    const rngY = mulberry32(22);
+    const n = 50000;
+    const x = Array.from({ length: n }, () => rngX());
+    const y = Array.from({ length: n }, () => rngY());
+    const r = pearsonCorrelation(x, y);
+    assert.ok(Math.abs(r) < 0.02, `correlación entre variables independientes debería ser ~0, dio ${r.toFixed(4)}`);
 });
