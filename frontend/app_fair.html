@@ -424,10 +424,12 @@
 
                             <div id="fair-review-history-container" class="hidden mt-6 p-4 bg-gray-50 rounded-lg">
                                 <h4 class="text-lg font-semibold text-gray-800 mb-2">Historial de Revisiones de esta Evaluación</h4>
-                                <table class="w-full text-sm">
-                                    <thead><tr class="text-left border-b"><th class="py-1">Fecha</th><th>ALE</th><th>Evaluación</th></tr></thead>
-                                    <tbody id="fair-review-history-body"></tbody>
-                                </table>
+                                <div class="overflow-x-auto">
+                                    <table class="w-full text-sm">
+                                        <thead><tr class="text-left border-b"><th class="py-1">Fecha</th><th>ALE</th><th>Evaluación</th></tr></thead>
+                                        <tbody id="fair-review-history-body"></tbody>
+                                    </table>
+                                </div>
                             </div>
 
                             <div id="fair-roi-section" class="hidden mt-6">
@@ -635,14 +637,16 @@
                         <div id="fair-consolidated-sensitivity-list" class="mb-8"></div>
 
                         <h3 class="text-lg font-semibold text-gray-800 mb-2">Riesgos en el Registro</h3>
-                        <table class="w-full text-sm">
-                            <thead>
-                                <tr class="text-left border-b">
-                                    <th class="py-2">Riesgo</th><th>Activo</th><th>ALE</th><th>CVaR 95%</th><th>Evaluación</th><th>Última corrida</th><th></th>
-                                </tr>
-                            </thead>
-                            <tbody id="fair-register-table-body"></tbody>
-                        </table>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm">
+                                <thead>
+                                    <tr class="text-left border-b">
+                                        <th class="py-2">Riesgo</th><th>Activo</th><th>ALE</th><th>CVaR 95%</th><th>Evaluación</th><th>Última corrida</th><th></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="fair-register-table-body"></tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
             </div>
