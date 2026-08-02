@@ -49,21 +49,25 @@ function calculateParetoAnalysis(risks) {
 /**
  * Promedia la sensibilidad (|correlación|) de cada variable, considerando
  * todos los riesgos guardados en el registro.
- * @param {Array<{sensitivity: Array<{name:string, correlation:number}>}>} risks
+ * @param {Array<{sensitivity: Array<{key?:string, name:string, correlation:number}>}>} risks
  * @param {number} [topN=8]
  */
 function calculateConsolidatedSensitivity(risks, topN = 8) {
     const totals = {};
     risks.forEach((risk) => {
         (risk.sensitivity || []).forEach((s) => {
-            if (!totals[s.name]) totals[s.name] = { sum: 0, count: 0 };
-            totals[s.name].sum += Math.abs(s.correlation);
-            totals[s.name].count += 1;
+            // key es el identificador estable (ver simulation.js); un riesgo guardado antes de
+            // que existiera ese campo solo trae name, así que se usa como respaldo — sigue
+            // agrupando bien porque name siempre fue estable para un mismo factor.
+            const groupKey = s.key || s.name;
+            if (!totals[groupKey]) totals[groupKey] = { key: s.key, name: s.name, sum: 0, count: 0 };
+            totals[groupKey].sum += Math.abs(s.correlation);
+            totals[groupKey].count += 1;
         });
     });
 
-    return Object.entries(totals)
-        .map(([name, v]) => ({ name, averageCorrelation: v.sum / v.count }))
+    return Object.values(totals)
+        .map(({ key, name, sum, count }) => ({ key, name, averageCorrelation: sum / count }))
         .sort((a, b) => b.averageCorrelation - a.averageCorrelation)
         .slice(0, topN);
 }

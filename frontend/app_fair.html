@@ -227,14 +227,14 @@
                             </div>
 
                             <div class="fair-section bg-gray-50">
-                                <h4>Gobernanza y Revisión <i class="fas fa-info-circle text-blue-500 cursor-pointer ml-1" title="ISO 31000, cláusula 6.6: el riesgo debe tener un responsable y una fecha de revisión definida, no quedar como un análisis estático."></i></h4>
+                                <h4><span id="governance-section-title">Gobernanza y Revisión</span> <i class="fas fa-info-circle text-blue-500 cursor-pointer ml-1" title="ISO 31000, cláusula 6.6: el riesgo debe tener un responsable y una fecha de revisión definida, no quedar como un análisis estático."></i></h4>
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div class="input-group">
-                                        <label for="fair-owner">Dueño del Riesgo (responsable):</label>
+                                        <label for="fair-owner" id="fair-owner-label">Dueño del Riesgo (responsable):</label>
                                         <input type="text" id="fair-owner" class="form-input" list="datalist-owners" placeholder="Ej. Gerente de Seguridad Patrimonial">
                                     </div>
                                     <div class="input-group">
-                                        <label for="fair-review-date">Próxima Fecha de Revisión:</label>
+                                        <label for="fair-review-date" id="fair-review-date-label">Próxima Fecha de Revisión:</label>
                                         <input type="date" id="fair-review-date" class="form-input">
                                     </div>
                                     <div class="input-group advanced-only">
@@ -253,7 +253,7 @@
                             </div>
 
                             <div class="fair-section bg-gray-50">
-                                <h4>Calidad de la Información <i class="fas fa-info-circle text-blue-500 cursor-pointer ml-1" title="Deja constancia de en qué se basaron los estimados de este análisis — es clave para poder auditar el resultado y detectar sesgo después."></i></h4>
+                                <h4><span id="data-quality-section-title">Calidad de la Información</span> <i class="fas fa-info-circle text-blue-500 cursor-pointer ml-1" title="Deja constancia de en qué se basaron los estimados de este análisis — es clave para poder auditar el resultado y detectar sesgo después."></i></h4>
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div class="input-group advanced-only">
                                         <label for="fair-data-source">Fuente Principal de los Datos:</label>
@@ -790,6 +790,30 @@ document.addEventListener('DOMContentLoaded', () => {
         simple: { min: 'En el mejor caso (calculado)', mode: '¿Cuánto costaría en el caso típico?', max: 'En el peor caso (calculado)' },
     };
 
+    // Nombres cortos para el Análisis de Sensibilidad (Paso 4 y Registro consolidado) — el
+    // backend manda 'key' (ver backend/src/lib/simulation.js) además de 'name' (el nombre
+    // técnico, usado tal cual en Modo Técnico) precisamente para que esto no tenga que
+    // duplicar ninguna lógica de cálculo, solo traducir la etiqueta.
+    const SENSITIVITY_LABELS_SIMPLE = {
+        tef: 'Qué tan seguido pasa',
+        vulnerabilidad: 'Qué tan probable es que funcione',
+        'lm:productividad': 'Productividad perdida',
+        'lm:respuesta': 'Costos de responder',
+        'lm:reemplazo': 'Costos de reemplazo',
+        'lm:multas': 'Multas',
+        'lm:reputacion': 'Daño a tu imagen',
+        'lm:investigacion': 'Costos de investigar',
+        'lm:oportunidad': 'Negocio perdido',
+        'lm:comunitario': 'Impacto en la comunidad',
+        'lm:ambiental': 'Impacto ambiental',
+    };
+    function sensitivityLabel(factor) {
+        if (App.UIMode.mode === 'simple' && factor.key && SENSITIVITY_LABELS_SIMPLE[factor.key]) {
+            return SENSITIVITY_LABELS_SIMPLE[factor.key];
+        }
+        return factor.name;
+    }
+
     // --- State Management ---
     const state = {
         config: {
@@ -1241,6 +1265,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 'fair-aceptar-title': '4. Aceptar / Retener (sin tratamiento)',
                 'fair-aceptar-description': 'ISO 31000 exige que aceptar un riesgo sea una decisión documentada y deliberada, no la ausencia de una decisión. Escribe la justificación.',
                 'fair-aceptar-justificacion-label': 'Justificación de la aceptación:',
+                'governance-section-title': 'Gobernanza y Revisión',
+                'fair-owner-label': 'Dueño del Riesgo (responsable):',
+                'fair-review-date-label': 'Próxima Fecha de Revisión:',
+                'data-quality-section-title': 'Calidad de la Información',
             },
             simple: {
                 'fair-step1-title': 'Paso 1: Cuéntanos qué riesgo vamos a analizar',
@@ -1269,6 +1297,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 'fair-aceptar-title': '4. No hacer nada y asumir el riesgo',
                 'fair-aceptar-description': 'Si decides no hacer nada, igual tienes que dejarlo por escrito y explicar por qué — no es lo mismo decidir aceptar el riesgo que simplemente no decidir nada.',
                 'fair-aceptar-justificacion-label': '¿Por qué decides no hacer nada al respecto?',
+                'governance-section-title': '¿Quién es responsable, y cuándo se revisa esto?',
+                'fair-owner-label': '¿Quién es el responsable de este riesgo?',
+                'fair-review-date-label': '¿Cuándo deberíamos revisarlo de nuevo?',
+                'data-quality-section-title': '¿Qué tan buena es tu información?',
             },
         },
 
@@ -1397,6 +1429,13 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             this.applyProbThresholdLabel();
+
+            // El Análisis de Sensibilidad (Paso 4) sí se re-renderiza completo al cambiar de
+            // modo (a diferencia de Magnitud de Pérdida) porque es de solo lectura — no hay
+            // ningún dato del usuario que perder, y así usa sensitivityLabel() de una.
+            if (state.fair && state.fair.lastSensitivity && App.FairAnalysis && App.FairAnalysis.renderSensitivity) {
+                App.FairAnalysis.renderSensitivity(state.fair.lastSensitivity);
+            }
         },
 
         // Aparte de applyLabels() porque su texto lleva un valor calculado (el umbral en
@@ -3481,7 +3520,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const color = s.correlation >= 0 ? '#3B82F6' : '#EF4444';
                 return `
                     <div class="mb-2">
-                        <div class="flex justify-between text-sm"><span>${s.name}</span><span>${(s.correlation * 100).toFixed(1)}%</span></div>
+                        <div class="flex justify-between text-sm"><span>${sensitivityLabel(s)}</span><span>${(s.correlation * 100).toFixed(1)}%</span></div>
                         <div class="w-full bg-gray-200 rounded h-2"><div class="h-2 rounded" style="width:${pct}%; background-color:${color};"></div></div>
                     </div>`;
             }).join('');
@@ -3743,7 +3782,8 @@ document.addEventListener('DOMContentLoaded', () => {
             this.renderInvestmentVerdict('fair-evitar-rosi', 'fair-evitar-verdict', result.evitar.verdict);
 
             // 4. Aceptar / Retener
-            document.getElementById('fair-aceptar-residual').textContent = `${formatCurrency(result.aceptar.residualALE)} (= ALE actual)`;
+            const aceptarSuffix = App.UIMode.mode === 'simple' ? '(= lo que perderías si no haces nada)' : '(= ALE actual)';
+            document.getElementById('fair-aceptar-residual').textContent = `${formatCurrency(result.aceptar.residualALE)} ${aceptarSuffix}`;
 
             // Recomendación: la calcula el backend (estrategia activa con mayor beneficio neto,
             // considerando también Fiabilidad y Retraso — Broder, 1984, Cap. 5).
@@ -4082,7 +4122,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const pct = Math.max(2, Math.round((a.averageCorrelation / maxVal) * 100));
                 return `
                     <div class="mb-2">
-                        <div class="flex justify-between text-sm"><span>${a.name}</span><span>${(a.averageCorrelation * 100).toFixed(1)}%</span></div>
+                        <div class="flex justify-between text-sm"><span>${sensitivityLabel(a)}</span><span>${(a.averageCorrelation * 100).toFixed(1)}%</span></div>
                         <div class="w-full bg-gray-200 rounded h-2"><div class="h-2 rounded bg-purple-600" style="width:${pct}%;"></div></div>
                     </div>`;
             }).join('');
