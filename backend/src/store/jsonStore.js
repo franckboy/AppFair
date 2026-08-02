@@ -36,6 +36,10 @@ class JsonStore {
     }
 
     _readAll() {
+        // Autorecuperación si el archivo desaparece después de construir el store (ej. se borró
+        // a mano, o el disco efímero de un free tier lo perdió al reiniciar) — sin esto, cada
+        // lectura tronaba con ENOENT hasta reiniciar el proceso.
+        this._ensureFile();
         const raw = fs.readFileSync(this.dbPath, 'utf-8');
         try {
             return { ...DEFAULTS, ...JSON.parse(raw) };

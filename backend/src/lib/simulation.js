@@ -74,13 +74,16 @@ function pearsonCorrelation(x, y) {
  * correlación de Pearson contra las pérdidas simuladas.
  */
 function calculateSensitivity(losses, tefSamples, vulnSamples, lmSamples, activeKeys) {
+    // key es el identificador estable que usa el frontend para traducir el nombre a Modo
+    // Simple/Técnico (ver LOSS_FORM_LABELS y SENSITIVITY_LABELS en app_fair.html) — name se
+    // manda también para no romper a un cliente que no sepa de esa traducción.
     const factors = [
-        { name: 'Frecuencia de Evento (TEF)', values: tefSamples },
-        { name: 'Vulnerabilidad', values: vulnSamples },
-        ...activeKeys.map((key, idx) => ({ name: `Magnitud: ${lossFormsLabels[key] || key}`, values: lmSamples[idx] })),
+        { key: 'tef', name: 'Frecuencia de Evento (TEF)', values: tefSamples },
+        { key: 'vulnerabilidad', name: 'Vulnerabilidad', values: vulnSamples },
+        ...activeKeys.map((key, idx) => ({ key: `lm:${key}`, name: `Magnitud: ${lossFormsLabels[key] || key}`, values: lmSamples[idx] })),
     ];
 
-    const results = factors.map((f) => ({ name: f.name, correlation: pearsonCorrelation(f.values, losses) }));
+    const results = factors.map((f) => ({ key: f.key, name: f.name, correlation: pearsonCorrelation(f.values, losses) }));
     results.sort((a, b) => Math.abs(b.correlation) - Math.abs(a.correlation));
     return results;
 }
