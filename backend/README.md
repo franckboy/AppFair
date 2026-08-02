@@ -203,7 +203,7 @@ distribución completa para un cálculo preciso, no solo el promedio).
 mismo `annualLosses`. `seed: 0` genera una semilla aleatoria nueva cada vez (se devuelve en
 `usedSeed` para que la anotes).
 
-**Validación:** `iterations` debe ser un entero entre 1 y 50,000 (tope duro — sin esto, un
+**Validación:** `iterations` debe ser un entero entre 1 y 10,000 (tope duro — sin esto, un
 cliente podía pedir millones de iteraciones y bloquear el event loop de Node para todas las
 demás peticiones). `tef`, `vuln` y cada entrada de `lossMagnitudes` deben ser objetos
 `{min, mode, max}` numéricos con `min <= mode <= max`; `vuln` además debe estar en `0-100`.
