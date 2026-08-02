@@ -4,8 +4,11 @@
 // mandar `iterations: 50000000` y el servidor intentaba reservar arreglos de
 // ese tamaño y correr la simulación de forma síncrona, bloqueando el event
 // loop de Node para todas las demás peticiones — una denegación de servicio
-// trivial y sin necesitar credenciales.
-const MAX_ITERATIONS = 50000;
+// trivial y sin necesitar credenciales. 10,000 es también el valor por
+// defecto (y único, en la práctica) que usa el frontend — fijarlo como tope
+// evita que una simulación "grande" tarde de forma impredecible al
+// re-simular un riesgo guardado desde el Registro.
+const MAX_ITERATIONS = 10000;
 
 function isFiniteNumber(v) {
     return typeof v === 'number' && Number.isFinite(v);

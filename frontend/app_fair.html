@@ -637,16 +637,48 @@
                         <div id="fair-consolidated-sensitivity-list" class="mb-8"></div>
 
                         <h3 class="text-lg font-semibold text-gray-800 mb-2">Riesgos en el Registro</h3>
-                        <div class="overflow-x-auto">
+                        <p class="description-text mb-2">Los riesgos ya calculados en pasos anteriores. Clic en "Simular" para ver el detalle de cualquiera (hasta 10,000 simulaciones Monte Carlo por corrida).</p>
+                        <div class="overflow-x-auto mb-8">
                             <table class="w-full text-sm">
                                 <thead>
                                     <tr class="text-left border-b">
-                                        <th class="py-2">Riesgo</th><th>Activo</th><th>ALE</th><th>CVaR 95%</th><th>Evaluación</th><th>Última corrida</th><th></th>
+                                        <th class="py-2">Riesgo</th><th>Activo</th><th>ALE</th><th>CVaR 95%</th><th>Evaluación</th><th>Última corrida</th><th></th><th></th>
                                     </tr>
                                 </thead>
                                 <tbody id="fair-register-table-body"></tbody>
                             </table>
                         </div>
+
+                        <div id="fair-register-simulation" class="hidden fair-section bg-blue-50 mb-8">
+                            <div class="flex justify-between items-center mb-3">
+                                <h3 class="text-lg font-semibold text-gray-800" id="fair-register-simulation-title">Simulación Detallada</h3>
+                                <button id="fair-register-simulation-close" class="text-gray-500 hover:text-gray-700 text-sm"><i class="fas fa-times mr-1"></i>Cerrar</button>
+                            </div>
+                            <div id="fair-register-simulation-loading" class="hidden text-center text-gray-500 py-6">Simulando 10,000 escenarios…</div>
+                            <div id="fair-register-simulation-body" class="hidden">
+                                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                    <div class="p-4 bg-white rounded-lg" style="height: 320px;">
+                                        <canvas id="fair-register-sim-chart"></canvas>
+                                    </div>
+                                    <div class="p-4 bg-white rounded-lg">
+                                        <h4 class="text-md font-semibold text-gray-800 mb-2">Métricas Clave</h4>
+                                        <ul class="space-y-2 text-gray-700 text-sm">
+                                            <li class="flex justify-between"><span>Pérdida Anual Promedio:</span> <strong id="fair-register-sim-ale" class="text-blue-700"></strong></li>
+                                            <li class="flex justify-between"><span>Pérdida Anual Mediana:</span> <strong id="fair-register-sim-median"></strong></li>
+                                            <li class="flex justify-between"><span>Peor 10% de los casos (P90):</span> <strong id="fair-register-sim-p90"></strong></li>
+                                            <li class="flex justify-between"><span>CVaR 95%:</span> <strong id="fair-register-sim-cvar" class="text-red-700"></strong></li>
+                                        </ul>
+                                    </div>
+                                </div>
+                                <div class="mt-4 p-4 bg-white rounded-lg">
+                                    <h4 class="text-md font-semibold text-gray-800 mb-2">Variables más influyentes</h4>
+                                    <div id="fair-register-sim-sensitivity"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <h3 class="text-lg font-semibold text-gray-800 mb-2">Interpretación General</h3>
+                        <div id="fair-register-interpretation" class="description-text text-base text-gray-700"></div>
                     </div>
                 </div>
             </div>
@@ -2866,6 +2898,9 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             document.getElementById('fair-export-report-btn').addEventListener('click', () => this.exportFairReport());
             document.getElementById('fair-export-consolidated-btn').addEventListener('click', () => this.exportConsolidatedReport());
+            document.getElementById('fair-register-simulation-close').addEventListener('click', () => {
+                document.getElementById('fair-register-simulation').classList.add('hidden');
+            });
             // Escopado a Paso 2 (TEF/Vulnerabilidad) a propósito: los campos de Magnitud de
             // Pérdida (Paso 3) ya tienen su propio listener en populateLossMagnitudeForms(),
             // que además espera (await) la respuesta del backend antes de reordenar — si este
@@ -3886,6 +3921,17 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!riskName) return;
 
             const currency = state.quickUI.domElements.inputs.currencySelect.value;
+            const readRange = (prefix) => ({
+                min: getSafeNumber(document.getElementById(`${prefix}-min`)),
+                mode: getSafeNumber(document.getElementById(`${prefix}-mode`)),
+                max: getSafeNumber(document.getElementById(`${prefix}-max`)),
+            });
+            // Se guardan los inputs (no solo el resultado) para poder re-simular este riesgo
+            // después desde el botón "Simular" del Registro sin pedirle los datos de nuevo al
+            // usuario — junto con la semilla usada, la simulación siempre da el mismo resultado.
+            const lossMagnitudes = {};
+            LOSS_FORMS_KEYS.forEach((key) => { lossMagnitudes[key] = readRange(`lm-${key}`); });
+
             try {
                 await App.Api.request(`/api/register/${encodeURIComponent(riskName)}`, {
                     method: 'PUT',
@@ -3896,11 +3942,21 @@ document.addEventListener('DOMContentLoaded', () => {
                         cvar95: summary.cvar95,
                         evaluationLevel: evaluation.level,
                         evaluationClasses: severityToClasses(evaluation.severity),
+                        // El texto de evaluationLevel no siempre contiene literalmente la
+                        // palabra del nivel (ej. "Aceptable" es severidad "bajo", "Requiere
+                        // Tratamiento" es "alto") — se guarda el severity crudo aparte para
+                        // poder agrupar por nivel de forma confiable (ver Interpretación
+                        // General en renderPortfolioInterpretation).
+                        severity: evaluation.severity,
                         evaluationJustification: evaluation.justification,
                         probExceedance: summary.probExceedance,
                         sensitivity: (state.fair.lastSensitivity || []).slice(0, 5),
                         currency,
                         securityPlan: document.getElementById('fair-security-plan').value.trim() || '—',
+                        tef: readRange('tef'),
+                        vuln: readRange('vuln'),
+                        lossMagnitudes,
+                        seed: state.fair.lastSeed || null,
                     },
                 });
             } catch (e) {
@@ -3944,6 +4000,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td>${formatEntryCurrency(r, r.cvar95)}</td>
                     <td><span class="px-2 py-1 rounded text-xs border-l-4 ${r.evaluationClasses}">${r.evaluationLevel}</span></td>
                     <td>${formatEntryDate(r)}</td>
+                    <td>
+                        <button class="btn btn-secondary text-xs" data-simulate-risk="${sanitizeHTML(r.riskName)}" ${r.tef && r.vuln && r.lossMagnitudes ? '' : 'disabled title="Este riesgo se guardó antes de esta función — vuelve a correr su simulación desde Análisis FAIR para poder verla aquí."'}>
+                            <i class="fas fa-chart-bar mr-1"></i>Simular
+                        </button>
+                    </td>
                     <td><button class="text-red-600 hover:text-red-800 text-sm" data-delete-risk="${sanitizeHTML(r.riskName)}"><i class="fas fa-trash"></i></button></td>
                 </tr>`
             ).join('');
@@ -3951,6 +4012,11 @@ document.addEventListener('DOMContentLoaded', () => {
             document.querySelectorAll('[data-delete-risk]').forEach(btn => {
                 btn.addEventListener('click', () => this.deleteFromRegister(btn.dataset.deleteRisk));
             });
+            document.querySelectorAll('[data-simulate-risk]').forEach(btn => {
+                btn.addEventListener('click', () => this.simulateRegisteredRisk(btn.dataset.simulateRisk));
+            });
+
+            this.renderPortfolioInterpretation(register);
 
             // Las zonas del mapa de calor (colores + rangos) ya vienen del backend en la
             // respuesta de GET /api/register — solo falta el color del texto, que es
@@ -4112,6 +4178,127 @@ document.addEventListener('DOMContentLoaded', () => {
             }).join('');
         },
 
+        // Re-simula un riesgo ya guardado usando sus inputs originales (tef/vuln/lossMagnitudes)
+        // y su semilla — misma reproducibilidad exacta que documenta /api/simulate. Siempre a
+        // 10,000 iteraciones (tope único para todas las simulaciones, ver backend/validate.js).
+        async simulateRegisteredRisk(riskName) {
+            const risk = (state.fair.riskRegister || []).find(r => r.riskName === riskName);
+            if (!risk || !risk.tef || !risk.vuln || !risk.lossMagnitudes) {
+                showToast('Este riesgo no tiene los datos guardados para re-simular. Vuelve a correrlo desde Análisis FAIR.');
+                return;
+            }
+
+            const section = document.getElementById('fair-register-simulation');
+            const loading = document.getElementById('fair-register-simulation-loading');
+            const body = document.getElementById('fair-register-simulation-body');
+            document.getElementById('fair-register-simulation-title').textContent = `Simulación Detallada: ${risk.riskName}`;
+            section.classList.remove('hidden');
+            loading.classList.remove('hidden');
+            loading.textContent = 'Simulando 10,000 escenarios…';
+            body.classList.add('hidden');
+            section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+            let result;
+            try {
+                result = await App.Api.request('/api/simulate', {
+                    method: 'POST',
+                    body: {
+                        iterations: 10000,
+                        seed: risk.seed || 0,
+                        tef: risk.tef,
+                        vuln: risk.vuln,
+                        lossMagnitudes: risk.lossMagnitudes,
+                        currency: risk.currency,
+                    },
+                });
+            } catch (e) {
+                loading.textContent = e.userMessage || 'No se pudo simular este riesgo.';
+                return;
+            }
+
+            loading.classList.add('hidden');
+            body.classList.remove('hidden');
+
+            const currencySymbol = state.config.CURRENCY_SYMBOLS[risk.currency] || '$';
+            const formatCurrency = (v) => `${currencySymbol}${Math.round(v).toLocaleString('en-US')}`;
+            document.getElementById('fair-register-sim-ale').textContent = formatCurrency(result.summary.average);
+            document.getElementById('fair-register-sim-median').textContent = formatCurrency(result.summary.median);
+            document.getElementById('fair-register-sim-p90').textContent = formatCurrency(result.summary.p90);
+            document.getElementById('fair-register-sim-cvar').textContent = formatCurrency(result.summary.cvar95);
+
+            const sensContainer = document.getElementById('fair-register-sim-sensitivity');
+            const top = (result.sensitivity || []).slice(0, 5);
+            const maxAbs = Math.max(...top.map(s => Math.abs(s.correlation)), 0.0001);
+            sensContainer.innerHTML = top.map(s => {
+                const pct = Math.max(2, Math.round((Math.abs(s.correlation) / maxAbs) * 100));
+                const color = s.correlation >= 0 ? '#3B82F6' : '#EF4444';
+                return `
+                    <div class="mb-2">
+                        <div class="flex justify-between text-sm"><span>${sensitivityLabel(s)}</span><span>${(s.correlation * 100).toFixed(1)}%</span></div>
+                        <div class="w-full bg-gray-200 rounded h-2"><div class="h-2 rounded" style="width:${pct}%; background-color:${color};"></div></div>
+                    </div>`;
+            }).join('');
+
+            // Histograma — mismo binning que el de Análisis FAIR (ver runMonteCarloSimulation).
+            const ctx = document.getElementById('fair-register-sim-chart').getContext('2d');
+            const numBins = 20;
+            const maxLoss = result.summary.max;
+            const binWidth = maxLoss > 0 ? maxLoss / numBins : 1;
+            const labels = [];
+            for (let i = 0; i < numBins; i++) labels.push(`${(i * binWidth / 1000).toFixed(0)}k`);
+            const binCounts = new Array(numBins).fill(0);
+            result.annualLosses.forEach(loss => {
+                const binIndex = Math.min(Math.floor(loss / binWidth), numBins - 1);
+                binCounts[binIndex]++;
+            });
+            if (state.fair.registerSimChart) state.fair.registerSimChart.destroy();
+            state.fair.registerSimChart = new Chart(ctx, {
+                type: 'bar',
+                data: { labels, datasets: [{ label: 'Frecuencia de Pérdida Anual', data: binCounts, backgroundColor: 'rgba(54, 162, 235, 0.6)', borderColor: 'rgba(54, 162, 235, 1)', borderWidth: 1 }] },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    scales: {
+                        y: { beginAtZero: true, title: { display: true, text: 'Nº de Simulaciones' } },
+                        x: { title: { display: true, text: `Pérdida Anual Estimada (miles de ${risk.currency})` }, ticks: { autoSkip: true, maxRotation: 45, minRotation: 45 } },
+                    },
+                },
+            });
+        },
+
+        // Síntesis del portafolio completo (no de un riesgo aislado) — cuenta por nivel de
+        // severidad, qué riesgos concentran el 80% de la exposición (ya calculado por el
+        // backend en /api/register) y cuál variable más vale la pena mejorar en promedio.
+        renderPortfolioInterpretation(register) {
+            const container = document.getElementById('fair-register-interpretation');
+            const pareto = state.fair.registerPareto;
+            // Se agrupa por el campo "severity" crudo ('critico'/'alto'/'medio'/'bajo'), no por
+            // el texto de evaluationLevel — ese texto no siempre contiene la palabra del nivel
+            // (ej. "Aceptable" es severidad "bajo", "Requiere Tratamiento" es "alto").
+            const severityLabels = { critico: 'Crítico', alto: 'Alto', medio: 'Medio', bajo: 'Bajo' };
+            const bySeverity = { critico: 0, alto: 0, medio: 0, bajo: 0 };
+            register.forEach(r => {
+                if (r.severity && bySeverity[r.severity] !== undefined) bySeverity[r.severity]++;
+            });
+            const currencySymbol = state.config.CURRENCY_SYMBOLS[register[0].currency] || '$';
+            const formatCurrency = (v) => `${currencySymbol}${Math.round(v).toLocaleString('en-US')}`;
+
+            const parts = [];
+            parts.push(`Tienes <strong>${register.length}</strong> riesgo${register.length === 1 ? '' : 's'} guardado${register.length === 1 ? '' : 's'}: ` +
+                Object.entries(bySeverity).filter(([, n]) => n > 0).map(([sev, n]) => `${n} en nivel <strong>${severityLabels[sev]}</strong>`).join(', ') + '.');
+
+            if (pareto && pareto.risks.length > 0) {
+                const topNames = pareto.risks.slice(0, pareto.riskCountFor80Percent).map(r => sanitizeHTML(r.riskName));
+                parts.push(`<strong>${pareto.riskCountFor80Percent} de ${pareto.totalRiskCount}</strong> riesgo${pareto.riskCountFor80Percent === 1 ? '' : 's'} (${topNames.join(', ')}) concentra${pareto.riskCountFor80Percent === 1 ? '' : 'n'} el 80% de tu exposición total (${formatCurrency(pareto.totalExposure)}/año) — prioriza el tratamiento ahí antes que en los demás.`);
+            }
+
+            const topSensitivity = (state.fair.registerConsolidatedSensitivity || [])[0];
+            if (topSensitivity) {
+                parts.push(`La variable que más mueve tus resultados, en promedio, es <strong>"${sensitivityLabel(topSensitivity)}"</strong> — mejorar la calidad de ese dato es donde más rendiría tu esfuerzo.`);
+            }
+
+            container.innerHTML = parts.map(p => `<p class="mb-2">${p}</p>`).join('');
+        },
+
         exportConsolidatedReport() {
             const register = state.fair.riskRegister;
             if (!register || register.length === 0) {
@@ -4131,6 +4318,27 @@ document.addEventListener('DOMContentLoaded', () => {
             // Mismo orden que los puntos numerados del mapa de calor (ver renderRiskRegister),
             // para que el número en el mapa corresponda al mismo riesgo en esta lista.
             const heatmapLegendHTML = register.map((r, i) => `<li>${i + 1}. ${sanitizeHTML(r.riskName)}</li>`).join('');
+
+            // Si hay una Simulación Detallada abierta (botón "Simular" de la tabla), se incluye
+            // en el PDF tal cual se ve en pantalla — así el histograma de un riesgo específico
+            // sale en el mismo documento que el resto, sin tener que exportar dos reportes.
+            const simSection = document.getElementById('fair-register-simulation');
+            let simulationDetailHTML = '';
+            if (!simSection.classList.contains('hidden') && !document.getElementById('fair-register-simulation-body').classList.contains('hidden')) {
+                const simChartImg = document.getElementById('fair-register-sim-chart').toDataURL('image/png');
+                simulationDetailHTML = `
+                <div class="print-section">
+                    <h2>${sanitizeHTML(document.getElementById('fair-register-simulation-title').textContent)}</h2>
+                    <img src="${simChartImg}" alt="Histograma de simulación" style="max-width:100%;">
+                    <table>
+                        <tr><td><strong>Pérdida Anual Promedio</strong></td><td>${document.getElementById('fair-register-sim-ale').textContent}</td></tr>
+                        <tr><td><strong>Pérdida Anual Mediana</strong></td><td>${document.getElementById('fair-register-sim-median').textContent}</td></tr>
+                        <tr><td><strong>Peor 10% de los casos (P90)</strong></td><td>${document.getElementById('fair-register-sim-p90').textContent}</td></tr>
+                        <tr><td><strong>CVaR 95%</strong></td><td>${document.getElementById('fair-register-sim-cvar').textContent}</td></tr>
+                    </table>
+                    ${document.getElementById('fair-register-sim-sensitivity').innerHTML}
+                </div>`;
+            }
 
             // El backend guarda ale/cvar95 como números crudos + la moneda de cada riesgo (no
             // strings ya formateados) — el formateo es presentación, se hace aquí por entrada.
@@ -4208,6 +4416,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     ${sensitivityHTML}
                 </div>
                 ${riskCardsHTML}
+                ${simulationDetailHTML}
+                <div class="print-section">
+                    <h2>Interpretación General</h2>
+                    ${document.getElementById('fair-register-interpretation').innerHTML}
+                </div>
                 <div class="print-section" style="margin-top:24px; border-top:1px solid #999; padding-top:8px;">
                     <p style="font-size:11px; color:#555;">Este documento contiene información confidencial de análisis de riesgo. Su distribución debe limitarse a las personas autorizadas por la organización apreciada.</p>
                 </div>

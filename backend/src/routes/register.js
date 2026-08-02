@@ -31,15 +31,21 @@ function createRegisterRouter(store) {
      * PUT /api/register/:riskName — guarda o actualiza un riesgo en el registro.
      * Se llama normalmente justo después de un /api/simulate exitoso, con su
      * resultado. Body esperado: { asset, owner, ale, cvar95, evaluationLevel,
-     * evaluationJustification, probExceedance, sensitivity, currency, aleCriticoUsado }
+     * evaluationJustification, probExceedance, sensitivity, currency, securityPlan,
+     * tef, vuln, lossMagnitudes, seed }
      */
     router.put('/:riskName', (req, res) => {
         const riskName = req.params.riskName;
         const criteria = store.get('riskCriteria') || defaultRiskCriteria;
         const {
-            asset = '—', owner = '—', ale, cvar95, evaluationLevel, evaluationClasses,
+            asset = '—', owner = '—', ale, cvar95, evaluationLevel, evaluationClasses, severity = null,
             evaluationJustification, probExceedance = 0, sensitivity = [], currency = 'USD',
             securityPlan = '—',
+            // tef/vuln/lossMagnitudes/seed son opcionales (un riesgo guardado antes de que
+            // existiera esto no los trae) — se guardan tal cual para poder re-simular este
+            // riesgo después desde el botón "Simular" del Registro, sin volver a pedirle los
+            // datos al usuario. La reproducibilidad exacta la da la semilla (ver /api/simulate).
+            tef = null, vuln = null, lossMagnitudes = null, seed = null,
         } = req.body;
 
         if (typeof ale !== 'number') {
@@ -50,10 +56,11 @@ function createRegisterRouter(store) {
 
         const entry = {
             riskName, asset, owner, currency, ale, cvar95,
-            evaluationLevel, evaluationClasses, evaluationJustification,
+            evaluationLevel, evaluationClasses, severity, evaluationJustification,
             impactPercent, probabilityPercent: probExceedance,
             sensitivity: sensitivity.slice(0, 5),
             securityPlan,
+            tef, vuln, lossMagnitudes, seed,
             date: new Date().toISOString(),
         };
 
