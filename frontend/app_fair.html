@@ -689,7 +689,7 @@
         <datalist id="datalist-threats"></datalist>
         <datalist id="datalist-owners"></datalist>
 
-        <!-- Reporte imprimible: se llena dinámicamente antes de exportar (ver App.FairAnalysis.exportFairReport) -->
+        <!-- Reporte imprimible: se llena dinámicamente antes de exportar (ver App.FairExport.exportFairReport) -->
         <div id="fair-print-report"></div>
     </div>
 
@@ -747,7 +747,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Diccionario Modo Simple/Técnico para las 9 categorías de Magnitud de Pérdida — mismo
     // patrón que App.UIMode.STEP_LABELS/RESULT_LABELS, pero aparte porque estos elementos se
-    // generan dinámicamente en App.FairAnalysis.populateLossMagnitudeForms() en vez de existir
+    // generan dinámicamente en App.FairWizard.populateLossMagnitudeForms() en vez de existir
     // ya en el HTML. Técnico usa el nombre FAIR/contable de cada forma de pérdida; Simple lo
     // convierte en la pregunta que de verdad hay que responder.
     const LOSS_FORM_LABELS = {
@@ -1423,7 +1423,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Aparte de applyLabels() porque su texto lleva un valor calculado (el umbral en
         // dinero) que solo existe después de simular — ver dónde se llama en
-        // App.FairAnalysis.displaySimulationResults().
+        // App.FairWizard.displaySimulationResults().
         applyProbThresholdLabel() {
             const thresholdK = state.fair && state.fair.lastThresholdK;
             const el = document.getElementById('prob-threshold-label');
@@ -2727,33 +2727,14 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // --- FAIR Analysis Module ---
-    App.FairAnalysis = {
-        init() {
-            this.populateLossMagnitudeForms();
-            this.bindEvents();
-            this.loadRiskRegister(false);
-            const restored = this.restoreFairAnalysis();
-            if (!restored) this.applyOrgDefaults();
-        },
-
-        // El Registro de Riesgos vive en el backend (GET/PUT/DELETE /api/register) — ya no en
-        // localStorage. `render=false` se usa en el arranque (la página aún está oculta; crear
-        // los gráficos de Chart.js sobre un <canvas> de tamaño 0 los deja mal dimensionados).
-        async loadRiskRegister(render = true) {
-            try {
-                const data = await App.Api.request('/api/register');
-                state.fair.riskRegister = data.risks || [];
-                state.fair.registerPareto = data.pareto || null;
-                state.fair.registerConsolidatedSensitivity = data.consolidatedSensitivity || [];
-                state.fair.registerHeatmapZones = data.heatmapZones || [];
-            } catch (e) {
-                console.error('No se pudo cargar el Registro de Riesgos:', e);
-                if (render) showToast(e.userMessage || 'No se pudo cargar el Registro de Riesgos.');
-                state.fair.riskRegister = state.fair.riskRegister || [];
-            }
-            if (render) this.renderRiskRegister();
-        },
-
+    // ============================================================
+    // App.FairWizard — el formulario de 4 pasos (Perfil de Atacante/Defensa,
+    // TEF/Vulnerabilidad, Magnitud de Pérdida, Simulación + Tratamiento), sus
+    // autocálculos, validaciones y el borrador persistido en localStorage. Si el
+    // bug está en algo que el usuario llena/ve mientras arma un análisis FAIR,
+    // está aquí.
+    // ============================================================
+    App.FairWizard = {
         applyOrgDefaults() {
             document.getElementById('fair-defense-profile').value = App.OrgDefaults.defaults.defenseKey;
             document.getElementById('fair-owner').value = App.OrgDefaults.defaults.owner;
@@ -2896,8 +2877,8 @@ document.addEventListener('DOMContentLoaded', () => {
             ['tef-min', 'tef-mode', 'tef-max'].forEach(id => {
                 document.getElementById(id).addEventListener('input', () => { state.fair.tefManuallyEdited = true; });
             });
-            document.getElementById('fair-export-report-btn').addEventListener('click', () => this.exportFairReport());
-            document.getElementById('fair-export-consolidated-btn').addEventListener('click', () => this.exportConsolidatedReport());
+            document.getElementById('fair-export-report-btn').addEventListener('click', () => App.FairExport.exportFairReport());
+            document.getElementById('fair-export-consolidated-btn').addEventListener('click', () => App.FairExport.exportConsolidatedReport());
             document.getElementById('fair-register-simulation-close').addEventListener('click', () => {
                 document.getElementById('fair-register-simulation').classList.add('hidden');
             });
@@ -3516,171 +3497,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }).join('');
             document.getElementById('fair-sensitivity-container').classList.remove('hidden');
         },
-        
-        exportFairReport() {
-            const currency = state.quickUI.domElements.inputs.currencySelect.value;
-            const formatCurrency = (value) => new Intl.NumberFormat('en-US', { style: 'currency', currency: currency, minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
-
-            const riskName = sanitizeHTML(document.getElementById('fair-riskName').value) || 'Riesgo sin nombre';
-            const asset = sanitizeHTML(document.getElementById('fair-asset').value) || '—';
-            const threat = sanitizeHTML(document.getElementById('fair-threat').value) || '—';
-            const effectSelect = document.getElementById('fair-effect');
-            const effectLabel = effectSelect.options[effectSelect.selectedIndex].text;
-            const owner = sanitizeHTML(document.getElementById('fair-owner').value) || '—';
-            const reviewDate = document.getElementById('fair-review-date').value || '—';
-            const dataSourceSelect = document.getElementById('fair-data-source');
-            const dataSourceLabel = dataSourceSelect.options[dataSourceSelect.selectedIndex].text;
-            const dataConfidenceSelect = document.getElementById('fair-data-confidence');
-            const dataConfidenceLabel = dataConfidenceSelect.options[dataConfidenceSelect.selectedIndex].text;
-            const dataNotes = sanitizeHTML(document.getElementById('fair-data-notes').value) || '—';
-            const securityPlan = sanitizeHTML(document.getElementById('fair-security-plan').value) || '—';
-            const assessor = sanitizeHTML(document.getElementById('fair-assessor').value) || '—';
-            const assessmentDate = document.getElementById('fair-assessment-date').value || '—';
-            const assessmentLocation = sanitizeHTML(document.getElementById('fair-assessment-location').value) || '—';
-            const riskTypeLabel = document.getElementById('fair-risk-type').value === 'oportunidad' ? 'Oportunidad (riesgo positivo)' : 'Amenaza (riesgo negativo)';
-            const timeHorizon = document.getElementById('fair-time-horizon').value;
-            const ctx = App.OrgContext.context;
-
-            const attackerProfile = state.quick.attackerProfiles[state.fair.attackerKey] || {};
-            const defenseProfile = state.quick.defenseProfiles[state.fair.defenseKey] || {};
-
-            const tef = {
-                min: getSafeNumber(document.getElementById('tef-min')), mode: getSafeNumber(document.getElementById('tef-mode')), max: getSafeNumber(document.getElementById('tef-max'))
-            };
-            const vuln = {
-                min: getSafeNumber(document.getElementById('vuln-min')), mode: getSafeNumber(document.getElementById('vuln-mode')), max: getSafeNumber(document.getElementById('vuln-max'))
-            };
-
-            const lossFormsLabels = {
-                'productividad': 'Pérdida de Productividad', 'respuesta': 'Costos de Respuesta', 'reemplazo': 'Costos de Reemplazo',
-                'multas': 'Multas y Sanciones', 'reputacion': 'Daño Reputacional', 'investigacion': 'Costos de Investigación',
-                'oportunidad': 'Pérdida de Oportunidad', 'comunitario': 'Impacto Comunitario/Societario', 'ambiental': 'Impacto Ambiental'
-            };
-            const lossRowsHTML = Object.entries(lossFormsLabels).map(([key, label]) => {
-                const min = getSafeNumber(document.getElementById(`lm-${key}-min`));
-                const mode = getSafeNumber(document.getElementById(`lm-${key}-mode`));
-                const max = getSafeNumber(document.getElementById(`lm-${key}-max`));
-                return `<tr><td>${label}</td><td>${formatCurrency(min)}</td><td>${formatCurrency(mode)}</td><td>${formatCurrency(max)}</td></tr>`;
-            }).join('');
-
-            const chartCanvas = document.getElementById('fair-results-chart');
-            const chartImg = chartCanvas ? chartCanvas.toDataURL('image/png') : '';
-
-            const fiabilidadLabelReport = { alta: 'Alta', media: 'Media', baja: 'Baja' };
-            const treatmentHTML = `
-                <div class="print-section">
-                    <h2>9. Comparación de Estrategias de Tratamiento (ISO 31000 / Broder, 1984)</h2>
-                    <table>
-                        <tr><th>Estrategia</th><th>Costo Anual</th><th>Pérdida Residual</th><th>Beneficio Neto</th><th>Fiabilidad</th><th>Implementación</th></tr>
-                        <tr><td>Mitigar</td><td>${document.getElementById('fair-roi-costo').textContent}</td><td>${document.getElementById('fair-roi-ale-despues').textContent}</td><td>${document.getElementById('fair-roi-resultado').textContent}</td><td>${fiabilidadLabelReport[document.getElementById('fair-mitigar-fiabilidad').value]}</td><td>${document.getElementById('fair-mitigar-retraso').value} días</td></tr>
-                        <tr><td>Transferir (Seguro)</td><td>${document.getElementById('fair-seguro-costo').textContent}</td><td>${document.getElementById('fair-seguro-residual').textContent}</td><td>${document.getElementById('fair-seguro-beneficio').textContent}</td><td>${fiabilidadLabelReport[document.getElementById('fair-seguro-fiabilidad').value]}</td><td>${document.getElementById('fair-seguro-retraso').value} días</td></tr>
-                        <tr><td>Evitar</td><td>${document.getElementById('fair-evitar-costo-display').textContent}</td><td>${formatCurrency(0)}</td><td>${document.getElementById('fair-evitar-beneficio').textContent}</td><td>${fiabilidadLabelReport[document.getElementById('fair-evitar-fiabilidad').value]}</td><td>${document.getElementById('fair-evitar-retraso').value} días</td></tr>
-                        <tr><td>Aceptar / Retener</td><td>${formatCurrency(0)}</td><td>${document.getElementById('fair-aceptar-residual').textContent}</td><td>—</td><td>—</td><td>—</td></tr>
-                    </table>
-                    <p style="margin-top:8px; font-size:12px;"><strong>Justificación de aceptación (si aplica):</strong> ${sanitizeHTML(document.getElementById('fair-aceptar-justificacion').value) || '—'}</p>
-                </div>`;
-
-            const reportHTML = `
-                <div class="print-section">
-                    <h1>Reporte de Análisis de Riesgo (FAIR)</h1>
-                    <p>Generado: ${new Date().toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
-                </div>
-                <div class="print-section">
-                    <h2>0. Contexto Organizacional y Datos de la Apreciación</h2>
-                    <table>
-                        <tr><td><strong>Misión y Objetivos</strong></td><td>${sanitizeHTML(ctx.mision) || '—'}</td></tr>
-                        <tr><td><strong>Naturaleza del Negocio</strong></td><td>${sanitizeHTML(ctx.naturalezaNegocio) || '—'}</td></tr>
-                        <tr><td><strong>Apetito por el Riesgo</strong></td><td>${ctx.apetitoRiesgo}</td></tr>
-                        <tr><td><strong>Partes Interesadas Clave</strong></td><td>${sanitizeHTML(ctx.partesInteresadas) || '—'}</td></tr>
-                        <tr><td><strong>Entorno Legal/Regulatorio</strong></td><td>${sanitizeHTML(ctx.entornoLegal) || '—'}</td></tr>
-                        <tr><td><strong>Alcance de la Cadena de Suministro Cubierta</strong></td><td>${sanitizeHTML(ctx.alcanceCadenaSuministro) || '—'}</td></tr>
-                        <tr><td><strong>Apreciador / Analista Responsable</strong></td><td>${assessor}</td></tr>
-                        <tr><td><strong>Fecha de esta Apreciación</strong></td><td>${assessmentDate}</td></tr>
-                        <tr><td><strong>Lugar / Ubicación Apreciada</strong></td><td>${assessmentLocation}</td></tr>
-                    </table>
-                </div>
-                <div class="print-section">
-                    <h2>1. Alcance del Riesgo</h2>
-                    <table>
-                        <tr><td><strong>Escenario</strong></td><td>${riskName}</td></tr>
-                        <tr><td><strong>Activo Afectado</strong></td><td>${asset}</td></tr>
-                        <tr><td><strong>Agente de Amenaza</strong></td><td>${threat}</td></tr>
-                        <tr><td><strong>Efecto / Pérdida</strong></td><td>${effectLabel}</td></tr>
-                        <tr><td><strong>Tipo de Riesgo</strong></td><td>${riskTypeLabel}</td></tr>
-                        <tr><td><strong>Horizonte Temporal</strong></td><td>${timeHorizon} año(s)</td></tr>
-                    </table>
-                </div>
-                <div class="print-section">
-                    <h2>2. Gobernanza y Calidad de la Información</h2>
-                    <table>
-                        <tr><td><strong>Dueño del Riesgo</strong></td><td>${owner}</td></tr>
-                        <tr><td><strong>Próxima Fecha de Revisión</strong></td><td>${reviewDate}</td></tr>
-                        <tr><td><strong>Fuente de los Datos</strong></td><td>${dataSourceLabel}</td></tr>
-                        <tr><td><strong>Nivel de Confianza</strong></td><td>${dataConfidenceLabel}</td></tr>
-                        <tr><td><strong>Notas / Justificación</strong></td><td>${dataNotes}</td></tr>
-                        <tr><td><strong>Plan de Seguridad / Medidas Vigentes</strong></td><td>${securityPlan}</td></tr>
-                    </table>
-                </div>
-                <div class="print-section">
-                    <h2>3. Perfil de Atacante y Defensa</h2>
-                    <table>
-                        <tr><td>Perfil de Atacante</td><td>${attackerProfile.name || '—'} (Factor de Amenaza: ${(state.fair.attackerScore || 0).toFixed(1)}%)</td></tr>
-                        <tr><td>Nivel de Defensa</td><td>${defenseProfile.name || '—'} (${(state.fair.defenseScore || 0).toFixed(1)}%)</td></tr>
-                    </table>
-                </div>
-                <div class="print-section">
-                    <h2>4. Frecuencia y Vulnerabilidad</h2>
-                    <table>
-                        <tr><th></th><th>Mín</th><th>Más Probable</th><th>Máx</th></tr>
-                        <tr><td>Frecuencia de Evento de Amenaza (contactos/año)</td><td>${tef.min}</td><td>${tef.mode}</td><td>${tef.max}</td></tr>
-                        <tr><td>Vulnerabilidad (%)</td><td>${vuln.min}%</td><td>${vuln.mode}%</td><td>${vuln.max}%</td></tr>
-                    </table>
-                </div>
-                <div class="print-section">
-                    <h2>5. Magnitud de Pérdida por Categoría</h2>
-                    <table>
-                        <tr><th>Categoría</th><th>Mín</th><th>Más Probable</th><th>Máx</th></tr>
-                        ${lossRowsHTML}
-                    </table>
-                </div>
-                <div class="print-section">
-                    <h2>6. Resultados de la Simulación Monte Carlo (${state.config.SIMULATION_ITERATIONS.toLocaleString('es-MX')} iteraciones, semilla: ${state.fair.lastSeed || '—'})</h2>
-                    <table>
-                        <tr><td>Pérdida Anual Promedio (ALE)</td><td>${document.getElementById('ale-result').textContent}</td></tr>
-                        <tr><td>Pérdida Anual Mediana (P50)</td><td>${document.getElementById('median-loss-result').textContent}</td></tr>
-                        <tr><td>Pérdida Mínima Simulada</td><td>${document.getElementById('min-loss-result').textContent}</td></tr>
-                        <tr><td>Pérdida Máxima Simulada</td><td>${document.getElementById('max-loss-result').textContent}</td></tr>
-                        <tr><td>Peor 10% de los casos (P90)</td><td>${document.getElementById('percentile-90-result').textContent}</td></tr>
-                        <tr><td>CVaR 95% (Expected Shortfall)</td><td>${document.getElementById('cvar-95-result').textContent}</td></tr>
-                        <tr><td>${document.getElementById('prob-threshold-label').textContent}</td><td>${document.getElementById('prob-threshold-result').textContent}</td></tr>
-                    </table>
-                    ${chartImg ? `<img src="${chartImg}" alt="Distribución de Pérdida Anual">` : ''}
-                </div>
-                <div class="print-section">
-                    <h2>7. Evaluación del Riesgo (contra Criterios de Riesgo definidos)</h2>
-                    <table>
-                        <tr><td><strong>Clasificación</strong></td><td>${state.fair.lastEvaluation ? state.fair.lastEvaluation.level : 'No evaluado'}</td></tr>
-                        <tr><td><strong>Justificación</strong></td><td>${state.fair.lastEvaluation ? state.fair.lastEvaluation.justification : ''}</td></tr>
-                    </table>
-                </div>
-                <div class="print-section">
-                    <h2>8. Análisis de Sensibilidad</h2>
-                    <table>
-                        <tr><th>Variable</th><th>Correlación con el resultado</th></tr>
-                        ${(state.fair.lastSensitivity || []).slice(0, 8).map(s =>
-                            `<tr><td>${s.name}</td><td>${(s.correlation * 100).toFixed(1)}%</td></tr>`
-                        ).join('')}
-                    </table>
-                </div>
-                ${treatmentHTML}
-                <div class="print-section" style="margin-top:24px; border-top:1px solid #999; padding-top:8px;">
-                    <p style="font-size:11px; color:#555;">Este documento contiene información confidencial de análisis de riesgo. Su distribución debe limitarse a las personas autorizadas por la organización apreciada.</p>
-                </div>
-            `;
-
-            document.getElementById('fair-print-report').innerHTML = reportHTML;
-            window.print();
-        },
 
         // Traduce el `verdict` que ya calculó el backend (POST /api/treatment/evaluate) al
         // mismo texto/emoji/clase que mostraba la UI — el backend no sabe nada de CSS/emojis,
@@ -3851,7 +3667,7 @@ document.addEventListener('DOMContentLoaded', () => {
             state.fair.lastThresholdK = `${currencySymbol}${(summary.exceedanceThreshold / 1000)}k`;
             App.UIMode.applyProbThresholdLabel();
             document.getElementById('prob-threshold-result').textContent = `${summary.probExceedance.toFixed(1)}%`;
-            await this.saveToRiskRegister(summary, evaluation);
+            await App.FairRegister.saveToRiskRegister(summary, evaluation);
 
             document.getElementById('fair-roi-section').classList.remove('hidden');
             document.getElementById('fair-export-report-btn').classList.remove('hidden');
@@ -3909,6 +3725,291 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             this.persistFairAnalysis();
+        },
+
+        persistFairAnalysis() {
+            try {
+                const chart = state.fair.fairResultsChart;
+                if (!chart) return;
+                const lossFormsKeys = LOSS_FORMS_KEYS;
+                const lossForms = {};
+                lossFormsKeys.forEach(key => {
+                    lossForms[key] = {
+                        min: document.getElementById(`lm-${key}-min`).value,
+                        mode: document.getElementById(`lm-${key}-mode`).value,
+                        max: document.getElementById(`lm-${key}-max`).value,
+                    };
+                });
+
+                const data = {
+                    timestamp: Date.now(),
+                    riskName: document.getElementById('fair-riskName').value,
+                    asset: document.getElementById('fair-asset').value,
+                    threat: document.getElementById('fair-threat').value,
+                    effect: document.getElementById('fair-effect').value,
+                    riskType: document.getElementById('fair-risk-type').value,
+                    timeHorizon: document.getElementById('fair-time-horizon').value,
+                    owner: document.getElementById('fair-owner').value,
+                    reviewDate: document.getElementById('fair-review-date').value,
+                    assessor: document.getElementById('fair-assessor').value,
+                    assessmentDate: document.getElementById('fair-assessment-date').value,
+                    assessmentLocation: document.getElementById('fair-assessment-location').value,
+                    dataSource: document.getElementById('fair-data-source').value,
+                    dataConfidence: document.getElementById('fair-data-confidence').value,
+                    dataNotes: document.getElementById('fair-data-notes').value,
+                    securityPlan: document.getElementById('fair-security-plan').value,
+                    attackerKey: document.getElementById('fair-attacker-profile').value,
+                    defenseKey: document.getElementById('fair-defense-profile').value,
+                    isDeliberate: document.getElementById('fair-deliberate-threat').checked,
+                    deliberateThreatPonderation: document.getElementById('fair-deliberate-ponderation').value,
+                    tef: {
+                        min: document.getElementById('tef-min').value,
+                        mode: document.getElementById('tef-mode').value,
+                        max: document.getElementById('tef-max').value,
+                    },
+                    vuln: {
+                        min: document.getElementById('vuln-min').value,
+                        mode: document.getElementById('vuln-mode').value,
+                        max: document.getElementById('vuln-max').value,
+                    },
+                    vulnManualOverride: document.getElementById('vuln-manual-override').checked,
+                    lossForms: lossForms,
+                    lmManualOverride: document.getElementById('lm-manual-override').checked,
+                    costoControlAnual: document.getElementById('fair-costoControlAnual').value,
+                    reduccionALE: document.getElementById('fair-reduccionALE').value,
+                    mitigarDefensaObjetivo: document.getElementById('fair-mitigar-defensa-objetivo').value,
+                    reduccionALEManualOverride: document.getElementById('fair-reduccionALE-manual-override').checked,
+                    seguroPrima: document.getElementById('fair-seguro-prima').value,
+                    seguroDeducible: document.getElementById('fair-seguro-deducible').value,
+                    seguroLimite: document.getElementById('fair-seguro-limite').value,
+                    seguroSinLimite: document.getElementById('fair-seguro-sin-limite').checked,
+                    evitarCosto: document.getElementById('fair-evitar-costo').value,
+                    mitigarFiabilidad: document.getElementById('fair-mitigar-fiabilidad').value,
+                    mitigarRetraso: document.getElementById('fair-mitigar-retraso').value,
+                    seguroFiabilidad: document.getElementById('fair-seguro-fiabilidad').value,
+                    seguroRetraso: document.getElementById('fair-seguro-retraso').value,
+                    evitarFiabilidad: document.getElementById('fair-evitar-fiabilidad').value,
+                    evitarRetraso: document.getElementById('fair-evitar-retraso').value,
+                    aceptarJustificacion: document.getElementById('fair-aceptar-justificacion').value,
+                    lastSeed: state.fair.lastSeed || null,
+                    reviewHistory: state.fair.reviewHistory || [],
+                    results: {
+                        ale: document.getElementById('ale-result').textContent,
+                        median: document.getElementById('median-loss-result').textContent,
+                        min: document.getElementById('min-loss-result').textContent,
+                        max: document.getElementById('max-loss-result').textContent,
+                        p90: document.getElementById('percentile-90-result').textContent,
+                        cvar95: document.getElementById('cvar-95-result').textContent,
+                        probThresholdLabel: document.getElementById('prob-threshold-label').textContent,
+                        probThresholdValue: document.getElementById('prob-threshold-result').textContent,
+                        simulatedALE: state.fair.simulatedALE,
+                        chartLabels: chart.data.labels,
+                        chartData: chart.data.datasets[0].data,
+                        currency: state.quickUI.domElements.inputs.currencySelect.value,
+                        evaluation: state.fair.lastEvaluation || null,
+                        sensitivity: state.fair.lastSensitivity || null,
+                        annualLosses: state.fair.lastAnnualLosses || null,
+                    },
+                };
+                localStorage.setItem('fairLastAnalysis', JSON.stringify(data));
+                // Plantilla reutilizable: a diferencia de fairLastAnalysis, esta NO se borra al
+                // reiniciar el formulario — sirve como base para "Duplicar como Plantilla".
+                localStorage.setItem('fairAnalysisTemplate', JSON.stringify(data));
+            } catch (e) {
+                console.error('No se pudo guardar el análisis FAIR en el navegador:', e);
+            }
+        },
+
+        restoreFairAnalysis() {
+            try {
+                const raw = localStorage.getItem('fairLastAnalysis');
+                if (!raw) return false;
+                const data = JSON.parse(raw);
+
+                document.getElementById('fair-riskName').value = data.riskName || '';
+                document.getElementById('fair-asset').value = data.asset || '';
+                document.getElementById('fair-threat').value = data.threat || '';
+                document.getElementById('fair-effect').value = data.effect || 'confidentiality';
+                document.getElementById('fair-risk-type').value = data.riskType || 'amenaza';
+                document.getElementById('fair-time-horizon').value = data.timeHorizon || '1';
+                this.toggleRiskTypeLabels();
+                document.getElementById('fair-owner').value = data.owner || App.OrgDefaults.defaults.owner;
+                document.getElementById('fair-review-date').value = data.reviewDate || '';
+                document.getElementById('fair-assessor').value = data.assessor || '';
+                document.getElementById('fair-assessment-date').value = data.assessmentDate || '';
+                document.getElementById('fair-assessment-location').value = data.assessmentLocation || '';
+                document.getElementById('fair-data-source').value = data.dataSource || 'experto-sin-calibrar';
+                document.getElementById('fair-data-confidence').value = data.dataConfidence || 'medio';
+                document.getElementById('fair-data-notes').value = data.dataNotes || '';
+                document.getElementById('fair-security-plan').value = data.securityPlan || '';
+                document.getElementById('fair-attacker-profile').value = data.attackerKey || 'empleado-desleal';
+                document.getElementById('fair-defense-profile').value = data.defenseKey || 'estandar';
+                document.getElementById('fair-deliberate-threat').checked = !!data.isDeliberate;
+                document.getElementById('fair-deliberate-ponderation-container').classList.toggle('hidden', !data.isDeliberate);
+                const ponderacion = parseFloat(data.deliberateThreatPonderation) || 0.7;
+                document.getElementById('fair-deliberate-ponderation').value = ponderacion;
+                document.getElementById('fair-deliberate-ponderation-value').textContent = `x${ponderacion.toFixed(2)}`;
+                this.updateAttackerDefenseSummary();
+
+                if (data.tef) {
+                    document.getElementById('tef-min').value = data.tef.min;
+                    document.getElementById('tef-mode').value = data.tef.mode;
+                    document.getElementById('tef-max').value = data.tef.max;
+                    // Ya es un dato real restaurado — que la sugerencia automática (todavía en
+                    // vuelo desde el updateAttackerDefenseSummary() de arriba) no lo pise.
+                    state.fair.tefManuallyEdited = true;
+                }
+                if (data.vuln) {
+                    document.getElementById('vuln-min').value = data.vuln.min;
+                    document.getElementById('vuln-mode').value = data.vuln.mode;
+                    document.getElementById('vuln-max').value = data.vuln.max;
+                    this.setVulnManualOverride(!!data.vulnManualOverride);
+                }
+                if (data.lossForms) {
+                    this.setLossMagnitudeManualOverride(!!data.lmManualOverride);
+                    Object.entries(data.lossForms).forEach(([key, vals]) => {
+                        const minEl = document.getElementById(`lm-${key}-min`);
+                        const modeEl = document.getElementById(`lm-${key}-mode`);
+                        const maxEl = document.getElementById(`lm-${key}-max`);
+                        if (minEl) minEl.value = vals.min;
+                        if (modeEl) modeEl.value = vals.mode;
+                        if (maxEl) maxEl.value = vals.max;
+                    });
+                }
+                document.getElementById('fair-costoControlAnual').value = data.costoControlAnual || '0';
+                document.getElementById('fair-reduccionALE').value = data.reduccionALE || '0';
+                document.getElementById('fair-mitigar-defensa-objetivo').value = data.mitigarDefensaObjetivo || 'basica';
+                document.getElementById('fair-reduccionALE-manual-override').checked = !!data.reduccionALEManualOverride;
+                document.getElementById('fair-reduccionALE').readOnly = !data.reduccionALEManualOverride;
+                document.getElementById('fair-reduccionALE').classList.toggle('bg-gray-100', !data.reduccionALEManualOverride);
+                document.getElementById('fair-reduccionALE-explanation').classList.toggle('hidden', !!data.reduccionALEManualOverride);
+                document.getElementById('fair-seguro-prima').value = data.seguroPrima || '0';
+                document.getElementById('fair-seguro-deducible').value = data.seguroDeducible || '0';
+                document.getElementById('fair-seguro-limite').value = data.seguroLimite || '0';
+                document.getElementById('fair-seguro-sin-limite').checked = !!data.seguroSinLimite;
+                document.getElementById('fair-seguro-limite').disabled = !!data.seguroSinLimite;
+                document.getElementById('fair-seguro-limite').classList.toggle('bg-gray-100', !!data.seguroSinLimite);
+                document.getElementById('fair-evitar-costo').value = data.evitarCosto || '0';
+                document.getElementById('fair-mitigar-fiabilidad').value = data.mitigarFiabilidad || 'media';
+                document.getElementById('fair-mitigar-retraso').value = data.mitigarRetraso || '0';
+                document.getElementById('fair-seguro-fiabilidad').value = data.seguroFiabilidad || 'media';
+                document.getElementById('fair-seguro-retraso').value = data.seguroRetraso || '0';
+                document.getElementById('fair-evitar-fiabilidad').value = data.evitarFiabilidad || 'alta';
+                document.getElementById('fair-evitar-retraso').value = data.evitarRetraso || '0';
+                document.getElementById('fair-aceptar-justificacion').value = data.aceptarJustificacion || '';
+
+                if (data.results) {
+                    document.getElementById('ale-result').textContent = data.results.ale;
+                    document.getElementById('median-loss-result').textContent = data.results.median;
+                    document.getElementById('min-loss-result').textContent = data.results.min;
+                    document.getElementById('max-loss-result').textContent = data.results.max;
+                    document.getElementById('percentile-90-result').textContent = data.results.p90;
+                    document.getElementById('cvar-95-result').textContent = data.results.cvar95;
+                    document.getElementById('prob-threshold-label').textContent = data.results.probThresholdLabel;
+                    document.getElementById('prob-threshold-result').textContent = data.results.probThresholdValue;
+                    state.fair.simulatedALE = data.results.simulatedALE || 0;
+                    state.fair.lastAnnualLosses = data.results.annualLosses || null;
+
+                    if (data.results.evaluation) {
+                        state.fair.lastEvaluation = data.results.evaluation;
+                        const banner = document.getElementById('fair-evaluation-banner');
+                        banner.className = `p-4 rounded-lg mb-6 border-l-4 ${severityToClasses(data.results.evaluation.severity)}`;
+                        banner.innerHTML = `
+                            <p class="font-bold text-lg">Evaluación: ${data.results.evaluation.level}</p>
+                            <p class="text-sm mt-1">${data.results.evaluation.justification}</p>
+                        `;
+                    }
+
+                    if (data.results.sensitivity) {
+                        state.fair.lastSensitivity = data.results.sensitivity;
+                        this.renderSensitivity(data.results.sensitivity);
+                    }
+
+                    if (data.lastSeed) {
+                        state.fair.lastSeed = data.lastSeed;
+                        document.getElementById('fair-seed-used').textContent = `Semilla usada: ${data.lastSeed} (anótala para reproducir exactamente esta corrida)`;
+                    }
+                    if (Array.isArray(data.reviewHistory)) {
+                        state.fair.reviewHistory = data.reviewHistory;
+                        document.getElementById('fair-review-history-body').innerHTML = data.reviewHistory.map(entry =>
+                            `<tr class="border-b"><td class="py-1">${entry.date}</td><td>${entry.ale}</td><td>${entry.evaluationLevel}</td></tr>`
+                        ).join('');
+                        document.getElementById('fair-review-history-container').classList.toggle('hidden', data.reviewHistory.length < 2);
+                    }
+
+                    document.getElementById('simulation-results-container').classList.remove('hidden');
+                    document.getElementById('fair-roi-section').classList.remove('hidden');
+                    document.getElementById('fair-export-report-btn').classList.remove('hidden');
+
+                    const ctx = document.getElementById('fair-results-chart').getContext('2d');
+                    if (state.fair.fairResultsChart) state.fair.fairResultsChart.destroy();
+                    const currency = data.results.currency || 'USD';
+                    state.fair.fairResultsChart = new Chart(ctx, {
+                        type: 'bar',
+                        data: {
+                            labels: data.results.chartLabels,
+                            datasets: [{
+                                label: 'Frecuencia de Pérdida Anual',
+                                data: data.results.chartData,
+                                backgroundColor: 'rgba(54, 162, 235, 0.6)',
+                                borderColor: 'rgba(54, 162, 235, 1)',
+                                borderWidth: 1
+                            }]
+                        },
+                        options: {
+                            responsive: true, maintainAspectRatio: false,
+                            scales: {
+                                y: { beginAtZero: true, title: { display: true, text: 'Nº de Simulaciones' } },
+                                x: { title: { display: true, text: `Pérdida Anual Estimada (miles de ${currency})` }, ticks: { autoSkip: true, maxRotation: 45, minRotation: 45 } }
+                            },
+                            plugins: {
+                                tooltip: {
+                                    callbacks: {
+                                        title: (context) => `Rango de Pérdida: ~${context[0].label}`,
+                                        label: (context) => `Simulaciones: ${context.parsed.y}`
+                                    }
+                                }
+                            }
+                        }
+                    });
+
+                    this.updateTreatmentView();
+                    this.navigateWizard(4, true);
+                    showToast('Se restauró tu último análisis FAIR guardado en este navegador.');
+                }
+                return true;
+            } catch (e) {
+                console.error('No se pudo restaurar el análisis FAIR guardado:', e);
+                return false;
+            }
+        }
+
+    };
+
+    // ============================================================
+    // App.FairRegister — el Registro de Riesgos consolidado: guardar/borrar
+    // cada riesgo ya simulado, y el dashboard (mapa de calor, Pareto,
+    // sensibilidad consolidada, interpretación general, re-simular un riesgo
+    // guardado). Si el bug está en la página "Registro de Riesgos", está aquí.
+    // ============================================================
+    App.FairRegister = {
+
+        // El Registro de Riesgos vive en el backend (GET/PUT/DELETE /api/register) — ya no en
+        // localStorage. `render=false` se usa en el arranque (la página aún está oculta; crear
+        // los gráficos de Chart.js sobre un <canvas> de tamaño 0 los deja mal dimensionados).
+        async loadRiskRegister(render = true) {
+            try {
+                const data = await App.Api.request('/api/register');
+                state.fair.riskRegister = data.risks || [];
+                state.fair.registerPareto = data.pareto || null;
+                state.fair.registerConsolidatedSensitivity = data.consolidatedSensitivity || [];
+                state.fair.registerHeatmapZones = data.heatmapZones || [];
+            } catch (e) {
+                console.error('No se pudo cargar el Registro de Riesgos:', e);
+                if (render) showToast(e.userMessage || 'No se pudo cargar el Registro de Riesgos.');
+                state.fair.riskRegister = state.fair.riskRegister || [];
+            }
+            if (render) this.renderRiskRegister();
         },
 
         // --- Registro de Riesgos (RIMS RA.1-2015, 6.4.4.3): cada riesgo FAIR ya analizado queda
@@ -4299,6 +4400,181 @@ document.addEventListener('DOMContentLoaded', () => {
             container.innerHTML = parts.map(p => `<p class="mb-2">${p}</p>`).join('');
         },
 
+    };
+
+    // ============================================================
+    // App.FairExport — arma el HTML imprimible y dispara window.print() para
+    // el reporte de un solo riesgo y el informe consolidado del Registro. Solo
+    // lee del DOM/state ya renderizado por FairWizard/FairRegister, no calcula
+    // nada. Si el bug está en el PDF exportado, está aquí.
+    // ============================================================
+    App.FairExport = {
+        
+        exportFairReport() {
+            const currency = state.quickUI.domElements.inputs.currencySelect.value;
+            const formatCurrency = (value) => new Intl.NumberFormat('en-US', { style: 'currency', currency: currency, minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
+
+            const riskName = sanitizeHTML(document.getElementById('fair-riskName').value) || 'Riesgo sin nombre';
+            const asset = sanitizeHTML(document.getElementById('fair-asset').value) || '—';
+            const threat = sanitizeHTML(document.getElementById('fair-threat').value) || '—';
+            const effectSelect = document.getElementById('fair-effect');
+            const effectLabel = effectSelect.options[effectSelect.selectedIndex].text;
+            const owner = sanitizeHTML(document.getElementById('fair-owner').value) || '—';
+            const reviewDate = document.getElementById('fair-review-date').value || '—';
+            const dataSourceSelect = document.getElementById('fair-data-source');
+            const dataSourceLabel = dataSourceSelect.options[dataSourceSelect.selectedIndex].text;
+            const dataConfidenceSelect = document.getElementById('fair-data-confidence');
+            const dataConfidenceLabel = dataConfidenceSelect.options[dataConfidenceSelect.selectedIndex].text;
+            const dataNotes = sanitizeHTML(document.getElementById('fair-data-notes').value) || '—';
+            const securityPlan = sanitizeHTML(document.getElementById('fair-security-plan').value) || '—';
+            const assessor = sanitizeHTML(document.getElementById('fair-assessor').value) || '—';
+            const assessmentDate = document.getElementById('fair-assessment-date').value || '—';
+            const assessmentLocation = sanitizeHTML(document.getElementById('fair-assessment-location').value) || '—';
+            const riskTypeLabel = document.getElementById('fair-risk-type').value === 'oportunidad' ? 'Oportunidad (riesgo positivo)' : 'Amenaza (riesgo negativo)';
+            const timeHorizon = document.getElementById('fair-time-horizon').value;
+            const ctx = App.OrgContext.context;
+
+            const attackerProfile = state.quick.attackerProfiles[state.fair.attackerKey] || {};
+            const defenseProfile = state.quick.defenseProfiles[state.fair.defenseKey] || {};
+
+            const tef = {
+                min: getSafeNumber(document.getElementById('tef-min')), mode: getSafeNumber(document.getElementById('tef-mode')), max: getSafeNumber(document.getElementById('tef-max'))
+            };
+            const vuln = {
+                min: getSafeNumber(document.getElementById('vuln-min')), mode: getSafeNumber(document.getElementById('vuln-mode')), max: getSafeNumber(document.getElementById('vuln-max'))
+            };
+
+            const lossFormsLabels = {
+                'productividad': 'Pérdida de Productividad', 'respuesta': 'Costos de Respuesta', 'reemplazo': 'Costos de Reemplazo',
+                'multas': 'Multas y Sanciones', 'reputacion': 'Daño Reputacional', 'investigacion': 'Costos de Investigación',
+                'oportunidad': 'Pérdida de Oportunidad', 'comunitario': 'Impacto Comunitario/Societario', 'ambiental': 'Impacto Ambiental'
+            };
+            const lossRowsHTML = Object.entries(lossFormsLabels).map(([key, label]) => {
+                const min = getSafeNumber(document.getElementById(`lm-${key}-min`));
+                const mode = getSafeNumber(document.getElementById(`lm-${key}-mode`));
+                const max = getSafeNumber(document.getElementById(`lm-${key}-max`));
+                return `<tr><td>${label}</td><td>${formatCurrency(min)}</td><td>${formatCurrency(mode)}</td><td>${formatCurrency(max)}</td></tr>`;
+            }).join('');
+
+            const chartCanvas = document.getElementById('fair-results-chart');
+            const chartImg = chartCanvas ? chartCanvas.toDataURL('image/png') : '';
+
+            const fiabilidadLabelReport = { alta: 'Alta', media: 'Media', baja: 'Baja' };
+            const treatmentHTML = `
+                <div class="print-section">
+                    <h2>9. Comparación de Estrategias de Tratamiento (ISO 31000 / Broder, 1984)</h2>
+                    <table>
+                        <tr><th>Estrategia</th><th>Costo Anual</th><th>Pérdida Residual</th><th>Beneficio Neto</th><th>Fiabilidad</th><th>Implementación</th></tr>
+                        <tr><td>Mitigar</td><td>${document.getElementById('fair-roi-costo').textContent}</td><td>${document.getElementById('fair-roi-ale-despues').textContent}</td><td>${document.getElementById('fair-roi-resultado').textContent}</td><td>${fiabilidadLabelReport[document.getElementById('fair-mitigar-fiabilidad').value]}</td><td>${document.getElementById('fair-mitigar-retraso').value} días</td></tr>
+                        <tr><td>Transferir (Seguro)</td><td>${document.getElementById('fair-seguro-costo').textContent}</td><td>${document.getElementById('fair-seguro-residual').textContent}</td><td>${document.getElementById('fair-seguro-beneficio').textContent}</td><td>${fiabilidadLabelReport[document.getElementById('fair-seguro-fiabilidad').value]}</td><td>${document.getElementById('fair-seguro-retraso').value} días</td></tr>
+                        <tr><td>Evitar</td><td>${document.getElementById('fair-evitar-costo-display').textContent}</td><td>${formatCurrency(0)}</td><td>${document.getElementById('fair-evitar-beneficio').textContent}</td><td>${fiabilidadLabelReport[document.getElementById('fair-evitar-fiabilidad').value]}</td><td>${document.getElementById('fair-evitar-retraso').value} días</td></tr>
+                        <tr><td>Aceptar / Retener</td><td>${formatCurrency(0)}</td><td>${document.getElementById('fair-aceptar-residual').textContent}</td><td>—</td><td>—</td><td>—</td></tr>
+                    </table>
+                    <p style="margin-top:8px; font-size:12px;"><strong>Justificación de aceptación (si aplica):</strong> ${sanitizeHTML(document.getElementById('fair-aceptar-justificacion').value) || '—'}</p>
+                </div>`;
+
+            const reportHTML = `
+                <div class="print-section">
+                    <h1>Reporte de Análisis de Riesgo (FAIR)</h1>
+                    <p>Generado: ${new Date().toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                </div>
+                <div class="print-section">
+                    <h2>0. Contexto Organizacional y Datos de la Apreciación</h2>
+                    <table>
+                        <tr><td><strong>Misión y Objetivos</strong></td><td>${sanitizeHTML(ctx.mision) || '—'}</td></tr>
+                        <tr><td><strong>Naturaleza del Negocio</strong></td><td>${sanitizeHTML(ctx.naturalezaNegocio) || '—'}</td></tr>
+                        <tr><td><strong>Apetito por el Riesgo</strong></td><td>${ctx.apetitoRiesgo}</td></tr>
+                        <tr><td><strong>Partes Interesadas Clave</strong></td><td>${sanitizeHTML(ctx.partesInteresadas) || '—'}</td></tr>
+                        <tr><td><strong>Entorno Legal/Regulatorio</strong></td><td>${sanitizeHTML(ctx.entornoLegal) || '—'}</td></tr>
+                        <tr><td><strong>Alcance de la Cadena de Suministro Cubierta</strong></td><td>${sanitizeHTML(ctx.alcanceCadenaSuministro) || '—'}</td></tr>
+                        <tr><td><strong>Apreciador / Analista Responsable</strong></td><td>${assessor}</td></tr>
+                        <tr><td><strong>Fecha de esta Apreciación</strong></td><td>${assessmentDate}</td></tr>
+                        <tr><td><strong>Lugar / Ubicación Apreciada</strong></td><td>${assessmentLocation}</td></tr>
+                    </table>
+                </div>
+                <div class="print-section">
+                    <h2>1. Alcance del Riesgo</h2>
+                    <table>
+                        <tr><td><strong>Escenario</strong></td><td>${riskName}</td></tr>
+                        <tr><td><strong>Activo Afectado</strong></td><td>${asset}</td></tr>
+                        <tr><td><strong>Agente de Amenaza</strong></td><td>${threat}</td></tr>
+                        <tr><td><strong>Efecto / Pérdida</strong></td><td>${effectLabel}</td></tr>
+                        <tr><td><strong>Tipo de Riesgo</strong></td><td>${riskTypeLabel}</td></tr>
+                        <tr><td><strong>Horizonte Temporal</strong></td><td>${timeHorizon} año(s)</td></tr>
+                    </table>
+                </div>
+                <div class="print-section">
+                    <h2>2. Gobernanza y Calidad de la Información</h2>
+                    <table>
+                        <tr><td><strong>Dueño del Riesgo</strong></td><td>${owner}</td></tr>
+                        <tr><td><strong>Próxima Fecha de Revisión</strong></td><td>${reviewDate}</td></tr>
+                        <tr><td><strong>Fuente de los Datos</strong></td><td>${dataSourceLabel}</td></tr>
+                        <tr><td><strong>Nivel de Confianza</strong></td><td>${dataConfidenceLabel}</td></tr>
+                        <tr><td><strong>Notas / Justificación</strong></td><td>${dataNotes}</td></tr>
+                        <tr><td><strong>Plan de Seguridad / Medidas Vigentes</strong></td><td>${securityPlan}</td></tr>
+                    </table>
+                </div>
+                <div class="print-section">
+                    <h2>3. Perfil de Atacante y Defensa</h2>
+                    <table>
+                        <tr><td>Perfil de Atacante</td><td>${attackerProfile.name || '—'} (Factor de Amenaza: ${(state.fair.attackerScore || 0).toFixed(1)}%)</td></tr>
+                        <tr><td>Nivel de Defensa</td><td>${defenseProfile.name || '—'} (${(state.fair.defenseScore || 0).toFixed(1)}%)</td></tr>
+                    </table>
+                </div>
+                <div class="print-section">
+                    <h2>4. Frecuencia y Vulnerabilidad</h2>
+                    <table>
+                        <tr><th></th><th>Mín</th><th>Más Probable</th><th>Máx</th></tr>
+                        <tr><td>Frecuencia de Evento de Amenaza (contactos/año)</td><td>${tef.min}</td><td>${tef.mode}</td><td>${tef.max}</td></tr>
+                        <tr><td>Vulnerabilidad (%)</td><td>${vuln.min}%</td><td>${vuln.mode}%</td><td>${vuln.max}%</td></tr>
+                    </table>
+                </div>
+                <div class="print-section">
+                    <h2>5. Magnitud de Pérdida por Categoría</h2>
+                    <table>
+                        <tr><th>Categoría</th><th>Mín</th><th>Más Probable</th><th>Máx</th></tr>
+                        ${lossRowsHTML}
+                    </table>
+                </div>
+                <div class="print-section">
+                    <h2>6. Resultados de la Simulación Monte Carlo (${state.config.SIMULATION_ITERATIONS.toLocaleString('es-MX')} iteraciones, semilla: ${state.fair.lastSeed || '—'})</h2>
+                    <table>
+                        <tr><td>Pérdida Anual Promedio (ALE)</td><td>${document.getElementById('ale-result').textContent}</td></tr>
+                        <tr><td>Pérdida Anual Mediana (P50)</td><td>${document.getElementById('median-loss-result').textContent}</td></tr>
+                        <tr><td>Pérdida Mínima Simulada</td><td>${document.getElementById('min-loss-result').textContent}</td></tr>
+                        <tr><td>Pérdida Máxima Simulada</td><td>${document.getElementById('max-loss-result').textContent}</td></tr>
+                        <tr><td>Peor 10% de los casos (P90)</td><td>${document.getElementById('percentile-90-result').textContent}</td></tr>
+                        <tr><td>CVaR 95% (Expected Shortfall)</td><td>${document.getElementById('cvar-95-result').textContent}</td></tr>
+                        <tr><td>${document.getElementById('prob-threshold-label').textContent}</td><td>${document.getElementById('prob-threshold-result').textContent}</td></tr>
+                    </table>
+                    ${chartImg ? `<img src="${chartImg}" alt="Distribución de Pérdida Anual">` : ''}
+                </div>
+                <div class="print-section">
+                    <h2>7. Evaluación del Riesgo (contra Criterios de Riesgo definidos)</h2>
+                    <table>
+                        <tr><td><strong>Clasificación</strong></td><td>${state.fair.lastEvaluation ? state.fair.lastEvaluation.level : 'No evaluado'}</td></tr>
+                        <tr><td><strong>Justificación</strong></td><td>${state.fair.lastEvaluation ? state.fair.lastEvaluation.justification : ''}</td></tr>
+                    </table>
+                </div>
+                <div class="print-section">
+                    <h2>8. Análisis de Sensibilidad</h2>
+                    <table>
+                        <tr><th>Variable</th><th>Correlación con el resultado</th></tr>
+                        ${(state.fair.lastSensitivity || []).slice(0, 8).map(s =>
+                            `<tr><td>${s.name}</td><td>${(s.correlation * 100).toFixed(1)}%</td></tr>`
+                        ).join('')}
+                    </table>
+                </div>
+                ${treatmentHTML}
+                <div class="print-section" style="margin-top:24px; border-top:1px solid #999; padding-top:8px;">
+                    <p style="font-size:11px; color:#555;">Este documento contiene información confidencial de análisis de riesgo. Su distribución debe limitarse a las personas autorizadas por la organización apreciada.</p>
+                </div>
+            `;
+
+            document.getElementById('fair-print-report').innerHTML = reportHTML;
+            window.print();
+        },
+
         exportConsolidatedReport() {
             const register = state.fair.riskRegister;
             if (!register || register.length === 0) {
@@ -4430,262 +4706,23 @@ document.addEventListener('DOMContentLoaded', () => {
             window.print();
         },
 
-        persistFairAnalysis() {
-            try {
-                const chart = state.fair.fairResultsChart;
-                if (!chart) return;
-                const lossFormsKeys = LOSS_FORMS_KEYS;
-                const lossForms = {};
-                lossFormsKeys.forEach(key => {
-                    lossForms[key] = {
-                        min: document.getElementById(`lm-${key}-min`).value,
-                        mode: document.getElementById(`lm-${key}-mode`).value,
-                        max: document.getElementById(`lm-${key}-max`).value,
-                    };
-                });
+    };
 
-                const data = {
-                    timestamp: Date.now(),
-                    riskName: document.getElementById('fair-riskName').value,
-                    asset: document.getElementById('fair-asset').value,
-                    threat: document.getElementById('fair-threat').value,
-                    effect: document.getElementById('fair-effect').value,
-                    riskType: document.getElementById('fair-risk-type').value,
-                    timeHorizon: document.getElementById('fair-time-horizon').value,
-                    owner: document.getElementById('fair-owner').value,
-                    reviewDate: document.getElementById('fair-review-date').value,
-                    assessor: document.getElementById('fair-assessor').value,
-                    assessmentDate: document.getElementById('fair-assessment-date').value,
-                    assessmentLocation: document.getElementById('fair-assessment-location').value,
-                    dataSource: document.getElementById('fair-data-source').value,
-                    dataConfidence: document.getElementById('fair-data-confidence').value,
-                    dataNotes: document.getElementById('fair-data-notes').value,
-                    securityPlan: document.getElementById('fair-security-plan').value,
-                    attackerKey: document.getElementById('fair-attacker-profile').value,
-                    defenseKey: document.getElementById('fair-defense-profile').value,
-                    isDeliberate: document.getElementById('fair-deliberate-threat').checked,
-                    deliberateThreatPonderation: document.getElementById('fair-deliberate-ponderation').value,
-                    tef: {
-                        min: document.getElementById('tef-min').value,
-                        mode: document.getElementById('tef-mode').value,
-                        max: document.getElementById('tef-max').value,
-                    },
-                    vuln: {
-                        min: document.getElementById('vuln-min').value,
-                        mode: document.getElementById('vuln-mode').value,
-                        max: document.getElementById('vuln-max').value,
-                    },
-                    vulnManualOverride: document.getElementById('vuln-manual-override').checked,
-                    lossForms: lossForms,
-                    lmManualOverride: document.getElementById('lm-manual-override').checked,
-                    costoControlAnual: document.getElementById('fair-costoControlAnual').value,
-                    reduccionALE: document.getElementById('fair-reduccionALE').value,
-                    mitigarDefensaObjetivo: document.getElementById('fair-mitigar-defensa-objetivo').value,
-                    reduccionALEManualOverride: document.getElementById('fair-reduccionALE-manual-override').checked,
-                    seguroPrima: document.getElementById('fair-seguro-prima').value,
-                    seguroDeducible: document.getElementById('fair-seguro-deducible').value,
-                    seguroLimite: document.getElementById('fair-seguro-limite').value,
-                    seguroSinLimite: document.getElementById('fair-seguro-sin-limite').checked,
-                    evitarCosto: document.getElementById('fair-evitar-costo').value,
-                    mitigarFiabilidad: document.getElementById('fair-mitigar-fiabilidad').value,
-                    mitigarRetraso: document.getElementById('fair-mitigar-retraso').value,
-                    seguroFiabilidad: document.getElementById('fair-seguro-fiabilidad').value,
-                    seguroRetraso: document.getElementById('fair-seguro-retraso').value,
-                    evitarFiabilidad: document.getElementById('fair-evitar-fiabilidad').value,
-                    evitarRetraso: document.getElementById('fair-evitar-retraso').value,
-                    aceptarJustificacion: document.getElementById('fair-aceptar-justificacion').value,
-                    lastSeed: state.fair.lastSeed || null,
-                    reviewHistory: state.fair.reviewHistory || [],
-                    results: {
-                        ale: document.getElementById('ale-result').textContent,
-                        median: document.getElementById('median-loss-result').textContent,
-                        min: document.getElementById('min-loss-result').textContent,
-                        max: document.getElementById('max-loss-result').textContent,
-                        p90: document.getElementById('percentile-90-result').textContent,
-                        cvar95: document.getElementById('cvar-95-result').textContent,
-                        probThresholdLabel: document.getElementById('prob-threshold-label').textContent,
-                        probThresholdValue: document.getElementById('prob-threshold-result').textContent,
-                        simulatedALE: state.fair.simulatedALE,
-                        chartLabels: chart.data.labels,
-                        chartData: chart.data.datasets[0].data,
-                        currency: state.quickUI.domElements.inputs.currencySelect.value,
-                        evaluation: state.fair.lastEvaluation || null,
-                        sensitivity: state.fair.lastSensitivity || null,
-                        annualLosses: state.fair.lastAnnualLosses || null,
-                    },
-                };
-                localStorage.setItem('fairLastAnalysis', JSON.stringify(data));
-                // Plantilla reutilizable: a diferencia de fairLastAnalysis, esta NO se borra al
-                // reiniciar el formulario — sirve como base para "Duplicar como Plantilla".
-                localStorage.setItem('fairAnalysisTemplate', JSON.stringify(data));
-            } catch (e) {
-                console.error('No se pudo guardar el análisis FAIR en el navegador:', e);
-            }
+    // App.FairAnalysis — fachada delgada: solo orquesta el orden de arranque y
+    // reexpone (sin lógica propia) los 3 métodos que otros módulos (App.UIMode,
+    // App.Navigation, App.QuickAnalysis) siguen llamando por este nombre. Toda
+    // la lógica real vive en FairWizard/FairRegister/FairExport de arriba.
+    App.FairAnalysis = {
+        init() {
+            App.FairWizard.populateLossMagnitudeForms();
+            App.FairWizard.bindEvents();
+            App.FairRegister.loadRiskRegister(false);
+            const restored = App.FairWizard.restoreFairAnalysis();
+            if (!restored) App.FairWizard.applyOrgDefaults();
         },
-
-        restoreFairAnalysis() {
-            try {
-                const raw = localStorage.getItem('fairLastAnalysis');
-                if (!raw) return false;
-                const data = JSON.parse(raw);
-
-                document.getElementById('fair-riskName').value = data.riskName || '';
-                document.getElementById('fair-asset').value = data.asset || '';
-                document.getElementById('fair-threat').value = data.threat || '';
-                document.getElementById('fair-effect').value = data.effect || 'confidentiality';
-                document.getElementById('fair-risk-type').value = data.riskType || 'amenaza';
-                document.getElementById('fair-time-horizon').value = data.timeHorizon || '1';
-                this.toggleRiskTypeLabels();
-                document.getElementById('fair-owner').value = data.owner || App.OrgDefaults.defaults.owner;
-                document.getElementById('fair-review-date').value = data.reviewDate || '';
-                document.getElementById('fair-assessor').value = data.assessor || '';
-                document.getElementById('fair-assessment-date').value = data.assessmentDate || '';
-                document.getElementById('fair-assessment-location').value = data.assessmentLocation || '';
-                document.getElementById('fair-data-source').value = data.dataSource || 'experto-sin-calibrar';
-                document.getElementById('fair-data-confidence').value = data.dataConfidence || 'medio';
-                document.getElementById('fair-data-notes').value = data.dataNotes || '';
-                document.getElementById('fair-security-plan').value = data.securityPlan || '';
-                document.getElementById('fair-attacker-profile').value = data.attackerKey || 'empleado-desleal';
-                document.getElementById('fair-defense-profile').value = data.defenseKey || 'estandar';
-                document.getElementById('fair-deliberate-threat').checked = !!data.isDeliberate;
-                document.getElementById('fair-deliberate-ponderation-container').classList.toggle('hidden', !data.isDeliberate);
-                const ponderacion = parseFloat(data.deliberateThreatPonderation) || 0.7;
-                document.getElementById('fair-deliberate-ponderation').value = ponderacion;
-                document.getElementById('fair-deliberate-ponderation-value').textContent = `x${ponderacion.toFixed(2)}`;
-                this.updateAttackerDefenseSummary();
-
-                if (data.tef) {
-                    document.getElementById('tef-min').value = data.tef.min;
-                    document.getElementById('tef-mode').value = data.tef.mode;
-                    document.getElementById('tef-max').value = data.tef.max;
-                    // Ya es un dato real restaurado — que la sugerencia automática (todavía en
-                    // vuelo desde el updateAttackerDefenseSummary() de arriba) no lo pise.
-                    state.fair.tefManuallyEdited = true;
-                }
-                if (data.vuln) {
-                    document.getElementById('vuln-min').value = data.vuln.min;
-                    document.getElementById('vuln-mode').value = data.vuln.mode;
-                    document.getElementById('vuln-max').value = data.vuln.max;
-                    this.setVulnManualOverride(!!data.vulnManualOverride);
-                }
-                if (data.lossForms) {
-                    this.setLossMagnitudeManualOverride(!!data.lmManualOverride);
-                    Object.entries(data.lossForms).forEach(([key, vals]) => {
-                        const minEl = document.getElementById(`lm-${key}-min`);
-                        const modeEl = document.getElementById(`lm-${key}-mode`);
-                        const maxEl = document.getElementById(`lm-${key}-max`);
-                        if (minEl) minEl.value = vals.min;
-                        if (modeEl) modeEl.value = vals.mode;
-                        if (maxEl) maxEl.value = vals.max;
-                    });
-                }
-                document.getElementById('fair-costoControlAnual').value = data.costoControlAnual || '0';
-                document.getElementById('fair-reduccionALE').value = data.reduccionALE || '0';
-                document.getElementById('fair-mitigar-defensa-objetivo').value = data.mitigarDefensaObjetivo || 'basica';
-                document.getElementById('fair-reduccionALE-manual-override').checked = !!data.reduccionALEManualOverride;
-                document.getElementById('fair-reduccionALE').readOnly = !data.reduccionALEManualOverride;
-                document.getElementById('fair-reduccionALE').classList.toggle('bg-gray-100', !data.reduccionALEManualOverride);
-                document.getElementById('fair-reduccionALE-explanation').classList.toggle('hidden', !!data.reduccionALEManualOverride);
-                document.getElementById('fair-seguro-prima').value = data.seguroPrima || '0';
-                document.getElementById('fair-seguro-deducible').value = data.seguroDeducible || '0';
-                document.getElementById('fair-seguro-limite').value = data.seguroLimite || '0';
-                document.getElementById('fair-seguro-sin-limite').checked = !!data.seguroSinLimite;
-                document.getElementById('fair-seguro-limite').disabled = !!data.seguroSinLimite;
-                document.getElementById('fair-seguro-limite').classList.toggle('bg-gray-100', !!data.seguroSinLimite);
-                document.getElementById('fair-evitar-costo').value = data.evitarCosto || '0';
-                document.getElementById('fair-mitigar-fiabilidad').value = data.mitigarFiabilidad || 'media';
-                document.getElementById('fair-mitigar-retraso').value = data.mitigarRetraso || '0';
-                document.getElementById('fair-seguro-fiabilidad').value = data.seguroFiabilidad || 'media';
-                document.getElementById('fair-seguro-retraso').value = data.seguroRetraso || '0';
-                document.getElementById('fair-evitar-fiabilidad').value = data.evitarFiabilidad || 'alta';
-                document.getElementById('fair-evitar-retraso').value = data.evitarRetraso || '0';
-                document.getElementById('fair-aceptar-justificacion').value = data.aceptarJustificacion || '';
-
-                if (data.results) {
-                    document.getElementById('ale-result').textContent = data.results.ale;
-                    document.getElementById('median-loss-result').textContent = data.results.median;
-                    document.getElementById('min-loss-result').textContent = data.results.min;
-                    document.getElementById('max-loss-result').textContent = data.results.max;
-                    document.getElementById('percentile-90-result').textContent = data.results.p90;
-                    document.getElementById('cvar-95-result').textContent = data.results.cvar95;
-                    document.getElementById('prob-threshold-label').textContent = data.results.probThresholdLabel;
-                    document.getElementById('prob-threshold-result').textContent = data.results.probThresholdValue;
-                    state.fair.simulatedALE = data.results.simulatedALE || 0;
-                    state.fair.lastAnnualLosses = data.results.annualLosses || null;
-
-                    if (data.results.evaluation) {
-                        state.fair.lastEvaluation = data.results.evaluation;
-                        const banner = document.getElementById('fair-evaluation-banner');
-                        banner.className = `p-4 rounded-lg mb-6 border-l-4 ${severityToClasses(data.results.evaluation.severity)}`;
-                        banner.innerHTML = `
-                            <p class="font-bold text-lg">Evaluación: ${data.results.evaluation.level}</p>
-                            <p class="text-sm mt-1">${data.results.evaluation.justification}</p>
-                        `;
-                    }
-
-                    if (data.results.sensitivity) {
-                        state.fair.lastSensitivity = data.results.sensitivity;
-                        this.renderSensitivity(data.results.sensitivity);
-                    }
-
-                    if (data.lastSeed) {
-                        state.fair.lastSeed = data.lastSeed;
-                        document.getElementById('fair-seed-used').textContent = `Semilla usada: ${data.lastSeed} (anótala para reproducir exactamente esta corrida)`;
-                    }
-                    if (Array.isArray(data.reviewHistory)) {
-                        state.fair.reviewHistory = data.reviewHistory;
-                        document.getElementById('fair-review-history-body').innerHTML = data.reviewHistory.map(entry =>
-                            `<tr class="border-b"><td class="py-1">${entry.date}</td><td>${entry.ale}</td><td>${entry.evaluationLevel}</td></tr>`
-                        ).join('');
-                        document.getElementById('fair-review-history-container').classList.toggle('hidden', data.reviewHistory.length < 2);
-                    }
-
-                    document.getElementById('simulation-results-container').classList.remove('hidden');
-                    document.getElementById('fair-roi-section').classList.remove('hidden');
-                    document.getElementById('fair-export-report-btn').classList.remove('hidden');
-
-                    const ctx = document.getElementById('fair-results-chart').getContext('2d');
-                    if (state.fair.fairResultsChart) state.fair.fairResultsChart.destroy();
-                    const currency = data.results.currency || 'USD';
-                    state.fair.fairResultsChart = new Chart(ctx, {
-                        type: 'bar',
-                        data: {
-                            labels: data.results.chartLabels,
-                            datasets: [{
-                                label: 'Frecuencia de Pérdida Anual',
-                                data: data.results.chartData,
-                                backgroundColor: 'rgba(54, 162, 235, 0.6)',
-                                borderColor: 'rgba(54, 162, 235, 1)',
-                                borderWidth: 1
-                            }]
-                        },
-                        options: {
-                            responsive: true, maintainAspectRatio: false,
-                            scales: {
-                                y: { beginAtZero: true, title: { display: true, text: 'Nº de Simulaciones' } },
-                                x: { title: { display: true, text: `Pérdida Anual Estimada (miles de ${currency})` }, ticks: { autoSkip: true, maxRotation: 45, minRotation: 45 } }
-                            },
-                            plugins: {
-                                tooltip: {
-                                    callbacks: {
-                                        title: (context) => `Rango de Pérdida: ~${context[0].label}`,
-                                        label: (context) => `Simulaciones: ${context.parsed.y}`
-                                    }
-                                }
-                            }
-                        }
-                    });
-
-                    this.updateTreatmentView();
-                    this.navigateWizard(4, true);
-                    showToast('Se restauró tu último análisis FAIR guardado en este navegador.');
-                }
-                return true;
-            } catch (e) {
-                console.error('No se pudo restaurar el análisis FAIR guardado:', e);
-                return false;
-            }
-        }
+        loadRiskRegister(render = true) { return App.FairRegister.loadRiskRegister(render); },
+        renderSensitivity(sensitivity) { return App.FairWizard.renderSensitivity(sensitivity); },
+        receiveData(data) { return App.FairWizard.receiveData(data); },
     };
 
     // Start the application
