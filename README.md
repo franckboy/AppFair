@@ -25,3 +25,7 @@ cd backend && npm install && npm start   # arranca en http://localhost:3000, imp
 Abre `frontend/app_fair.html` directamente en el navegador (no necesita servidor propio) y,
 en el botón **Conexión API** de la esquina superior, ingresa la URL del backend (por defecto
 `http://localhost:3000`) y la API key que te imprimió la consola al arrancar.
+
+## Licencia
+
+[MIT](LICENSE).

@@ -4,6 +4,7 @@ require('dotenv').config();
 const crypto = require('crypto');
 const express = require('express');
 const cors = require('cors');
+const rateLimit = require('express-rate-limit');
 
 const { JsonStore } = require('./src/store/jsonStore');
 const { createApiKeyAuth } = require('./src/middleware/apiKeyAuth');
@@ -28,8 +29,26 @@ if (!apiKey) {
     console.warn('   Define API_KEY en tu .env (ver .env.example) para producción o para que no cambie al reiniciar.');
 }
 
-app.use(cors());
+// Sin ALLOWED_ORIGIN, CORS queda abierto a cualquier origen (igual que antes) — cómodo para
+// desarrollo local, pero hay que restringirlo al dominio real del frontend antes de publicar.
+const allowedOrigins = (process.env.ALLOWED_ORIGIN || '').split(',').map((s) => s.trim()).filter(Boolean);
+if (allowedOrigins.length === 0) {
+    console.warn('⚠️  ALLOWED_ORIGIN no configurada — CORS está abierto a cualquier origen. Está bien para desarrollo local; antes de publicar el frontend en un dominio real, define ALLOWED_ORIGIN en tu .env (ver .env.example).');
+}
+app.use(cors(allowedOrigins.length > 0 ? { origin: allowedOrigins } : undefined));
+
 app.use(express.json({ limit: '2mb' })); // 2mb por si el cliente reenvía annualLosses (10,000 números)
+
+// Límite general de peticiones por IP — antes no había ninguno. Se aplica antes de la
+// autenticación a propósito, para que también frene intentos de adivinar la API key a fuerza
+// bruta, no solo el uso normal de la API ya autenticada.
+app.use('/api', rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 300,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Demasiadas peticiones desde esta IP. Intenta de nuevo en unos minutos.' },
+}));
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok', service: 'motor-riesgos-fair-backend' }));
 

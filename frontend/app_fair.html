@@ -4,14 +4,27 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gestión de Riesgos Empresariales con FAIR</title>
-    <!-- Tailwind CSS for styling -->
-    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Tailwind CSS for styling. Versión fija (antes sin pin => "latest" silencioso). -->
+    <script src="https://cdn.tailwindcss.com/3.4.14"></script>
     <!-- Font Awesome for icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- Chart.js for data visualization -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Chart.js for data visualization. Versión fija (antes sin pin => "latest" silencioso). -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
     <!-- html2canvas for exporting charts as images -->
     <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+    <!--
+      Nota de seguridad (pendiente, no se pudo completar en este entorno): a estos 4 recursos
+      les falta el atributo integrity (Subresource Integrity) — hoy, si alguno de estos CDN
+      fuera comprometido, ejecutaría código arbitrario en esta app. Las versiones ya quedaron
+      fijas arriba (primer paso necesario para SRI), pero calcular el hash real requiere
+      descargar el archivo exacto; el entorno donde se hizo este cambio no tiene salida de red
+      hacia cdn.tailwindcss.com, cdn.jsdelivr.net ni cdnjs.cloudflare.com. Para completarlo,
+      desde una máquina con internet, por cada recurso: pipear su contenido (curl -s a la URL)
+      a "openssl dgst -sha384 -binary | openssl base64 -A" y agregar el resultado como
+      integrity="sha384-(hash)" crossorigin="anonymous" en la etiqueta correspondiente (o usar
+      la interfaz de https://www.srihash.org/ como alternativa).
+    -->
+
     <style>
         @tailwind base;
         @tailwind components;

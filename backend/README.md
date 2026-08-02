@@ -14,7 +14,7 @@ servidor.
 npm install
 npm start          # arranca en http://localhost:3000
 npm run dev         # con recarga automática al guardar cambios
-npm test            # corre las 13 pruebas automatizadas del motor de cálculo
+npm test            # corre las 15 pruebas automatizadas del motor de cálculo
 ```
 
 Variables de entorno (vía `.env` — copia `.env.example` — o el entorno del sistema):
@@ -22,14 +22,14 @@ Variables de entorno (vía `.env` — copia `.env.example` — o el entorno del 
 - `API_KEY` — requerida para producción (ver "Autenticación" abajo). Si no la defines, el
   servidor genera una temporal en cada arranque y la imprime en consola, solo para poder
   probar en local sin fricción.
+- `ALLOWED_ORIGIN` — dominio(s) permitidos para CORS, separados por coma (ej.
+  `https://tuusuario.github.io`). Si no la defines, CORS queda abierto a cualquier origen
+  (cómodo en local; restríngela antes de publicar el frontend en un dominio real).
 
 ## Autenticación
 
 Todos los endpoints bajo `/api/` (excepto `/api/health`) exigen el header `X-API-Key` con
-el valor de tu `API_KEY`. Sin esto, cualquier origen que alcanzara el servidor podía leer y
-escribir los Criterios de Riesgo, el Contexto Organizacional y el Registro de Riesgos sin
-ninguna credencial — CORS está abierto (`cors()` sin restricción de origen), así que la
-API key es la única barrera real hoy.
+el valor de tu `API_KEY`.
 
 ```bash
 curl http://localhost:3000/api/config/criteria -H "X-API-Key: tu-api-key"
@@ -38,6 +38,10 @@ curl http://localhost:3000/api/config/criteria -H "X-API-Key: tu-api-key"
 Una petición sin el header, o con una key incorrecta, responde `401`. Esto **no** es un
 sistema de auth completo (no hay usuarios, roles ni expiración) — para multiusuario real,
 reemplázalo por JWT/OAuth antes de exponerlo fuera de tu red de confianza.
+
+También hay un límite general de 300 peticiones cada 15 minutos por IP en todo `/api/*`
+(incluye intentos fallidos de autenticación, a propósito — frena tanto abuso normal como
+fuerza bruta contra la API key). Pasado el límite, responde `429`.
 
 ## Persistencia
 
