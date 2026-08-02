@@ -334,7 +334,7 @@
                                         ¿Es una amenaza deliberada (con intención propia, no accidental)?
                                     </label>
                                 </div>
-                                <div id="fair-deliberate-ponderation-container" class="input-group hidden">
+                                <div id="fair-deliberate-ponderation-container" class="input-group hidden advanced-only">
                                     <label for="fair-deliberate-ponderation" class="flex justify-between items-center">
                                         Sensibilidad del ajuste: <span id="fair-deliberate-ponderation-value" class="slider-value">x0.70</span>
                                     </label>
@@ -342,34 +342,30 @@
                                     <p class="description-text">Qué tanto peso le das a la diferencia Atacante-Defensa al sugerir la frecuencia. 0 = sin ajuste, 2 = ajuste máximo.</p>
                                 </div>
                                 <div id="fair-attacker-defense-summary" class="mt-4 p-3 bg-white rounded-md border border-gray-200 text-sm"></div>
-                                <div class="mt-3 flex flex-wrap items-center gap-3">
-                                    <button type="button" id="fair-apply-suggestion-btn" class="btn btn-secondary text-sm">
-                                        <i class="fas fa-magic mr-2"></i>Sugerir rango de Frecuencia según Motivación/Persistencia del atacante
-                                    </button>
-                                    <span class="description-text">No sobrescribe nada hasta que hagas clic. No usa tu Nivel de Defensa — eso ya está en Vulnerabilidad, para no descontarlo dos veces.</span>
-                                </div>
-                                <p class="description-text mt-2">La Vulnerabilidad (Paso 2) ya usa tu Nivel de Defensa. Este botón solo ajusta la Frecuencia — cuántas veces lo intentan, no si tienen éxito.</p>
+                                <p class="description-text mt-2">La Vulnerabilidad (más abajo) ya usa tu Nivel de Defensa. Estos dos controles solo ajustan la Frecuencia — cuántas veces lo intentan, no si tienen éxito.</p>
                             </div>
 
                             <div class="fair-section">
                                 <h4><span id="tef-header">Frecuencia de Evento de Amenaza</span> <i id="tef-info" class="fas fa-info-circle text-blue-500 cursor-pointer ml-1" title="La cantidad de veces que un agente de amenaza entra en contacto con un activo. Ej: 100 intentos de phishing por año."></i></h4>
+                                <p class="description-text mb-2">Te dejamos un punto de partida sugerido según el Perfil de Atacante que elegiste arriba — ajústalo libremente si conoces un dato mejor (histórico, benchmark del sector, etc.); no hay una forma automática de saberlo con certeza, así que el número final es tu criterio.</p>
                                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                                     <div class="input-group">
                                         <label for="tef-min" id="tef-min-label">Contacto/Año (Mín)</label>
-                                        <input type="number" id="tef-min" class="form-input fair-range-input" data-min="true" value="10" min="0" oninput="validity.valid||(value='');">
+                                        <input type="number" id="tef-min" class="form-input fair-range-input" data-min="true" value="5" min="0" oninput="validity.valid||(value='');">
                                         <span id="tef-min-error" class="error-message hidden" aria-live="polite"></span>
                                     </div>
                                     <div class="input-group">
                                         <label for="tef-mode" id="tef-mode-label">Contacto/Año (Más Probable)</label>
-                                        <input type="number" id="tef-mode" class="form-input fair-range-input" data-mode="true" value="50" min="0" oninput="validity.valid||(value='');">
+                                        <input type="number" id="tef-mode" class="form-input fair-range-input" data-mode="true" value="10" min="0" oninput="validity.valid||(value='');">
                                         <span id="tef-mode-error" class="error-message hidden" aria-live="polite"></span>
                                     </div>
                                     <div class="input-group">
                                         <label for="tef-max" id="tef-max-label">Contacto/Año (Máx)</label>
-                                        <input type="number" id="tef-max" class="form-input fair-range-input" data-max="true" value="100" min="0" oninput="validity.valid||(value='');">
+                                        <input type="number" id="tef-max" class="form-input fair-range-input" data-max="true" value="18" min="0" oninput="validity.valid||(value='');">
                                         <span id="tef-max-error" class="error-message hidden" aria-live="polite"></span>
                                     </div>
                                 </div>
+                                <p id="tef-auto-explanation" class="description-text mt-2"></p>
                             </div>
 
                             <div class="fair-section">
@@ -805,6 +801,9 @@ document.addEventListener('DOMContentLoaded', () => {
             // no bloquear "Siguiente" con datos todavía en 0 mientras la llamada al backend
             // sigue en camino (ver bindEvents()).
             pendingAutocalc: null,
+            // true en cuanto el usuario teclea directamente en TEF (ver bindEvents) — a partir de
+            // ahí suggestTefRange() deja de tocar esos campos, para no pisar un dato real.
+            tefManuallyEdited: false,
             stepValidations: {
                 1: () => document.getElementById('fair-riskName').value.trim() !== '',
                 2: () => {
@@ -2688,6 +2687,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.getElementById('tef-min').value = data.tef.min;
                 document.getElementById('tef-mode').value = data.tef.mode;
                 document.getElementById('tef-max').value = data.tef.max;
+                // Ya es un dato real restaurado — que la sugerencia automática (todavía en
+                // vuelo desde el updateAttackerDefenseSummary() de arriba) no lo pise.
+                state.fair.tefManuallyEdited = true;
             }
             if (data.vuln) {
                 document.getElementById('vuln-min').value = data.vuln.min;
@@ -2766,12 +2768,22 @@ document.addEventListener('DOMContentLoaded', () => {
                     showToast('Vulnerabilidad calculada automáticamente de nuevo.');
                 }
             });
-            document.getElementById('fair-deliberate-threat').addEventListener('change', () => this.toggleDeliberateThreatFair());
+            document.getElementById('fair-deliberate-threat').addEventListener('change', () => {
+                this.toggleDeliberateThreatFair();
+                this.suggestTefRange();
+            });
             document.getElementById('fair-risk-type').addEventListener('change', () => this.toggleRiskTypeLabels());
+            document.getElementById('fair-deliberate-ponderation').addEventListener('change', () => this.suggestTefRange());
             document.getElementById('fair-deliberate-ponderation').addEventListener('input', (e) => {
                 document.getElementById('fair-deliberate-ponderation-value').textContent = `x${parseFloat(e.target.value).toFixed(2)}`;
             });
-            document.getElementById('fair-apply-suggestion-btn').addEventListener('click', () => this.applyAttackerDefenseSuggestion());
+            // Si el usuario escribe directamente en TEF, dejamos de pisarlo con la sugerencia
+            // automática — la sugerencia es solo un punto de partida, no debe robarle el control
+            // a alguien que ya puso su propio dato. .value=... por JS no dispara 'input', así que
+            // este listener solo detecta tecleo real del usuario, nunca nuestras propias sugerencias.
+            ['tef-min', 'tef-mode', 'tef-max'].forEach(id => {
+                document.getElementById(id).addEventListener('input', () => { state.fair.tefManuallyEdited = true; });
+            });
             document.getElementById('fair-export-report-btn').addEventListener('click', () => this.exportFairReport());
             document.getElementById('fair-export-consolidated-btn').addEventListener('click', () => this.exportConsolidatedReport());
             // Escopado a Paso 2 (TEF/Vulnerabilidad) a propósito: los campos de Magnitud de
@@ -2831,6 +2843,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <p class="mt-2 ${diffClass}"><strong>Diferencial Atacante−Defensa:</strong> ${differential.toFixed(1)} puntos (${diffText})</p>
             `;
 
+            this.suggestTefRange();
             await Promise.all([this.updateVulnerabilityAuto(), this.updateReduccionALEAuto()]);
         },
 
@@ -2939,29 +2952,37 @@ document.addEventListener('DOMContentLoaded', () => {
             state.fair.isDeliberate = checked;
         },
 
-        applyAttackerDefenseSuggestion() {
+        // Punto de partida automático para TEF (Paso 2): no hay forma de calcular "cuántas veces
+        // al año" con certeza solo a partir de un perfil de atacante — eso depende del contexto
+        // real de la organización, que el software no conoce. Por eso esto es una SUGERENCIA que
+        // se recalcula sola mientras el usuario no haya tecleado su propio número (ver el listener
+        // 'input' en bindEvents que fija tefManuallyEdited), no un cálculo "verdadero" como
+        // Vulnerabilidad o Magnitud de Pérdida, que sí son derivables con la info disponible.
+        //
+        // La Frecuencia depende de qué tan motivado y persistente es el atacante — NO de tu nivel
+        // de Defensa. La Defensa ya se aplica en Vulnerabilidad (si el ataque tiene éxito); usarla
+        // también aquí contaría el mismo efecto dos veces. Un atacante "promedio" (50%) no ajusta
+        // la frecuencia base.
+        suggestTefRange() {
+            if (state.fair.tefManuallyEdited) return;
+            const attackerKey = document.getElementById('fair-attacker-profile').value;
+            const attackerProfile = state.quick.attackerProfiles[attackerKey];
+            const explanationEl = document.getElementById('tef-auto-explanation');
+            if (!attackerProfile) return;
+
             const ponderacion = getSafeNumber(document.getElementById('fair-deliberate-ponderation'));
             const isDeliberate = document.getElementById('fair-deliberate-threat').checked;
-
-            // Corrección: la Frecuencia (cuántas veces lo intentan) depende de qué tan motivado y
-            // persistente es el atacante — NO de tu nivel de Defensa. La Defensa ya se aplica en
-            // Vulnerabilidad (si el ataque tiene éxito); usarla también aquí contaba el mismo
-            // efecto dos veces. Referencia: un atacante "promedio" (50%) no ajusta la frecuencia.
-            const attackerProfile = state.quick.attackerProfiles[document.getElementById('fair-attacker-profile').value];
             const frequencyFactor = (attackerProfile.motivation + attackerProfile.persistence) / 2;
             const FF_raw = (frequencyFactor - 50) / 100;
-
             const multiplier = isDeliberate ? Math.max(0.1, 1 + (FF_raw * ponderacion)) : 1;
 
-            const currentMode = getSafeNumber(document.getElementById('tef-mode')) || 10;
-            const suggestedMode = Math.max(1, Math.round(currentMode * multiplier));
+            const BASE_MODE = 10; // punto de partida neutral (atacante "promedio", sin ajuste)
+            const suggestedMode = Math.max(1, Math.round(BASE_MODE * multiplier));
 
             document.getElementById('tef-min').value = Math.max(1, Math.round(suggestedMode * 0.5));
             document.getElementById('tef-mode').value = suggestedMode;
             document.getElementById('tef-max').value = Math.round(suggestedMode * 1.8);
-
-            this.validateAndFixRange('tef');
-            showToast('Rango de Frecuencia (TEF) sugerido según la Motivación y Persistencia del atacante.');
+            explanationEl.textContent = `Sugerido según el Perfil "${attackerProfile.name || attackerKey}"${isDeliberate ? ' y la sensibilidad de ajuste elegida' : ''} — es un punto de partida, no un cálculo exacto. Edítalo si tienes un dato mejor (histórico, benchmark del sector, etc.).`;
         },
 
         validateAndFixRange(prefix) {
@@ -3034,6 +3055,9 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('tef-min').value = Math.max(1, Math.round(tefMode * 0.2));
             document.getElementById('tef-mode').value = tefMode;
             document.getElementById('tef-max').value = Math.round(tefMode * 2);
+            // Ya viene de un dato real (Análisis Rápido) — que la sugerencia automática (todavía
+            // en vuelo desde el updateAttackerDefenseSummary() de arriba) no lo pise.
+            state.fair.tefManuallyEdited = true;
 
             // La Vulnerabilidad NO se transfiere de Análisis Rápido: ya quedó calculada arriba
             // (updateAttackerDefenseSummary, línea previa) a partir del Perfil de Atacante/Defensa
@@ -3239,9 +3263,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.getElementById('fair-sensitivity-list').innerHTML = '';
                 document.getElementById('fair-sensitivity-container').classList.add('hidden');
                 state.fair.lastSensitivity = null;
-                document.getElementById('tef-min').value = '10';
-                document.getElementById('tef-mode').value = '50';
-                document.getElementById('tef-max').value = '100';
+                document.getElementById('tef-min').value = '5';
+                document.getElementById('tef-mode').value = '10';
+                document.getElementById('tef-max').value = '18';
+                document.getElementById('tef-auto-explanation').textContent = '';
+                state.fair.tefManuallyEdited = false;
                 document.getElementById('vuln-min').value = '10';
                 document.getElementById('vuln-mode').value = '25';
                 document.getElementById('vuln-max').value = '50';
@@ -4192,6 +4218,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     document.getElementById('tef-min').value = data.tef.min;
                     document.getElementById('tef-mode').value = data.tef.mode;
                     document.getElementById('tef-max').value = data.tef.max;
+                    // Ya es un dato real restaurado — que la sugerencia automática (todavía en
+                    // vuelo desde el updateAttackerDefenseSummary() de arriba) no lo pise.
+                    state.fair.tefManuallyEdited = true;
                 }
                 if (data.vuln) {
                     document.getElementById('vuln-min').value = data.vuln.min;
