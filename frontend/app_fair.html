@@ -3277,7 +3277,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <label for="lm-${key}-mode" id="lm-${key}-mode-label">${fieldLabels.mode}</label>
                         <input type="number" id="lm-${key}-mode" class="form-input fair-range-input" data-mode="true" data-key="${key}" value="0" min="0" oninput="validity.valid||(value='');">
                     </div>
-                    <p class="text-sm text-gray-500 mt-1" id="lm-${key}-compact-summary">Mín: <span id="lm-${key}-min-display">$0</span> · Máx: <span id="lm-${key}-max-display">$0</span></p>
+                    <p class="text-sm text-gray-500 mt-1" id="lm-${key}-compact-summary">Mín: $0 · Máx: $0</p>
                     <div class="hidden grid grid-cols-1 md:grid-cols-2 gap-4 mt-2" id="lm-${key}-minmax-full">
                         <div class="input-group">
                             <label for="lm-${key}-min" id="lm-${key}-min-label">${fieldLabels.min}</label>
@@ -3295,6 +3295,7 @@ document.addEventListener('DOMContentLoaded', () => {
             document.querySelectorAll('.fair-range-input').forEach(input => {
                 if (input.dataset.key) {
                     input.addEventListener('change', async () => {
+                        let autocalcOk = true;
                         if (input.dataset.mode) {
                             // Hay que esperar a que el backend devuelva min/max antes de
                             // reordenar — si no, validateAndFixRange ordena con el min/max
@@ -3302,9 +3303,14 @@ document.addEventListener('DOMContentLoaded', () => {
                             // que el usuario acaba de escribir. Se registra en
                             // pendingAutocalc para que navigateWizard() también la espere si
                             // el usuario da clic en "Siguiente" antes de que esto termine.
-                            await this._trackPendingAutocalc(this.updateLossMagnitudeAuto(input.dataset.key));
+                            autocalcOk = await this._trackPendingAutocalc(this.updateLossMagnitudeAuto(input.dataset.key));
                         }
-                        this.validateAndFixRange(`lm-${input.dataset.key}`);
+                        // Si el cálculo falló, Mín/Máx quedaron con su valor viejo/sin relación
+                        // con el "Modo" que se acaba de escribir — reordenar esos 3 números junto
+                        // con el nuevo Modo no tiene sentido y, peor, puede pisar el Modo recién
+                        // tecleado con ese valor viejo (ver el mensaje de error que ya se mostró
+                        // en el resumen compacto en su lugar).
+                        if (autocalcOk) this.validateAndFixRange(`lm-${input.dataset.key}`);
                         this.displayFairValidationErrors();
                     });
                 }
@@ -3314,14 +3320,19 @@ document.addEventListener('DOMContentLoaded', () => {
         // Refleja el valor actual de los inputs Mín/Máx (ocultos en modo automático, ver arriba)
         // en el resumen compacto de una sola línea — se llama cada vez que esos inputs cambian
         // de valor por cualquier vía (autocálculo, restaurar borrador, plantilla, Análisis Rápido).
+        // Reconstruye el texto completo (no solo el de un <span> hijo) a propósito: mientras el
+        // cálculo está en vuelo o si falla, este mismo elemento se pisa con "Calculando…" o un
+        // mensaje de error (ver _applyLossMagnitudeAuto) — si esto dependiera de un <span> hijo
+        // fijo, ese pisado lo destruiría y el resumen se quedaría trabado en "Calculando…" para
+        // siempre, aunque el cálculo ya hubiera terminado bien.
         refreshLossMagnitudeCompactDisplay(key) {
-            const minDisplay = document.getElementById(`lm-${key}-min-display`);
-            const maxDisplay = document.getElementById(`lm-${key}-max-display`);
-            if (!minDisplay || !maxDisplay) return;
+            const summaryEl = document.getElementById(`lm-${key}-compact-summary`);
+            if (!summaryEl) return;
             const currency = state.quickUI.domElements.inputs.currencySelect.value;
             const fmt = (v) => new Intl.NumberFormat('en-US', { style: 'currency', currency, minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v);
-            minDisplay.textContent = fmt(getSafeNumber(document.getElementById(`lm-${key}-min`)));
-            maxDisplay.textContent = fmt(getSafeNumber(document.getElementById(`lm-${key}-max`)));
+            const min = fmt(getSafeNumber(document.getElementById(`lm-${key}-min`)));
+            const max = fmt(getSafeNumber(document.getElementById(`lm-${key}-max`)));
+            summaryEl.textContent = `Mín: ${min} · Máx: ${max}`;
         },
 
         refreshAllLossMagnitudeCompactDisplays() {
@@ -3331,16 +3342,21 @@ document.addEventListener('DOMContentLoaded', () => {
         // Mismo criterio que Vulnerabilidad: el usuario solo da el valor "Más Probable" y el
         // Mínimo/Máximo se derivan según su Nivel de Confianza declarado (POST
         // /api/autocalc/loss-magnitude, en batch para las 9 categorías a la vez).
+        // Devuelven `true` si Mín/Máx quedaron actualizados con un cálculo real (o si no había
+        // nada que calcular), `false` si el cálculo falló y Mín/Máx se quedaron en su valor
+        // viejo/sin relación con el "Modo" recién editado — el llamador (el listener de
+        // 'change' en populateLossMagnitudeForms) usa esto para decidir si tiene sentido
+        // reordenar Min/Modo/Max con validateAndFixRange (ver ahí el porqué).
         async updateLossMagnitudeAuto(key) {
-            if (document.getElementById('lm-manual-override').checked) return;
+            if (document.getElementById('lm-manual-override').checked) return true;
             const modeEl = document.getElementById(`lm-${key}-mode`);
-            if (!modeEl) return;
-            await this._applyLossMagnitudeAuto([key]);
+            if (!modeEl) return true;
+            return await this._applyLossMagnitudeAuto([key]);
         },
 
         async updateAllLossMagnitudeAuto() {
-            if (document.getElementById('lm-manual-override').checked) return;
-            await this._applyLossMagnitudeAuto(LOSS_FORMS_KEYS);
+            if (document.getElementById('lm-manual-override').checked) return true;
+            return await this._applyLossMagnitudeAuto(LOSS_FORMS_KEYS);
         },
 
         async _applyLossMagnitudeAuto(keys) {
@@ -3348,14 +3364,30 @@ document.addEventListener('DOMContentLoaded', () => {
             const items = keys
                 .map(key => ({ key, mode: getSafeNumber(document.getElementById(`lm-${key}-mode`)) }))
                 .filter(item => document.getElementById(`lm-${item.key}-mode`));
-            if (items.length === 0) return;
+            if (items.length === 0) return true;
+
+            // Mientras el cálculo está en vuelo (o si falla — ej. el backend gratuito de Render
+            // tardando en "despertar"), el resumen compacto de Mín/Máx no debe quedarse en
+            // silencio mostrando "$0 · $0" como si fuera un resultado real: eso es indistinguible
+            // de un error de cálculo. Mismo patrón que "Calculando…" en Vulnerabilidad/Resumen
+            // Atacante-Defensa.
+            items.forEach(({ key }) => {
+                const summaryEl = document.getElementById(`lm-${key}-compact-summary`);
+                if (summaryEl && !summaryEl.classList.contains('hidden')) summaryEl.textContent = 'Calculando…';
+            });
 
             let data;
             try {
                 data = await App.Api.request('/api/autocalc/loss-magnitude', { method: 'POST', body: { items, confidence } });
             } catch (err) {
                 showToast(err.userMessage || 'No se pudo calcular la Magnitud de Pérdida automáticamente.');
-                return;
+                items.forEach(({ key }) => {
+                    const summaryEl = document.getElementById(`lm-${key}-compact-summary`);
+                    if (summaryEl && !summaryEl.classList.contains('hidden')) {
+                        summaryEl.innerHTML = '<span class="text-red-600">No se pudo calcular — revisa tu conexión o activa "Ajustar manualmente".</span>';
+                    }
+                });
+                return false;
             }
             Object.entries(data).forEach(([key, range]) => {
                 const minEl = document.getElementById(`lm-${key}-min`);
@@ -3364,6 +3396,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (maxEl) maxEl.value = range.max;
                 this.refreshLossMagnitudeCompactDisplay(key);
             });
+            return true;
         },
 
         // Alterna entre el resumen compacto de una línea (automático — la caja de Mín/Máx
