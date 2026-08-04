@@ -80,33 +80,142 @@ const lossFormsLabels = {
 // riskProfiles arriba) — salvo, puntualmente, el dominio de "Seguridad Física y Ambiental" de
 // ISO 27001 Anexo A (perímetro/acceso físico), que es física, no cyber.
 const riskCatalog = {
+    // Dominio "Natural": el usuario compartió el plan de entregas del Catálogo Maestro
+    // AppFair (Entrega 3 — Dominio Natural, ~80 amenazas) sin un documento de contenido
+    // detallado como el de Humano — confirmó que lo arme con criterio propio. La mayoría de
+    // las "normas base" listadas en ese plan (ASIS SPC.1, ISO 27001, NIST CSF/SP 800-53,
+    // IEC 62443, MITRE ATT&CK) son de seguridad física/ciber orientadas a actores humanos, no
+    // aplican a riesgos naturales — se usan en su lugar ISO 22301 (Continuidad de Negocio,
+    // el estándar que sí cubre cómo una organización responde a este tipo de disrupciones),
+    // NFPA 1600/1144 (gestión de emergencias/incendio) e ISO 31000 donde no aplica ninguna de
+    // las anteriores. Códigos NAT-XX / NAT-XXX-NNN, mismo esquema de trazabilidad que Humano —
+    // pero completo en su totalidad por Claude, no proviene de un documento del usuario.
     'natural': {
         label: 'Natural',
+        code: 'NAT',
         categories: {
-            'hidrometeorologico': {
-                label: 'Hidrometeorológico',
-                threats: [
-                    { key: 'inundacion', name: 'Inundación', standard: 'ASIS GSRA, NFPA 1600', description: 'Entrada de agua por lluvia, desbordamiento de cuerpos de agua o falla de drenaje que daña instalaciones, inventario o equipo.' },
-                    { key: 'huracan-tormenta', name: 'Huracán / Ciclón / Tormenta Severa', standard: 'ASIS GSRA, NFPA 1600', description: 'Viento extremo, lluvia intensa o granizo que daña estructuras, techos, vehículos o interrumpe operaciones.' },
-                ],
-            },
             'geologico': {
                 label: 'Geológico',
+                code: 'NAT-01',
                 threats: [
-                    { key: 'sismo', name: 'Sismo / Terremoto', standard: 'ASIS GSRA, NFPA 1600', description: 'Movimiento telúrico que puede causar daño estructural, interrupción operativa y riesgo a la vida humana.' },
-                    { key: 'deslizamiento-tierra', name: 'Deslizamiento de Tierra', standard: 'ASIS GSRA', description: 'Movimiento de suelo o roca que puede dañar instalaciones, vías de acceso o infraestructura crítica.' },
+                    { key: 'sismo', name: 'Sismo / Terremoto', standard: 'ISO 22301, NFPA 1600', code: 'NAT-GEO-001', description: 'Movimiento telúrico que puede causar daño estructural, interrupción operativa y riesgo a la vida humana.' },
+                    { key: 'tsunami', name: 'Tsunami', standard: 'ISO 22301, NFPA 1600', code: 'NAT-GEO-002', description: 'Ola de gran tamaño generada por un sismo submarino u otra actividad geológica.' },
+                    { key: 'actividad-volcanica', name: 'Actividad Volcánica / Erupción', standard: 'ISO 22301, NFPA 1600', code: 'NAT-GEO-003', description: 'Erupción volcánica con flujo de lava, piroclastos o emisión de ceniza.' },
+                    { key: 'ceniza-volcanica', name: 'Emisión de Ceniza Volcánica', standard: 'ISO 22301', code: 'NAT-GEO-004', description: 'Caída de ceniza volcánica que afecta visibilidad, maquinaria, sistemas de ventilación y transporte.' },
+                    { key: 'deslizamiento-tierra', name: 'Deslizamiento de Tierra', standard: 'ISO 22301', code: 'NAT-GEO-005', description: 'Movimiento de suelo o roca que puede dañar instalaciones, vías de acceso o infraestructura crítica.' },
+                    { key: 'flujo-lodo', name: 'Flujo de Lodo (Lahar)', standard: 'ISO 22301', code: 'NAT-GEO-006', description: 'Corriente de lodo y escombros, típicamente asociada a actividad volcánica o lluvia intensa sobre terreno inestable.' },
+                    { key: 'subsidencia', name: 'Hundimiento de Terreno (Subsidencia)', standard: 'ISO 31000', code: 'NAT-GEO-007', description: 'Descenso gradual o súbito del nivel del suelo que puede dañar cimientos e infraestructura.' },
+                    { key: 'sumidero', name: 'Formación de Sumidero (Sinkhole)', standard: 'ISO 31000', code: 'NAT-GEO-008', description: 'Colapso súbito del terreno por disolución de roca subyacente, que puede tragar infraestructura.' },
+                    { key: 'licuefaccion-suelo', name: 'Licuefacción de Suelo', standard: 'ISO 22301', code: 'NAT-GEO-009', description: 'Pérdida de resistencia del suelo saturado durante un sismo, que puede hacer colapsar cimientos.' },
+                    { key: 'avalancha-roca', name: 'Avalancha de Roca', standard: 'ISO 31000', code: 'NAT-GEO-010', description: 'Caída súbita y masiva de rocas por una ladera, típica en zonas montañosas.' },
+                ],
+            },
+            'hidrometeorologico': {
+                label: 'Hidrometeorológico',
+                code: 'NAT-02',
+                threats: [
+                    { key: 'inundacion-pluvial', name: 'Inundación Pluvial', standard: 'ISO 22301, NFPA 1600', code: 'NAT-HID-001', description: 'Acumulación de agua por lluvia intensa que supera la capacidad de drenaje del terreno o de las instalaciones.' },
+                    { key: 'inundacion-fluvial', name: 'Inundación Fluvial', standard: 'ISO 22301, NFPA 1600', code: 'NAT-HID-002', description: 'Desbordamiento de un río o cuerpo de agua que inunda instalaciones cercanas.' },
+                    { key: 'inundacion-costera', name: 'Inundación Costera', standard: 'ISO 22301, NFPA 1600', code: 'NAT-HID-003', description: 'Entrada de agua de mar a zonas costeras por marea alta, oleaje o marea de tormenta.' },
+                    { key: 'huracan-ciclon', name: 'Huracán / Ciclón Tropical', standard: 'ISO 22301, NFPA 1600', code: 'NAT-HID-004', description: 'Sistema de viento y lluvia intensa de origen tropical que daña estructuras e interrumpe operaciones.' },
+                    { key: 'tormenta-tropical', name: 'Tormenta Tropical', standard: 'ISO 22301, NFPA 1600', code: 'NAT-HID-005', description: 'Sistema tropical de menor intensidad que un huracán, con viento fuerte y lluvia intensa sostenida.' },
+                    { key: 'tornado', name: 'Tornado', standard: 'NFPA 1600', code: 'NAT-HID-006', description: 'Columna de viento en rotación de alta velocidad que puede destruir estructuras a su paso.' },
+                    { key: 'granizada', name: 'Granizada', standard: 'ISO 22301', code: 'NAT-HID-007', description: 'Precipitación de hielo que puede dañar techos, vehículos, cristales e inventario expuesto.' },
+                    { key: 'tormenta-electrica-severa', name: 'Tormenta Eléctrica Severa', standard: 'NFPA 780, ISO 22301', code: 'NAT-HID-008', description: 'Actividad eléctrica atmosférica intensa con riesgo de rayos, sobretensión e incendio.' },
+                    { key: 'vendaval', name: 'Vendaval / Ráfaga de Viento Severa', standard: 'NFPA 1600', code: 'NAT-HID-009', description: 'Viento de alta velocidad no asociado a un ciclón que daña estructuras, techos o líneas eléctricas.' },
+                    { key: 'nevada-severa', name: 'Nevada Severa', standard: 'ISO 22301', code: 'NAT-HID-010', description: 'Acumulación intensa de nieve que interrumpe accesos, transporte y puede colapsar techos.' },
+                    { key: 'tormenta-hielo', name: 'Tormenta de Hielo', standard: 'ISO 22301', code: 'NAT-HID-011', description: 'Lluvia que se congela al contacto, formando una capa de hielo sobre estructuras, vías y líneas eléctricas.' },
+                    { key: 'sequia', name: 'Sequía', standard: 'ISO 22301', code: 'NAT-HID-012', description: 'Escasez prolongada de precipitación que afecta el suministro de agua para la operación.' },
+                    { key: 'lluvia-intensa-localizada', name: 'Lluvia Intensa Localizada', standard: 'ISO 22301', code: 'NAT-HID-013', description: 'Precipitación de corta duración pero muy alta intensidad, típica de tormentas convectivas.' },
+                    { key: 'ciclon-extratropical', name: 'Ciclón Extratropical', standard: 'ISO 22301, NFPA 1600', code: 'NAT-HID-014', description: 'Sistema de baja presión de latitudes medias con viento fuerte y lluvia o nieve sostenida.' },
                 ],
             },
             'incendio-natural': {
                 label: 'Incendio Natural',
+                code: 'NAT-03',
                 threats: [
-                    { key: 'incendio-forestal', name: 'Incendio Forestal', standard: 'ASIS GSRA, NFPA 1144', description: 'Fuego de origen natural o ambiental que se propaga hacia instalaciones o terrenos de la organización.' },
+                    { key: 'incendio-forestal', name: 'Incendio Forestal', standard: 'NFPA 1144', code: 'NAT-INC-001', description: 'Fuego de origen natural que se propaga en zonas boscosas hacia instalaciones o terrenos de la organización.' },
+                    { key: 'incendio-pastizal', name: 'Incendio de Pastizal', standard: 'NFPA 1144', code: 'NAT-INC-002', description: 'Fuego de propagación rápida en vegetación baja o pastizales cercanos a las instalaciones.' },
+                    { key: 'incendio-matorral', name: 'Incendio de Matorral', standard: 'NFPA 1144', code: 'NAT-INC-003', description: 'Fuego en vegetación arbustiva densa, con alta carga combustible.' },
+                    { key: 'propagacion-incendio-viento', name: 'Propagación de Incendio por Viento', standard: 'NFPA 1144', code: 'NAT-INC-004', description: 'Aceleración y cambio de dirección de un incendio natural por efecto del viento.' },
+                    { key: 'reignicion-incendio-forestal', name: 'Reignición de Incendio Forestal', standard: 'NFPA 1144', code: 'NAT-INC-005', description: 'Reactivación de un incendio forestal dado por controlado, por brasas o puntos calientes remanentes.' },
+                    { key: 'humo-ceniza-incendio', name: 'Humo y Ceniza de Incendio Forestal', standard: 'NFPA 1144, ISO 22301', code: 'NAT-INC-006', description: 'Deterioro de la calidad del aire y visibilidad por humo/ceniza de un incendio forestal cercano, que puede forzar cierre operativo.' },
                 ],
             },
-            'sanitario': {
-                label: 'Sanitario',
+            'biologico-sanitario': {
+                label: 'Biológico / Sanitario',
+                code: 'NAT-04',
                 threats: [
-                    { key: 'pandemia', name: 'Pandemia / Emergencia Sanitaria', standard: 'ISO 31000, NFPA 1600', description: 'Brote de enfermedad que reduce disponibilidad de personal y puede forzar cierre parcial o total de operaciones.' },
+                    { key: 'pandemia', name: 'Pandemia', standard: 'ISO 22301, NFPA 1600', code: 'NAT-BIO-001', description: 'Brote de enfermedad a escala global que reduce disponibilidad de personal y puede forzar cierre de operaciones.' },
+                    { key: 'epidemia-local', name: 'Epidemia Local', standard: 'ISO 22301, NFPA 1600', code: 'NAT-BIO-002', description: 'Brote de enfermedad concentrado en una región o comunidad que afecta al personal.' },
+                    { key: 'brote-zoonotico', name: 'Brote de Enfermedad Zoonótica', standard: 'ISO 22301', code: 'NAT-BIO-003', description: 'Enfermedad transmitida de animales a personas que se propaga entre el personal.' },
+                    { key: 'plaga-insectos', name: 'Plaga de Insectos', standard: 'ISO 22301', code: 'NAT-BIO-004', description: 'Infestación de insectos que afecta inventario, alimentos o condiciones sanitarias de las instalaciones.' },
+                    { key: 'infestacion-roedores', name: 'Infestación de Roedores', standard: 'ISO 22301', code: 'NAT-BIO-005', description: 'Presencia de roedores que daña inventario, cableado o condiciones sanitarias.' },
+                    { key: 'contaminacion-biologica-agua', name: 'Contaminación Biológica de Agua', standard: 'ISO 22301', code: 'NAT-BIO-006', description: 'Presencia de microorganismos patógenos en el suministro de agua de la organización.' },
+                    { key: 'floracion-algas-nocivas', name: 'Floración de Algas Nocivas', standard: 'ISO 22301', code: 'NAT-BIO-007', description: 'Proliferación de algas tóxicas en cuerpos de agua cercanos, que afecta el suministro o la operación.' },
+                    { key: 'enfermedad-vectores', name: 'Enfermedad Transmitida por Vectores', standard: 'ISO 22301', code: 'NAT-BIO-008', description: 'Enfermedad transmitida por mosquitos u otros vectores que afecta la disponibilidad de personal.' },
+                    { key: 'proliferacion-fauna-nociva', name: 'Proliferación de Fauna Nociva', standard: 'ISO 22301', code: 'NAT-BIO-009', description: 'Aumento no controlado de fauna silvestre que representa un riesgo sanitario o de seguridad para el personal.' },
+                    { key: 'enfermedad-agricola', name: 'Enfermedad Vegetal / Agrícola a Gran Escala', standard: 'ISO 22301', code: 'NAT-BIO-010', description: 'Brote de una plaga o enfermedad vegetal que afecta cultivos o insumos de origen agrícola de la organización.' },
+                    { key: 'contaminacion-suelo-natural', name: 'Contaminación de Suelo por Fenómeno Natural', standard: 'ISO 22301', code: 'NAT-BIO-011', description: 'Alteración biológica o química del suelo por un evento natural (ej. inundación con sedimento contaminado).' },
+                    { key: 'intoxicacion-alimentaria-natural', name: 'Intoxicación Alimentaria de Origen Natural', standard: 'ISO 22301', code: 'NAT-BIO-012', description: 'Contaminación natural (toxinas, patógenos) de alimentos que afecta al personal a gran escala.' },
+                ],
+            },
+            'oceanico-costero': {
+                label: 'Oceánico / Costero',
+                code: 'NAT-05',
+                threats: [
+                    { key: 'marea-tormenta', name: 'Marea de Tormenta (Storm Surge)', standard: 'ISO 22301, NFPA 1600', code: 'NAT-OCE-001', description: 'Elevación anormal del nivel del mar asociada a un ciclón, que inunda zonas costeras.' },
+                    { key: 'erosion-costera', name: 'Erosión Costera', standard: 'ISO 22301', code: 'NAT-OCE-002', description: 'Pérdida gradual de terreno costero por acción del oleaje y las corrientes.' },
+                    { key: 'oleaje-extremo', name: 'Oleaje Extremo', standard: 'ISO 22301', code: 'NAT-OCE-003', description: 'Olas de gran altura que dañan infraestructura costera o portuaria.' },
+                    { key: 'corriente-resaca', name: 'Corriente de Resaca Severa', standard: 'ISO 31000', code: 'NAT-OCE-004', description: 'Corriente marina fuerte que representa riesgo para personal u operaciones costeras.' },
+                    { key: 'intrusion-agua-salada', name: 'Intrusión de Agua Salada', standard: 'ISO 22301', code: 'NAT-OCE-005', description: 'Contaminación de agua dulce subterránea o superficial por agua de mar.' },
+                    { key: 'elevacion-nivel-mar', name: 'Elevación del Nivel del Mar', standard: 'ISO 31000', code: 'NAT-OCE-006', description: 'Aumento sostenido y de largo plazo del nivel del mar que incrementa el riesgo de inundación costera crónica.' },
+                    { key: 'marejada-ciclonica', name: 'Marejada Ciclónica', standard: 'ISO 22301, NFPA 1600', code: 'NAT-OCE-007', description: 'Oleaje anómalo generado por un sistema ciclónico distante.' },
+                    { key: 'colapso-linea-costa', name: 'Colapso de Línea de Costa', standard: 'ISO 22301', code: 'NAT-OCE-008', description: 'Falla estructural súbita de un acantilado o duna costera que protegía instalaciones cercanas.' },
+                ],
+            },
+            'atmosferico-severo': {
+                label: 'Atmosférico Severo',
+                code: 'NAT-06',
+                threats: [
+                    { key: 'ola-calor', name: 'Ola de Calor', standard: 'ISO 22301, NFPA 1600', code: 'NAT-ATM-001', description: 'Periodo prolongado de temperatura extrema alta que afecta al personal y a equipos sensibles.' },
+                    { key: 'ola-frio', name: 'Ola de Frío', standard: 'ISO 22301, NFPA 1600', code: 'NAT-ATM-002', description: 'Periodo prolongado de temperatura extrema baja que afecta al personal, tuberías y equipos.' },
+                    { key: 'helada', name: 'Helada', standard: 'ISO 22301', code: 'NAT-ATM-003', description: 'Descenso de temperatura bajo el punto de congelación que daña cultivos, tuberías o infraestructura expuesta.' },
+                    { key: 'neblina-densa', name: 'Neblina Densa', standard: 'ISO 31000', code: 'NAT-ATM-004', description: 'Reducción severa de visibilidad que afecta transporte, patrullaje y operaciones al aire libre.' },
+                    { key: 'tormenta-polvo-arena', name: 'Tormenta de Polvo / Arena', standard: 'ISO 22301', code: 'NAT-ATM-005', description: 'Viento que levanta partículas de suelo o arena, dañando equipo y reduciendo visibilidad.' },
+                    { key: 'calima', name: 'Calima / Contaminación Atmosférica Natural', standard: 'ISO 22301', code: 'NAT-ATM-006', description: 'Suspensión de partículas naturales en el aire (polvo, arena, ceniza) que afecta salud y visibilidad.' },
+                    { key: 'impacto-directo-rayo', name: 'Impacto Directo de Rayo', standard: 'NFPA 780', code: 'NAT-ATM-007', description: 'Descarga eléctrica atmosférica directa sobre una persona, estructura o equipo.' },
+                    { key: 'inversion-termica', name: 'Inversión Térmica Prolongada', standard: 'ISO 22301', code: 'NAT-ATM-008', description: 'Estancamiento de aire contaminado cerca del suelo que deteriora la calidad del aire de forma sostenida.' },
+                    { key: 'derecho', name: 'Viento Huracanado sin Ciclón Asociado (Derecho)', standard: 'NFPA 1600', code: 'NAT-ATM-009', description: 'Línea de tormentas que produce viento sostenido de gran intensidad en línea recta, sin rotación ciclónica.' },
+                    { key: 'granizo-severo-aislado', name: 'Granizo Severo Aislado', standard: 'ISO 22301', code: 'NAT-ATM-010', description: 'Evento de granizo de gran tamaño concentrado en un área reducida, con daño localizado intenso.' },
+                ],
+            },
+            'espacial': {
+                label: 'Espacial',
+                code: 'NAT-07',
+                threats: [
+                    { key: 'tormenta-geomagnetica', name: 'Tormenta Geomagnética / Solar', standard: 'ISO 31000', code: 'NAT-ESP-001', description: 'Perturbación del campo magnético terrestre por actividad solar, con riesgo de falla eléctrica y de telecomunicaciones.' },
+                    { key: 'eyeccion-masa-coronal', name: 'Eyección de Masa Coronal', standard: 'ISO 31000', code: 'NAT-ESP-002', description: 'Liberación masiva de plasma solar que puede afectar redes eléctricas y sistemas satelitales.' },
+                    { key: 'impacto-meteorito', name: 'Impacto de Meteorito', standard: 'ISO 31000', code: 'NAT-ESP-003', description: 'Impacto de un cuerpo celeste contra la superficie terrestre cerca de las instalaciones.' },
+                    { key: 'interrupcion-senal-satelital', name: 'Interrupción de Señal Satelital por Actividad Solar', standard: 'ISO 31000', code: 'NAT-ESP-004', description: 'Pérdida de comunicación o posicionamiento satelital por interferencia de origen solar.' },
+                    { key: 'radiacion-cosmica', name: 'Radiación Cósmica Elevada', standard: 'ISO 31000', code: 'NAT-ESP-005', description: 'Exposición anómala a radiación de origen cósmico, relevante para operaciones a gran altitud.' },
+                    { key: 'caida-desechos-espaciales', name: 'Caída de Desechos Espaciales', standard: 'ISO 31000', code: 'NAT-ESP-006', description: 'Impacto de fragmentos de satélites u otros objetos artificiales que reingresan a la atmósfera.' },
+                ],
+            },
+            'geomorfologico': {
+                label: 'Geomorfológico',
+                code: 'NAT-08',
+                threats: [
+                    { key: 'erosion-suelo', name: 'Erosión de Suelo', standard: 'ISO 22301', code: 'NAT-GEM-001', description: 'Pérdida gradual de la capa superficial del suelo por agua o viento, que compromete cimientos o accesos.' },
+                    { key: 'desertificacion', name: 'Desertificación', standard: 'ISO 31000', code: 'NAT-GEM-002', description: 'Degradación progresiva del suelo hacia condiciones áridas, con impacto de largo plazo en la operación.' },
+                    { key: 'colapso-cavernas', name: 'Colapso de Cavernas o Minas Naturales', standard: 'ISO 31000', code: 'NAT-GEM-003', description: 'Hundimiento del terreno por colapso de una cavidad natural subterránea.' },
+                    { key: 'movimiento-falla-geologica', name: 'Movimiento de Falla Geológica (Creep)', standard: 'ISO 31000', code: 'NAT-GEM-004', description: 'Desplazamiento lento y sostenido del terreno a lo largo de una falla geológica.' },
+                    { key: 'expansion-suelo-arcilloso', name: 'Expansión/Contracción de Suelo Arcilloso', standard: 'ISO 31000', code: 'NAT-GEM-005', description: 'Movimiento cíclico del suelo arcilloso por cambios de humedad, que agrieta cimientos y estructuras.' },
+                    { key: 'karstificacion', name: 'Karstificación', standard: 'ISO 31000', code: 'NAT-GEM-006', description: 'Formación de terreno kárstico por disolución de roca soluble, con riesgo de hundimientos.' },
+                    { key: 'deshielo-permafrost', name: 'Deshielo de Permafrost', standard: 'ISO 31000', code: 'NAT-GEM-007', description: 'Descongelamiento de suelo permanentemente helado, que desestabiliza cimientos e infraestructura.' },
+                    { key: 'alteracion-cauce-rio', name: 'Alteración de Cauce Natural de Río', standard: 'ISO 22301', code: 'NAT-GEM-008', description: 'Cambio en el curso natural de un río que puede exponer instalaciones a inundación o erosión.' },
+                    { key: 'dunas-migratorias', name: 'Formación de Dunas Migratorias', standard: 'ISO 31000', code: 'NAT-GEM-009', description: 'Desplazamiento de dunas de arena que puede sepultar accesos o infraestructura.' },
+                    { key: 'colapso-ribera-rio', name: 'Colapso de Ribera de Río', standard: 'ISO 22301', code: 'NAT-GEM-010', description: 'Falla súbita de la orilla de un río por socavación, que puede afectar infraestructura cercana.' },
                 ],
             },
         },
