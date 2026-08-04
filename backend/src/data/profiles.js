@@ -21,7 +21,8 @@ const defenseProfiles = {
 };
 
 // Perfiles de riesgo (Análisis Rápido): factores de vulnerabilidad e impacto
-// ponderado por tipo de riesgo.
+// ponderado por tipo de riesgo. La app calcula únicamente riesgos de
+// Seguridad Física y Patrimonial — no hay perfil de Ciberseguridad.
 const riskProfiles = {
     'seguridad-fisica': {
         name: 'Seguridad Física y Patrimonial',
@@ -29,14 +30,6 @@ const riskProfiles = {
         impactFactors: {
             'Impacto Financiero Directo (Pérdida Material)': 40, 'Impacto Operacional y de Continuidad': 25, 'Impacto Humano y Psicológico': 15,
             'Impacto Legal, Normativo y de Cumplimiento': 10, 'Impacto Reputacional (Interno y Externo)': 10,
-        },
-    },
-    'ciberseguridad': {
-        name: 'Ciberseguridad',
-        vulnerabilityFactors: ['Red Perimetral', 'Endpoints y Servidores', 'Aplicaciones y Datos', 'Conciencia del Usuario', 'Controles de Acceso Digital'],
-        impactFactors: {
-            'Impacto en Datos y Sistemas (Tecnológico/Digital)': 40, 'Impacto Operacional y de Continuidad del Negocio': 30, 'Impacto Legal, Normativo y de Cumplimiento': 15,
-            'Impacto Reputacional (Externo y de Relaciones con Stakeholders)': 10, 'Impacto Estratégico': 5,
         },
     },
 };
