@@ -118,15 +118,34 @@ function evaluateTreatmentStrategies({ currentALE, annualLosses, mitigar, transf
     results.evitar = {
         cost: evitar.cost, residualALE: 0, avoidedLoss: currentALE, netBenefit: netBenefitEvitar,
         reliability: evitar.reliability, delayDays: evitar.delayDays,
-        verdict: getInvestmentVerdict(evitar.cost, currentALE, formatCurrency),
+        // A diferencia de Mitigar/Transferir, avoidedLoss de Evitar es SIEMPRE currentALE por
+        // definición (elimina el 100% del riesgo) — con costo 0 (su default sin tocar), el
+        // getInvestmentVerdict genérico diría "SÍ conviene, sin costo capturado" como si eliminar
+        // la fuente del riesgo fuera gratis, lo cual nunca es cierto en la práctica. Se exige un
+        // costo real antes de dar cualquier veredicto, mismo criterio que en la recomendación.
+        verdict: evitar.cost > 0
+            ? getInvestmentVerdict(evitar.cost, currentALE, formatCurrency)
+            : { verdict: 'sin_datos', rosi: null, message: 'Ingresa el costo anualizado de eliminar la fuente de este riesgo para ver si conviene.' },
     };
 
     // 4. Aceptar / Retener (sin costo, sin cambio)
     results.aceptar = { cost: 0, residualALE: currentALE, avoidedLoss: 0, netBenefit: 0 };
 
-    // Recomendación: la estrategia activa (con datos capturados) con mayor beneficio neto
+    // Recomendación: la estrategia activa (con datos capturados) con mayor beneficio neto.
+    // "Evitar" es un caso especial: por definición evita el 100% del ALE actual (avoidedLoss =
+    // currentALE) SIEMPRE, sin importar si el usuario metió algún dato — a diferencia de Mitigar
+    // (avoidedLoss depende de una reducción% real) y Transferir (avoidedLoss solo es > 0 si se
+    // cargó deducible/límite/sin-límite). Sin este caso especial, "Evitar" quedaba "activa" con
+    // costo 0 (su default) y beneficio neto = 100% del ALE gratis — literalmente imposible de
+    // superar por Mitigar o Transferir — así que ganaba (o empataba) la recomendación siempre,
+    // aunque el usuario nunca hubiera tocado esa sección. Eliminar la fuente de un riesgo real
+    // nunca es gratis; se exige un costo > 0 para contarla como una opción real.
     const activeStrategies = Object.entries(results)
-        .filter(([key, r]) => key !== 'aceptar' && (r.cost > 0 || r.avoidedLoss > 0));
+        .filter(([key, r]) => {
+            if (key === 'aceptar') return false;
+            if (key === 'evitar') return r.cost > 0;
+            return r.cost > 0 || r.avoidedLoss > 0;
+        });
 
     let recommendation;
     if (activeStrategies.length === 0) {
