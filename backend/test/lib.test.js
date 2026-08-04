@@ -6,7 +6,7 @@ const assert = require('node:assert');
 const { mulberry32, getTriangularRandom } = require('../src/lib/random');
 const { runMonteCarloSimulation, summarizeLosses, pearsonCorrelation } = require('../src/lib/simulation');
 const { calculateVulnerability, calculateReduccionALE } = require('../src/lib/autocalc');
-const { calculateInsuranceRetainedALE, calculateROSI } = require('../src/lib/treatment');
+const { calculateInsuranceRetainedALE, calculateROSI, evaluateTreatmentStrategies } = require('../src/lib/treatment');
 const { evaluateFairThreat } = require('../src/lib/evaluation');
 
 test('mulberry32 es determinista: misma semilla -> misma secuencia', () => {
@@ -79,6 +79,40 @@ test('calculateInsuranceRetainedALE: cobertura ilimitada sí cubre todo el exced
 
 test('calculateROSI: costo 0 devuelve null (no está definido matemáticamente)', () => {
     assert.strictEqual(calculateROSI(0, 50000), null);
+});
+
+test('evaluateTreatmentStrategies: NO recomienda "Evitar" cuando su costo se dejó en el default (0) sin tocar', () => {
+    // Bug real encontrado: avoidedLoss de Evitar es SIEMPRE currentALE (elimina el 100% del
+    // riesgo por definición), a diferencia de Mitigar/Transferir cuyo avoidedLoss depende de
+    // datos reales — sin este chequeo, Evitar quedaba "activa" con costo 0 (su default sin
+    // tocar) y beneficio neto = 100% del ALE gratis, imposible de superar, así que ganaba la
+    // recomendación siempre aunque el usuario nunca hubiera entrado a esa sección.
+    const fmt = (n) => `$${n}`;
+    const result = evaluateTreatmentStrategies({
+        currentALE: 100000,
+        annualLosses: null,
+        mitigar: { cost: 15000, reductionPercent: 40, reliability: 'media', delayDays: 30 },
+        transferir: { premium: 0, deductible: 0, limit: 0, unlimited: false, reliability: 'media', delayDays: 0 },
+        evitar: { cost: 0, reliability: 'alta', delayDays: 0 }, // nunca tocado por el usuario
+    }, fmt);
+    assert.strictEqual(result.recommendation.strategy, 'mitigar');
+    // Mismo problema a nivel de veredicto individual: sin este chequeo, la fila de "Evitar"
+    // por sí sola mostraba "✅ SÍ conviene, sin costo capturado" — contradiciendo la
+    // recomendación general de arriba.
+    assert.strictEqual(result.evitar.verdict.verdict, 'sin_datos');
+});
+
+test('evaluateTreatmentStrategies: SÍ recomienda "Evitar" cuando tiene un costo real capturado y gana en beneficio neto', () => {
+    const fmt = (n) => `$${n}`;
+    const result = evaluateTreatmentStrategies({
+        currentALE: 100000,
+        annualLosses: null,
+        mitigar: { cost: 15000, reductionPercent: 40, reliability: 'media', delayDays: 30 },
+        transferir: { premium: 0, deductible: 0, limit: 0, unlimited: false, reliability: 'media', delayDays: 0 },
+        evitar: { cost: 5000, reliability: 'alta', delayDays: 0 },
+    }, fmt);
+    assert.strictEqual(result.recommendation.strategy, 'evitar');
+    assert.strictEqual(result.recommendation.netBenefit, 95000);
 });
 
 test('evaluateFairThreat: clasifica correctamente como Crítico por encima del umbral', () => {
