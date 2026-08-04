@@ -678,6 +678,32 @@ const riskCatalog = {
                     { key: 'incumplimiento-limpieza-precarga', name: 'Incumplimiento de Limpieza de Contenedor Pre-Carga', standard: 'C-TPAT', code: 'CTP-AGR-003', description: 'El contenedor no se limpia conforme al procedimiento antes de cargar mercancía.' },
                 ],
             },
+            // Único punto de todo el catálogo con contenido de ciberseguridad — a petición
+            // explícita del usuario ("añade ciberseguridad en este apartado para estar
+            // alineados al estándar"): el MSC de C-TPAT sí incluye Ciberseguridad como uno de
+            // sus 10 pilares oficiales desde su actualización más reciente, y dejarlo fuera
+            // hacía que este dominio (que reclama alineación con el estándar real) quedara
+            // incompleto frente a C-TPAT. Alcance acotado a los sistemas de TI que soportan la
+            // cadena de suministro física (rastreo de carga, manifiestos electrónicos,
+            // control de acceso) — no es un módulo general de ciberseguridad empresarial. El
+            // resto del catálogo (Humano, Natural, Operacional) sigue sin contenido cyber,
+            // coherente con el alcance físico/patrimonial definido para la app en general.
+            'ciberseguridad': {
+                label: 'Ciberseguridad de la Cadena de Suministro',
+                code: 'CTP-10',
+                threats: [
+                    { key: 'acceso-no-autorizado-sistemas-cadena-suministro', name: 'Acceso No Autorizado a Sistemas de Información de la Cadena de Suministro', standard: 'C-TPAT (Ciberseguridad)', code: 'CTP-CYB-001', description: 'Ingreso no autorizado a los sistemas que administran carga, manifiestos o control de acceso.' },
+                    { key: 'falta-control-contrasenas-sistemas-criticos', name: 'Falta de Control de Contraseñas en Sistemas Críticos', standard: 'C-TPAT (Ciberseguridad)', code: 'CTP-CYB-002', description: 'Contraseñas débiles, compartidas o sin cambio periódico en sistemas que soportan la cadena de suministro.' },
+                    { key: 'ausencia-parcheo-seguridad-ti', name: 'Ausencia de Parcheo de Seguridad en Sistemas de TI', standard: 'C-TPAT (Ciberseguridad)', code: 'CTP-CYB-003', description: 'Sistemas operando con vulnerabilidades conocidas por falta de actualización.' },
+                    { key: 'malware-sistema-wms-tms', name: 'Infección por Malware en Sistema de Gestión de Almacén o Transporte', standard: 'C-TPAT (Ciberseguridad)', code: 'CTP-CYB-004', description: 'Software malicioso compromete el sistema (WMS/TMS) usado para gestionar inventario o embarques.' },
+                    { key: 'manipulacion-manifiesto-electronico', name: 'Manipulación de Datos de Manifiesto Electrónico (EDI)', standard: 'C-TPAT (Ciberseguridad)', code: 'CTP-CYB-005', description: 'Alteración no autorizada de la información de carga transmitida electrónicamente entre socios comerciales.' },
+                    { key: 'uso-no-autorizado-medios-removibles', name: 'Uso No Autorizado de Medios Removibles en Sistemas Críticos', standard: 'C-TPAT (Ciberseguridad)', code: 'CTP-CYB-006', description: 'Conexión de USB u otro medio no autorizado a un sistema que administra la cadena de suministro.' },
+                    { key: 'falta-respaldo-informacion-critica', name: 'Falta de Respaldo de Información Crítica de la Cadena de Suministro', standard: 'C-TPAT (Ciberseguridad)', code: 'CTP-CYB-007', description: 'Ausencia de copias de respaldo de los datos de carga, manifiestos o trazabilidad.' },
+                    { key: 'ausencia-plan-respuesta-incidentes-ciberneticos', name: 'Ausencia de Plan de Respuesta a Incidentes Cibernéticos', standard: 'C-TPAT (Ciberseguridad)', code: 'CTP-CYB-008', description: 'No existe un procedimiento definido para responder a un incidente de seguridad de la información.' },
+                    { key: 'compromiso-credenciales-plataforma-rastreo', name: 'Compromiso de Credenciales de Acceso a Plataforma de Rastreo de Carga', standard: 'C-TPAT (Ciberseguridad)', code: 'CTP-CYB-009', description: 'Robo o filtración de las credenciales usadas para dar seguimiento a embarques en tránsito.' },
+                    { key: 'falta-segmentacion-red', name: 'Falta de Segmentación de Red entre Sistemas Operativos y Administrativos', standard: 'C-TPAT (Ciberseguridad)', code: 'CTP-CYB-010', description: 'Los sistemas que controlan acceso físico o rastreo de carga comparten red sin aislamiento con sistemas administrativos generales.' },
+                ],
+            },
         },
     },
 };
