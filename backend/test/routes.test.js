@@ -57,20 +57,25 @@ test('GET /api/config/profiles trae los 5 perfiles de atacante y 4 de defensa', 
     assert.strictEqual(Object.keys(res.body.defenseProfiles).length, 4);
 });
 
-test('GET /api/config/profiles trae el Catálogo de Riesgos con sus 5 categorías, cada riesgo con key/name/standard', async () => {
+test('GET /api/config/profiles trae el Catálogo de Riesgos en 3 niveles (Dominio > Categoría > Amenaza), cada amenaza con key/name/standard', async () => {
     const res = await request(app).get('/api/config/profiles').set('X-API-Key', TEST_API_KEY);
     assert.strictEqual(res.status, 200);
-    const categories = Object.keys(res.body.riskCatalog);
-    assert.deepStrictEqual(categories.sort(), [
+    const domains = Object.keys(res.body.riskCatalog);
+    assert.deepStrictEqual(domains.sort(), [
         'cadena-suministro', 'humano-intencional', 'humano-no-intencional', 'natural', 'tecnologico-operacional',
     ]);
-    for (const category of Object.values(res.body.riskCatalog)) {
-        assert.ok(typeof category.label === 'string' && category.label.length > 0);
-        assert.ok(Array.isArray(category.risks) && category.risks.length > 0);
-        for (const risk of category.risks) {
-            assert.ok(typeof risk.key === 'string' && risk.key.length > 0);
-            assert.ok(typeof risk.name === 'string' && risk.name.length > 0);
-            assert.ok(typeof risk.standard === 'string' && risk.standard.length > 0);
+    for (const domain of Object.values(res.body.riskCatalog)) {
+        assert.ok(typeof domain.label === 'string' && domain.label.length > 0);
+        const categoryKeys = Object.keys(domain.categories);
+        assert.ok(categoryKeys.length > 0);
+        for (const category of Object.values(domain.categories)) {
+            assert.ok(typeof category.label === 'string' && category.label.length > 0);
+            assert.ok(Array.isArray(category.threats) && category.threats.length > 0);
+            for (const threat of category.threats) {
+                assert.ok(typeof threat.key === 'string' && threat.key.length > 0);
+                assert.ok(typeof threat.name === 'string' && threat.name.length > 0);
+                assert.ok(typeof threat.standard === 'string' && threat.standard.length > 0);
+            }
         }
     }
 });
