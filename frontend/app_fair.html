@@ -433,7 +433,7 @@
                             </div>
 
                             <div id="fair-roi-section" class="hidden mt-6">
-                                <div class="col-span-1 md:col-span-2 mt-6 p-4 bg-green-50 border border-green-200 rounded-md">
+                                <div id="fair-roi-content" class="col-span-1 md:col-span-2 mt-6 p-4 bg-green-50 border border-green-200 rounded-md">
                                     <h3 class="text-xl font-semibold text-green-800 mb-2">Tratamiento del Riesgo</h3>
                                     <p class="description-text mb-4">
                                         Compara las estrategias de tratamiento de ISO 31000 (cláusula 6.5) contra la Pérdida Anual Esperada (ALE) simulada:
@@ -584,6 +584,12 @@
                                     </div>
 
                                     <div id="fair-treatment-recommendation" class="mt-4 p-3 bg-white rounded-md border-l-4 border-blue-500 text-sm"></div>
+                                </div>
+
+                                <div id="fair-roi-opportunity-note" class="hidden mt-6 p-4 bg-blue-50 border border-blue-200 rounded-md text-sm text-blue-900">
+                                    <p><strong>El análisis de Tratamiento (Mitigar / Transferir / Evitar / Aceptar) no aplica a una Oportunidad.</strong></p>
+                                    <p class="mt-2">Esas cuatro estrategias (ISO 31000, cláusula 6.5) están pensadas para reducir una <em>pérdida</em> — "evitar" o "mitigar" una oportunidad significaría renunciar al beneficio o reducirlo a propósito, lo opuesto de lo que buscas.</p>
+                                    <p class="mt-2">La pregunta relevante aquí es otra: ¿vale la pena invertir para capturar esta oportunidad? Eso ya lo responde la evaluación de arriba, comparando el Beneficio Anual Esperado contra tus Criterios de Riesgo.</p>
                                 </div>
                             </div>
 
@@ -3637,6 +3643,23 @@ document.addEventListener('DOMContentLoaded', () => {
         },
 
         async updateTreatmentView() {
+            // Mitigar/Transferir/Evitar/Aceptar (ISO 31000, 6.5) asumen que la base es una
+            // PÉRDIDA a reducir — aplicado a una Oportunidad, "Evitar" mostraría como "beneficio
+            // neto" el beneficio que en realidad se pierde al no perseguirla (matemática al
+            // revés), y "Mitigar" invitaría a reducir a propósito lo que es tu beneficio. Se
+            // reemplaza toda la sección por una nota, en vez de mostrar esos números.
+            const riskType = document.getElementById('fair-risk-type').value;
+            const roiContent = document.getElementById('fair-roi-content');
+            const opportunityNote = document.getElementById('fair-roi-opportunity-note');
+            if (riskType === 'oportunidad') {
+                roiContent.classList.add('hidden');
+                opportunityNote.classList.remove('hidden');
+                this.persistFairAnalysis();
+                return;
+            }
+            roiContent.classList.remove('hidden');
+            opportunityNote.classList.add('hidden');
+
             const currency = state.quickUI.domElements.inputs.currencySelect.value;
             const formatCurrency = (value) => new Intl.NumberFormat('en-US', { style: 'currency', currency: currency }).format(value);
             const aleActual = state.fair.simulatedALE || 0;
@@ -4590,7 +4613,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const assessor = sanitizeHTML(document.getElementById('fair-assessor').value) || '—';
             const assessmentDate = document.getElementById('fair-assessment-date').value || '—';
             const assessmentLocation = sanitizeHTML(document.getElementById('fair-assessment-location').value) || '—';
-            const riskTypeLabel = document.getElementById('fair-risk-type').value === 'oportunidad' ? 'Oportunidad (riesgo positivo)' : 'Amenaza (riesgo negativo)';
+            const riskType = document.getElementById('fair-risk-type').value;
+            const riskTypeLabel = riskType === 'oportunidad' ? 'Oportunidad (riesgo positivo)' : 'Amenaza (riesgo negativo)';
             const timeHorizon = document.getElementById('fair-time-horizon').value;
             const ctx = App.OrgContext.context;
 
@@ -4620,7 +4644,15 @@ document.addEventListener('DOMContentLoaded', () => {
             const chartImg = chartCanvas ? chartCanvas.toDataURL('image/png') : '';
 
             const fiabilidadLabelReport = { alta: 'Alta', media: 'Media', baja: 'Baja' };
-            const treatmentHTML = `
+            // Igual que en pantalla (ver App.FairWizard.updateTreatmentView): Mitigar/Transferir/
+            // Evitar/Aceptar asumen que la base es una pérdida a reducir — para una Oportunidad
+            // esos números salen invertidos (ej. "Evitar" mostraría como "beneficio" el beneficio
+            // que en realidad se pierde al no perseguirla), así que se omite la tabla.
+            const treatmentHTML = riskType === 'oportunidad' ? `
+                <div class="print-section">
+                    <h2>9. Tratamiento del Riesgo</h2>
+                    <p>El análisis de Mitigar/Transferir/Evitar/Aceptar (ISO 31000, cláusula 6.5) está diseñado para reducir una pérdida y no aplica a una Oportunidad. La evaluación de la Sección 6 (Beneficio Anual Esperado contra los Criterios de Riesgo) ya responde si vale la pena invertir para capturarla.</p>
+                </div>` : `
                 <div class="print-section">
                     <h2>9. Comparación de Estrategias de Tratamiento (ISO 31000 / Broder, 1984)</h2>
                     <table>
