@@ -3067,8 +3067,15 @@ document.addEventListener('DOMContentLoaded', () => {
         //
         // La Frecuencia depende de qué tan motivado y persistente es el atacante — NO de tu nivel
         // de Defensa. La Defensa ya se aplica en Vulnerabilidad (si el ataque tiene éxito); usarla
-        // también aquí contaría el mismo efecto dos veces. Un atacante "promedio" (50%) no ajusta
-        // la frecuencia base.
+        // también aquí contaría el mismo efecto dos veces.
+        //
+        // El multiplicador escala según la motivación+persistencia del atacante en bruto (0-100),
+        // no centrada en 50 — antes, un atacante "por debajo del promedio" (ej. Intruso
+        // Oportunista, o el Grupo Organizado que da justo 50) hacía que subir el ponderador de
+        // "qué tan deliberada es la amenaza" bajara o no moviera la frecuencia sugerida, mismo
+        // problema que el de Riesgo Inherente en Análisis Rápido: marcar una amenaza como
+        // deliberada y pesarla más nunca debería sugerir MENOS frecuencia que el punto de partida
+        // neutral (BASE_MODE, ponderación=0) — solo puede sugerir igual o más.
         suggestTefRange() {
             if (state.fair.tefManuallyEdited) return;
             const attackerKey = document.getElementById('fair-attacker-profile').value;
@@ -3079,10 +3086,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const ponderacion = getSafeNumber(document.getElementById('fair-deliberate-ponderation'));
             const isDeliberate = document.getElementById('fair-deliberate-threat').checked;
             const frequencyFactor = (attackerProfile.motivation + attackerProfile.persistence) / 2;
-            const FF_raw = (frequencyFactor - 50) / 100;
-            const multiplier = isDeliberate ? Math.max(0.1, 1 + (FF_raw * ponderacion)) : 1;
+            const attackerThreatFactor = frequencyFactor / 100;
+            const multiplier = isDeliberate ? (1 + (attackerThreatFactor * ponderacion)) : 1;
 
-            const BASE_MODE = 10; // punto de partida neutral (atacante "promedio", sin ajuste)
+            const BASE_MODE = 10; // punto de partida neutral (amenaza no deliberada, o ponderación=0)
             const suggestedMode = Math.max(1, Math.round(BASE_MODE * multiplier));
 
             document.getElementById('tef-min').value = Math.max(1, Math.round(suggestedMode * 0.5));
