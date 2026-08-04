@@ -706,6 +706,127 @@ const riskCatalog = {
             },
         },
     },
+    // Dominio "Operador Económico Autorizado (OEA)": a petición del usuario, justo debajo de
+    // Cadena de Suministro C-TPAT. OEA es la certificación de seguridad/facilitación de
+    // comercio basada en el Marco SAFE de la OMA (Organización Mundial de Aduanas) — el
+    // programa que en distintos países se llama AEO/OEA (México, Unión Europea, etc.), primo
+    // de C-TPAT (con quien varios países tienen acuerdos de reconocimiento mutuo) pero con
+    // requisitos propios. Se cita como "OEA (Marco SAFE de la OMA)" en vez de una regulación
+    // nacional específica, porque no hay certeza de a qué implementación de país en particular
+    // aplica esta app — evita afirmar una precisión normativa que no se puede verificar (mismo
+    // criterio que ya se siguió para no citar cláusulas ASIS que no se podían confirmar).
+    //
+    // Se evita duplicar íntegramente el contenido ya cubierto en Cadena de Suministro C-TPAT
+    // (hay solape temático real, ambos programas comparten controles de seguridad física/
+    // transporte/socios comerciales) — aquí se prioriza lo DISTINTIVO de OEA frente a C-TPAT:
+    // Solvencia Financiera e Historial de Cumplimiento (requisitos de calificación que C-TPAT
+    // no exige de la misma forma), Gestión de Registros Comerciales, y Gestión de Crisis/Mejora
+    // Continua — más una cobertura más breve (no exhaustiva como en C-TPAT) de los controles de
+    // seguridad física/transporte/personal que sí comparten ambos programas.
+    //
+    // Sin contenido de ciberseguridad — a diferencia de C-TPAT, aquí no se pidió explícitamente
+    // alinearse con ese pilar del Marco SAFE (que también lo incluye), así que se mantiene el
+    // alcance físico/patrimonial general de la app por defecto.
+    'operador-economico-autorizado': {
+        label: 'Operador Económico Autorizado (OEA)',
+        code: 'OEA',
+        categories: {
+            'solvencia-financiera': {
+                label: 'Solvencia Financiera',
+                code: 'OEA-01',
+                threats: [
+                    { key: 'insolvencia-financiera-empresa', name: 'Insolvencia Financiera de la Empresa', standard: 'OEA (Marco SAFE de la OMA)', code: 'OEA-FIN-001', description: 'La empresa no cuenta con la solvencia financiera exigida para calificar o mantener la certificación OEA.' },
+                    { key: 'falta-registro-contable-auditable', name: 'Falta de Registro Contable Auditable', standard: 'OEA (Marco SAFE de la OMA)', code: 'OEA-FIN-002', description: 'La contabilidad de la empresa no cumple con los estándares exigidos para ser auditada por la autoridad aduanera.' },
+                    { key: 'incumplimiento-obligaciones-fiscales', name: 'Incumplimiento de Obligaciones Fiscales', standard: 'OEA (Marco SAFE de la OMA)', code: 'OEA-FIN-003', description: 'La empresa presenta adeudos o incumplimientos fiscales que ponen en riesgo su calificación OEA.' },
+                    { key: 'deterioro-indicadores-financieros', name: 'Deterioro de Indicadores Financieros Clave', standard: 'OEA (Marco SAFE de la OMA)', code: 'OEA-FIN-004', description: 'Un deterioro sostenido en la situación financiera de la empresa que compromete su continuidad como operador certificado.' },
+                ],
+            },
+            'historial-cumplimiento': {
+                label: 'Historial de Cumplimiento',
+                code: 'OEA-02',
+                threats: [
+                    { key: 'antecedente-infraccion-aduanera', name: 'Antecedente de Infracción Aduanera', standard: 'OEA (Marco SAFE de la OMA)', code: 'OEA-CUM-001', description: 'La empresa registra una infracción previa ante la autoridad aduanera que afecta su elegibilidad OEA.' },
+                    { key: 'antecedente-penal-comercio-exterior', name: 'Antecedente Penal Relacionado con Comercio Exterior', standard: 'OEA (Marco SAFE de la OMA)', code: 'OEA-CUM-002', description: 'La empresa o alguno de sus representantes tiene un antecedente penal vinculado a operaciones de comercio exterior.' },
+                    { key: 'suspension-previa-certificacion-oea', name: 'Suspensión Previa de Certificación OEA', standard: 'OEA (Marco SAFE de la OMA)', code: 'OEA-CUM-003', description: 'La empresa tuvo una certificación OEA suspendida o cancelada en el pasado.' },
+                    { key: 'incumplimiento-requerimiento-autoridad', name: 'Incumplimiento de Requerimiento de Autoridad Aduanera', standard: 'OEA (Marco SAFE de la OMA)', code: 'OEA-CUM-004', description: 'La empresa no atiende en tiempo y forma un requerimiento de información o inspección de la autoridad aduanera.' },
+                ],
+            },
+            'gestion-registros': {
+                label: 'Gestión de Registros Comerciales y Logísticos',
+                code: 'OEA-03',
+                threats: [
+                    { key: 'falta-trazabilidad-documental', name: 'Falta de Trazabilidad Documental de la Operación de Comercio Exterior', standard: 'OEA (Marco SAFE de la OMA)', code: 'OEA-REG-001', description: 'No es posible reconstruir el historial documental completo de una operación de importación/exportación.' },
+                    { key: 'discrepancia-registros-operacion-fisica', name: 'Discrepancia entre Registros Contables y Operación Física', standard: 'OEA (Marco SAFE de la OMA)', code: 'OEA-REG-002', description: 'Los registros contables no coinciden con el movimiento físico real de la mercancía.' },
+                    { key: 'perdida-destruccion-registros-comex', name: 'Pérdida o Destrucción de Registros de Comercio Exterior', standard: 'OEA (Marco SAFE de la OMA)', code: 'OEA-REG-003', description: 'Extravío o destrucción, accidental o deliberada, de documentación de comercio exterior.' },
+                    { key: 'falta-conservacion-documentacion-aduanera', name: 'Falta de Conservación de Documentación Aduanera', standard: 'OEA (Marco SAFE de la OMA)', code: 'OEA-REG-004', description: 'La documentación aduanera no se conserva durante el plazo mínimo exigido por la autoridad.' },
+                ],
+            },
+            'socios-comerciales-oea': {
+                label: 'Seguridad de Socios Comerciales',
+                code: 'OEA-04',
+                threats: [
+                    { key: 'socio-sin-certificacion-oea', name: 'Socio Comercial sin Certificación OEA Reconocida', standard: 'OEA (Marco SAFE de la OMA)', code: 'OEA-SOC-001', description: 'Se opera con un socio comercial extranjero sin certificación OEA reconocida por acuerdo de reconocimiento mutuo.' },
+                    { key: 'falta-evaluacion-riesgo-socio', name: 'Falta de Evaluación de Riesgo de Socio Comercial', standard: 'OEA (Marco SAFE de la OMA)', code: 'OEA-SOC-002', description: 'No se evalúa formalmente el riesgo de seguridad y cumplimiento de un socio antes de operar con él.' },
+                    { key: 'socio-listado-riesgo-sancionado', name: 'Socio Comercial en Listado de Riesgo o Sancionado', standard: 'OEA (Marco SAFE de la OMA)', code: 'OEA-SOC-003', description: 'Se opera con un socio comercial que aparece en un listado de riesgo o sanción de una autoridad competente.' },
+                ],
+            },
+            'seguridad-carga-oea': {
+                label: 'Seguridad de la Carga',
+                code: 'OEA-05',
+                threats: [
+                    { key: 'alteracion-carga-almacenamiento', name: 'Alteración de Carga Durante Almacenamiento', standard: 'OEA (Marco SAFE de la OMA)', code: 'OEA-CAR-001', description: 'La mercancía es alterada mientras permanece almacenada bajo control aduanero.' },
+                    { key: 'sustitucion-mercancia-declarada', name: 'Sustitución de Mercancía Declarada', standard: 'OEA (Marco SAFE de la OMA)', code: 'OEA-CAR-002', description: 'La mercancía físicamente embarcada no corresponde a la declarada ante la autoridad aduanera.' },
+                    { key: 'falta-verificacion-peso-cantidad', name: 'Falta de Verificación de Peso y Cantidad', standard: 'OEA (Marco SAFE de la OMA)', code: 'OEA-CAR-003', description: 'No se verifica el peso o la cantidad de la mercancía contra lo documentado antes del despacho.' },
+                    { key: 'empaque-vulnerable-manipulacion', name: 'Empaque Vulnerable a Manipulación', standard: 'OEA (Marco SAFE de la OMA)', code: 'OEA-CAR-004', description: 'El empaque de la mercancía no ofrece evidencia visible de manipulación indebida.' },
+                ],
+            },
+            'seguridad-transporte-oea': {
+                label: 'Seguridad del Transporte',
+                code: 'OEA-06',
+                threats: [
+                    { key: 'unidad-sin-dispositivo-rastreo', name: 'Unidad de Transporte sin Dispositivo de Rastreo', standard: 'OEA (Marco SAFE de la OMA)', code: 'OEA-TRA-001', description: 'La unidad que transporta la mercancía no cuenta con un dispositivo de geolocalización activo.' },
+                    { key: 'ruta-no-autorizada-desviada', name: 'Ruta de Transporte No Autorizada o Desviada', standard: 'OEA (Marco SAFE de la OMA)', code: 'OEA-TRA-002', description: 'La unidad se desvía de la ruta autorizada o programada sin justificación registrada.' },
+                    { key: 'falta-verificacion-operador-transporte', name: 'Falta de Verificación de Operador de Transporte', standard: 'OEA (Marco SAFE de la OMA)', code: 'OEA-TRA-003', description: 'No se verifica la identidad o los antecedentes del conductor/operador antes de asignarle la unidad.' },
+                ],
+            },
+            'seguridad-instalaciones-oea': {
+                label: 'Seguridad de las Instalaciones',
+                code: 'OEA-07',
+                threats: [
+                    { key: 'acceso-no-controlado-almacen-aduanero', name: 'Acceso No Controlado a Áreas de Almacenamiento Aduanero', standard: 'OEA (Marco SAFE de la OMA)', code: 'OEA-INS-001', description: 'Personal o vehículos ingresan sin control a un área bajo control aduanero.' },
+                    { key: 'falta-vigilancia-recinto-fiscalizado', name: 'Falta de Vigilancia en Recinto Fiscalizado', standard: 'OEA (Marco SAFE de la OMA)', code: 'OEA-INS-002', description: 'Un recinto bajo control fiscal opera sin la vigilancia mínima exigida.' },
+                    { key: 'infraestructura-perimetral-insuficiente-oea', name: 'Infraestructura de Seguridad Perimetral Insuficiente', standard: 'OEA (Marco SAFE de la OMA)', code: 'OEA-INS-003', description: 'El perímetro de las instalaciones no cuenta con la barrera física mínima exigida por el programa.' },
+                ],
+            },
+            'seguridad-personal-oea': {
+                label: 'Seguridad del Personal',
+                code: 'OEA-08',
+                threats: [
+                    { key: 'personal-sin-verificacion-confiabilidad', name: 'Personal sin Verificación de Confiabilidad', standard: 'OEA (Marco SAFE de la OMA)', code: 'OEA-PER-001', description: 'Personal con acceso a operaciones de comercio exterior sin un proceso de verificación de confianza.' },
+                    { key: 'falta-capacitacion-procedimientos-aduaneros', name: 'Falta de Capacitación en Procedimientos Aduaneros', standard: 'OEA (Marco SAFE de la OMA)', code: 'OEA-PER-002', description: 'El personal involucrado en comercio exterior no está capacitado en los procedimientos aduaneros aplicables.' },
+                    { key: 'rotacion-personal-clave-sin-reevaluacion', name: 'Rotación de Personal Clave sin Reevaluación de Confiabilidad', standard: 'OEA (Marco SAFE de la OMA)', code: 'OEA-PER-003', description: 'Un puesto clave cambia de titular sin repetir el proceso de verificación de confianza correspondiente.' },
+                ],
+            },
+            'gestion-crisis-continuidad': {
+                label: 'Gestión de Crisis y Continuidad',
+                code: 'OEA-09',
+                threats: [
+                    { key: 'falta-plan-gestion-crisis', name: 'Falta de Plan de Gestión de Crisis', standard: 'OEA (Marco SAFE de la OMA)', code: 'OEA-CRI-001', description: 'La empresa no cuenta con un plan formal para gestionar una crisis de seguridad o cumplimiento aduanero.' },
+                    { key: 'ausencia-procedimiento-recuperacion-incidente', name: 'Ausencia de Procedimiento de Recuperación ante Incidente Aduanero', standard: 'OEA (Marco SAFE de la OMA)', code: 'OEA-CRI-002', description: 'No existe un procedimiento definido para restablecer la operación tras un incidente que afecte a la autoridad aduanera.' },
+                    { key: 'falta-comunicacion-autoridad-contingencia', name: 'Falta de Comunicación con Autoridad Aduanera en Contingencia', standard: 'OEA (Marco SAFE de la OMA)', code: 'OEA-CRI-003', description: 'No hay un canal definido para notificar a la autoridad aduanera durante una contingencia de seguridad.' },
+                ],
+            },
+            'mejora-continua': {
+                label: 'Medición, Análisis y Mejora Continua',
+                code: 'OEA-10',
+                threats: [
+                    { key: 'falta-autoevaluacion-periodica', name: 'Falta de Autoevaluación Periódica del Programa de Seguridad', standard: 'OEA (Marco SAFE de la OMA)', code: 'OEA-MEJ-001', description: 'La empresa no revisa periódicamente el desempeño de su propio programa de seguridad OEA.' },
+                    { key: 'ausencia-auditoria-interna-cumplimiento', name: 'Ausencia de Auditoría Interna de Cumplimiento OEA', standard: 'OEA (Marco SAFE de la OMA)', code: 'OEA-MEJ-002', description: 'No se realiza una auditoría interna periódica del cumplimiento de los requisitos OEA.' },
+                    { key: 'falta-accion-correctiva-hallazgo', name: 'Falta de Acción Correctiva ante Hallazgo de Auditoría', standard: 'OEA (Marco SAFE de la OMA)', code: 'OEA-MEJ-003', description: 'Un hallazgo de auditoría o inspección no se traduce en una acción correctiva documentada.' },
+                ],
+            },
+        },
+    },
 };
 
 // Criterios de Riesgo por defecto (Contexto — ISO 31000, cláusula 6.3.4).
