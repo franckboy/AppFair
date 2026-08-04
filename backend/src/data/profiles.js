@@ -393,8 +393,14 @@ const riskCatalog = {
             },
         },
     },
-    'tecnologico-operacional': {
-        label: 'Tecnológico / Operacional',
+    // Dominio "Tecnológico": placeholder — el plan de entregas del usuario lo separa de
+    // "Operacional" (Entrega 2 vs. Entrega 4, cada uno con su propio target de ~120/~80
+    // amenazas). Este dominio se construyó originalmente como "Tecnológico/Operacional"
+    // combinado, antes de conocer ese plan — se deja aquí con su contenido original (4
+    // amenazas de infraestructura/equipo) hasta que llegue el contenido completo de la
+    // Entrega 2 (Dominio Tecnológico), momento en el que se expandirá.
+    'tecnologico': {
+        label: 'Tecnológico',
         categories: {
             'infraestructura': {
                 label: 'Infraestructura',
@@ -419,6 +425,145 @@ const riskCatalog = {
                 label: 'Equipo',
                 threats: [
                     { key: 'falla-equipo-critico', name: 'Falla de Equipo Crítico', standard: 'ISO 31000', description: 'Descompostura de maquinaria o equipo esencial para la operación, sin causa externa deliberada.' },
+                ],
+            },
+        },
+    },
+    // Dominio "Operacional" (Entrega 4 del plan de entregas, ~80 amenazas): sin documento de
+    // contenido detallado del usuario, construido con criterio propio (mismo acuerdo que
+    // Natural). Se excluyen deliberadamente ASIS/ISO 27001/NIST/IEC 62443/MITRE de la lista de
+    // normas base del plan — son de seguridad física ante actores humanos o de ciberseguridad
+    // de sistemas de control industrial (IEC 62443), y este dominio cubre fallas operativas de
+    // proceso/mantenimiento/calidad/logística interna, no ataques deliberados ni brechas
+    // digitales. Se usan en su lugar ISO 22301 (continuidad de negocio), ISO 31000 (general),
+    // ISO 9001 (calidad), ISO 55001 (gestión de activos/mantenimiento), ISO 45001 (seguridad y
+    // salud ocupacional) e ISO 22000 (inocuidad alimentaria, donde aplica). Se evita duplicar
+    // lo que ya cubre el dominio "Cadena de Suministro" (seguridad de carga/socios
+    // comerciales) — aquí la logística es interna (manejo de materiales, bodega, patio).
+    'operacional': {
+        label: 'Operacional',
+        code: 'OPE',
+        categories: {
+            'procesos-produccion': {
+                label: 'Procesos y Producción',
+                code: 'OPE-01',
+                threats: [
+                    { key: 'interrupcion-linea-produccion', name: 'Interrupción de Línea de Producción', standard: 'ISO 22301', code: 'OPE-PRO-001', description: 'Detención no planeada de una línea de producción que afecta la operación.' },
+                    { key: 'paro-no-programado-planta', name: 'Paro No Programado de Planta', standard: 'ISO 22301', code: 'OPE-PRO-002', description: 'Detención total de la planta fuera del calendario de operación previsto.' },
+                    { key: 'cuello-botella-proceso', name: 'Cuello de Botella en Proceso Crítico', standard: 'ISO 31000', code: 'OPE-PRO-003', description: 'Punto del proceso que limita la capacidad total de producción de la operación.' },
+                    { key: 'desviacion-proceso', name: 'Desviación de Proceso Fuera de Especificación', standard: 'ISO 9001', code: 'OPE-PRO-004', description: 'Ejecución de un proceso fuera de los parámetros técnicos definidos.' },
+                    { key: 'sobreproduccion', name: 'Sobreproducción', standard: 'ISO 31000', code: 'OPE-PRO-005', description: 'Producción por encima de la demanda real, generando costo e inventario excedente.' },
+                    { key: 'subproduccion', name: 'Subproducción', standard: 'ISO 31000', code: 'OPE-PRO-006', description: 'Producción por debajo de la demanda o del compromiso comercial asumido.' },
+                    { key: 'contaminacion-cruzada-proceso', name: 'Contaminación Cruzada en Proceso', standard: 'ISO 22301', code: 'OPE-PRO-007', description: 'Mezcla no intencional de materiales o productos distintos durante el proceso productivo.' },
+                    { key: 'interrupcion-cambio-turno', name: 'Interrupción por Cambio de Turno Deficiente', standard: 'ISO 31000', code: 'OPE-PRO-008', description: 'Pérdida de continuidad operativa por una transición de turno mal ejecutada.' },
+                    { key: 'falla-arranque-proceso', name: 'Falla en Arranque de Proceso', standard: 'ISO 22301', code: 'OPE-PRO-009', description: 'Falla al reiniciar un proceso o línea productiva después de una detención.' },
+                    { key: 'falla-parada-proceso', name: 'Falla en Parada de Proceso', standard: 'ISO 22301', code: 'OPE-PRO-010', description: 'Falla al detener un proceso de forma segura y controlada.' },
+                    { key: 'error-configuracion-proceso', name: 'Error de Configuración de Proceso', standard: 'ISO 31000', code: 'OPE-PRO-011', description: 'Ajuste incorrecto de parámetros de un proceso u operación.' },
+                    { key: 'contaminacion-insumos-proceso', name: 'Contaminación de Insumos en Proceso', standard: 'ISO 22301', code: 'OPE-PRO-012', description: 'Alteración accidental de un insumo durante su manejo dentro del proceso.' },
+                ],
+            },
+            'mantenimiento': {
+                label: 'Mantenimiento',
+                code: 'OPE-02',
+                threats: [
+                    { key: 'falla-mantenimiento-diferido', name: 'Falla por Mantenimiento Diferido', standard: 'ISO 55001', code: 'OPE-MTO-001', description: 'Falla de equipo causada por posponer el mantenimiento programado.' },
+                    { key: 'mantenimiento-correctivo-no-planeado', name: 'Mantenimiento Correctivo No Planeado', standard: 'ISO 55001', code: 'OPE-MTO-002', description: 'Necesidad de reparación urgente no prevista que interrumpe la operación.' },
+                    { key: 'falla-repuesto-critico', name: 'Falla de Repuesto Crítico No Disponible', standard: 'ISO 55001', code: 'OPE-MTO-003', description: 'Falta de una refacción esencial que prolonga el tiempo de reparación de un equipo.' },
+                    { key: 'error-ejecucion-mantenimiento', name: 'Error en Ejecución de Mantenimiento', standard: 'ISO 55001', code: 'OPE-MTO-004', description: 'Trabajo de mantenimiento mal realizado que causa una falla posterior o un incidente.' },
+                    { key: 'obsolescencia-equipo', name: 'Obsolescencia de Equipo', standard: 'ISO 55001', code: 'OPE-MTO-005', description: 'Equipo que ya no cuenta con soporte, repuestos o desempeño adecuado por antigüedad.' },
+                    { key: 'falla-desgaste-no-detectado', name: 'Falla por Desgaste No Detectado', standard: 'ISO 55001', code: 'OPE-MTO-006', description: 'Falla de un componente por desgaste que no fue identificado a tiempo.' },
+                    { key: 'interrupcion-mantenimiento-extendido', name: 'Interrupción por Mantenimiento Programado Extendido', standard: 'ISO 22301', code: 'OPE-MTO-007', description: 'Una intervención de mantenimiento programada toma más tiempo del previsto y afecta la operación.' },
+                    { key: 'falla-proveedor-mantenimiento', name: 'Falla de Proveedor de Servicio de Mantenimiento', standard: 'ISO 55001', code: 'OPE-MTO-008', description: 'Un proveedor externo de mantenimiento no cumple con el servicio contratado a tiempo.' },
+                    { key: 'falla-equipo-respaldo', name: 'Falla de Equipo de Respaldo (Backup)', standard: 'ISO 22301', code: 'OPE-MTO-009', description: 'El equipo destinado a operar en caso de falla del principal también falla o no está disponible.' },
+                    { key: 'incumplimiento-programa-preventivo', name: 'Incumplimiento de Programa de Mantenimiento Preventivo', standard: 'ISO 55001', code: 'OPE-MTO-010', description: 'El mantenimiento preventivo programado no se ejecuta según lo planeado.' },
+                ],
+            },
+            'calidad': {
+                label: 'Calidad',
+                code: 'OPE-03',
+                threats: [
+                    { key: 'no-conformidad-producto', name: 'No Conformidad de Producto', standard: 'ISO 9001', code: 'OPE-CAL-001', description: 'Producto que no cumple con los requisitos de calidad establecidos.' },
+                    { key: 'retiro-producto-mercado', name: 'Retiro de Producto del Mercado (Recall)', standard: 'ISO 9001', code: 'OPE-CAL-002', description: 'Necesidad de retirar producto ya distribuido por un defecto o riesgo detectado.' },
+                    { key: 'reclamo-cliente-calidad', name: 'Reclamo de Cliente por Calidad', standard: 'ISO 9001', code: 'OPE-CAL-003', description: 'Queja formal de un cliente relacionada con la calidad del producto o servicio entregado.' },
+                    { key: 'falla-control-calidad-materia-prima', name: 'Falla en Control de Calidad de Materia Prima', standard: 'ISO 9001', code: 'OPE-CAL-004', description: 'Ingreso de materia prima que no cumple con las especificaciones requeridas.' },
+                    { key: 'falla-equipo-medicion', name: 'Falla de Equipo de Medición/Calibración', standard: 'ISO 9001', code: 'OPE-CAL-005', description: 'Instrumento de medición fuera de calibración que compromete la validez de un resultado.' },
+                    { key: 'lote-produccion-defectuoso', name: 'Lote de Producción Defectuoso', standard: 'ISO 9001', code: 'OPE-CAL-006', description: 'Un lote completo de producción resulta con un defecto sistemático.' },
+                    { key: 'incumplimiento-especificacion-tecnica', name: 'Incumplimiento de Especificación Técnica', standard: 'ISO 9001', code: 'OPE-CAL-007', description: 'El producto o proceso no cumple con una especificación técnica acordada con el cliente.' },
+                    { key: 'falla-sistema-gestion-calidad', name: 'Falla de Sistema de Gestión de Calidad', standard: 'ISO 9001', code: 'OPE-CAL-008', description: 'El sistema documental o de control de calidad no detecta una desviación a tiempo.' },
+                    { key: 'producto-fuera-vida-util', name: 'Producto Fuera de Vida Útil (Caducidad)', standard: 'ISO 22000', code: 'OPE-CAL-009', description: 'Producto que se distribuye o utiliza después de su fecha de caducidad o vida útil.' },
+                    { key: 'error-formulacion-mezcla', name: 'Error de Formulación o Mezcla', standard: 'ISO 9001', code: 'OPE-CAL-010', description: 'Combinación incorrecta de ingredientes o componentes en la elaboración de un producto.' },
+                ],
+            },
+            'capacidad-programacion': {
+                label: 'Capacidad y Programación',
+                code: 'OPE-04',
+                threats: [
+                    { key: 'sobrecarga-capacidad-instalada', name: 'Sobrecarga de Capacidad Instalada', standard: 'ISO 31000', code: 'OPE-CAP-001', description: 'Demanda que excede la capacidad máxima de producción u operación disponible.' },
+                    { key: 'programacion-deficiente-produccion', name: 'Programación Deficiente de Producción', standard: 'ISO 31000', code: 'OPE-CAP-002', description: 'Mala planeación de la secuencia u horarios de producción que genera ineficiencia.' },
+                    { key: 'cuello-botella-logistico-interno', name: 'Cuello de Botella Logístico Interno', standard: 'ISO 31000', code: 'OPE-CAP-003', description: 'Punto de la logística interna que limita el flujo de materiales o producto.' },
+                    { key: 'retraso-cumplimiento-pedido', name: 'Retraso en Cumplimiento de Pedido', standard: 'ISO 31000', code: 'OPE-CAP-004', description: 'Incapacidad de entregar un pedido dentro del plazo comprometido.' },
+                    { key: 'perdida-capacidad-ausentismo', name: 'Pérdida de Capacidad por Ausentismo', standard: 'ISO 31000', code: 'OPE-CAP-005', description: 'Reducción de la capacidad operativa por falta de personal disponible.' },
+                    { key: 'desbalance-linea-produccion', name: 'Desbalance de Línea de Producción', standard: 'ISO 31000', code: 'OPE-CAP-006', description: 'Diferencia de ritmo entre estaciones de una línea que genera cuellos de botella internos.' },
+                ],
+            },
+            'logistica-interna': {
+                label: 'Logística Interna',
+                code: 'OPE-05',
+                threats: [
+                    { key: 'dano-producto-manejo-interno', name: 'Daño de Producto en Manejo Interno', standard: 'ISO 22301', code: 'OPE-LOG-001', description: 'Deterioro de producto durante su manejo dentro de las instalaciones de la organización.' },
+                    { key: 'error-picking-surtido', name: 'Error de Picking/Surtido de Pedido', standard: 'ISO 31000', code: 'OPE-LOG-002', description: 'Preparación incorrecta de un pedido (producto, cantidad o destino equivocado).' },
+                    { key: 'perdida-trazabilidad-inventario', name: 'Pérdida de Trazabilidad de Inventario', standard: 'ISO 28000', code: 'OPE-LOG-003', description: 'Imposibilidad de rastrear la ubicación o el movimiento histórico de un producto en inventario.' },
+                    { key: 'congestion-patio-maniobras', name: 'Congestión en Patio de Maniobras', standard: 'ISO 31000', code: 'OPE-LOG-004', description: 'Saturación del patio de carga/descarga que retrasa el flujo de vehículos.' },
+                    { key: 'falla-montacargas', name: 'Falla de Montacargas u Equipo de Manejo de Materiales', standard: 'ISO 22301', code: 'OPE-LOG-005', description: 'Descompostura de un montacargas u otro equipo usado para mover materiales internamente.' },
+                    { key: 'error-etiquetado-rotulado', name: 'Error en Etiquetado o Rotulado', standard: 'ISO 31000', code: 'OPE-LOG-006', description: 'Identificación incorrecta de un producto o embarque.' },
+                    { key: 'extravio-mercancia-bodega', name: 'Extravío de Mercancía en Bodega', standard: 'ISO 28000', code: 'OPE-LOG-007', description: 'Producto que no puede ser localizado dentro de la bodega, sin evidencia de sustracción.' },
+                    { key: 'sobreinventario-obsolescencia', name: 'Sobreinventario / Obsolescencia de Inventario', standard: 'ISO 31000', code: 'OPE-LOG-008', description: 'Acumulación de inventario por encima de lo necesario, con riesgo de volverse obsoleto.' },
+                    { key: 'error-conteo-ciclico', name: 'Error de Conteo Cíclico de Inventario', standard: 'ISO 28000', code: 'OPE-LOG-009', description: 'Discrepancia entre el inventario físico y el registrado, detectada en un conteo periódico.' },
+                    { key: 'colision-montacargas', name: 'Colisión de Montacargas', standard: 'ISO 45001', code: 'OPE-LOG-010', description: 'Accidente de un montacargas contra personal, estructura o mercancía dentro de las instalaciones.' },
+                ],
+            },
+            'gestion-instalaciones': {
+                label: 'Gestión de Instalaciones',
+                code: 'OPE-06',
+                threats: [
+                    { key: 'falla-hvac', name: 'Falla de Sistema de Climatización (HVAC)', standard: 'ISO 22301', code: 'OPE-INS-001', description: 'Falla del sistema de calefacción, ventilación o aire acondicionado que afecta personal, producto o equipo.' },
+                    { key: 'falla-suministro-agua', name: 'Falla de Suministro de Agua', standard: 'ISO 22301', code: 'OPE-INS-002', description: 'Interrupción del abastecimiento de agua a las instalaciones.' },
+                    { key: 'falla-sistema-refrigeracion', name: 'Falla de Sistema de Refrigeración', standard: 'ISO 22301', code: 'OPE-INS-003', description: 'Falla de un sistema de frío que compromete producto o insumos que requieren cadena de frío.' },
+                    { key: 'deterioro-infraestructura-mantenimiento', name: 'Deterioro de Infraestructura por Falta de Mantenimiento', standard: 'ISO 55001', code: 'OPE-INS-004', description: 'Degradación de instalaciones por ausencia o insuficiencia de mantenimiento preventivo.' },
+                    { key: 'falla-iluminacion-critica', name: 'Falla de Iluminación Crítica', standard: 'ISO 22301', code: 'OPE-INS-005', description: 'Pérdida de iluminación en un área operativa o de seguridad crítica.' },
+                    { key: 'saturacion-capacidad-almacenamiento', name: 'Saturación de Capacidad de Almacenamiento', standard: 'ISO 31000', code: 'OPE-INS-006', description: 'El espacio de almacenamiento disponible es insuficiente para el volumen operativo.' },
+                    { key: 'falla-tratamiento-aguas-residuales', name: 'Falla de Sistema de Tratamiento de Aguas Residuales', standard: 'ISO 22301', code: 'OPE-INS-007', description: 'Falla del sistema de tratamiento que puede generar un incumplimiento ambiental u operativo.' },
+                    { key: 'falla-elevador-personal', name: 'Falla de Elevador o Montacargas de Personal', standard: 'ISO 22301', code: 'OPE-INS-008', description: 'Descompostura de un elevador que afecta la movilidad del personal dentro de las instalaciones.' },
+                    { key: 'filtracion-agua-techo', name: 'Filtración de Agua en Techo o Estructura', standard: 'ISO 22301', code: 'OPE-INS-009', description: 'Entrada de agua por daño estructural, sin relación con un evento climático extremo.' },
+                    { key: 'falla-extraccion-humos', name: 'Falla de Sistema de Extracción de Humos o Gases', standard: 'NFPA, ISO 22301', code: 'OPE-INS-010', description: 'Falla del sistema que evacúa humos, gases o vapores de un área de proceso.' },
+                ],
+            },
+            'recursos-humanos-operativos': {
+                label: 'Recursos Humanos Operativos',
+                code: 'OPE-07',
+                threats: [
+                    { key: 'escasez-personal-calificado', name: 'Escasez de Personal Calificado', standard: 'ISO 31000', code: 'OPE-RRH-001', description: 'Dificultad para cubrir puestos operativos con el nivel de calificación requerido.' },
+                    { key: 'rotacion-personal-elevada', name: 'Rotación de Personal Elevada', standard: 'ISO 31000', code: 'OPE-RRH-002', description: 'Salida frecuente de personal que afecta la continuidad y curva de aprendizaje operativa.' },
+                    { key: 'huelga-paro-laboral', name: 'Huelga o Paro Laboral', standard: 'ISO 31000', code: 'OPE-RRH-003', description: 'Suspensión colectiva de labores por parte del personal.' },
+                    { key: 'ausentismo-elevado', name: 'Ausentismo Elevado', standard: 'ISO 31000', code: 'OPE-RRH-004', description: 'Inasistencia recurrente del personal que reduce la capacidad operativa disponible.' },
+                    { key: 'falta-capacitacion-personal', name: 'Falta de Capacitación del Personal Operativo', standard: 'ISO 31000', code: 'OPE-RRH-005', description: 'Personal que ejecuta tareas operativas sin la capacitación adecuada.' },
+                    { key: 'fatiga-personal-turnos-extendidos', name: 'Fatiga del Personal en Turnos Extendidos', standard: 'ISO 45001', code: 'OPE-RRH-006', description: 'Disminución del desempeño y aumento del riesgo de error por jornadas prolongadas.' },
+                    { key: 'error-operativo-entrenamiento-insuficiente', name: 'Error Operativo por Personal Insuficientemente Entrenado', standard: 'ISO 31000', code: 'OPE-RRH-007', description: 'Equivocación en una tarea operativa causada por falta de entrenamiento previo.' },
+                    { key: 'insubordinacion-conflicto-colectivo', name: 'Insubordinación o Conflicto Laboral Colectivo', standard: 'ISO 31000', code: 'OPE-RRH-008', description: 'Conflicto sostenido entre personal y dirección que afecta el desempeño operativo.' },
+                    { key: 'perdida-conocimiento-critico', name: 'Pérdida de Conocimiento Crítico', standard: 'ISO 31000', code: 'OPE-RRH-009', description: 'Salida de personal clave que se lleva consigo conocimiento no documentado del proceso.' },
+                    { key: 'falla-sucesion-puesto-critico', name: 'Falla en Sucesión de Puesto Crítico', standard: 'ISO 31000', code: 'OPE-RRH-010', description: 'Ausencia de un plan de reemplazo adecuado para un puesto operativo esencial.' },
+                ],
+            },
+            'continuidad-operativa': {
+                label: 'Continuidad Operativa',
+                code: 'OPE-08',
+                threats: [
+                    { key: 'interrupcion-servicio-cliente-critico', name: 'Interrupción de Servicio a Cliente Crítico', standard: 'ISO 22301', code: 'OPE-CON-001', description: 'Falla en la entrega de producto o servicio a un cliente cuya relación es crítica para la operación.' },
+                    { key: 'falla-plan-continuidad-no-probado', name: 'Falla de Plan de Continuidad No Probado', standard: 'ISO 22301', code: 'OPE-CON-002', description: 'Un plan de continuidad de negocio no funciona como se esperaba por no haberse probado previamente.' },
+                    { key: 'dependencia-proveedor-unico', name: 'Dependencia de Proveedor Único', standard: 'ISO 22301', code: 'OPE-CON-003', description: 'La operación depende de un solo proveedor sin alternativa, generando un punto único de falla.' },
+                    { key: 'perdida-sitio-alterno', name: 'Pérdida de Sitio Alterno de Operación', standard: 'ISO 22301', code: 'OPE-CON-004', description: 'El sitio previsto para continuar operando en caso de contingencia deja de estar disponible.' },
+                    { key: 'falla-comunicacion-contingencia', name: 'Falla de Comunicación Interna en Contingencia', standard: 'ISO 22301', code: 'OPE-CON-005', description: 'Los canales de comunicación previstos para una emergencia no funcionan cuando se necesitan.' },
+                    { key: 'incumplimiento-sla', name: 'Incumplimiento de Acuerdo de Nivel de Servicio (SLA)', standard: 'ISO 22301', code: 'OPE-CON-006', description: 'La organización no cumple con los tiempos o niveles de servicio comprometidos con un cliente.' },
                 ],
             },
         },
