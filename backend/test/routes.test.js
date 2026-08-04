@@ -62,8 +62,9 @@ test('GET /api/config/profiles trae el Catálogo de Riesgos en 3 niveles (Domini
     assert.strictEqual(res.status, 200);
     const domains = Object.keys(res.body.riskCatalog);
     assert.deepStrictEqual(domains.sort(), [
-        'cadena-suministro', 'humano-intencional', 'humano-no-intencional', 'natural', 'tecnologico-operacional',
+        'cadena-suministro', 'humano', 'natural', 'tecnologico-operacional',
     ]);
+    assert.strictEqual(Object.keys(res.body.riskCatalog.humano.categories).length, 10);
     for (const domain of Object.values(res.body.riskCatalog)) {
         assert.ok(typeof domain.label === 'string' && domain.label.length > 0);
         const categoryKeys = Object.keys(domain.categories);
