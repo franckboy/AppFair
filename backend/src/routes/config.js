@@ -1,14 +1,14 @@
 'use strict';
 
 const express = require('express');
-const { attackerProfiles, defenseProfiles, riskProfiles, lossFormsKeys, lossFormsLabels, defaultRiskCriteria } = require('../data/profiles');
+const { attackerProfiles, defenseProfiles, riskProfiles, riskCatalog, lossFormsKeys, lossFormsLabels, defaultRiskCriteria } = require('../data/profiles');
 
 function createConfigRouter(store) {
     const router = express.Router();
 
     // --- Perfiles y catálogos (de solo lectura, vienen del código, no de la base) ---
     router.get('/profiles', (req, res) => {
-        res.json({ attackerProfiles, defenseProfiles, riskProfiles, lossFormsKeys, lossFormsLabels });
+        res.json({ attackerProfiles, defenseProfiles, riskProfiles, riskCatalog, lossFormsKeys, lossFormsLabels });
     });
 
     // --- Criterios de Riesgo (Contexto — ISO 31000, 6.3.4) ---
