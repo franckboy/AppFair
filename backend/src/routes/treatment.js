@@ -2,6 +2,7 @@
 
 const express = require('express');
 const { evaluateTreatmentStrategies } = require('../lib/treatment');
+const { validateTreatmentBody } = require('../lib/validate');
 
 function makeCurrencyFormatter(currency = 'USD') {
     const fmt = new Intl.NumberFormat('en-US', { style: 'currency', currency, minimumFractionDigits: 0, maximumFractionDigits: 0 });
@@ -33,6 +34,9 @@ function createTreatmentRouter() {
         if (typeof currentALE !== 'number') {
             return res.status(400).json({ error: 'currentALE (número) es requerido — normalmente el promedio que devuelve /api/simulate.' });
         }
+
+        const treatmentError = validateTreatmentBody(req.body);
+        if (treatmentError) return res.status(400).json({ error: treatmentError });
 
         const formatCurrency = makeCurrencyFormatter(currency);
 
