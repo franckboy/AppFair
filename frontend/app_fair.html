@@ -436,8 +436,8 @@
                                 <div id="fair-roi-content" class="col-span-1 md:col-span-2 mt-6 p-4 bg-green-50 border border-green-200 rounded-md">
                                     <h3 class="text-xl font-semibold text-green-800 mb-2">Tratamiento del Riesgo</h3>
                                     <p class="description-text mb-4">
-                                        Compara las estrategias de tratamiento de ISO 31000 (cláusula 6.5) contra la Pérdida Anual Esperada (ALE) simulada:
-                                        <strong>Pérdida Anual Actual (simulada): <span id="fair-treat-ale-base">$0.00</span></strong>
+                                        Compara las estrategias de tratamiento de ISO 31000 (cláusula 6.5) contra tu Pérdida Anual Esperada (ALE) actual:
+                                        <strong><span id="fair-treat-ale-base">$0.00</span></strong>
                                     </p>
 
                                     <div class="fair-section bg-white">
@@ -760,7 +760,7 @@ document.addEventListener('DOMContentLoaded', () => {
         tecnico: {
             productividad: '1. Pérdida de Productividad', respuesta: '2. Costos de Respuesta', reemplazo: '3. Costos de Reemplazo',
             multas: '4. Multas y Sanciones', reputacion: '5. Daño Reputacional', investigacion: '6. Costos de Investigación',
-            oportunidad: '7. Pérdida de Oportunidad', comunitario: '8. Impacto Comunitario/Societario', ambiental: '9. Impacto Ambiental',
+            oportunidad: '7. Negocio No Capturado (Ventaja Competitiva)', comunitario: '8. Impacto Comunitario/Societario', ambiental: '9. Impacto Ambiental',
         },
         simple: {
             productividad: '1. ¿Cuánto perderías por gente que no puede trabajar mientras pasa esto?',
@@ -1310,7 +1310,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     'tef-header': 'Frecuencia de Evento de Amenaza',
                     'vuln-header': 'Vulnerabilidad (%)',
                     'chart-title': 'Distribución de Pérdida Anual',
-                    'ale-label': 'Pérdida Anual Promedio (Simulada):',
+                    'ale-label': 'Pérdida Anual Esperada (ALE) — Promedio Simulado:',
                     'median-label': 'Pérdida Anual Mediana (Percentil 50):',
                     'min-label': 'Pérdida Mínima Simulada:',
                     'max-label': 'Pérdida Máxima Simulada:',
@@ -1336,7 +1336,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     'tef-header': 'Frecuencia de Evento de Oportunidad',
                     'vuln-header': 'Probabilidad de Captura (%)',
                     'chart-title': 'Distribución de Beneficio Anual',
-                    'ale-label': 'Beneficio Anual Promedio (Simulado):',
+                    'ale-label': 'Beneficio Anual Esperado — Promedio Simulado:',
                     'median-label': 'Beneficio Anual Mediano (Percentil 50):',
                     'min-label': 'Beneficio Mínimo Simulado:',
                     'max-label': 'Beneficio Máximo Simulado:',
@@ -4631,7 +4631,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const lossFormsLabels = {
                 'productividad': 'Pérdida de Productividad', 'respuesta': 'Costos de Respuesta', 'reemplazo': 'Costos de Reemplazo',
                 'multas': 'Multas y Sanciones', 'reputacion': 'Daño Reputacional', 'investigacion': 'Costos de Investigación',
-                'oportunidad': 'Pérdida de Oportunidad', 'comunitario': 'Impacto Comunitario/Societario', 'ambiental': 'Impacto Ambiental'
+                'oportunidad': 'Negocio No Capturado (Ventaja Competitiva)', 'comunitario': 'Impacto Comunitario/Societario', 'ambiental': 'Impacto Ambiental'
             };
             const lossRowsHTML = Object.entries(lossFormsLabels).map(([key, label]) => {
                 const min = getSafeNumber(document.getElementById(`lm-${key}-min`));

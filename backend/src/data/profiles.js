@@ -50,7 +50,13 @@ const lossFormsLabels = {
     multas: 'Multas y Sanciones',
     reputacion: 'Daño Reputacional',
     investigacion: 'Costos de Investigación',
-    oportunidad: 'Pérdida de Oportunidad',
+    // Nombrada así (no "Pérdida de Oportunidad") a propósito: esta clave ('oportunidad') es una
+    // de las 9 categorías de Magnitud de Pérdida — el costo de negocio no capturado durante el
+    // evento (FAIR: "Competitive Advantage" loss) — y coincide, sin relación alguna, con el
+    // valor riskType='oportunidad' (un riesgo POSITIVO completo, ver evaluation.js). Llamar a
+    // esta categoría "Pérdida de Oportunidad" leía como si un riesgo tipo Oportunidad tuviera
+    // que capturar cuánta "pérdida de oportunidad" sufre, una contradicción de términos.
+    oportunidad: 'Negocio No Capturado (Ventaja Competitiva)',
     comunitario: 'Impacto Comunitario/Societario',
     ambiental: 'Impacto Ambiental',
 };
