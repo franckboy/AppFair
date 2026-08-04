@@ -57,6 +57,24 @@ test('GET /api/config/profiles trae los 5 perfiles de atacante y 4 de defensa', 
     assert.strictEqual(Object.keys(res.body.defenseProfiles).length, 4);
 });
 
+test('GET /api/config/profiles trae el Catálogo de Riesgos con sus 5 categorías, cada riesgo con key/name/standard', async () => {
+    const res = await request(app).get('/api/config/profiles').set('X-API-Key', TEST_API_KEY);
+    assert.strictEqual(res.status, 200);
+    const categories = Object.keys(res.body.riskCatalog);
+    assert.deepStrictEqual(categories.sort(), [
+        'cadena-suministro', 'humano-intencional', 'humano-no-intencional', 'natural', 'tecnologico-operacional',
+    ]);
+    for (const category of Object.values(res.body.riskCatalog)) {
+        assert.ok(typeof category.label === 'string' && category.label.length > 0);
+        assert.ok(Array.isArray(category.risks) && category.risks.length > 0);
+        for (const risk of category.risks) {
+            assert.ok(typeof risk.key === 'string' && risk.key.length > 0);
+            assert.ok(typeof risk.name === 'string' && risk.name.length > 0);
+            assert.ok(typeof risk.standard === 'string' && risk.standard.length > 0);
+        }
+    }
+});
+
 test('PUT /api/config/criteria rechaza bandas no crecientes con 400', async () => {
     const res = await request(app)
         .put('/api/config/criteria')
