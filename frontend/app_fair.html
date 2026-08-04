@@ -4343,7 +4343,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const currency = state.quickUI.domElements.inputs.currencySelect.value;
             const formatCurrency = (value) => new Intl.NumberFormat('en-US', { style: 'currency', currency: currency, minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
 
-            const mixedCurrencies = registerHasMixedCurrencies(state.fair.riskRegister);
+            // `pareto` ya viene del backend excluyendo 'oportunidad' (su ale es un beneficio, no
+            // una pérdida) — el chequeo de monedas mixtas tiene que mirar ese mismo subconjunto,
+            // si no una oportunidad guardada en otra moneda dispara "no se muestra: distintas
+            // monedas" aunque las amenazas (lo único que pareto.totalExposure realmente suma)
+            // estén todas en la misma moneda y el total sí sea perfectamente calculable.
+            const mixedCurrencies = registerHasMixedCurrencies((state.fair.riskRegister || []).filter(r => r.riskType !== 'oportunidad'));
             document.getElementById('fair-pareto-summary').textContent = mixedCurrencies
                 ? `${pareto.riskCountFor80Percent} de ${pareto.totalRiskCount} riesgo(s) concentran el 80% de tu exposición — el total en dinero no se muestra porque tienes riesgos guardados en distintas monedas (sumarlos daría un número sin sentido). Prioriza el tratamiento en esos primero.`
                 : `${pareto.riskCountFor80Percent} de ${pareto.totalRiskCount} riesgo(s) concentran el 80% de tu exposición total (${formatCurrency(pareto.totalExposure)}/año). Prioriza el tratamiento en esos primero.`;
@@ -4509,18 +4514,35 @@ document.addEventListener('DOMContentLoaded', () => {
             // Se agrupa por el campo "severity" crudo ('critico'/'alto'/'medio'/'bajo'), no por
             // el texto de evaluationLevel — ese texto no siempre contiene la palabra del nivel
             // (ej. "Aceptable" es severidad "bajo", "Requiere Tratamiento" es "alto").
+            //
+            // Solo se cuentan las amenazas: una 'oportunidad' también usa severity 'bajo'/'medio',
+            // pero con el significado invertido (evaluateFairOpportunity — 'bajo' ahí significa
+            // "Oportunidad Menor", no "riesgo bajo"). Contarla junto con las amenazas inflaba el
+            // bucket "Bajo" con oportunidades buenas como si fueran riesgos triviales.
             const severityLabels = { critico: 'Crítico', alto: 'Alto', medio: 'Medio', bajo: 'Bajo' };
             const bySeverity = { critico: 0, alto: 0, medio: 0, bajo: 0 };
-            register.forEach(r => {
+            const threatRegister = register.filter(r => r.riskType !== 'oportunidad');
+            const opportunityCount = register.length - threatRegister.length;
+            threatRegister.forEach(r => {
                 if (r.severity && bySeverity[r.severity] !== undefined) bySeverity[r.severity]++;
             });
-            const currencySymbol = state.config.CURRENCY_SYMBOLS[register[0].currency] || '$';
+            // El símbolo tiene que venir de una amenaza (lo único que pareto.totalExposure suma)
+            // — si el primer registro guardado fuera una oportunidad en otra moneda, se mostraba
+            // el símbolo equivocado junto al total de las amenazas.
+            const currencySymbol = state.config.CURRENCY_SYMBOLS[(threatRegister[0] || register[0]).currency] || '$';
             const formatCurrency = (v) => `${currencySymbol}${Math.round(v).toLocaleString('en-US')}`;
-            const mixedCurrencies = registerHasMixedCurrencies(register);
+            // Mismo criterio que renderParetoChart: el chequeo de monedas mixtas debe mirar solo
+            // las amenazas, que es lo único que pareto.totalExposure realmente suma.
+            const mixedCurrencies = registerHasMixedCurrencies(threatRegister);
 
             const parts = [];
-            parts.push(`Tienes <strong>${register.length}</strong> riesgo${register.length === 1 ? '' : 's'} guardado${register.length === 1 ? '' : 's'}: ` +
-                Object.entries(bySeverity).filter(([, n]) => n > 0).map(([sev, n]) => `${n} en nivel <strong>${severityLabels[sev]}</strong>`).join(', ') + '.');
+            if (threatRegister.length > 0) {
+                parts.push(`Tienes <strong>${threatRegister.length}</strong> amenaza${threatRegister.length === 1 ? '' : 's'} guardada${threatRegister.length === 1 ? '' : 's'}: ` +
+                    Object.entries(bySeverity).filter(([, n]) => n > 0).map(([sev, n]) => `${n} en nivel <strong>${severityLabels[sev]}</strong>`).join(', ') +
+                    (opportunityCount > 0 ? ` (+ ${opportunityCount} oportunidad${opportunityCount === 1 ? '' : 'es'}, ver tabla abajo).` : '.'));
+            } else {
+                parts.push(`Tienes <strong>${opportunityCount}</strong> oportunidad${opportunityCount === 1 ? '' : 'es'} guardada${opportunityCount === 1 ? '' : 's'} y ninguna amenaza — ver tabla abajo.`);
+            }
 
             if (pareto && pareto.risks.length > 0) {
                 const topNames = pareto.risks.slice(0, pareto.riskCountFor80Percent).map(r => sanitizeHTML(r.riskName));
