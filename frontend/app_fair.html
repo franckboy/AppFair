@@ -1874,10 +1874,11 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // ============================================================
-    // App.RiskCatalog — el Catálogo de Riesgos (Análisis Rápido): un modal con Tipo de Riesgo →
-    // Riesgo Específico, para llenar "Nombre del Riesgo" eligiendo de una lista curada según
-    // metodologías reconocidas (ASIS, C-TPAT) en vez de escribirla a mano. Contenido de solo
-    // lectura, viene de GET /api/config/profiles → riskCatalog (ver backend/src/data/profiles.js).
+    // App.RiskCatalog — el Catálogo de Riesgos (Análisis Rápido): un modal con 3 selects
+    // encadenados — Dominio → Categoría → Amenaza Específica — para llenar "Nombre del Riesgo"
+    // eligiendo de una lista curada según metodologías reconocidas (ASIS, C-TPAT, NFPA, ISO
+    // 28000/TAPA, COSO) en vez de escribirla a mano. Contenido de solo lectura, viene de
+    // GET /api/config/profiles → riskCatalog (ver backend/src/data/profiles.js).
     // ============================================================
     App.RiskCatalog = {
         init() {
@@ -1887,8 +1888,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         openPicker() {
             const catalog = state.quick.riskCatalog || {};
-            const categoryKeys = Object.keys(catalog);
-            if (categoryKeys.length === 0) {
+            const domainKeys = Object.keys(catalog);
+            if (domainKeys.length === 0) {
                 showToast('El Catálogo de Riesgos no está disponible en este momento.');
                 return;
             }
@@ -1897,16 +1898,20 @@ document.addEventListener('DOMContentLoaded', () => {
             Modal.body.innerHTML = `
                 <p class="description-text mb-4">
                     Elige un riesgo ya catalogado según metodologías reconocidas de gestión de
-                    riesgos (ASIS International, C-TPAT) para nombrar tu riesgo de forma
-                    consistente, en vez de escribirlo a mano.
+                    riesgos (ASIS International, C-TPAT, NFPA, ISO) para nombrar tu riesgo de
+                    forma consistente, en vez de escribirlo a mano.
                 </p>
                 <div class="input-group">
-                    <label for="riskcat-category">Tipo de Riesgo:</label>
+                    <label for="riskcat-domain">Dominio:</label>
+                    <select id="riskcat-domain" class="form-select"></select>
+                </div>
+                <div class="input-group">
+                    <label for="riskcat-category">Categoría:</label>
                     <select id="riskcat-category" class="form-select"></select>
                 </div>
                 <div class="input-group">
-                    <label for="riskcat-risk">Riesgo Específico:</label>
-                    <select id="riskcat-risk" class="form-select"></select>
+                    <label for="riskcat-threat">Amenaza Específica:</label>
+                    <select id="riskcat-threat" class="form-select"></select>
                 </div>
                 <div id="riskcat-info" class="p-3 bg-gray-50 border rounded-md text-sm text-gray-700 mt-2"></div>
             `;
@@ -1916,63 +1921,74 @@ document.addEventListener('DOMContentLoaded', () => {
             `;
             Modal.modal.classList.remove('hidden');
 
+            const domainSelect = document.getElementById('riskcat-domain');
             const categorySelect = document.getElementById('riskcat-category');
-            const riskSelect = document.getElementById('riskcat-risk');
+            const threatSelect = document.getElementById('riskcat-threat');
             const infoEl = document.getElementById('riskcat-info');
 
-            categoryKeys.forEach(key => {
+            domainKeys.forEach(key => {
                 const opt = document.createElement('option');
                 opt.value = key;
                 opt.textContent = catalog[key].label;
-                categorySelect.appendChild(opt);
+                domainSelect.appendChild(opt);
             });
 
-            const currentRisk = () => {
-                const risks = (catalog[categorySelect.value] || {}).risks || [];
-                return risks.find(r => r.key === riskSelect.value);
-            };
+            const currentCategories = () => (catalog[domainSelect.value] || {}).categories || {};
+            const currentThreats = () => (currentCategories()[categorySelect.value] || {}).threats || [];
+            const currentThreat = () => currentThreats().find(t => t.key === threatSelect.value);
 
             const updateInfo = () => {
-                const risk = currentRisk();
-                infoEl.innerHTML = risk
-                    ? `<p><strong>${sanitizeHTML(risk.standard)}</strong></p><p class="mt-1">${sanitizeHTML(risk.description)}</p>`
+                const threat = currentThreat();
+                infoEl.innerHTML = threat
+                    ? `<p><strong>${sanitizeHTML(threat.standard)}</strong></p><p class="mt-1">${sanitizeHTML(threat.description)}</p>`
                     : '';
             };
 
-            const populateRisks = () => {
-                const risks = (catalog[categorySelect.value] || {}).risks || [];
-                riskSelect.innerHTML = '';
-                risks.forEach(r => {
+            const populateThreats = () => {
+                threatSelect.innerHTML = '';
+                currentThreats().forEach(t => {
                     const opt = document.createElement('option');
-                    opt.value = r.key;
-                    opt.textContent = r.name;
-                    riskSelect.appendChild(opt);
+                    opt.value = t.key;
+                    opt.textContent = t.name;
+                    threatSelect.appendChild(opt);
                 });
                 updateInfo();
             };
 
-            categorySelect.addEventListener('change', populateRisks);
-            riskSelect.addEventListener('change', updateInfo);
-            populateRisks();
+            const populateCategories = () => {
+                categorySelect.innerHTML = '';
+                Object.entries(currentCategories()).forEach(([key, category]) => {
+                    const opt = document.createElement('option');
+                    opt.value = key;
+                    opt.textContent = category.label;
+                    categorySelect.appendChild(opt);
+                });
+                populateThreats();
+            };
+
+            domainSelect.addEventListener('change', populateCategories);
+            categorySelect.addEventListener('change', populateThreats);
+            threatSelect.addEventListener('change', updateInfo);
+            populateCategories();
 
             document.getElementById('riskcat-cancel-btn').addEventListener('click', () => Modal.hide());
             document.getElementById('riskcat-use-btn').addEventListener('click', () => {
-                const risk = currentRisk();
-                if (!risk) return;
-                this.useSelected(risk);
+                const threat = currentThreat();
+                if (!threat) return;
+                this.useSelected(threat);
                 Modal.hide();
             });
         },
 
         // No pisa una Descripción que el usuario ya haya escrito — mismo principio que ya sigue
         // el resto de la app (sugerir, nunca sobrescribir en silencio algo que ya se llenó).
-        useSelected(risk) {
+        useSelected(threat) {
             const nameInput = document.getElementById('riskName');
             const descInput = document.getElementById('riskDescription');
-            nameInput.value = risk.name;
+            nameInput.value = threat.name;
             nameInput.dispatchEvent(new Event('input'));
             if (descInput && !descInput.value.trim()) {
-                descInput.value = risk.description;
+                descInput.value = threat.description;
                 descInput.dispatchEvent(new Event('input'));
             }
             showToast('Riesgo cargado desde el catálogo.');
