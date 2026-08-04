@@ -2215,8 +2215,17 @@ document.addEventListener('DOMContentLoaded', () => {
             values.defenseKey = defenseKey;
             const attackerScore = this.calculateProfileAverage(state.quick.attackerProfiles[attackerKey]);
             const defenseScore = this.calculateProfileAverage(state.quick.defenseProfiles[defenseKey]);
-            values.FAD_raw = (attackerScore - defenseScore) / 100;
-            const FAD_Multiplier = values.isDeliberate ? (1 + (values.FAD_raw * values.deliberateThreatPonderation)) : 1;
+            values.FAD_raw = (attackerScore - defenseScore) / 100; // Diferencial Atacante-Defensa, solo informativo (ver resultadoADFactor)
+            // El multiplicador de amenaza deliberada escala según qué tan capaz/motivado es el
+            // ATACANTE por sí solo, NO según el diferencial contra tu defensa — usar el
+            // diferencial aquí era el bug: con una defensa fuerte (defenseScore > attackerScore)
+            // ese diferencial es negativo, así que subir el ponderador de "qué tan deliberada es
+            // la amenaza" bajaba el Riesgo Inherente en vez de subirlo. Que la amenaza sea
+            // deliberada (alguien te la está planteando a propósito) nunca debería REDUCIR el
+            // riesgo respecto al caso no-deliberado — tu defensa ya se descuenta aparte, en
+            // Riesgo Residual (RRt/ENC), no debe cancelar la intencionalidad de la amenaza aquí.
+            const attackerThreatFactor = attackerScore / 100;
+            const FAD_Multiplier = values.isDeliberate ? (1 + (attackerThreatFactor * values.deliberateThreatPonderation)) : 1;
             const PI_ajustada = Math.max(0, Math.min(1, values.PI * FAD_Multiplier));
             values.PI_ajustada = PI_ajustada;
             
