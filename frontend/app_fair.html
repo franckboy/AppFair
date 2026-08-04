@@ -4174,6 +4174,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         vuln: readRange('vuln'),
                         lossMagnitudes,
                         seed: state.fair.lastSeed || null,
+                        riskType: document.getElementById('fair-risk-type').value,
                     },
                 });
             } catch (e) {
@@ -4235,6 +4236,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
             this.renderPortfolioInterpretation(register);
 
+            // El mapa de calor (Impacto vs. Probabilidad de excedencia) y sus zonas
+            // Bajo/Medio/Alto/Crítico son conceptos de AMENAZA — para una 'oportunidad'
+            // (riesgo positivo) el "ale" guardado es en realidad un beneficio esperado, no una
+            // pérdida. Graficarla ahí la posicionaba en la esquina "Crítico" (peor caso posible)
+            // aunque fuera una oportunidad grande y buena — se excluye del mapa (y del Pareto,
+            // ver backend calculateParetoAnalysis), pero se sigue listando en la tabla de abajo
+            // con su propia evaluación correcta ("Oportunidad Significativa...", etc.).
+            const threatRegister = register.filter(r => r.riskType !== 'oportunidad');
+            const opportunityCount = register.length - threatRegister.length;
+
             // Las zonas del mapa de calor (colores + rangos) ya vienen del backend en la
             // respuesta de GET /api/register — solo falta el color del texto, que es
             // puramente presentación (blanco sobre fondos oscuros, negro sobre claros).
@@ -4276,7 +4287,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     ctx.textAlign = 'center';
                     ctx.textBaseline = 'middle';
                     ctx.fillStyle = '#fff';
-                    register.forEach((r, i) => {
+                    threatRegister.forEach((r, i) => {
                         ctx.fillText(String(i + 1), x.getPixelForValue(r.impactPercent), y.getPixelForValue(r.probabilityPercent));
                     });
                     ctx.restore();
@@ -4285,8 +4296,9 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('fair-register-legend').innerHTML = `
                 <p class="font-semibold text-gray-700 mb-2">Riesgos en el mapa</p>
                 <ol class="space-y-1">
-                    ${register.map((r, i) => `<li><strong>${i + 1}.</strong> ${sanitizeHTML(r.riskName)}</li>`).join('')}
-                </ol>`;
+                    ${threatRegister.map((r, i) => `<li><strong>${i + 1}.</strong> ${sanitizeHTML(r.riskName)}</li>`).join('')}
+                </ol>
+                ${opportunityCount > 0 ? `<p class="text-xs text-gray-500 mt-2">${opportunityCount} oportunidad${opportunityCount === 1 ? '' : 'es'} no se muestra${opportunityCount === 1 ? '' : 'n'} aquí — un beneficio esperado no es un riesgo a tratar. Están en la tabla de abajo.</p>` : ''}`;
 
             if (state.fair.registerChart) state.fair.registerChart.destroy();
             state.fair.registerChart = new Chart(canvas, {
@@ -4294,7 +4306,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 data: {
                     datasets: [{
                         label: 'Riesgos FAIR',
-                        data: register.map(r => ({ x: r.impactPercent, y: r.probabilityPercent, name: r.riskName })),
+                        data: threatRegister.map(r => ({ x: r.impactPercent, y: r.probabilityPercent, name: r.riskName })),
                         pointBackgroundColor: '#7C3AED',
                         pointBorderColor: 'white',
                         pointRadius: 10,
@@ -4428,6 +4440,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         vuln: risk.vuln,
                         lossMagnitudes: risk.lossMagnitudes,
                         currency: risk.currency,
+                        // Sin esto, una 'oportunidad' guardada se re-simulaba asumiendo
+                        // 'amenaza' (el default del backend) — el `evaluation` que devuelve la
+                        // respuesta quedaría mal calculado (aunque esta vista no lo muestre hoy).
+                        riskType: risk.riskType || 'amenaza',
                     },
                 });
             } catch (e) {
@@ -4707,9 +4723,13 @@ document.addEventListener('DOMContentLoaded', () => {
             const formatCurrency = (value) => new Intl.NumberFormat('en-US', { style: 'currency', currency: currency, minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
             const ctx = App.OrgContext.context;
 
-            const totalALE = register.reduce((sum, r) => sum + r.ale, 0);
-            const criticos = register.filter(r => r.evaluationLevel.includes('Crítico')).length;
-            const mixedCurrencies = registerHasMixedCurrencies(register);
+            // 'oportunidad' se excluye de la exposición total y del mapa de calor — su "ale" es
+            // un beneficio esperado, no una pérdida (mismo criterio que calculateParetoAnalysis
+            // en el backend; ver también renderRiskRegister).
+            const threatRegister = register.filter(r => r.riskType !== 'oportunidad');
+            const totalALE = threatRegister.reduce((sum, r) => sum + r.ale, 0);
+            const criticos = threatRegister.filter(r => r.evaluationLevel.includes('Crítico')).length;
+            const mixedCurrencies = registerHasMixedCurrencies(threatRegister);
             const exposicionTotalTexto = mixedCurrencies
                 ? 'No se muestra: hay riesgos guardados en distintas monedas (sumarlos daría un número sin sentido)'
                 : formatCurrency(totalALE);
@@ -4717,9 +4737,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const heatmapImg = document.getElementById('fair-register-chart').toDataURL('image/png');
             const paretoImg = document.getElementById('fair-pareto-chart').toDataURL('image/png');
             const sensitivityHTML = document.getElementById('fair-consolidated-sensitivity-list').innerHTML;
-            // Mismo orden que los puntos numerados del mapa de calor (ver renderRiskRegister),
-            // para que el número en el mapa corresponda al mismo riesgo en esta lista.
-            const heatmapLegendHTML = register.map((r, i) => `<li>${i + 1}. ${sanitizeHTML(r.riskName)}</li>`).join('');
+            // Mismo orden que los puntos numerados del mapa de calor (ver renderRiskRegister) —
+            // solo amenazas, para que el número en el mapa corresponda al mismo riesgo aquí.
+            const heatmapLegendHTML = threatRegister.map((r, i) => `<li>${i + 1}. ${sanitizeHTML(r.riskName)}</li>`).join('');
 
             // Si hay una Simulación Detallada abierta (botón "Simular" de la tabla), se incluye
             // en el PDF tal cual se ve en pantalla — así el histograma de un riesgo específico

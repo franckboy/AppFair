@@ -8,6 +8,7 @@ const { runMonteCarloSimulation, summarizeLosses, pearsonCorrelation } = require
 const { calculateVulnerability, calculateReduccionALE } = require('../src/lib/autocalc');
 const { calculateInsuranceRetainedALE, calculateROSI, evaluateTreatmentStrategies } = require('../src/lib/treatment');
 const { evaluateFairThreat } = require('../src/lib/evaluation');
+const { calculateParetoAnalysis } = require('../src/lib/register');
 
 test('mulberry32 es determinista: misma semilla -> misma secuencia', () => {
     const rngA = mulberry32(42);
@@ -120,6 +121,27 @@ test('evaluateFairThreat: clasifica correctamente como Crítico por encima del u
     const fmt = (n) => `$${n}`;
     const result = evaluateFairThreat(300000, 100000, criteria, fmt);
     assert.strictEqual(result.severity, 'critico');
+});
+
+test('calculateParetoAnalysis: excluye riesgos tipo "oportunidad" de la exposición total', () => {
+    // Bug real: el "ale" de una oportunidad es un BENEFICIO esperado, no una pérdida — antes
+    // de este chequeo, un beneficio grande se sumaba a la "exposición total" y competía por el
+    // 80% de "prioriza el tratamiento aquí" como si fuera el peor riesgo del portafolio.
+    const risks = [
+        { riskName: 'Amenaza chica', ale: 50000, riskType: 'amenaza' },
+        { riskName: 'Oportunidad grande', ale: 2000000, riskType: 'oportunidad' },
+    ];
+    const pareto = calculateParetoAnalysis(risks);
+    assert.strictEqual(pareto.totalExposure, 50000);
+    assert.strictEqual(pareto.totalRiskCount, 1);
+    assert.ok(!pareto.risks.some((r) => r.riskName === 'Oportunidad grande'));
+});
+
+test('calculateParetoAnalysis: un riesgo sin riskType (guardado antes de que existiera el campo) se trata como amenaza', () => {
+    const risks = [{ riskName: 'Riesgo viejo', ale: 80000 }];
+    const pareto = calculateParetoAnalysis(risks);
+    assert.strictEqual(pareto.totalExposure, 80000);
+    assert.strictEqual(pareto.totalRiskCount, 1);
 });
 
 // --- Validación estadística del muestreador triangular ---
