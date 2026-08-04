@@ -183,6 +183,22 @@ test('POST /api/treatment/evaluate con datos válidos responde con las 4 estrate
     assert.ok(res.body.recommendation);
 });
 
+test('POST /api/treatment/evaluate con reductionPercent > 100 responde 400 (no se puede evitar más del 100% del riesgo)', async () => {
+    const res = await request(app)
+        .post('/api/treatment/evaluate')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ currentALE: 100000, mitigar: { cost: 5000, reductionPercent: 150 } });
+    assert.strictEqual(res.status, 400);
+});
+
+test('POST /api/treatment/evaluate con costo negativo responde 400', async () => {
+    const res = await request(app)
+        .post('/api/treatment/evaluate')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ currentALE: 100000, evitar: { cost: -5000 } });
+    assert.strictEqual(res.status, 400);
+});
+
 // --- Registro de Riesgos ---
 
 test('flujo completo del Registro: PUT crea, GET lo lista, DELETE lo quita', async () => {

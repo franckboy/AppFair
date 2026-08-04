@@ -64,4 +64,37 @@ function validateSeed(seed) {
     return null;
 }
 
-module.exports = { MAX_ITERATIONS, isFiniteNumber, validateTriangularRange, validateIterations, validateSeed };
+/**
+ * Valida los campos numéricos del body de /api/treatment/evaluate. Antes de esto no había
+ * ningún límite: un reductionPercent > 100 hacía que Mitigar "evitara" más pérdida de la que
+ * existe (ALE residual negativo), y un costo/premium/deducible/límite negativo inflaba el
+ * beneficio neto calculado — ninguno de los dos es un valor real posible, así que dejarlos
+ * pasar sin avisar exageraba o subestimaba el riesgo sin ninguna razón de negocio, solo por
+ * falta de validación.
+ * @param {Object} body
+ * @returns {string|null} mensaje de error, o null si es válido
+ */
+function validateTreatmentBody(body) {
+    const { mitigar = {}, transferir = {}, evitar = {} } = body;
+
+    if (mitigar.reductionPercent !== undefined) {
+        if (!isFiniteNumber(mitigar.reductionPercent) || mitigar.reductionPercent < 0 || mitigar.reductionPercent > 100) {
+            return 'mitigar.reductionPercent debe ser un número entre 0 y 100.';
+        }
+    }
+
+    const nonNegativeFields = [
+        ['mitigar.cost', mitigar.cost], ['mitigar.delayDays', mitigar.delayDays],
+        ['transferir.premium', transferir.premium], ['transferir.deductible', transferir.deductible],
+        ['transferir.limit', transferir.limit], ['transferir.delayDays', transferir.delayDays],
+        ['evitar.cost', evitar.cost], ['evitar.delayDays', evitar.delayDays],
+    ];
+    for (const [label, value] of nonNegativeFields) {
+        if (value !== undefined && (!isFiniteNumber(value) || value < 0)) {
+            return `${label} debe ser un número mayor o igual a 0.`;
+        }
+    }
+    return null;
+}
+
+module.exports = { MAX_ITERATIONS, isFiniteNumber, validateTriangularRange, validateIterations, validateSeed, validateTreatmentBody };
