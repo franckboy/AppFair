@@ -23,10 +23,19 @@ function getRiskMatrixZones(rrtBands) {
  * Análisis 80-20 (Pareto): ordena los riesgos de mayor a menor ALE y calcula
  * el % acumulado, para saber cuántos riesgos concentran el 80% de la
  * exposición total.
- * @param {Array<{riskName:string, ale:number}>} risks
+ *
+ * Los riesgos tipo 'oportunidad' (riesgo positivo) se excluyen: su "ale" es en
+ * realidad un beneficio esperado, no una pérdida — sumarlo a la "exposición
+ * total" o hacerlo competir por el 80% de "prioriza el tratamiento aquí" no
+ * tiene sentido (un beneficio grande no es más urgente de tratar, es al revés,
+ * más deseable de perseguir). Los riesgos guardados antes de que existiera el
+ * campo riskType no tienen ese dato — se tratan como 'amenaza' (su
+ * comportamiento actual), no se excluyen.
+ * @param {Array<{riskName:string, ale:number, riskType?:string}>} risks
  */
 function calculateParetoAnalysis(risks) {
-    const sorted = [...risks].sort((a, b) => b.ale - a.ale);
+    const threats = risks.filter((r) => r.riskType !== 'oportunidad');
+    const sorted = [...threats].sort((a, b) => b.ale - a.ale);
     const total = sorted.reduce((sum, r) => sum + r.ale, 0);
 
     let running = 0;

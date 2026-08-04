@@ -227,3 +227,25 @@ test('PUT /api/register/:riskName sin ale (número) responde 400', async () => {
     const res = await request(app).put('/api/register/Riesgo%20Incompleto').set('X-API-Key', TEST_API_KEY).send({});
     assert.strictEqual(res.status, 400);
 });
+
+test('PUT /api/register/:riskName con riskType "oportunidad" se guarda y se excluye del Pareto', async () => {
+    // Bug real: riskType no se guardaba nunca (undefined para siempre), así que una
+    // "oportunidad" (riesgo positivo) quedaba indistinguible de una amenaza en el Registro —
+    // su beneficio esperado se sumaba a la "exposición total" y se graficaba en la esquina
+    // "Crítico" del mapa de calor como si fuera el peor riesgo del portafolio.
+    const riskName = 'Oportunidad de prueba HTTP';
+    const putRes = await request(app)
+        .put(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ale: 900000, cvar95: 1200000, evaluationLevel: 'Oportunidad Significativa', riskType: 'oportunidad' });
+    assert.strictEqual(putRes.status, 200);
+    assert.strictEqual(putRes.body.entry.riskType, 'oportunidad');
+
+    const getRes = await request(app).get('/api/register').set('X-API-Key', TEST_API_KEY);
+    const saved = getRes.body.risks.find((r) => r.riskName === riskName);
+    assert.strictEqual(saved.riskType, 'oportunidad');
+    assert.ok(!getRes.body.pareto.risks.some((r) => r.riskName === riskName),
+        'la oportunidad no debe aparecer en el Pareto (su "ale" es un beneficio, no una pérdida)');
+
+    await request(app).delete(`/api/register/${encodeURIComponent(riskName)}`).set('X-API-Key', TEST_API_KEY);
+});

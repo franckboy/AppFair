@@ -32,7 +32,7 @@ function createRegisterRouter(store) {
      * Se llama normalmente justo después de un /api/simulate exitoso, con su
      * resultado. Body esperado: { asset, owner, ale, cvar95, evaluationLevel,
      * evaluationJustification, probExceedance, sensitivity, currency, securityPlan,
-     * tef, vuln, lossMagnitudes, seed }
+     * tef, vuln, lossMagnitudes, seed, riskType }
      */
     router.put('/:riskName', (req, res) => {
         const riskName = req.params.riskName;
@@ -46,6 +46,14 @@ function createRegisterRouter(store) {
             // riesgo después desde el botón "Simular" del Registro, sin volver a pedirle los
             // datos al usuario. La reproducibilidad exacta la da la semilla (ver /api/simulate).
             tef = null, vuln = null, lossMagnitudes = null, seed = null,
+            // Antes no se guardaba nada: cada riesgo quedaba asumido como 'amenaza' para
+            // siempre, sin importar qué se eligió en el wizard. Una 'oportunidad' (riesgo
+            // positivo — su "ale" es en realidad un BENEFICIO esperado, no una pérdida) mezclada
+            // sin distinguir en el Pareto/mapa de calor (que asumen "más alto = más urgente
+            // tratar") terminaba graficada en la esquina "Crítico" y sumada a la "exposición
+            // total", como si un beneficio grande fuera el peor riesgo del portafolio — ver
+            // calculateParetoAnalysis, que ahora excluye 'oportunidad' de esa suma.
+            riskType = 'amenaza',
         } = req.body;
 
         if (typeof ale !== 'number') {
@@ -55,7 +63,7 @@ function createRegisterRouter(store) {
         const impactPercent = Math.max(0, Math.min(100, (ale / (criteria.aleCritico || 1)) * 100));
 
         const entry = {
-            riskName, asset, owner, currency, ale, cvar95,
+            riskName, asset, owner, currency, ale, cvar95, riskType,
             evaluationLevel, evaluationClasses, severity, evaluationJustification,
             impactPercent, probabilityPercent: probExceedance,
             sensitivity: sensitivity.slice(0, 5),
