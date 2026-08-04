@@ -568,21 +568,114 @@ const riskCatalog = {
             },
         },
     },
+    // Dominio "Cadena de Suministro C-TPAT": expandido a petición del usuario para cubrir los
+    // 9 Criterios Mínimos de Seguridad (MSC) del programa C-TPAT (Customs Trade Partnership
+    // Against Terrorism, CBP), uno por categoría — EXCEPTO el pilar "Cybersecurity" que el
+    // MSC sí incluye desde su actualización más reciente, deliberadamente omitido aquí: es de
+    // ciberseguridad, fuera del alcance físico/patrimonial que ya se definió esta sesión (igual
+    // que se excluyó NIST/MITRE de otros dominios). El nombre del dominio deja explícito que es
+    // C-TPAT (no un dominio genérico de "riesgo de cadena de suministro" — esa distinción se
+    // discutió con el usuario: el riesgo de continuidad de proveedores/logística ya vive en
+    // Operacional → Continuidad Operativa; este dominio es específicamente sobre SEGURIDAD de
+    // la cadena de suministro bajo ese programa de certificación).
     'cadena-suministro': {
-        label: 'Cadena de Suministro',
+        label: 'Cadena de Suministro C-TPAT',
+        code: 'CTP',
         categories: {
-            'integridad-carga': {
-                label: 'Integridad de la Carga',
+            'socios-comerciales': {
+                label: 'Seguridad de Socios Comerciales',
+                code: 'CTP-01',
                 threats: [
-                    { key: 'contrabando-contenedores', name: 'Contrabando en Contenedores/Vehículos', standard: 'C-TPAT', description: 'Introducción de mercancía ilícita o personas no autorizadas dentro de un contenedor o vehículo de carga.' },
-                    { key: 'manipulacion-sello-seguridad', name: 'Manipulación No Autorizada de Contenedor/Sello de Seguridad', standard: 'C-TPAT, ISO 28000', description: 'Apertura o alteración indebida de un contenedor o su sello de seguridad durante el trayecto.' },
+                    { key: 'seleccion-socio-sin-verificacion', name: 'Selección de Socio Comercial sin Verificación de Seguridad', standard: 'C-TPAT', code: 'CTP-SOC-001', description: 'Incorporación de un proveedor, transportista o socio sin evaluar su cumplimiento de criterios mínimos de seguridad.' },
+                    { key: 'incumplimiento-socio-comercial', name: 'Incumplimiento de Seguridad por Socio Comercial', standard: 'C-TPAT', code: 'CTP-SOC-002', description: 'Un proveedor, transportista o socio de la cadena de suministro no cumple los criterios mínimos de seguridad exigidos.' },
+                    { key: 'certificacion-ctpat-suspendida', name: 'Socio Comercial con Certificación C-TPAT Suspendida o Revocada', standard: 'C-TPAT', code: 'CTP-SOC-003', description: 'Se continúa operando con un socio cuya certificación C-TPAT fue suspendida o revocada, sin haberlo detectado.' },
+                    { key: 'subcontratacion-no-autorizada', name: 'Subcontratación No Autorizada por Parte de un Socio Comercial', standard: 'C-TPAT', code: 'CTP-SOC-004', description: 'Un socio comercial delega parte del servicio a un tercero no evaluado ni autorizado.' },
+                    { key: 'cambio-no-notificado-propietario', name: 'Cambio No Notificado de Propietario de un Socio Comercial', standard: 'C-TPAT', code: 'CTP-SOC-005', description: 'Un socio comercial cambia de dueño o de control sin notificarlo, alterando su perfil de riesgo.' },
                 ],
             },
-            'socios-comerciales': {
-                label: 'Socios Comerciales',
+            'contenedores-transporte': {
+                label: 'Seguridad de Contenedores y Medios de Transporte',
+                code: 'CTP-02',
                 threats: [
-                    { key: 'incumplimiento-socio-comercial', name: 'Incumplimiento de Seguridad por Socio Comercial', standard: 'C-TPAT', description: 'Un proveedor, transportista o socio de la cadena de suministro no cumple los criterios mínimos de seguridad exigidos.' },
-                    { key: 'personal-no-verificado', name: 'Personal No Verificado en la Cadena de Suministro', standard: 'C-TPAT', description: 'Personal sin verificación de antecedentes con acceso a carga, vehículos o instalaciones logísticas.' },
+                    { key: 'manipulacion-contenedor', name: 'Manipulación No Autorizada de Contenedor', standard: 'C-TPAT', code: 'CTP-CON-001', description: 'Apertura o alteración indebida de un contenedor durante el trayecto.' },
+                    { key: 'ausencia-inspeccion-7-puntos', name: 'Ausencia de Inspección de 7 Puntos del Contenedor', standard: 'C-TPAT', code: 'CTP-CON-002', description: 'El contenedor no se inspecciona (pared frontal, lados, piso, techo, puertas, exterior/chasis) antes de la carga.' },
+                    { key: 'compartimento-oculto', name: 'Compartimento Oculto en Contenedor o Vehículo', standard: 'C-TPAT', code: 'CTP-CON-003', description: 'Existencia de un espacio no declarado en la estructura de un contenedor o vehículo, apto para ocultar mercancía o personas.' },
+                    { key: 'contenedor-danado', name: 'Contenedor Dañado que Compromete su Integridad', standard: 'C-TPAT', code: 'CTP-CON-004', description: 'Daño estructural que facilita el acceso no autorizado al interior del contenedor.' },
+                    { key: 'vehiculo-sin-verificacion-procedencia', name: 'Vehículo de Transporte sin Verificación de Procedencia', standard: 'C-TPAT', code: 'CTP-CON-005', description: 'Se recibe o despacha carga en un vehículo cuyo origen y operador no fueron verificados.' },
+                    { key: 'contrabando-contenedores', name: 'Contrabando de Mercancía Ilícita en Contenedor', standard: 'C-TPAT', code: 'CTP-CON-006', description: 'Introducción de mercancía ilícita dentro de un contenedor o vehículo de carga.' },
+                    { key: 'polizon-oculto', name: 'Polizón Oculto en Contenedor o Vehículo', standard: 'C-TPAT', code: 'CTP-CON-007', description: 'Una o más personas se ocultan dentro de un contenedor o vehículo de carga para cruzar una frontera sin ser detectadas.' },
+                ],
+            },
+            'sellos-seguridad': {
+                label: 'Seguridad de Sellos',
+                code: 'CTP-03',
+                threats: [
+                    { key: 'sello-no-conforme-iso17712', name: 'Sello de Alta Seguridad No Conforme a Norma ISO 17712', standard: 'C-TPAT, ISO 17712', code: 'CTP-SEL-001', description: 'Se usa un sello que no cumple con la norma ISO 17712 para sellos de alta seguridad en contenedores de carga.' },
+                    { key: 'manipulacion-sello-seguridad', name: 'Sustitución No Autorizada de Sello de Seguridad', standard: 'C-TPAT, ISO 17712', code: 'CTP-SEL-002', description: 'Un sello de seguridad es retirado y reemplazado sin autorización durante el trayecto.' },
+                    { key: 'sello-aplicado-incorrectamente', name: 'Aplicación Incorrecta de Sello de Seguridad', standard: 'C-TPAT', code: 'CTP-SEL-003', description: 'El sello se coloca sin seguir el procedimiento establecido, reduciendo su efectividad.' },
+                    { key: 'falta-verificacion-vvtt', name: 'Falta de Verificación VVTT del Sello al Recibir el Contenedor', standard: 'C-TPAT', code: 'CTP-SEL-004', description: 'No se aplica el procedimiento Ver-Verificar-Girar-Jalar (VVTT) al recibir un contenedor sellado.' },
+                    { key: 'extravio-sellos-sin-usar', name: 'Extravío de Sellos de Seguridad sin Usar', standard: 'C-TPAT', code: 'CTP-SEL-005', description: 'Pérdida de sellos de seguridad aún no utilizados, que podrían emplearse para simular una cadena de custodia falsa.' },
+                ],
+            },
+            'seguridad-procedimental': {
+                label: 'Seguridad Procedimental',
+                code: 'CTP-04',
+                threats: [
+                    { key: 'documentacion-embarque-incompleta', name: 'Documentación de Embarque Incompleta o Alterada', standard: 'C-TPAT', code: 'CTP-PRO-001', description: 'Los documentos de embarque están incompletos, ilegibles o muestran señales de alteración.' },
+                    { key: 'discrepancia-manifiesto-carga', name: 'Discrepancia entre Manifiesto y Carga Física', standard: 'C-TPAT', code: 'CTP-PRO-002', description: 'La mercancía física no coincide con lo declarado en el manifiesto de carga.' },
+                    { key: 'falta-conciliacion-inventario-ctpat', name: 'Falta de Conciliación de Inventario en Recepción o Despacho', standard: 'C-TPAT', code: 'CTP-PRO-003', description: 'No se concilia la cantidad recibida o despachada contra lo documentado.' },
+                    { key: 'manejo-inadecuado-carga-alto-riesgo', name: 'Manejo Inadecuado de Carga de Alto Riesgo', standard: 'C-TPAT', code: 'CTP-PRO-004', description: 'Carga identificada como de alto riesgo no recibe el resguardo o supervisión adicional que exige el procedimiento.' },
+                    { key: 'falta-procedimiento-reportar-anomalias', name: 'Falta de Procedimiento para Reportar Anomalías de Seguridad', standard: 'C-TPAT', code: 'CTP-PRO-005', description: 'No existe o no se sigue un procedimiento claro para reportar una anomalía de seguridad detectada en la cadena de suministro.' },
+                ],
+            },
+            'controles-acceso-fisico': {
+                label: 'Controles de Acceso Físico',
+                code: 'CTP-05',
+                threats: [
+                    { key: 'ingreso-visitante-sin-registro', name: 'Ingreso de Visitante sin Registro', standard: 'C-TPAT', code: 'CTP-ACC-001', description: 'Una persona ajena ingresa a las instalaciones sin quedar registrada.' },
+                    { key: 'falta-credencial-diferenciada', name: 'Falta de Credencial Diferenciada para Empleados, Visitantes y Proveedores', standard: 'C-TPAT', code: 'CTP-ACC-002', description: 'No hay forma visual de distinguir entre empleados, visitantes y proveedores dentro de las instalaciones.' },
+                    { key: 'control-acceso-vehicular-deficiente', name: 'Control de Acceso Vehicular Deficiente', standard: 'C-TPAT', code: 'CTP-ACC-003', description: 'Los vehículos ingresan o salen de las instalaciones sin verificación adecuada.' },
+                    { key: 'ausencia-verificacion-identidad-acceso', name: 'Ausencia de Verificación de Identidad en Punto de Acceso', standard: 'C-TPAT', code: 'CTP-ACC-004', description: 'El punto de acceso no verifica que la identidad de quien ingresa corresponda a su credencial.' },
+                ],
+            },
+            'seguridad-fisica-instalaciones': {
+                label: 'Seguridad Física de Instalaciones',
+                code: 'CTP-06',
+                threats: [
+                    { key: 'perimetro-sin-cercado', name: 'Perímetro sin Cercado Adecuado', standard: 'C-TPAT', code: 'CTP-FIS-001', description: 'El perímetro de las instalaciones carece de una barrera física suficiente para disuadir el acceso no autorizado.' },
+                    { key: 'iluminacion-perimetral-insuficiente', name: 'Iluminación Perimetral Insuficiente', standard: 'C-TPAT', code: 'CTP-FIS-002', description: 'La iluminación del perímetro y áreas críticas no es suficiente para la vigilancia nocturna.' },
+                    { key: 'falla-alarma-intrusion', name: 'Falla de Sistema de Alarma de Intrusión', standard: 'C-TPAT', code: 'CTP-FIS-003', description: 'El sistema de alarma contra intrusión no funciona o no cubre un área crítica.' },
+                    { key: 'punto-ciego-cctv', name: 'Punto Ciego de CCTV en Área Crítica', standard: 'C-TPAT', code: 'CTP-FIS-004', description: 'Existe un área de manejo de carga o acceso sin cobertura de cámaras.' },
+                    { key: 'cerradura-baja-seguridad', name: 'Cerradura o Candado de Baja Seguridad en Puerta Crítica', standard: 'C-TPAT', code: 'CTP-FIS-005', description: 'Una puerta de acceso a carga o áreas restringidas usa un mecanismo de cierre fácil de forzar.' },
+                    { key: 'estacionamiento-sin-separacion', name: 'Área de Estacionamiento sin Separación de Zonas de Carga', standard: 'C-TPAT', code: 'CTP-FIS-006', description: 'Los vehículos privados se estacionan sin separación física de las áreas de carga y descarga.' },
+                ],
+            },
+            'seguridad-personal': {
+                label: 'Seguridad de Personal',
+                code: 'CTP-07',
+                threats: [
+                    { key: 'personal-no-verificado', name: 'Contratación sin Verificación de Antecedentes', standard: 'C-TPAT', code: 'CTP-PER-001', description: 'Personal sin verificación de antecedentes con acceso a carga, vehículos o instalaciones logísticas.' },
+                    { key: 'personal-temporal-sin-verificacion', name: 'Personal Temporal sin Verificación de Antecedentes', standard: 'C-TPAT', code: 'CTP-PER-002', description: 'Personal eventual o subcontratado obtiene acceso sin pasar por el mismo proceso de verificación que el personal permanente.' },
+                    { key: 'falta-baja-inmediata-acceso', name: 'Falta de Baja Inmediata de Acceso al Terminar Relación Laboral', standard: 'C-TPAT', code: 'CTP-PER-003', description: 'Los accesos y credenciales de un empleado no se cancelan de inmediato al terminar su relación laboral.' },
+                    { key: 'acceso-areas-sensibles-injustificado', name: 'Acceso a Áreas Sensibles sin Necesidad Justificada', standard: 'C-TPAT', code: 'CTP-PER-004', description: 'Personal con acceso a áreas críticas de carga o seguridad sin que su función lo requiera.' },
+                ],
+            },
+            'capacitacion-conciencia': {
+                label: 'Capacitación y Conciencia de Seguridad',
+                code: 'CTP-08',
+                threats: [
+                    { key: 'falta-capacitacion-deteccion-contrabando', name: 'Falta de Capacitación en Detección de Contrabando', standard: 'C-TPAT', code: 'CTP-CAP-001', description: 'El personal no está capacitado para reconocer indicios de contrabando en la carga.' },
+                    { key: 'falta-capacitacion-manipulacion-indebida', name: 'Falta de Capacitación en Reconocimiento de Manipulación Indebida', standard: 'C-TPAT', code: 'CTP-CAP-002', description: 'El personal no está capacitado para identificar señales de que un contenedor o sello fue manipulado.' },
+                    { key: 'desconocimiento-reporte-incidentes', name: 'Desconocimiento del Procedimiento de Reporte de Incidentes de Seguridad', standard: 'C-TPAT', code: 'CTP-CAP-003', description: 'El personal no sabe cómo o a quién reportar un incidente de seguridad detectado.' },
+                ],
+            },
+            'seguridad-agricola': {
+                label: 'Seguridad Agrícola',
+                code: 'CTP-09',
+                threats: [
+                    { key: 'contaminacion-contenedor-plagas', name: 'Contaminación de Contenedor con Plagas o Material Vegetal', standard: 'C-TPAT', code: 'CTP-AGR-001', description: 'Presencia de plagas, insectos o material vegetal no declarado dentro de un contenedor de carga.' },
+                    { key: 'presencia-suelo-materia-organica', name: 'Presencia de Suelo o Materia Orgánica en Contenedor', standard: 'C-TPAT', code: 'CTP-AGR-002', description: 'Se detecta tierra u otro material orgánico en un contenedor, con riesgo de introducir contaminación biológica.' },
+                    { key: 'incumplimiento-limpieza-precarga', name: 'Incumplimiento de Limpieza de Contenedor Pre-Carga', standard: 'C-TPAT', code: 'CTP-AGR-003', description: 'El contenedor no se limpia conforme al procedimiento antes de cargar mercancía.' },
                 ],
             },
         },
