@@ -5,9 +5,20 @@
 // Amenaza" (FA) que usa el motor de Vulnerabilidad.
 const attackerProfiles = {
     'oportunista': { name: 'Intruso Oportunista', motivation: 30, resources: 10, capacity: 20, persistence: 20, sophistication: 10 },
-    'vandalismo': { name: 'Vandalismo / Hurtos Comunes', motivation: 70, resources: 40, capacity: 50, persistence: 60, sophistication: 40 },
+    // Vandalismo/Hurtos Comunes es oportunista por definición: se va a un blanco más fácil en
+    // cuanto encuentra resistencia — su Persistencia debe ser BAJA, no la más alta de los 5
+    // perfiles (como quedaba con persistence=60, incluso por encima del Crimen Organizado).
+    // Motivación también se baja de 70 a 55: sigue siendo notable (impulso, presión de grupo,
+    // ganancia rápida) pero ya no supera a un actor premeditado como el Crimen Organizado.
+    'vandalismo': { name: 'Vandalismo / Hurtos Comunes', motivation: 55, resources: 40, capacity: 50, persistence: 30, sophistication: 40 },
     'empleado-desleal': { name: 'Empleado Desleal', motivation: 80, resources: 60, capacity: 70, persistence: 70, sophistication: 60 },
-    'organizado': { name: 'Grupo Criminal Organizado', motivation: 60, resources: 60, capacity: 60, persistence: 40, sophistication: 50 },
+    // Sesgo real encontrado: con persistence=40, el Crimen Organizado quedaba MENOS persistente
+    // que el Vandalismo (60) — invertido respecto a la realidad de seguridad patrimonial, donde
+    // un grupo organizado (robo de mercancía, bandas de asalto a instalaciones) case el objetivo,
+    // reintenta y se adapta, a diferencia de un vándalo oportunista que se retira al primer
+    // obstáculo. Se sube Persistencia a 65 y Motivación a 65 (ganancia deliberada, no impulsiva)
+    // para que quede, correctamente, por encima de Vandalismo en ambas dimensiones.
+    'organizado': { name: 'Grupo Criminal Organizado', motivation: 65, resources: 60, capacity: 60, persistence: 65, sophistication: 50 },
     'estado-nacion': { name: 'Terrorista o Espía', motivation: 90, resources: 90, capacity: 90, persistence: 90, sophistication: 90 },
 };
 
