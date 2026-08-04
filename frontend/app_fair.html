@@ -128,16 +128,16 @@
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <div class="input-group md:col-span-2">
                                     <label for="fair-riskName">Nombre del Escenario de Riesgo:</label>
-                                    <input type="text" id="fair-riskName" class="form-input" placeholder="Ej. Exfiltración de datos de clientes desde la base de datos CRM">
+                                    <input type="text" id="fair-riskName" class="form-input" placeholder="Ej. Robo a mano armada en la sucursal principal">
                                     <span id="fair-riskName-error" class="error-message hidden" aria-live="polite"></span>
                                 </div>
                                 <div class="input-group">
                                     <label for="fair-asset">Activo Afectado:</label>
-                                    <input type="text" id="fair-asset" class="form-input" list="datalist-assets" placeholder="Ej. Base de datos de clientes (DB-CRM-01)">
+                                    <input type="text" id="fair-asset" class="form-input" list="datalist-assets" placeholder="Ej. Bodega de mercancía (Bodega 3)">
                                 </div>
                                 <div class="input-group">
                                     <label for="fair-threat">Agente de Amenaza:</label>
-                                    <input type="text" id="fair-threat" class="form-input" list="datalist-threats" placeholder="Ej. Cibercriminal externo">
+                                    <input type="text" id="fair-threat" class="form-input" list="datalist-threats" placeholder="Ej. Grupo criminal organizado">
                                 </div>
                                 <div class="input-group">
                                     <label for="fair-risk-type">
@@ -157,12 +157,17 @@
                                         <option value="5">5 años</option>
                                     </select>
                                 </div>
+                                <!-- Las 3 opciones originales eran Confidencialidad/Integridad/Disponibilidad (la tríada
+                                     CIA de ciberseguridad) — se me pasaron en el barrido de "elimina toda referencia a
+                                     ciberseguridad" de esta sesión porque no contenían ninguna de las palabras que
+                                     busqué entonces. Reemplazadas por categorías de efecto propias de seguridad física. -->
                                 <div class="input-group md:col-span-2">
                                     <label for="fair-effect" id="fair-effect-label">Efecto / Pérdida:</label>
                                     <select id="fair-effect" class="form-select">
-                                        <option value="confidentiality">Pérdida de Confidencialidad</option>
-                                        <option value="integrity">Pérdida de Integridad</option>
-                                        <option value="availability">Pérdida de Disponibilidad</option>
+                                        <option value="material">Pérdida o Daño Material</option>
+                                        <option value="personas">Impacto a la Integridad de las Personas</option>
+                                        <option value="operativo">Interrupción Operativa</option>
+                                        <option value="reputacional">Daño Reputacional</option>
                                     </select>
                                 </div>
                             </div>
@@ -2022,7 +2027,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <h3 class="text-xl font-medium text-gray-700 mb-4">Paso 1: Descripción y Evaluación Inicial</h3>
                         <div class="input-group">
                             <label for="riskName">Nombre del Riesgo:</label>
-                            <input type="text" id="riskName" class="form-input" placeholder="Ej. Falla del sistema de pagos">
+                            <input type="text" id="riskName" class="form-input" placeholder="Ej. Robo de mercancía en la bodega principal">
                             <span id="riskName-error" class="error-message hidden" aria-live="polite"></span>
                             <button type="button" id="open-risk-catalog-btn" class="btn btn-secondary text-sm mt-2">📋 Elegir del Catálogo de Riesgos</button>
                         </div>
@@ -2949,7 +2954,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             this.resetForm(false);
 
-            document.getElementById('fair-effect').value = data.effect || 'confidentiality';
+            document.getElementById('fair-effect').value = data.effect || 'material';
             document.getElementById('fair-risk-type').value = data.riskType || 'amenaza';
             document.getElementById('fair-time-horizon').value = data.timeHorizon || '1';
             this.toggleRiskTypeLabels();
@@ -3638,7 +3643,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.getElementById('fair-riskName').value = '';
                 document.getElementById('fair-asset').value = '';
                 document.getElementById('fair-threat').value = '';
-                document.getElementById('fair-effect').value = 'confidentiality';
+                document.getElementById('fair-effect').value = 'material';
                 document.getElementById('fair-risk-type').value = 'amenaza';
                 document.getElementById('fair-time-horizon').value = '1';
                 this.toggleRiskTypeLabels();
@@ -4143,7 +4148,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.getElementById('fair-riskName').value = data.riskName || '';
                 document.getElementById('fair-asset').value = data.asset || '';
                 document.getElementById('fair-threat').value = data.threat || '';
-                document.getElementById('fair-effect').value = data.effect || 'confidentiality';
+                document.getElementById('fair-effect').value = data.effect || 'material';
                 document.getElementById('fair-risk-type').value = data.riskType || 'amenaza';
                 document.getElementById('fair-time-horizon').value = data.timeHorizon || '1';
                 this.toggleRiskTypeLabels();
