@@ -111,71 +111,175 @@ const riskCatalog = {
             },
         },
     },
-    'humano-intencional': {
-        label: 'Humano — Intencional',
+    // Dominio "Humano": basado en el Catálogo Maestro de Amenazas v1.0 (Dominio 1: Amenazas
+    // Humanas) que compartió el usuario — normas base declaradas ahí: ASIS SPC.1-2023, ISO
+    // 31000, NFPA 730, ISO 28000 (se omite NIST CSF de esa lista de normas base porque los
+    // únicos ítems que lo citaban eran de ciberseguridad, ver abajo). Se preserva el sistema de
+    // códigos del documento (HUM / HUM-01 / HUM-ROB-001) para trazabilidad. "Intencional" vs.
+    // "No Intencional" ya NO son dominios separados — un solo dominio "Humano" con 10
+    // categorías, porque esa distinción ya existe en la app vía el interruptor "Amenaza
+    // Deliberada" (Análisis Rápido/FAIR), no hace falta duplicarla en el catálogo.
+    //
+    // Se excluyeron del documento original, por ser específicos de ciberseguridad (NIST CSF) —
+    // fuera del alcance de esta app (ver riskProfiles arriba): HUM-ROB-012 Robo de información,
+    // HUM-ROB-013 Robo de identidad, HUM-ROB-014 Robo de propiedad intelectual, HUM-FRA-005
+    // Falsificación de identidad, HUM-FRA-006 Fraude electrónico, y "ciberterrorismo" dentro de
+    // HUM-TER. Los códigos de esos ítems excluidos se dejan sin usar (no se reasignan) para no
+    // perder la trazabilidad con el documento original si se reconsideran más adelante.
+    //
+    // El documento original solo daba el rango de código para HUM-05 a HUM-10 (Sabotaje,
+    // Espionaje, Delincuencia Organizada, Intrusión, Corrupción, Error Humano), sin los nombres
+    // de las amenazas específicas — esas 6 categorías se completaron con criterio propio,
+    // siguiendo el mismo estilo y las mismas familias de normas (ASIS/ISO/NFPA), continuando la
+    // numeración de código del documento (no son parte de la fuente original verbatim).
+    'humano': {
+        label: 'Humano',
+        code: 'HUM',
         categories: {
             'robo': {
                 label: 'Robo',
+                code: 'HUM-01',
                 threats: [
-                    { key: 'robo-interno', name: 'Robo Interno (Hurto por Personal)', standard: 'ASIS GSRA, ISO 31000', description: 'Sustracción de bienes o valores por parte de personal con acceso legítimo a las instalaciones.' },
-                    { key: 'robo-externo', name: 'Robo Externo (Intrusión)', standard: 'ASIS GSRA', description: 'Sustracción de bienes o valores mediante ingreso no autorizado de terceros ajenos a la organización.' },
-                    { key: 'robo-mano-armada', name: 'Robo a Mano Armada', standard: 'ASIS GSRA', description: 'Sustracción de bienes o valores mediante violencia o amenaza con arma contra personal o instalaciones.' },
-                    { key: 'robo-vehiculo', name: 'Robo de Vehículo', standard: 'ASIS GSRA', description: 'Sustracción de un vehículo de la organización, propio o de un tercero, dentro o fuera de sus instalaciones.' },
-                    { key: 'robo-carga-transito', name: 'Robo de Carga en Tránsito', standard: 'ISO 28000, TAPA FSR/TSR', description: 'Sustracción de mercancía durante su transporte entre origen y destino.' },
+                    { key: 'robo-interno', name: 'Robo Interno', standard: 'ASIS, ISO 31000', code: 'HUM-ROB-001', description: 'Sustracción de bienes por parte de personal con acceso legítimo a las instalaciones.' },
+                    { key: 'robo-externo', name: 'Robo Externo', standard: 'ASIS', code: 'HUM-ROB-002', description: 'Sustracción de bienes mediante ingreso no autorizado de terceros ajenos a la organización.' },
+                    { key: 'robo-armado', name: 'Robo Armado', standard: 'ASIS', code: 'HUM-ROB-003', description: 'Sustracción de bienes mediante uso o amenaza de un arma.' },
+                    { key: 'robo-con-violencia', name: 'Robo con Violencia', standard: 'ASIS', code: 'HUM-ROB-004', description: 'Sustracción de bienes mediante fuerza física contra las personas, sin arma.' },
+                    { key: 'hurto-simple', name: 'Hurto Simple', standard: 'ASIS', code: 'HUM-ROB-005', description: 'Sustracción de bienes sin violencia ni intimidación.' },
+                    { key: 'robo-efectivo', name: 'Robo de Efectivo', standard: 'ISO 31000', code: 'HUM-ROB-006', description: 'Sustracción de dinero en efectivo de cajas, bóvedas o áreas de resguardo.' },
+                    { key: 'robo-inventario', name: 'Robo de Inventario', standard: 'ISO 28000', code: 'HUM-ROB-007', description: 'Sustracción de existencias almacenadas en bodega o centro de distribución.' },
+                    { key: 'robo-mercancia', name: 'Robo de Mercancía', standard: 'ISO 28000', code: 'HUM-ROB-008', description: 'Sustracción de producto terminado destinado a la venta o distribución.' },
+                    { key: 'robo-carga', name: 'Robo de Carga', standard: 'ISO 28000', code: 'HUM-ROB-009', description: 'Sustracción de mercancía consolidada para su despacho o embarque.' },
+                    { key: 'robo-vehiculo', name: 'Robo de Vehículo', standard: 'ASIS', code: 'HUM-ROB-010', description: 'Sustracción de un vehículo propio o de un tercero, dentro o fuera de las instalaciones.' },
+                    { key: 'robo-combustible', name: 'Robo de Combustible', standard: 'ISO 28000', code: 'HUM-ROB-011', description: 'Sustracción de combustible de tanques, vehículos o instalaciones de almacenamiento.' },
+                    { key: 'robo-durante-transporte', name: 'Robo durante Transporte', standard: 'ISO 28000', code: 'HUM-ROB-015', description: 'Sustracción de mercancía mientras se encuentra en tránsito entre origen y destino.' },
                 ],
             },
             'fraude': {
                 label: 'Fraude',
+                code: 'HUM-02',
                 threats: [
-                    { key: 'fraude-financiero', name: 'Fraude Financiero / Malversación', standard: 'ISO 31000, COSO ERM', description: 'Uso indebido deliberado de activos o recursos financieros por parte de personal con acceso legítimo.' },
-                    { key: 'fraude-documental', name: 'Fraude Documental', standard: 'ISO 31000', description: 'Falsificación o alteración de documentos (facturas, contratos, registros) con fines de engaño o beneficio indebido.' },
+                    { key: 'fraude-financiero', name: 'Fraude Financiero', standard: 'ISO 31000', code: 'HUM-FRA-001', description: 'Manipulación deliberada de recursos financieros para beneficio propio o de terceros.' },
+                    { key: 'fraude-contable', name: 'Fraude Contable', standard: 'COSO', code: 'HUM-FRA-002', description: 'Alteración deliberada de registros contables para ocultar pérdidas o inflar resultados.' },
+                    { key: 'fraude-documental', name: 'Fraude Documental', standard: 'ISO 31000', code: 'HUM-FRA-003', description: 'Uso de documentos alterados o falsos para obtener un beneficio indebido.' },
+                    { key: 'falsificacion-documentos', name: 'Falsificación de Documentos', standard: 'ISO 31000', code: 'HUM-FRA-004', description: 'Creación o modificación de documentos oficiales sin autorización.' },
+                    { key: 'apropiacion-indebida', name: 'Apropiación Indebida', standard: 'ISO 31000', code: 'HUM-FRA-007', description: 'Uso o disposición de bienes o fondos ajenos sin autorización.' },
+                    { key: 'desvio-activos', name: 'Desvío de Activos', standard: 'ISO 31000', code: 'HUM-FRA-008', description: 'Redirección no autorizada de activos de la organización hacia terceros.' },
+                    { key: 'manipulacion-registros', name: 'Manipulación de Registros', standard: 'ISO 9001', code: 'HUM-FRA-009', description: 'Alteración de bitácoras, inventarios o registros operativos para ocultar una irregularidad.' },
+                    { key: 'colusion-interna', name: 'Colusión Interna', standard: 'ASIS', code: 'HUM-FRA-010', description: 'Acuerdo entre dos o más personas, internas o con terceros, para cometer un fraude.' },
                 ],
             },
             'violencia': {
-                label: 'Violencia / Actos Contra las Personas',
+                label: 'Violencia',
+                code: 'HUM-03',
                 threats: [
-                    { key: 'secuestro-extorsion', name: 'Secuestro / Extorsión', standard: 'ASIS GSRA', description: 'Privación de la libertad o amenaza contra personal, o exigencia de pago bajo amenaza.' },
-                    { key: 'violencia-laboral', name: 'Violencia en el Lugar de Trabajo', standard: 'ASIS GSRA', description: 'Agresión física o amenaza entre personal, o de terceros contra personal, dentro de las instalaciones.' },
-                ],
-            },
-            'sabotaje-destruccion': {
-                label: 'Sabotaje y Destrucción Deliberada',
-                threats: [
-                    { key: 'sabotaje', name: 'Sabotaje', standard: 'ASIS GSRA, ISO 31000', description: 'Daño intencional a procesos, equipo o infraestructura para interrumpir operaciones.' },
-                    { key: 'vandalismo', name: 'Vandalismo', standard: 'ASIS GSRA', description: 'Daño deliberado a instalaciones, vehículos o equipo sin intención de sustraerlos.' },
-                    { key: 'incendio-provocado', name: 'Incendio Provocado', standard: 'ASIS GSRA, NFPA 921', description: 'Fuego iniciado deliberadamente para causar daño o interrumpir operaciones.' },
+                    { key: 'agresion-fisica', name: 'Agresión Física', standard: 'ASIS', code: 'HUM-VIO-001', description: 'Uso de fuerza física contra una persona dentro o en relación con las instalaciones.' },
+                    { key: 'homicidio', name: 'Homicidio', standard: 'ASIS', code: 'HUM-VIO-002', description: 'Privación de la vida de una persona dentro o en relación con las instalaciones.' },
+                    { key: 'lesiones', name: 'Lesiones', standard: 'ASIS', code: 'HUM-VIO-003', description: 'Daño físico a una persona como resultado de un acto violento.' },
+                    { key: 'amenazas', name: 'Amenazas', standard: 'ASIS', code: 'HUM-VIO-004', description: 'Manifestación de intención de causar daño a una persona o a la organización.' },
+                    { key: 'acoso-laboral', name: 'Acoso Laboral', standard: 'ISO 45001', code: 'HUM-VIO-005', description: 'Conducta hostil o intimidatoria sostenida contra un trabajador.' },
+                    { key: 'acoso-sexual', name: 'Acoso Sexual', standard: 'ISO 45001', code: 'HUM-VIO-006', description: 'Conducta de naturaleza sexual no consentida dentro del entorno laboral.' },
+                    { key: 'violencia-clientes', name: 'Violencia de Clientes', standard: 'ASIS', code: 'HUM-VIO-007', description: 'Agresión física o verbal de un cliente o visitante contra personal de la organización.' },
+                    { key: 'violencia-domestica-trabajo', name: 'Violencia Doméstica Trasladada al Trabajo', standard: 'ASIS', code: 'HUM-VIO-008', description: 'Un conflicto doméstico que se manifiesta violentamente en el lugar de trabajo.' },
+                    { key: 'rinas', name: 'Riñas', standard: 'ASIS', code: 'HUM-VIO-009', description: 'Enfrentamiento físico entre dos o más personas dentro de las instalaciones.' },
+                    { key: 'ataque-arma-blanca', name: 'Ataque con Arma Blanca', standard: 'ASIS', code: 'HUM-VIO-010', description: 'Agresión con un objeto punzocortante.' },
+                    { key: 'ataque-arma-fuego', name: 'Ataque con Arma de Fuego', standard: 'ASIS', code: 'HUM-VIO-011', description: 'Agresión con un arma de fuego.' },
+                    { key: 'toma-rehenes', name: 'Toma de Rehenes', standard: 'ASIS', code: 'HUM-VIO-012', description: 'Retención forzada de una o más personas dentro de las instalaciones.' },
                 ],
             },
             'terrorismo': {
                 label: 'Terrorismo',
+                code: 'HUM-04',
                 threats: [
-                    { key: 'atentado-explosivo', name: 'Atentado Explosivo', standard: 'ASIS GSRA, NFPA 730', description: 'Uso de un artefacto explosivo contra instalaciones o personal con fines ideológicos o políticos.' },
-                    { key: 'amenaza-bomba', name: 'Amenaza de Bomba', standard: 'ASIS GSRA, NFPA 730', description: 'Aviso, creíble o no, de un artefacto explosivo, que obliga a activar protocolos de evacuación/revisión.' },
+                    { key: 'atentado-explosivo', name: 'Atentado Explosivo', standard: 'ASIS, NFPA 730', code: 'HUM-TER-001', description: 'Uso de un artefacto explosivo con fines ideológicos o políticos.' },
+                    { key: 'ataque-quimico', name: 'Ataque Químico', standard: 'ASIS', code: 'HUM-TER-002', description: 'Uso deliberado de una sustancia química peligrosa contra personas o instalaciones.' },
+                    { key: 'ataque-biologico', name: 'Ataque Biológico', standard: 'ASIS', code: 'HUM-TER-003', description: 'Uso deliberado de un agente biológico contra personas o instalaciones.' },
+                    { key: 'ataque-radiologico', name: 'Ataque Radiológico', standard: 'ASIS', code: 'HUM-TER-004', description: 'Uso deliberado de material radiológico contra personas o instalaciones.' },
+                    { key: 'atentado-incendiario', name: 'Atentado Incendiario', standard: 'ASIS, NFPA 921', code: 'HUM-TER-005', description: 'Uso deliberado del fuego, con fines ideológicos o políticos.' },
+                    { key: 'atentado-suicida', name: 'Atentado Suicida', standard: 'ASIS', code: 'HUM-TER-006', description: 'Ataque ejecutado por un agresor dispuesto a morir en el acto.' },
+                    { key: 'amenaza-bomba', name: 'Amenaza de Bomba', standard: 'ASIS, NFPA 730', code: 'HUM-TER-007', description: 'Aviso, creíble o no, de un artefacto explosivo.' },
+                    { key: 'financiamiento-terrorismo', name: 'Financiamiento al Terrorismo', standard: 'ASIS, ISO 31000', code: 'HUM-TER-008', description: 'Provisión de recursos económicos, consciente o no, a una organización terrorista.' },
+                ],
+            },
+            'sabotaje': {
+                label: 'Sabotaje',
+                code: 'HUM-05',
+                threats: [
+                    { key: 'sabotaje-infraestructura', name: 'Sabotaje a Infraestructura', standard: 'ASIS, ISO 31000', code: 'HUM-SAB-001', description: 'Daño intencional a instalaciones o infraestructura crítica para interrumpir operaciones.' },
+                    { key: 'sabotaje-maquinaria', name: 'Sabotaje a Maquinaria o Equipo', standard: 'ASIS', code: 'HUM-SAB-002', description: 'Daño intencional a maquinaria o equipo para interrumpir la operación.' },
+                    { key: 'sabotaje-sistemas-seguridad', name: 'Sabotaje a Sistemas de Seguridad Física', standard: 'ASIS', code: 'HUM-SAB-003', description: 'Manipulación o daño deliberado a CCTV, control de acceso o alarmas.' },
+                    { key: 'vandalismo', name: 'Vandalismo', standard: 'ASIS', code: 'HUM-SAB-004', description: 'Daño deliberado a instalaciones, vehículos o equipo sin intención de sustraerlos.' },
+                    { key: 'incendio-provocado', name: 'Incendio Provocado', standard: 'ASIS, NFPA 921', code: 'HUM-SAB-005', description: 'Fuego iniciado deliberadamente, sin motivación terrorista, para causar daño.' },
+                    { key: 'contaminacion-deliberada-producto', name: 'Contaminación Deliberada de Producto', standard: 'ASIS', code: 'HUM-SAB-006', description: 'Alteración intencional de un producto para causar daño o pérdida.' },
+                    { key: 'interrupcion-suministros', name: 'Interrupción Deliberada de Suministros', standard: 'ASIS', code: 'HUM-SAB-007', description: 'Corte intencional de agua, energía u otro insumo crítico para la operación.' },
+                    { key: 'destruccion-documentacion', name: 'Destrucción de Documentación Crítica', standard: 'ASIS', code: 'HUM-SAB-008', description: 'Eliminación deliberada de registros o documentos necesarios para la operación.' },
+                    { key: 'manipulacion-inventario', name: 'Manipulación Deliberada de Inventario', standard: 'ASIS', code: 'HUM-SAB-009', description: 'Alteración intencional de existencias o registros de inventario para ocultar una irregularidad.' },
+                    { key: 'dano-flota', name: 'Daño Deliberado a Flota Vehicular', standard: 'ASIS', code: 'HUM-SAB-010', description: 'Daño intencional a los vehículos de la organización.' },
                 ],
             },
             'espionaje': {
                 label: 'Espionaje',
+                code: 'HUM-06',
                 threats: [
-                    { key: 'espionaje-industrial', name: 'Espionaje Industrial', standard: 'ASIS GSRA', description: 'Obtención no autorizada de información o ventaja competitiva mediante acceso físico indebido.' },
-                    { key: 'acceso-no-autorizado', name: 'Acceso No Autorizado a Instalaciones', standard: 'ASIS GSRA, ISO 27001 Anexo A (Seguridad Física)', description: 'Ingreso de personas no autorizadas a áreas restringidas o críticas de la organización.' },
+                    { key: 'espionaje-industrial', name: 'Espionaje Industrial', standard: 'ASIS', code: 'HUM-ESP-001', description: 'Obtención no autorizada de información o ventaja competitiva mediante acceso físico indebido.' },
+                    { key: 'espionaje-competitivo', name: 'Espionaje Competitivo', standard: 'ASIS', code: 'HUM-ESP-002', description: 'Recolección encubierta de información estratégica por parte de un competidor.' },
+                    { key: 'infiltracion-personal', name: 'Infiltración de Personal', standard: 'ASIS', code: 'HUM-ESP-003', description: 'Colocación de una persona dentro de la organización con el fin de obtener información.' },
+                    { key: 'vigilancia-no-autorizada', name: 'Vigilancia No Autorizada', standard: 'ASIS', code: 'HUM-ESP-004', description: 'Observación o seguimiento encubierto de instalaciones o personal.' },
+                    { key: 'interceptacion-comunicaciones-fisicas', name: 'Interceptación de Comunicaciones Físicas', standard: 'ASIS', code: 'HUM-ESP-005', description: 'Sustracción o revisión no autorizada de correspondencia o documentos en tránsito.' },
+                    { key: 'grabacion-no-autorizada', name: 'Grabación No Autorizada de Instalaciones', standard: 'ASIS', code: 'HUM-ESP-006', description: 'Fotografía o grabación de áreas restringidas sin autorización.' },
+                    { key: 'reclutamiento-personal', name: 'Reclutamiento de Personal para Obtener Información', standard: 'ASIS', code: 'HUM-ESP-007', description: 'Persuasión o soborno a un empleado para que entregue información.' },
+                    { key: 'extraccion-documentos', name: 'Extracción No Autorizada de Documentos', standard: 'ASIS', code: 'HUM-ESP-008', description: 'Sustracción física de documentos con información sensible.' },
                 ],
             },
-        },
-    },
-    'humano-no-intencional': {
-        label: 'Humano — No Intencional',
-        categories: {
-            'error-operativo': {
-                label: 'Error Operativo',
+            'delincuencia-organizada': {
+                label: 'Delincuencia Organizada',
+                code: 'HUM-07',
                 threats: [
-                    { key: 'error-procedimientos', name: 'Error Humano en Procedimientos Operativos', standard: 'ISO 31000', description: 'Equivocación no deliberada de personal al ejecutar un proceso, con consecuencia de pérdida o daño.' },
-                    { key: 'incumplimiento-procedimientos', name: 'Incumplimiento de Procedimientos de Seguridad', standard: 'ASIS GSRA', description: 'Personal que no sigue protocolos establecidos (accesos, custodia de llaves, rondines), aumentando la exposición sin intención maliciosa.' },
+                    { key: 'secuestro', name: 'Secuestro', standard: 'ASIS', code: 'HUM-ORG-001', description: 'Privación de la libertad de una persona por parte de un grupo criminal organizado.' },
+                    { key: 'extorsion', name: 'Extorsión', standard: 'ASIS', code: 'HUM-ORG-002', description: 'Exigencia de pago bajo amenaza por parte de un grupo criminal organizado.' },
+                    { key: 'cobro-piso', name: 'Cobro de Piso', standard: 'ASIS', code: 'HUM-ORG-003', description: 'Exigencia recurrente de pago a cambio de no causar daño a la operación.' },
+                    { key: 'robo-mercancia-banda-organizada', name: 'Robo de Mercancía por Banda Organizada', standard: 'ASIS, ISO 28000', code: 'HUM-ORG-004', description: 'Sustracción planeada y coordinada de mercancía por un grupo criminal.' },
+                    { key: 'trafico-mercancia-ilicita', name: 'Tráfico de Mercancía Ilícita', standard: 'ASIS, C-TPAT', code: 'HUM-ORG-005', description: 'Uso de las instalaciones o la cadena logística para mover mercancía ilegal.' },
+                    { key: 'contrabando-organizacion-criminal', name: 'Contrabando Facilitado por Organización Criminal', standard: 'ASIS, C-TPAT', code: 'HUM-ORG-006', description: 'Introducción de mercancía o personas no declaradas con apoyo de un grupo organizado.' },
+                    { key: 'extorsion-transportistas', name: 'Extorsión a Transportistas', standard: 'ASIS', code: 'HUM-ORG-007', description: 'Exigencia de pago o amenaza contra personal de transporte de carga.' },
+                    { key: 'corrupcion-organizacion-criminal', name: 'Corrupción de Personal por Organización Criminal', standard: 'ASIS', code: 'HUM-ORG-008', description: 'Soborno o coacción a personal para facilitar actividad criminal.' },
                 ],
             },
-            'accidente': {
-                label: 'Accidente',
+            'intrusion': {
+                label: 'Intrusión',
+                code: 'HUM-08',
                 threats: [
-                    { key: 'accidente-laboral', name: 'Accidente Laboral', standard: 'ISO 31000, NFPA 101', description: 'Lesión o daño no intencional al personal durante el desempeño de sus funciones.' },
+                    { key: 'acceso-no-autorizado', name: 'Acceso No Autorizado a Instalaciones', standard: 'ASIS, ISO 27001 Anexo A (Seguridad Física)', code: 'HUM-INT-001', description: 'Ingreso de personas no autorizadas a áreas restringidas o críticas de la organización.' },
+                    { key: 'allanamiento', name: 'Allanamiento', standard: 'ASIS', code: 'HUM-INT-002', description: 'Ingreso forzado a instalaciones fuera de horario o sin autorización.' },
+                    { key: 'escalamiento-perimetro', name: 'Escalamiento de Perímetro', standard: 'ASIS', code: 'HUM-INT-003', description: 'Superación de bardas, cercas u otras barreras perimetrales.' },
+                    { key: 'credenciales-falsas-robadas', name: 'Uso de Credenciales Falsas o Robadas', standard: 'ASIS', code: 'HUM-INT-004', description: 'Ingreso mediante una identificación o credencial de acceso falsificada o sustraída.' },
+                    { key: 'tailgating', name: 'Ingreso Detrás de Personal Autorizado (Tailgating)', standard: 'ASIS', code: 'HUM-INT-005', description: 'Ingreso de una persona no autorizada aprovechando el acceso de alguien autorizado.' },
+                    { key: 'ocupacion-ilegal', name: 'Ocupación Ilegal de Instalaciones', standard: 'ASIS', code: 'HUM-INT-006', description: 'Ocupación no autorizada y sostenida de un inmueble o área de la organización.' },
+                    { key: 'ingreso-areas-restringidas', name: 'Ingreso de Personal Ajeno a Áreas Restringidas', standard: 'ASIS', code: 'HUM-INT-007', description: 'Ingreso de un visitante o proveedor a un área para la que no tiene autorización.' },
+                ],
+            },
+            'corrupcion': {
+                label: 'Corrupción',
+                code: 'HUM-09',
+                threats: [
+                    { key: 'soborno', name: 'Soborno', standard: 'ISO 37001', code: 'HUM-COR-001', description: 'Ofrecimiento o aceptación de un beneficio indebido a cambio de una acción u omisión.' },
+                    { key: 'cohecho-personal-seguridad', name: 'Cohecho a Personal de Seguridad', standard: 'ISO 37001, ASIS', code: 'HUM-COR-002', description: 'Pago indebido a personal de seguridad para facilitar un acto ilícito.' },
+                    { key: 'trafico-influencias', name: 'Tráfico de Influencias', standard: 'ISO 37001', code: 'HUM-COR-003', description: 'Uso de una posición de influencia para obtener un beneficio indebido para un tercero.' },
+                    { key: 'conflicto-interes', name: 'Conflicto de Interés No Declarado', standard: 'ISO 37001, ISO 31000', code: 'HUM-COR-004', description: 'Situación en la que el interés personal de un colaborador compromete su objetividad, sin haberla declarado.' },
+                    { key: 'pago-indebido-autoridades', name: 'Pago Indebido a Autoridades', standard: 'ISO 37001', code: 'HUM-COR-005', description: 'Entrega de dinero o beneficios a un funcionario público para obtener trato favorable.' },
+                    { key: 'favoritismo-contrataciones', name: 'Favoritismo en Contrataciones', standard: 'ISO 37001', code: 'HUM-COR-006', description: 'Selección de proveedores o personal por relación personal en vez de mérito.' },
+                ],
+            },
+            'error-humano': {
+                label: 'Error Humano',
+                code: 'HUM-10',
+                threats: [
+                    { key: 'error-procedimientos', name: 'Error en Procedimientos Operativos', standard: 'ISO 31000', code: 'HUM-ERR-001', description: 'Equivocación no deliberada de personal al ejecutar un proceso, con consecuencia de pérdida o daño.' },
+                    { key: 'incumplimiento-procedimientos', name: 'Incumplimiento de Procedimientos de Seguridad', standard: 'ASIS', code: 'HUM-ERR-002', description: 'Personal que no sigue protocolos establecidos, sin intención maliciosa.' },
+                    { key: 'accidente-laboral', name: 'Accidente Laboral', standard: 'ISO 31000, NFPA 101', code: 'HUM-ERR-003', description: 'Lesión o daño no intencional al personal durante el desempeño de sus funciones.' },
+                    { key: 'negligencia-custodia-credenciales', name: 'Negligencia en Custodia de Llaves o Credenciales', standard: 'ASIS', code: 'HUM-ERR-004', description: 'Pérdida o manejo descuidado de llaves, tarjetas o credenciales de acceso.' },
+                    { key: 'error-verificacion-identidad', name: 'Error en Verificación de Identidad', standard: 'ASIS', code: 'HUM-ERR-005', description: 'Falla del personal de control de acceso al validar la identidad de una persona.' },
+                    { key: 'fatiga-distraccion-personal', name: 'Fatiga o Distracción del Personal de Seguridad', standard: 'ASIS', code: 'HUM-ERR-006', description: 'Disminución de la vigilancia por cansancio o falta de atención.' },
+                    { key: 'comunicacion-deficiente-turnos', name: 'Comunicación Deficiente en Cambios de Turno', standard: 'ASIS', code: 'HUM-ERR-007', description: 'Pérdida de información relevante al transferir responsabilidades entre turnos.' },
                 ],
             },
         },
