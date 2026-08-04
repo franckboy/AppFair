@@ -797,6 +797,16 @@ document.addEventListener('DOMContentLoaded', () => {
         return factor.name;
     }
 
+    // Cada riesgo del Registro guarda su propia moneda (se puede analizar un riesgo en USD y
+    // otro en MXN sin querer, o a propósito) — sumar sus ALE crudos y ponerles un solo símbolo
+    // de moneda (Pareto, Interpretación General, Resumen Ejecutivo del PDF) sería sumar peras
+    // con manzanas y mostrar un número inventado. Esto detecta esa mezcla para poder avisar en
+    // vez de mostrar una "Exposición Total" mal calculada en silencio.
+    function registerHasMixedCurrencies(register) {
+        const currencies = new Set((register || []).map(r => r.currency || 'USD'));
+        return currencies.size > 1;
+    }
+
     // --- State Management ---
     const state = {
         config: {
@@ -4321,8 +4331,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const currency = state.quickUI.domElements.inputs.currencySelect.value;
             const formatCurrency = (value) => new Intl.NumberFormat('en-US', { style: 'currency', currency: currency, minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
 
-            document.getElementById('fair-pareto-summary').textContent =
-                `${pareto.riskCountFor80Percent} de ${pareto.totalRiskCount} riesgo(s) concentran el 80% de tu exposición total (${formatCurrency(pareto.totalExposure)}/año). Prioriza el tratamiento en esos primero.`;
+            const mixedCurrencies = registerHasMixedCurrencies(state.fair.riskRegister);
+            document.getElementById('fair-pareto-summary').textContent = mixedCurrencies
+                ? `${pareto.riskCountFor80Percent} de ${pareto.totalRiskCount} riesgo(s) concentran el 80% de tu exposición — el total en dinero no se muestra porque tienes riesgos guardados en distintas monedas (sumarlos daría un número sin sentido). Prioriza el tratamiento en esos primero.`
+                : `${pareto.riskCountFor80Percent} de ${pareto.totalRiskCount} riesgo(s) concentran el 80% de tu exposición total (${formatCurrency(pareto.totalExposure)}/año). Prioriza el tratamiento en esos primero.`;
 
             const canvas = document.getElementById('fair-pareto-chart');
             if (state.fair.paretoChart) state.fair.paretoChart.destroy();
@@ -4488,6 +4500,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             const currencySymbol = state.config.CURRENCY_SYMBOLS[register[0].currency] || '$';
             const formatCurrency = (v) => `${currencySymbol}${Math.round(v).toLocaleString('en-US')}`;
+            const mixedCurrencies = registerHasMixedCurrencies(register);
 
             const parts = [];
             parts.push(`Tienes <strong>${register.length}</strong> riesgo${register.length === 1 ? '' : 's'} guardado${register.length === 1 ? '' : 's'}: ` +
@@ -4495,7 +4508,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (pareto && pareto.risks.length > 0) {
                 const topNames = pareto.risks.slice(0, pareto.riskCountFor80Percent).map(r => sanitizeHTML(r.riskName));
-                parts.push(`<strong>${pareto.riskCountFor80Percent} de ${pareto.totalRiskCount}</strong> riesgo${pareto.riskCountFor80Percent === 1 ? '' : 's'} (${topNames.join(', ')}) concentra${pareto.riskCountFor80Percent === 1 ? '' : 'n'} el 80% de tu exposición total (${formatCurrency(pareto.totalExposure)}/año) — prioriza el tratamiento ahí antes que en los demás.`);
+                const exposicionTexto = mixedCurrencies
+                    ? 'el 80% de tu exposición total (el monto no se muestra: tienes riesgos guardados en distintas monedas, sumarlos daría un número sin sentido)'
+                    : `el 80% de tu exposición total (${formatCurrency(pareto.totalExposure)}/año)`;
+                parts.push(`<strong>${pareto.riskCountFor80Percent} de ${pareto.totalRiskCount}</strong> riesgo${pareto.riskCountFor80Percent === 1 ? '' : 's'} (${topNames.join(', ')}) concentra${pareto.riskCountFor80Percent === 1 ? '' : 'n'} ${exposicionTexto} — prioriza el tratamiento ahí antes que en los demás.`);
             }
 
             const topSensitivity = (state.fair.registerConsolidatedSensitivity || [])[0];
@@ -4693,6 +4709,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const totalALE = register.reduce((sum, r) => sum + r.ale, 0);
             const criticos = register.filter(r => r.evaluationLevel.includes('Crítico')).length;
+            const mixedCurrencies = registerHasMixedCurrencies(register);
+            const exposicionTotalTexto = mixedCurrencies
+                ? 'No se muestra: hay riesgos guardados en distintas monedas (sumarlos daría un número sin sentido)'
+                : formatCurrency(totalALE);
 
             const heatmapImg = document.getElementById('fair-register-chart').toDataURL('image/png');
             const paretoImg = document.getElementById('fair-pareto-chart').toDataURL('image/png');
@@ -4765,7 +4785,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <h2>Resumen Ejecutivo</h2>
                     <table>
                         <tr><td><strong>Riesgos Analizados</strong></td><td>${register.length}</td></tr>
-                        <tr><td><strong>Exposición Total (suma de ALE)</strong></td><td>${formatCurrency(totalALE)}</td></tr>
+                        <tr><td><strong>Exposición Total (suma de ALE)</strong></td><td>${exposicionTotalTexto}</td></tr>
                         <tr><td><strong>Riesgos en nivel Crítico</strong></td><td>${criticos}</td></tr>
                     </table>
                 </div>
