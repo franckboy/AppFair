@@ -1,6 +1,6 @@
 # Motor de Riesgos FAIR — Backend
 
-API REST del motor de cálculo de riesgos patrimoniales/ciberseguridad (FAIR + Monte Carlo,
+API REST del motor de cálculo de riesgos de seguridad física y patrimonial (FAIR + Monte Carlo,
 alineado a ISO 31000 / RIMS RA.1-2015 / ISO 28001). Es **solo el backend** — no incluye
 interfaz. `../frontend/app_fair.html` es su cliente: consume esta API directamente (ver el
 módulo `App.Api` ahí) para perfiles, criterios, autocálculo, simulación, tratamiento y
