@@ -840,6 +840,12 @@ document.addEventListener('DOMContentLoaded', () => {
             currentRiskData: {},
             riskMatrixChart: null,
             displayedRisks: [],
+            // La norma/estándar del Catálogo de Riesgos elegida más recientemente para el
+            // riesgo que se está llenando ahora mismo (ver App.RiskCatalog.useSelected()). Se
+            // limpia si el usuario escribe encima de "Nombre del Riesgo" a mano, para no
+            // asociar por error la norma de un riesgo distinto (ver el listener 'input' de
+            // riskName en App.QuickAnalysis.bindEvents()).
+            selectedCatalogRef: null,
         },
         fair: {
             fairResultsChart: null,
@@ -1985,6 +1991,11 @@ document.addEventListener('DOMContentLoaded', () => {
         useSelected(threat) {
             const nameInput = document.getElementById('riskName');
             const descInput = document.getElementById('riskDescription');
+            // Antes esto se perdía por completo: nada guardaba de qué amenaza del catálogo
+            // salió este riesgo, así que ni el Historial de Análisis Rápido ni la promoción a
+            // FAIR tenían forma de mostrar la norma — ver calculateAll() (guarda esto en
+            // catalogStandard/catalogCode) y App.FairWizard.loadRiskIntoForm() (lo transfiere).
+            state.quick.selectedCatalogRef = { standard: threat.standard, code: threat.code };
             nameInput.value = threat.name;
             nameInput.dispatchEvent(new Event('input'));
             if (descInput && !descInput.value.trim()) {
@@ -2275,6 +2286,15 @@ document.addEventListener('DOMContentLoaded', () => {
             Object.values(dom.inputs).forEach(input => {
                 if(input) input.addEventListener('input', () => this.calculateAll());
             });
+            // Si el usuario escribe encima de "Nombre del Riesgo" a mano, ya no corresponde a
+            // la amenaza del catálogo que se haya elegido antes — se limpia la referencia para
+            // no guardar una norma que no le corresponde a este riesgo. `isTrusted` distingue
+            // un tecleo real del usuario del evento sintético que dispara
+            // App.RiskCatalog.useSelected() al llenar el campo (ese sí debe conservar la
+            // referencia que él mismo acaba de guardar).
+            dom.inputs.riskName.addEventListener('input', (e) => {
+                if (e.isTrusted) state.quick.selectedCatalogRef = null;
+            });
             document.querySelectorAll('.quick-cost-input').forEach(input => {
                  input.addEventListener('change', () => this.validateAndFixRange('costoMinImpacto', 'costoMaxImpacto'));
             });
@@ -2333,6 +2353,13 @@ document.addEventListener('DOMContentLoaded', () => {
             const values = {
                 riskName: sanitizeHTML(dom.inputs.riskName.value) || "Riesgo Actual (sin guardar)",
                 riskDescription: sanitizeHTML(dom.inputs.riskDescription.value),
+                // Bug real encontrado: al elegir un riesgo del Catálogo (App.RiskCatalog), la
+                // norma/estándar que lo sustenta no se guardaba en ningún lado — ni en el
+                // historial ni al promover a FAIR, dando la sensación de que ambos módulos no
+                // tenían ninguna conexión de datos. Ver App.RiskCatalog.useSelected() y el
+                // listener 'input' de riskName que limpia esto si el usuario escribe encima.
+                catalogStandard: (state.quick.selectedCatalogRef || {}).standard || null,
+                catalogCode: (state.quick.selectedCatalogRef || {}).code || null,
                 ARO_raw: getSafeNumber(dom.inputs.aro),
                 costoMinImpacto: getSafeNumber(dom.inputs.costoMinImpacto),
                 costoMaxImpacto: getSafeNumber(dom.inputs.costoMaxImpacto),
@@ -2803,7 +2830,11 @@ document.addEventListener('DOMContentLoaded', () => {
             dom.inputs.rrMax.value = data.rrMax;
             dom.inputs.toggleDeliberateThreat.checked = data.isDeliberate;
             dom.inputs.deliberateThreatPonderation.value = data.deliberateThreatPonderation;
-            
+            // Sin esto, volver a guardar un riesgo cargado desde el historial perdía en
+            // silencio la norma del catálogo que ya tenía (calculateAll() la vuelve a leer de
+            // state.quick.selectedCatalogRef, no del campo riskName).
+            state.quick.selectedCatalogRef = data.catalogStandard ? { standard: data.catalogStandard, code: data.catalogCode } : null;
+
             this.toggleDeliberateThreatSection();
             this.calculateAll();
             Modal.alert(`Análisis para <strong>${sanitizeHTML(data.riskName)}</strong> cargado desde el historial.`, "Carga Exitosa");
@@ -2832,9 +2863,18 @@ document.addEventListener('DOMContentLoaded', () => {
             state.quick.history.forEach(risk => {
                 const row = tbody.insertRow();
                 row.className = 'bg-white border-b hover:bg-gray-50';
+                // La Descripción y la norma del Catálogo (si el riesgo vino de ahí) no tenían
+                // dónde verse en el Historial — antes solo existían dentro de fullData, sin
+                // ninguna forma de consultarlas desde aquí. Se muestran como tooltip (title) y
+                // una nota chica bajo el nombre, sin agregar columnas nuevas a la tabla.
+                const desc = (risk.fullData && risk.fullData.riskDescription) || '';
+                const standard = (risk.fullData && risk.fullData.catalogStandard) || '';
                 row.innerHTML = `
                     <td class="px-2 py-4"><input type="checkbox" class="history-checkbox" data-id="${risk.id}" /></td>
-                    <td class="px-6 py-4 font-medium text-gray-900 whitespace-nowrap">${sanitizeHTML(risk.name)}</td>
+                    <td class="px-6 py-4 font-medium text-gray-900 whitespace-nowrap" ${desc ? `title="${sanitizeHTML(desc)}"` : ''}>
+                        ${sanitizeHTML(risk.name)}
+                        ${standard ? `<br><span class="text-xs font-normal text-gray-500">📋 ${sanitizeHTML(standard)}</span>` : ''}
+                    </td>
                     <td class="px-6 py-4">${risk.ri}</td>
                     <td class="px-6 py-4">${risk.rrt}</td>
                     <td class="px-6 py-4">${risk.ale}</td>
@@ -3291,6 +3331,17 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('fair-wizard-wrapper').classList.remove('hidden');
             this.resetForm(false);
             document.getElementById('fair-riskName').value = data.riskName || '';
+
+            // Bug real: la Descripción y la norma del catálogo (si el riesgo se armó con
+            // App.RiskCatalog en Análisis Rápido) no llegaban a ningún campo de FAIR — el
+            // usuario veía el wizard como si fuera un análisis completamente nuevo, sin
+            // ninguna conexión con lo que ya había escrito. "Notas / Justificación de los
+            // Estimados" es el campo de FAIR más cercano a este contexto (Paso 1, sección
+            // Calidad de la Información).
+            const notesParts = [];
+            if (data.riskDescription) notesParts.push(data.riskDescription);
+            if (data.catalogStandard) notesParts.push(`[Catálogo de Riesgos: ${data.catalogCode ? data.catalogCode + ' — ' : ''}${data.catalogStandard}]`);
+            document.getElementById('fair-data-notes').value = notesParts.join('\n\n');
 
             if (data.attackerKey) document.getElementById('fair-attacker-profile').value = data.attackerKey;
             if (data.defenseKey) document.getElementById('fair-defense-profile').value = data.defenseKey;
