@@ -4749,6 +4749,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // un beneficio esperado, no una pérdida (mismo criterio que calculateParetoAnalysis
             // en el backend; ver también renderRiskRegister).
             const threatRegister = register.filter(r => r.riskType !== 'oportunidad');
+            const opportunityCount = register.length - threatRegister.length;
             const totalALE = threatRegister.reduce((sum, r) => sum + r.ale, 0);
             const criticos = threatRegister.filter(r => r.evaluationLevel.includes('Crítico')).length;
             const mixedCurrencies = registerHasMixedCurrencies(threatRegister);
@@ -4826,9 +4827,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="print-section">
                     <h2>Resumen Ejecutivo</h2>
                     <table>
-                        <tr><td><strong>Riesgos Analizados</strong></td><td>${register.length}</td></tr>
-                        <tr><td><strong>Exposición Total (suma de ALE)</strong></td><td>${exposicionTotalTexto}</td></tr>
-                        <tr><td><strong>Riesgos en nivel Crítico</strong></td><td>${criticos}</td></tr>
+                        <tr><td><strong>Riesgos Analizados</strong></td><td>${register.length}${opportunityCount > 0 ? ` (${threatRegister.length} amenaza${threatRegister.length === 1 ? '' : 's'}, ${opportunityCount} oportunidad${opportunityCount === 1 ? '' : 'es'})` : ''}</td></tr>
+                        <tr><td><strong>Exposición Total (suma de ALE de las amenazas)</strong></td><td>${exposicionTotalTexto}</td></tr>
+                        <tr><td><strong>Amenazas en nivel Crítico</strong></td><td>${criticos}</td></tr>
                     </table>
                 </div>
                 <div class="print-section">
