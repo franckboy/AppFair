@@ -393,38 +393,170 @@ const riskCatalog = {
             },
         },
     },
-    // Dominio "Tecnológico": placeholder — el plan de entregas del usuario lo separa de
-    // "Operacional" (Entrega 2 vs. Entrega 4, cada uno con su propio target de ~120/~80
-    // amenazas). Este dominio se construyó originalmente como "Tecnológico/Operacional"
-    // combinado, antes de conocer ese plan — se deja aquí con su contenido original (4
-    // amenazas de infraestructura/equipo) hasta que llegue el contenido completo de la
-    // Entrega 2 (Dominio Tecnológico), momento en el que se expandirá.
+    // Dominio "Tecnológico" (Entrega 2 del plan de entregas): sin documento de contenido
+    // detallado del usuario, construido con criterio propio (mismo acuerdo que Natural y
+    // Operacional) — no llega al target de ~120 del plan original (queda en ~75), pero cada
+    // amenaza es real y distinta, sin relleno para completar un número. Alcance ACOTADO a
+    // petición explícita del usuario: tecnología de SEGURIDAD PATRIMONIAL/FÍSICA (CCTV,
+    // control de acceso, alarmas, detección de intrusión, energía de respaldo, comunicaciones
+    // de seguridad) — NO ciberseguridad (coherente con la exclusión ya declarada arriba para
+    // toda la app). Por eso no hay nada de red/software/malware/hackeo aquí — solo fallas
+    // físicas/eléctricas/mecánicas del equipo. Tampoco se duplica lo que ya cubre "Operacional"
+    // (mantenimiento general, HVAC, agua, elevadores, montacargas) — este dominio es
+    // específicamente sobre la tecnología que sostiene la función de seguridad, no las
+    // instalaciones ni el equipo productivo en general. "Falla Estructural de Instalaciones"
+    // (antes aquí, en el placeholder original) se reubicó a Operacional → Gestión de
+    // Instalaciones (OPE-INS-011): es una falla de construcción/materiales, no de tecnología.
+    // Normas base: IEC 62676 (videovigilancia), IEC 60839 (alarmas y sistemas electrónicos de
+    // seguridad), UL 294/UL 827/UL 325 (control de acceso, estación central de monitoreo,
+    // barreras vehiculares — normas de producto de EE.UU. ampliamente usadas en la industria),
+    // NFPA 70/72/110/730 (eléctrico, alarma contra incendio, energía de emergencia, prevención
+    // de crimen en el entorno construido), ISO 27001 Anexo A (Seguridad Física y Ambiental,
+    // igual que ya se usaba en el placeholder), ASIS (práctica general de seguridad física).
     'tecnologico': {
         label: 'Tecnológico',
+        code: 'TEC',
         categories: {
-            'infraestructura': {
-                label: 'Infraestructura',
+            'energia-respaldo': {
+                label: 'Energía y Respaldo Eléctrico para Seguridad',
+                code: 'TEC-01',
                 threats: [
-                    { key: 'falla-electrica', name: 'Falla Eléctrica / Corte de Energía', standard: 'ISO 31000', description: 'Interrupción del suministro eléctrico que afecta operaciones, sistemas de seguridad física o refrigeración/conservación.' },
-                    { key: 'falla-estructural', name: 'Falla Estructural de Instalaciones', standard: 'ISO 31000', description: 'Deterioro o colapso de elementos estructurales por desgaste, mal mantenimiento o defecto de construcción.' },
+                    { key: 'falla-suministro-electrico-principal', name: 'Falla de Suministro Eléctrico Principal', standard: 'NFPA 70, ISO 31000', code: 'TEC-ENE-001', description: 'Interrupción del suministro eléctrico comercial que deja sin alimentación a los sistemas de seguridad física.' },
+                    { key: 'falla-generador-respaldo', name: 'Falla de Generador de Respaldo', standard: 'NFPA 110', code: 'TEC-ENE-002', description: 'El generador de emergencia no arranca o no sostiene la carga cuando falla la energía principal.' },
+                    { key: 'falla-ups-seguridad', name: 'Falla de UPS de Sistemas de Seguridad', standard: 'NFPA 110, ISO 22301', code: 'TEC-ENE-003', description: 'La fuente de alimentación ininterrumpida de un sistema de seguridad no cubre el corte de energía o no se activa.' },
+                    { key: 'sobretension-equipo-seguridad', name: 'Sobretensión o Pico de Voltaje en Equipo de Seguridad', standard: 'NFPA 70', code: 'TEC-ENE-004', description: 'Daño a cámaras, paneles u otro equipo de seguridad electrónico por una variación súbita de voltaje.' },
+                    { key: 'falla-puesta-tierra', name: 'Falla de Puesta a Tierra (Grounding)', standard: 'NFPA 70', code: 'TEC-ENE-005', description: 'Sistema de tierra deficiente que provoca daño o mal funcionamiento en equipo de seguridad sensible.' },
+                    { key: 'agotamiento-bateria-respaldo', name: 'Agotamiento No Detectado de Batería de Respaldo', standard: 'ISO 55001', code: 'TEC-ENE-006', description: 'Una batería de respaldo se descarga sin monitoreo previo y falla justo cuando se necesita.' },
+                    { key: 'falta-combustible-generador', name: 'Falta de Combustible para Generador de Emergencia', standard: 'NFPA 110', code: 'TEC-ENE-007', description: 'El generador de emergencia se queda sin combustible durante un corte de energía prolongado.' },
+                    { key: 'falla-transferencia-automatica', name: 'Falla de Interruptor de Transferencia Automática (ATS)', standard: 'NFPA 110', code: 'TEC-ENE-008', description: 'El interruptor de transferencia automática no conmuta correctamente entre la red eléctrica y el respaldo.' },
+                    { key: 'interferencia-electromagnetica', name: 'Interferencia Electromagnética en Equipo de Seguridad', standard: 'IEC 60839', code: 'TEC-ENE-009', description: 'Ruido eléctrico de otro equipo cercano que degrada la señal o el desempeño de un sistema de seguridad.' },
                 ],
             },
-            'incendio-accidental': {
-                label: 'Incendio Accidental',
+            'videovigilancia': {
+                label: 'Videovigilancia (CCTV)',
+                code: 'TEC-02',
                 threats: [
-                    { key: 'incendio-electrico', name: 'Incendio por Falla Eléctrica', standard: 'NFPA 70, ASIS GSRA', description: 'Fuego originado por corto circuito, sobrecarga o mal estado de instalaciones eléctricas.' },
+                    { key: 'falla-camara-cctv', name: 'Falla de Cámara de Videovigilancia', standard: 'IEC 62676', code: 'TEC-CCT-001', description: 'Descompostura de una o más cámaras que genera un punto ciego en la cobertura.' },
+                    { key: 'falla-grabador-video', name: 'Falla de Grabador de Video (DVR/NVR)', standard: 'IEC 62676', code: 'TEC-CCT-002', description: 'Mal funcionamiento del equipo que graba y almacena el video de las cámaras.' },
+                    { key: 'perdida-almacenamiento-video', name: 'Pérdida de Almacenamiento de Video', standard: 'IEC 62676', code: 'TEC-CCT-003', description: 'La grabación de un periodo relevante no está disponible por falla o saturación del almacenamiento.' },
+                    { key: 'falla-vision-nocturna', name: 'Falla de Visión Nocturna / Infrarrojo', standard: 'IEC 62676', code: 'TEC-CCT-004', description: 'Pérdida de la capacidad de grabar en condiciones de baja luz por falla del iluminador infrarrojo de la cámara.' },
+                    { key: 'falla-camara-ptz', name: 'Mal Funcionamiento de Cámara PTZ (Pan-Tilt-Zoom)', standard: 'IEC 62676', code: 'TEC-CCT-005', description: 'Una cámara motorizada deja de responder a los comandos de movimiento o enfoque, o queda fija en una posición.' },
+                    { key: 'punto-ciego-no-identificado', name: 'Punto Ciego No Identificado en Cobertura de Cámaras', standard: 'ASIS', code: 'TEC-CCT-006', description: 'Un área relevante queda fuera del campo de visión de todas las cámaras, sin que se haya detectado en el diseño del sistema.' },
+                    { key: 'dano-cableado-camara', name: 'Daño de Cableado o Conexión de Cámara', standard: 'IEC 62676', code: 'TEC-CCT-007', description: 'Corte, desgaste o desconexión física del cableado que alimenta o transmite la señal de una cámara.' },
+                    { key: 'falla-monitor-control-cctv', name: 'Falla de Monitor o Estación de Control de CCTV', standard: 'IEC 62676', code: 'TEC-CCT-008', description: 'El puesto desde el que el personal de seguridad supervisa las cámaras en vivo deja de funcionar.' },
+                    { key: 'obstruccion-lente-no-detectada', name: 'Obstrucción Física de Lente de Cámara No Detectada', standard: 'ASIS', code: 'TEC-CCT-009', description: 'Suciedad, vaho, hielo u otro objeto cubre el lente de una cámara sin que se detecte a tiempo.' },
+                    { key: 'desincronizacion-timestamp', name: 'Desincronización de Marca de Tiempo (Timestamp) en Grabación', standard: 'IEC 62676', code: 'TEC-CCT-010', description: 'La hora registrada en el video no coincide con la hora real, lo que compromete su valor como evidencia.' },
                 ],
             },
-            'sistemas-seguridad': {
-                label: 'Sistemas de Seguridad',
+            'control-acceso-tec': {
+                label: 'Control de Acceso',
+                code: 'TEC-03',
                 threats: [
-                    { key: 'falla-sistemas-seguridad', name: 'Falla de Sistemas de Seguridad Física', standard: 'ISO 27001 Anexo A (Seguridad Física y Ambiental)', description: 'Mal funcionamiento de CCTV, control de acceso o alarmas que reduce la capacidad de detección/disuasión.' },
+                    { key: 'falla-lector-credencial', name: 'Falla de Lector de Tarjeta o Credencial', standard: 'UL 294', code: 'TEC-ACC-001', description: 'El lector de control de acceso deja de reconocer credenciales válidas o falla intermitentemente.' },
+                    { key: 'falla-lector-biometrico', name: 'Falla de Lector Biométrico', standard: 'UL 294', code: 'TEC-ACC-002', description: 'El equipo de reconocimiento de huella, rostro u otro rasgo biométrico deja de identificar correctamente al personal autorizado.' },
+                    { key: 'falla-torniquete', name: 'Falla de Torniquete o Molinete', standard: 'UL 294', code: 'TEC-ACC-003', description: 'El mecanismo de paso controlado se atasca, no gira o permite el paso sin validar credencial.' },
+                    { key: 'falla-chapa-electrica', name: 'Falla de Chapa Eléctrica o Electroimán de Puerta', standard: 'UL 294', code: 'TEC-ACC-004', description: 'El mecanismo que asegura una puerta controlada no traba o no libera correctamente.' },
+                    { key: 'falla-sensor-puerta-forzada', name: 'Falla de Sensor de Puerta Forzada/Abierta', standard: 'UL 294', code: 'TEC-ACC-005', description: 'El sensor que debería alertar sobre una puerta forzada o dejada abierta no genera la alarma esperada.' },
+                    { key: 'falla-sistema-gestion-visitantes', name: 'Falla de Sistema de Gestión de Visitantes', standard: 'ASIS', code: 'TEC-ACC-006', description: 'El sistema que registra y controla el acceso de visitantes no funciona, dejando sin control ese flujo.' },
+                    { key: 'falla-barrera-vehicular', name: 'Falla de Barrera Vehicular Automática', standard: 'UL 325', code: 'TEC-ACC-007', description: 'La pluma o barrera de control vehicular no sube, no baja o no responde a la señal de apertura.' },
+                    { key: 'falla-reconocimiento-placas', name: 'Falla de Reconocimiento de Placas Vehiculares (LPR)', standard: 'ASIS', code: 'TEC-ACC-008', description: 'El sistema que identifica placas vehiculares no las lee correctamente o falla en condiciones de poca luz.' },
+                    { key: 'falla-sincronizacion-credenciales', name: 'Falla de Sincronización de Base de Datos de Credenciales', standard: 'UL 294', code: 'TEC-ACC-009', description: 'La lista de credenciales autorizadas no se actualiza correctamente entre el sistema central y los lectores.' },
                 ],
             },
-            'equipo': {
-                label: 'Equipo',
+            'deteccion-intrusion': {
+                label: 'Detección de Intrusión y Alarmas',
+                code: 'TEC-04',
                 threats: [
-                    { key: 'falla-equipo-critico', name: 'Falla de Equipo Crítico', standard: 'ISO 31000', description: 'Descompostura de maquinaria o equipo esencial para la operación, sin causa externa deliberada.' },
+                    { key: 'falla-sensor-movimiento', name: 'Falla de Sensor de Movimiento', standard: 'IEC 60839', code: 'TEC-ALA-001', description: 'El detector de movimiento no activa la alarma ante presencia no autorizada, o genera falsas alarmas recurrentes.' },
+                    { key: 'falla-sensor-perimetral', name: 'Falla de Sensor Perimetral (Cerca Sensorizada / Fibra Óptica)', standard: 'IEC 60839', code: 'TEC-ALA-002', description: 'El sistema de detección instalado en el perímetro no identifica un intento de cruce o escalamiento.' },
+                    { key: 'falla-sensor-rotura-vidrio', name: 'Falla de Sensor de Rotura de Vidrio', standard: 'IEC 60839', code: 'TEC-ALA-003', description: 'El sensor acústico que detecta la rotura de un vidrio no activa la alarma correspondiente.' },
+                    { key: 'falla-panel-alarma', name: 'Falla de Panel de Alarma', standard: 'IEC 60839', code: 'TEC-ALA-004', description: 'La central que procesa las señales de los sensores de intrusión deja de funcionar o se reinicia sola.' },
+                    { key: 'fatiga-falsas-alarmas', name: 'Fatiga por Falsas Alarmas Recurrentes', standard: 'ASIS', code: 'TEC-ALA-005', description: 'Un exceso de falsas alarmas hace que el personal deje de responder con la seriedad debida a una alarma real.' },
+                    { key: 'falla-comunicacion-estacion-central', name: 'Falla de Comunicación con Estación Central de Monitoreo', standard: 'UL 827', code: 'TEC-ALA-006', description: 'La señal de alarma no llega a la estación central de monitoreo externa por falla de la línea de comunicación.' },
+                    { key: 'falla-boton-panico', name: 'Falla de Botón de Pánico o Coacción', standard: 'UL 827', code: 'TEC-ALA-007', description: 'El dispositivo de emergencia activado manualmente por el personal no genera la alerta esperada.' },
+                    { key: 'falla-sensor-apertura', name: 'Falla de Sensor de Apertura de Puerta/Ventana', standard: 'IEC 60839', code: 'TEC-ALA-008', description: 'El contacto magnético que detecta la apertura de una puerta o ventana no reporta el evento.' },
+                    { key: 'falla-sirena-anunciador', name: 'Falla de Sirena o Anunciador de Alarma', standard: 'IEC 60839', code: 'TEC-ALA-009', description: 'El dispositivo audible o visual que debería notificar una alarma activa no funciona.' },
+                ],
+            },
+            'incendio-tecnico': {
+                label: 'Incendio Accidental de Origen Técnico',
+                code: 'TEC-05',
+                threats: [
+                    { key: 'incendio-electrico', name: 'Incendio por Falla Eléctrica', standard: 'NFPA 70, ASIS', code: 'TEC-INC-001', description: 'Fuego originado por corto circuito, sobrecarga o mal estado de instalaciones eléctricas.' },
+                    { key: 'incendio-sobrecalentamiento-equipo', name: 'Incendio por Sobrecalentamiento de Equipo', standard: 'NFPA 70', code: 'TEC-INC-002', description: 'Fuego causado por un equipo que opera a una temperatura superior a la que puede disipar de forma segura.' },
+                    { key: 'incendio-falla-bateria', name: 'Incendio por Falla de Batería o Cargador', standard: 'NFPA 70', code: 'TEC-INC-003', description: 'Fuego originado por una batería (ej. de respaldo o de equipo móvil) o su cargador en mal estado.' },
+                    { key: 'incendio-trabajo-caliente', name: 'Incendio por Trabajo en Caliente Mal Controlado', standard: 'NFPA 51B', code: 'TEC-INC-004', description: 'Fuego originado por soldadura, corte u otra actividad que genera chispas o calor, sin las medidas de control adecuadas.' },
+                    { key: 'incendio-falla-maquinaria', name: 'Incendio por Falla de Maquinaria en Operación', standard: 'NFPA 70', code: 'TEC-INC-005', description: 'Fuego originado por fricción, chispas o falla mecánica de un equipo en funcionamiento.' },
+                ],
+            },
+            'proteccion-incendio': {
+                label: 'Detección y Protección contra Incendio',
+                code: 'TEC-06',
+                threats: [
+                    { key: 'falla-detector-humo', name: 'Falla de Detector de Humo', standard: 'NFPA 72', code: 'TEC-PCI-001', description: 'El detector de humo no activa la alarma ante la presencia de humo, o genera falsas alarmas recurrentes.' },
+                    { key: 'falla-panel-alarma-incendio', name: 'Falla de Panel de Alarma Contra Incendio', standard: 'NFPA 72', code: 'TEC-PCI-002', description: 'La central que procesa las señales de detección de incendio deja de funcionar correctamente.' },
+                    { key: 'falla-sistema-rociadores', name: 'Falla de Sistema de Rociadores (Sprinklers)', standard: 'NFPA 13, NFPA 72', code: 'TEC-PCI-003', description: 'El sistema automático de extinción con agua no se activa, o lo hace de forma insuficiente, ante un incendio.' },
+                    { key: 'falla-sistema-supresion-gas', name: 'Falla de Sistema de Supresión con Agente Limpio o Gas', standard: 'NFPA 2001', code: 'TEC-PCI-004', description: 'El sistema de extinción por agente gaseoso (usado donde el agua dañaría el activo) no descarga correctamente.' },
+                    { key: 'falla-bomba-contra-incendio', name: 'Falla de Bomba Contra Incendio', standard: 'NFPA 20', code: 'TEC-PCI-005', description: 'La bomba que presuriza la red de agua contra incendio no arranca o no sostiene la presión requerida.' },
+                    { key: 'falsa-alarma-incendio-recurrente', name: 'Falsa Alarma de Incendio Recurrente', standard: 'NFPA 72', code: 'TEC-PCI-006', description: 'Activaciones repetidas sin causa real que erosionan la confianza y la velocidad de respuesta del personal.' },
+                    { key: 'falla-valvula-rociador-cerrada', name: 'Válvula de Sistema de Rociadores Cerrada Sin Detectar', standard: 'NFPA 25', code: 'TEC-PCI-007', description: 'Una válvula de control del sistema de rociadores queda cerrada por error, dejando el sistema sin agua disponible.' },
+                    { key: 'falla-detector-calor', name: 'Falla de Detector de Calor', standard: 'NFPA 72', code: 'TEC-PCI-008', description: 'El detector que responde a un aumento de temperatura (usado donde el humo no es un buen indicador) no activa la alarma.' },
+                ],
+            },
+            'comunicaciones-seguridad': {
+                label: 'Comunicaciones de Seguridad',
+                code: 'TEC-07',
+                threats: [
+                    { key: 'falla-radio-personal-seguridad', name: 'Falla de Radio de Comunicación del Personal de Seguridad', standard: 'ASIS', code: 'TEC-COM-001', description: 'El equipo de radio usado por guardias o personal de vigilancia deja de transmitir o recibir.' },
+                    { key: 'falla-intercomunicador', name: 'Falla de Sistema de Intercomunicación (Interfón)', standard: 'ASIS', code: 'TEC-COM-002', description: 'El equipo que permite comunicación entre un punto de acceso y la caseta de vigilancia deja de funcionar.' },
+                    { key: 'falla-notificacion-masiva', name: 'Falla de Sistema de Notificación Masiva de Emergencia', standard: 'NFPA 72', code: 'TEC-COM-003', description: 'El sistema que difunde una alerta a todo el personal en caso de emergencia no se activa o no se escucha.' },
+                    { key: 'falla-enlace-caseta-vigilancia', name: 'Falla de Enlace Telefónico de la Caseta de Vigilancia', standard: 'ASIS', code: 'TEC-COM-004', description: 'El punto de control de acceso pierde su línea de comunicación con el resto de la organización.' },
+                    { key: 'dano-fisico-cableado-seguridad', name: 'Daño Físico de Cableado de la Red de Sistemas de Seguridad', standard: 'ASIS', code: 'TEC-COM-005', description: 'Corte, roedores o desgaste físico del cableado que conecta cámaras, sensores o control de acceso entre sí.' },
+                    { key: 'falla-repetidor-antena-radio', name: 'Falla de Repetidor o Antena de Radio', standard: 'ASIS', code: 'TEC-COM-006', description: 'El equipo que extiende la cobertura de radio del personal de seguridad deja de funcionar.' },
+                    { key: 'saturacion-canal-radio-emergencia', name: 'Saturación de Canal de Radio en Emergencia', standard: 'ASIS', code: 'TEC-COM-007', description: 'Demasiadas transmisiones simultáneas impiden que una comunicación crítica pase durante una emergencia.' },
+                ],
+            },
+            'iluminacion-seguridad': {
+                label: 'Iluminación de Seguridad',
+                code: 'TEC-08',
+                threats: [
+                    { key: 'falla-iluminacion-perimetral', name: 'Falla de Iluminación Perimetral', standard: 'NFPA 730', code: 'TEC-ILU-001', description: 'Las luminarias que iluminan el perímetro de las instalaciones dejan de funcionar, reduciendo la visibilidad y disuasión.' },
+                    { key: 'falla-iluminacion-emergencia', name: 'Falla de Iluminación de Emergencia', standard: 'NFPA 101', code: 'TEC-ILU-002', description: 'El sistema de luces de emergencia no se activa durante un corte de energía.' },
+                    { key: 'falla-luminaria-movimiento', name: 'Falla de Luminaria Activada por Movimiento', standard: 'NFPA 730', code: 'TEC-ILU-003', description: 'Una luz que debería encenderse ante detección de movimiento no responde.' },
+                    { key: 'zona-sombra-no-identificada', name: 'Zona de Sombra No Identificada en el Perímetro', standard: 'ASIS', code: 'TEC-ILU-004', description: 'Un área del perímetro queda sin cobertura de iluminación adecuada, sin que se haya detectado en la inspección.' },
+                ],
+            },
+            'inspeccion-deteccion': {
+                label: 'Equipos de Inspección y Detección',
+                code: 'TEC-09',
+                threats: [
+                    { key: 'falla-escaner-rayos-x', name: 'Falla de Escáner de Rayos X', standard: 'ASIS, C-TPAT', code: 'TEC-INS-001', description: 'El equipo de inspección por rayos X de carga, correo o pertenencias deja de funcionar o pierde calibración.' },
+                    { key: 'falla-detector-metales', name: 'Falla de Detector de Metales', standard: 'ASIS', code: 'TEC-INS-002', description: 'El arco o detector portátil de metales pierde sensibilidad o deja de responder.' },
+                    { key: 'falla-deteccion-explosivos-narcoticos', name: 'Falla de Equipo de Detección de Explosivos/Narcóticos', standard: 'ASIS, C-TPAT', code: 'TEC-INS-003', description: 'El equipo de detección por trazas o canino asistido tecnológicamente pierde precisión o disponibilidad.' },
+                    { key: 'falla-bascula-pesaje-carga', name: 'Falla de Báscula o Sistema de Pesaje de Carga', standard: 'ASIS', code: 'TEC-INS-004', description: 'El sistema que verifica el peso de un embarque contra lo declarado pierde calibración o deja de funcionar.' },
+                    { key: 'falla-verificacion-sellos', name: 'Falla de Verificación Electrónica de Sellos de Contenedor', standard: 'C-TPAT, ISO 17712', code: 'TEC-INS-005', description: 'El lector que valida la integridad de un sello de alta seguridad en un contenedor no detecta una alteración.' },
+                ],
+            },
+            'rastreo-monitoreo-activos': {
+                label: 'Rastreo y Monitoreo de Activos',
+                code: 'TEC-10',
+                threats: [
+                    { key: 'falla-perdida-senal-gps', name: 'Falla o Pérdida de Señal de Rastreo GPS', standard: 'ASIS', code: 'TEC-RAS-001', description: 'El equipo de rastreo satelital de un vehículo o activo deja de reportar su ubicación.' },
+                    { key: 'falla-telemetria-flota', name: 'Falla de Telemetría de Flota', standard: 'ASIS', code: 'TEC-RAS-002', description: 'El sistema que reporta velocidad, rutas o eventos de manejo de la flota deja de transmitir datos.' },
+                    { key: 'falla-etiqueta-lector-rfid', name: 'Falla de Etiqueta o Lector RFID', standard: 'ASIS', code: 'TEC-RAS-003', description: 'Una etiqueta de identificación por radiofrecuencia o su lector dejan de comunicarse correctamente.' },
+                    { key: 'falla-alerta-geocerca', name: 'Falla de Alerta de Geocerca (Geofencing)', standard: 'ASIS', code: 'TEC-RAS-004', description: 'El sistema no genera la alerta esperada cuando un activo rastreado sale de una zona autorizada.' },
+                    { key: 'falla-monitoreo-temperatura-cadena-frio', name: 'Falla de Sistema de Monitoreo de Temperatura en Cadena de Frío', standard: 'ISO 22000', code: 'TEC-RAS-005', description: 'El sensor que vigila la temperatura de un embarque o almacén refrigerado deja de reportar o reporta datos incorrectos.' },
+                ],
+            },
+            'obsolescencia-tecnologica': {
+                label: 'Obsolescencia y Ciclo de Vida de Tecnología de Seguridad',
+                code: 'TEC-11',
+                threats: [
+                    { key: 'obsolescencia-equipo-seguridad', name: 'Obsolescencia de Equipo de Seguridad', standard: 'ISO 55001', code: 'TEC-OBS-001', description: 'Equipo de seguridad que ya no ofrece un desempeño adecuado por antigüedad, frente a las amenazas actuales.' },
+                    { key: 'discontinuacion-soporte-fabricante', name: 'Discontinuación de Soporte del Fabricante', standard: 'ISO 55001', code: 'TEC-OBS-002', description: 'El fabricante deja de dar soporte técnico o actualizaciones a un sistema de seguridad todavía en uso.' },
+                    { key: 'falta-repuestos-fuera-ciclo', name: 'Falta de Repuestos para Equipo de Seguridad Fuera de Ciclo', standard: 'ISO 55001', code: 'TEC-OBS-003', description: 'No hay refacciones disponibles en el mercado para un equipo de seguridad ya descontinuado.' },
+                    { key: 'incompatibilidad-tras-actualizacion', name: 'Incompatibilidad entre Sistemas de Seguridad Tras una Actualización', standard: 'ASIS', code: 'TEC-OBS-004', description: 'Una actualización de un sistema de seguridad deja de ser compatible con otro sistema con el que antes se integraba.' },
+                    { key: 'falla-integracion-sistemas-seguridad', name: 'Falla de Integración entre Sistemas de Seguridad', standard: 'ASIS', code: 'TEC-OBS-005', description: 'Distintos sistemas de seguridad (CCTV, control de acceso, alarmas) no comparten información entre sí como se planeó.' },
                 ],
             },
         },
@@ -536,6 +668,9 @@ const riskCatalog = {
                     { key: 'falla-elevador-personal', name: 'Falla de Elevador o Montacargas de Personal', standard: 'ISO 22301', code: 'OPE-INS-008', description: 'Descompostura de un elevador que afecta la movilidad del personal dentro de las instalaciones.' },
                     { key: 'filtracion-agua-techo', name: 'Filtración de Agua en Techo o Estructura', standard: 'ISO 22301', code: 'OPE-INS-009', description: 'Entrada de agua por daño estructural, sin relación con un evento climático extremo.' },
                     { key: 'falla-extraccion-humos', name: 'Falla de Sistema de Extracción de Humos o Gases', standard: 'NFPA, ISO 22301', code: 'OPE-INS-010', description: 'Falla del sistema que evacúa humos, gases o vapores de un área de proceso.' },
+                    // Reubicado desde el dominio "Tecnológico" al expandirlo (ver comentario ahí): es una
+                    // falla de construcción/materiales, no de tecnología de seguridad.
+                    { key: 'falla-estructural', name: 'Falla Estructural de Instalaciones', standard: 'ISO 31000', code: 'OPE-INS-011', description: 'Deterioro o colapso de elementos estructurales por desgaste, mal mantenimiento o defecto de construcción.' },
                 ],
             },
             'recursos-humanos-operativos': {
