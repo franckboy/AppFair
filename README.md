@@ -104,16 +104,23 @@ veces por simulación. Qué forma de curva se usa para eso no es cosmético — 
   triangular, cualquier punto entre mín y máx tenía una probabilidad "en línea recta" hacia los
   extremos, lo que sobre-representa esos extremos frente a lo que un experto normalmente quiere
   decir al dar sus 3 números.
-- **Magnitud de Pérdida → lognormal calibrada** (`getLognormalRandom`), no triangular ni PERT.
-  Las pérdidas financieras son "la mayoría chicas, pocas grandes" (asimetría a la derecha) —
-  estándar en modelado financiero/actuarial, y coherente con que la app ya reporta CVaR95/P90
-  además del promedio. `mínimo`/`máximo` se calibran como percentil 5/95 (IC 90%, la
-  construcción estándar de estimados calibrados) en vez de un techo/piso absoluto — a
+- **Magnitud de Pérdida → lognormal calibrada por MOMENTOS** (`getLognormalRandom`), no
+  triangular ni PERT. Las pérdidas financieras son "la mayoría chicas, pocas grandes" (asimetría
+  a la derecha) — estándar en modelado financiero/actuarial, y coherente con que la app ya
+  reporta CVaR95/P90 además del promedio. Primer intento: tratar mínimo/máximo como percentil
+  5/95 (IC 90%) — se descartó porque esos mismos números los calibra `calculateLossMagnitudeRange`
+  pensando en una triangular acotada, no en una promesa estadística de "90% de probabilidad
+  aquí", y reinterpretarlos así inflaba la cola sin control (CVaR95 y el máximo simulado podían
+  dispararse >10x). En su lugar, la lognormal se ajusta para tener la MISMA varianza que la
+  triangular con ese mismo min/moda/max (`triangularVariance` + `solveLognormalSigmaSquared`,
+  por bisección — no hay fórmula cerrada) y la misma moda — se preserva el "ancho de
+  incertidumbre" que el usuario quiso decir, y solo cambia la FORMA: sesgo a la derecha y una
+  cola realista sin techo duro, en vez de una promesa de percentil nueva e injustificada. A
   diferencia de triangular/PERT, una pérdida simulada SÍ puede superar el "peor caso" que se
-  estimó, que es justamente el motivo de trackear CVaR95 en vez de solo el máximo. Si una
-  categoría tiene mínimo o "más probable" en $0 (un caso real y válido — no toda categoría de
-  pérdida aplica a todo riesgo), cae a triangular para esa muestra, porque la lognormal no está
-  definida en 0.
+  estimó (con probabilidad baja, no cero) — que es justamente el motivo de trackear CVaR95 en
+  vez de solo el máximo. Si una categoría tiene "más probable" en $0 (un caso real y válido — no
+  toda categoría de pérdida aplica a todo riesgo), cae a triangular para esa muestra, porque la
+  lognormal no está definida en 0.
 - **Riesgo Inherente** (`App.FairRegister.computeFairRiskEquivalents`, frontend) usa
   `pertMean` (`(min + 4·moda + max) / 6`) para "des-mitigar" el ALE Residual y estimar cuánto
   costaría el riesgo sin controles — la misma distribución (PERT) que de verdad simula el

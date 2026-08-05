@@ -3,7 +3,14 @@
 const test = require('node:test');
 const assert = require('node:assert');
 
-const { mulberry32, getTriangularRandom, getPertRandom, getLognormalRandom } = require('../src/lib/random');
+const {
+    mulberry32,
+    getTriangularRandom,
+    getPertRandom,
+    getLognormalRandom,
+    triangularVariance,
+    solveLognormalSigmaSquared,
+} = require('../src/lib/random');
 const { runMonteCarloSimulation, summarizeLosses, pearsonCorrelation } = require('../src/lib/simulation');
 const { calculateVulnerability, calculateReduccionALE } = require('../src/lib/autocalc');
 const { calculateInsuranceRetainedALE, calculateROSI, evaluateTreatmentStrategies } = require('../src/lib/treatment');
@@ -231,70 +238,94 @@ test('getPertRandom: nunca devuelve valores fuera de [min, max] (a diferencia de
 });
 
 // --- Validación estadística del muestreador lognormal (Magnitud de Pérdida) ---
-test('getLognormalRandom: la media muestral converge a la teórica, y ln(muestras) converge a Normal(mu, sigma²)', () => {
-    // La varianza de la lognormal en sí (no la de sus logaritmos) explota con sigma grande —
-    // su estimador necesita muchísimas más de 200,000 muestras para converger de forma
-    // estable, por la cola derecha pesada (no es un defecto del muestreador, es una propiedad
-    // conocida de la distribución). La forma correcta y estable de validar la fórmula es en
-    // espacio logarítmico: por construcción, ln(muestra) = mu + sigma·Z con Z ~ Normal(0,1),
-    // así que ln(muestras) debe converger a Normal(mu, sigma²) — eso sí converge rápido.
+test('getLognormalRandom: ln(muestras) converge a Normal(mu, sigma²), con sigma² resuelto para igualar la varianza de la triangular', () => {
+    // La varianza de la lognormal en sí (no la de sus logaritmos) es un estimador más ruidoso
+    // que su propia media — la forma correcta y estable de validar mu/sigma² es en espacio
+    // logarítmico: por construcción, ln(muestra) = mu + sigma·Z con Z ~ Normal(0,1), así que
+    // ln(muestras) debe converger a Normal(mu, sigma²) — eso sí converge rápido y con poco
+    // ruido, incluso para el sigma² grande que puede salir de un caso muy sesgado.
     const rng = mulberry32(2026);
-    const Z90 = 1.6448536269514722;
     const cases = [
         { min: 10000, mode: 50000, max: 150000 },
         { min: 1000, mode: 5000, max: 200000 }, // muy sesgada — el caso típico de Magnitud de Pérdida
+        { min: 0, mode: 20000, max: 40000 }, // min=0 — ya NO cae a triangular (solo mode<=0 lo hace)
     ];
     const n = 200000;
 
     for (const { min, mode, max } of cases) {
-        const sigma = (Math.log(max) - Math.log(min)) / (2 * Z90);
-        const mu = Math.log(mode) + sigma * sigma;
+        const sigmaSquared = solveLognormalSigmaSquared(mode, triangularVariance(min, mode, max));
+        const sigma = Math.sqrt(sigmaSquared);
+        const mu = Math.log(mode) + sigmaSquared;
 
         const samples = new Array(n);
         for (let i = 0; i < n; i++) samples[i] = getLognormalRandom(min, mode, max, rng);
-
-        const mean = samples.reduce((a, b) => a + b, 0) / n;
-        const theoreticalMean = Math.exp(mu + (sigma * sigma) / 2);
-        const meanRelError = Math.abs(mean - theoreticalMean) / theoreticalMean;
-        assert.ok(
-            meanRelError < 0.05,
-            `min=${min} moda=${mode} max=${max}: media muestral ${mean.toFixed(2)} vs teórica ${theoreticalMean.toFixed(2)} (error ${(meanRelError * 100).toFixed(2)}%)`,
-        );
 
         const logs = samples.map((x) => Math.log(x));
         const logMean = logs.reduce((a, b) => a + b, 0) / n;
         const logVariance = logs.reduce((sum, x) => sum + (x - logMean) ** 2, 0) / n;
         const logMeanAbsError = Math.abs(logMean - mu);
-        const logVarRelError = Math.abs(logVariance - sigma * sigma) / (sigma * sigma);
+        const logVarAbsError = Math.abs(logVariance - sigmaSquared);
 
         assert.ok(
-            logMeanAbsError < 0.02,
+            logMeanAbsError < Math.max(0.02, sigma * 0.02),
             `min=${min} moda=${mode} max=${max}: media de ln(muestras) ${logMean.toFixed(4)} vs mu teórico ${mu.toFixed(4)} (dif ${logMeanAbsError.toFixed(4)})`,
         );
         assert.ok(
-            logVarRelError < 0.05,
-            `min=${min} moda=${mode} max=${max}: varianza de ln(muestras) ${logVariance.toFixed(4)} vs sigma² teórico ${(sigma * sigma).toFixed(4)} (error ${(logVarRelError * 100).toFixed(2)}%)`,
+            logVarAbsError < Math.max(0.001, sigmaSquared * 0.1),
+            `min=${min} moda=${mode} max=${max}: varianza de ln(muestras) ${logVariance.toFixed(4)} vs sigma² teórico ${sigmaSquared.toFixed(4)} (dif ${logVarAbsError.toFixed(4)})`,
         );
     }
 });
 
-test('getLognormalRandom: SÍ puede superar max (percentil 95, no techo duro) — a diferencia de PERT/triangular', () => {
-    const rng = mulberry32(3);
-    let exceedsMax = false;
-    for (let i = 0; i < 50000; i++) {
-        if (getLognormalRandom(10000, 50000, 150000, rng) > 150000) {
-            exceedsMax = true;
-            break;
-        }
-    }
-    assert.ok(exceedsMax, 'con 50,000 muestras, se esperaba que al menos una superara max (percentil 95, no absoluto)');
+test('getLognormalRandom: la varianza muestral (en dinero, no en logaritmos) converge a la MISMA varianza que tendría la triangular con ese min/moda/max', () => {
+    // Esta es la propiedad que motivó el ajuste por momentos: el "ancho de incertidumbre" que
+    // implican min/moda/max debe quedar igual que antes (con triangular) — solo cambia la
+    // forma de la curva, no cuánta incertidumbre hay.
+    const rng = mulberry32(99);
+    const { min, mode, max } = { min: 10000, mode: 50000, max: 150000 };
+    const n = 300000;
+    const samples = new Array(n);
+    for (let i = 0; i < n; i++) samples[i] = getLognormalRandom(min, mode, max, rng);
+
+    const mean = samples.reduce((a, b) => a + b, 0) / n;
+    const variance = samples.reduce((sum, x) => sum + (x - mean) ** 2, 0) / n;
+    const targetVariance = triangularVariance(min, mode, max);
+    const relError = Math.abs(variance - targetVariance) / targetVariance;
+
+    assert.ok(
+        relError < 0.05,
+        `varianza muestral ${variance.toFixed(0)} vs varianza de la triangular equivalente ${targetVariance.toFixed(0)} (error ${(relError * 100).toFixed(2)}%)`,
+    );
 });
 
-test('getLognormalRandom: con min o moda en 0 (categoría de pérdida sin costo en ese punto), cae a triangular en vez de reventar', () => {
+test('getLognormalRandom: SÍ puede superar max, pero con probabilidad baja (no el ~50% que daba la calibración por percentil 5/95 descartada)', () => {
+    const rng = mulberry32(3);
+    const n = 50000;
+    let exceedCount = 0;
+    for (let i = 0; i < n; i++) {
+        if (getLognormalRandom(10000, 50000, 150000, rng) > 150000) exceedCount++;
+    }
+    const pct = exceedCount / n;
+    assert.ok(pct > 0, 'con 50,000 muestras, se esperaba que al menos una superara max (no es un techo absoluto)');
+    assert.ok(
+        pct < 0.1,
+        `se esperaba superar max en menos del 10% de las muestras (dio ${(pct * 100).toFixed(2)}%) — si no, la cola sigue exagerada`,
+    );
+});
+
+test('getLognormalRandom: con min=0 y moda>0, YA NO cae a triangular (el ajuste por momentos no necesita min>0)', () => {
     const rngA = mulberry32(55);
     const rngB = mulberry32(55);
     const fromLognormal = getLognormalRandom(0, 5000, 20000, rngA);
     const fromTriangular = getTriangularRandom(0, 5000, 20000, rngB);
+    assert.notStrictEqual(fromLognormal, fromTriangular);
+});
+
+test('getLognormalRandom: con moda en 0 (categoría de pérdida sin costo típico), cae a triangular en vez de reventar', () => {
+    const rngA = mulberry32(55);
+    const rngB = mulberry32(55);
+    const fromLognormal = getLognormalRandom(0, 0, 20000, rngA);
+    const fromTriangular = getTriangularRandom(0, 0, 20000, rngB);
     assert.strictEqual(fromLognormal, fromTriangular);
 });
 
