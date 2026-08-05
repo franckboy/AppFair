@@ -326,6 +326,30 @@ test('PUT /api/assets/:id con id inexistente responde 404', async () => {
     assert.strictEqual(res.status, 404);
 });
 
+test('POST /api/assets sin currency usa USD por defecto, y PUT respeta la currency guardada', async () => {
+    const postRes = await request(app)
+        .post('/api/assets')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ nombre: 'Equipo Importado', valorEstimado: 20000, currency: 'EUR' });
+    assert.strictEqual(postRes.body.entry.currency, 'EUR');
+
+    const postDefaultRes = await request(app)
+        .post('/api/assets')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ nombre: 'Bodega Local', valorEstimado: 10000 });
+    assert.strictEqual(postDefaultRes.body.entry.currency, 'USD',
+        'sin currency en el body, debe caer en USD (mismo default que register.js/simulate.js/treatment.js)');
+
+    const putRes = await request(app)
+        .put(`/api/assets/${postRes.body.entry.id}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ nombre: 'Equipo Importado', valorEstimado: 25000, currency: 'EUR' });
+    assert.strictEqual(putRes.body.entry.currency, 'EUR');
+
+    await request(app).delete(`/api/assets/${postRes.body.entry.id}`).set('X-API-Key', TEST_API_KEY);
+    await request(app).delete(`/api/assets/${postDefaultRes.body.entry.id}`).set('X-API-Key', TEST_API_KEY);
+});
+
 test('dos activos pueden compartir el mismo nombre sin pisarse (identificados por id, no por nombre)', async () => {
     const a = await request(app).post('/api/assets').set('X-API-Key', TEST_API_KEY).send({ nombre: 'Bodega 3', valorEstimado: 100 });
     const b = await request(app).post('/api/assets').set('X-API-Key', TEST_API_KEY).send({ nombre: 'Bodega 3', valorEstimado: 200 });

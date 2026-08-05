@@ -720,6 +720,10 @@
                                 <input type="number" id="asset-valor" class="form-input" min="0" value="0" required>
                             </div>
                             <div class="input-group">
+                                <label for="asset-moneda">Moneda:</label>
+                                <select id="asset-moneda" class="form-select"></select>
+                            </div>
+                            <div class="input-group">
                                 <label for="asset-categoria">Categoría (opcional):</label>
                                 <input type="text" id="asset-categoria" class="form-input" placeholder="Ej. Inventario, Equipo, Inmueble">
                             </div>
@@ -2097,6 +2101,8 @@ document.addEventListener('DOMContentLoaded', () => {
         editingId: null,
 
         init() {
+            App.QuickAnalysis.populateDropdown(document.getElementById('asset-moneda'), Object.keys(state.config.CURRENCY_SYMBOLS).map(c => ({ name: c, value: c })));
+            document.getElementById('asset-moneda').value = App.OrgDefaults.defaults.currency || 'USD';
             document.getElementById('asset-form').addEventListener('submit', (e) => { e.preventDefault(); this.handleSubmit(); });
             document.getElementById('asset-form-cancel-btn').addEventListener('click', () => this.cancelEdit());
             const quickBtn = document.getElementById('open-asset-catalog-btn');
@@ -2120,16 +2126,19 @@ document.addEventListener('DOMContentLoaded', () => {
             this.render();
         },
 
+        // Bug real corregido: antes se formateaba el valor de TODOS los activos con la moneda
+        // que estuviera seleccionada ahora mismo en Análisis Rápido, así que el mismo activo
+        // cambiaba de moneda con solo cambiar ese selector en otra pantalla. Cada activo trae
+        // su propia 'currency' (fijada al crearlo) y se formatea con esa, no con la global.
         render() {
             const assets = state.quick.assets || [];
             document.getElementById('assets-empty').classList.toggle('hidden', assets.length > 0);
-            const currency = state.quickUI.domElements.inputs.currencySelect.value || 'USD';
-            const fmt = (v) => new Intl.NumberFormat('en-US', { style: 'currency', currency, minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v);
+            const fmt = (v, currency) => new Intl.NumberFormat('en-US', { style: 'currency', currency: currency || 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v);
             const tbody = document.getElementById('assets-table-body');
             tbody.innerHTML = assets.map(a => `
                 <tr class="border-b">
                     <td class="py-2">${sanitizeHTML(a.nombre)}</td>
-                    <td>${fmt(a.valorEstimado)}</td>
+                    <td>${fmt(a.valorEstimado, a.currency)}</td>
                     <td>${sanitizeHTML(a.categoria || '—')}</td>
                     <td>${sanitizeHTML(a.ubicacion || '—')}</td>
                     <td class="text-right whitespace-nowrap">
@@ -2146,6 +2155,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return {
                 nombre: document.getElementById('asset-nombre').value.trim(),
                 valorEstimado: getSafeNumber(document.getElementById('asset-valor')),
+                currency: document.getElementById('asset-moneda').value,
                 categoria: document.getElementById('asset-categoria').value.trim(),
                 ubicacion: document.getElementById('asset-ubicacion').value.trim(),
                 notas: document.getElementById('asset-notas').value.trim(),
@@ -2183,6 +2193,7 @@ document.addEventListener('DOMContentLoaded', () => {
             this.editingId = id;
             document.getElementById('asset-nombre').value = asset.nombre;
             document.getElementById('asset-valor').value = asset.valorEstimado;
+            document.getElementById('asset-moneda').value = asset.currency || 'USD';
             document.getElementById('asset-categoria').value = asset.categoria || '';
             document.getElementById('asset-ubicacion').value = asset.ubicacion || '';
             document.getElementById('asset-notas').value = asset.notas || '';
@@ -2195,6 +2206,7 @@ document.addEventListener('DOMContentLoaded', () => {
         cancelEdit() {
             this.editingId = null;
             document.getElementById('asset-form').reset();
+            document.getElementById('asset-moneda').value = App.OrgDefaults.defaults.currency || 'USD';
             document.getElementById('asset-form-error').classList.add('hidden');
             document.getElementById('asset-form-title').textContent = 'Agregar Activo';
             document.getElementById('asset-form-submit-btn').textContent = 'Agregar Activo';
@@ -2223,8 +2235,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 showToast('Aún no hay activos en el catálogo. Agrega uno primero en "Catálogo de Activos".');
                 return;
             }
-            const currency = state.quickUI.domElements.inputs.currencySelect.value || 'USD';
-            const fmt = (v) => new Intl.NumberFormat('en-US', { style: 'currency', currency, minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v);
+            // Moneda del análisis actual (el único selector de moneda que existe en la app,
+            // en Análisis Rápido — FAIR no tiene uno propio, hereda el que venga de ahí). Se usa
+            // para avisar si el activo elegido está en una moneda distinta, no para convertirlo:
+            // no hay tipos de cambio en la app, así que "convertir" sería inventar un número.
+            const activeCurrency = state.quickUI.domElements.inputs.currencySelect.value || 'USD';
+            const fmt = (v, currency) => new Intl.NumberFormat('en-US', { style: 'currency', currency: currency || 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v);
 
             Modal.title.textContent = 'Catálogo de Activos';
             Modal.body.innerHTML = `
@@ -2245,15 +2261,17 @@ document.addEventListener('DOMContentLoaded', () => {
             assets.forEach(a => {
                 const opt = document.createElement('option');
                 opt.value = a.id;
-                opt.textContent = `${a.nombre} — ${fmt(a.valorEstimado)}`;
+                opt.textContent = `${a.nombre} — ${fmt(a.valorEstimado, a.currency)}`;
                 select.appendChild(opt);
             });
             const currentAsset = () => assets.find(a => a.id === select.value);
             const updateInfo = () => {
                 const a = currentAsset();
-                infoEl.innerHTML = a
-                    ? `<p><strong>Valor Estimado: ${fmt(a.valorEstimado)}</strong></p>${a.categoria ? `<p class="mt-1">Categoría: ${sanitizeHTML(a.categoria)}</p>` : ''}${a.ubicacion ? `<p>Ubicación: ${sanitizeHTML(a.ubicacion)}</p>` : ''}`
+                if (!a) { infoEl.innerHTML = ''; return; }
+                const mismatchWarning = (a.currency || 'USD') !== activeCurrency
+                    ? `<p class="text-red-600 mt-1">⚠️ Este activo está registrado en ${a.currency || 'USD'}, pero tu análisis actual usa ${activeCurrency}. La app no convierte monedas — si lo usas, el número se aplicará tal cual, en ${activeCurrency}.</p>`
                     : '';
+                infoEl.innerHTML = `<p><strong>Valor Estimado: ${fmt(a.valorEstimado, a.currency)}</strong></p>${a.categoria ? `<p class="mt-1">Categoría: ${sanitizeHTML(a.categoria)}</p>` : ''}${a.ubicacion ? `<p>Ubicación: ${sanitizeHTML(a.ubicacion)}</p>` : ''}${mismatchWarning}`;
             };
             select.addEventListener('change', updateInfo);
             updateInfo();
@@ -2273,16 +2291,21 @@ document.addEventListener('DOMContentLoaded', () => {
         // ninguna relación con el activo real.
         applyToQuickAnalysis(asset) {
             const dom = state.quickUI.domElements;
+            const activeCurrency = dom.inputs.currencySelect.value || 'USD';
+            const assetCurrency = asset.currency || 'USD';
             state.quick.selectedAssetRef = { id: asset.id };
             dom.inputs.quickAsset.value = asset.nombre;
             dom.inputs.quickAsset.dispatchEvent(new Event('input'));
             dom.inputs.costoMinImpacto.value = asset.valorEstimado;
             dom.inputs.costoMaxImpacto.value = asset.valorEstimado;
             dom.inputs.costoMinImpacto.dispatchEvent(new Event('input'));
+            const fmtAsset = new Intl.NumberFormat('en-US', { style: 'currency', currency: assetCurrency, minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(asset.valorEstimado);
             const hint = document.getElementById('quickAsset-value-hint');
-            hint.textContent = `Valor registrado del activo: ${new Intl.NumberFormat('en-US', { style: 'currency', currency: dom.inputs.currencySelect.value || 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(asset.valorEstimado)}. Costo Mínimo/Máximo se prellenaron con ese valor — ajústalos si tu impacto real no es el 100% del activo.`;
+            hint.textContent = assetCurrency === activeCurrency
+                ? `Valor registrado del activo: ${fmtAsset}. Costo Mínimo/Máximo se prellenaron con ese valor — ajústalos si tu impacto real no es el 100% del activo.`
+                : `⚠️ Valor registrado del activo: ${fmtAsset}, pero tu análisis está en ${activeCurrency}. Costo Mínimo/Máximo se prellenaron con el número tal cual (${asset.valorEstimado}), SIN convertir — revísalo antes de continuar.`;
             hint.classList.remove('hidden');
-            showToast('Activo cargado desde el catálogo.');
+            showToast(assetCurrency === activeCurrency ? 'Activo cargado desde el catálogo.' : 'Activo cargado — revisa la moneda, no coincide con tu análisis actual.');
         },
     };
 
