@@ -71,6 +71,7 @@ test('GET /api/config/profiles trae el Catálogo de Riesgos en 3 niveles (Domini
     assert.deepStrictEqual(domains.sort(), [
         'cadena-suministro',
         'humano',
+        'legal',
         'natural',
         'operacional',
         'operador-economico-autorizado',
