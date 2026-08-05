@@ -838,11 +838,11 @@
                 </div>
 
                 <!-- Antes vivía en su propia página ("Análisis Rápido de Riesgos") — se fusionó aquí
-                     (ver App.QuickAnalysis) para que Análisis de Riesgo sea un solo flujo: la misma
-                     tabla concentrada que Registro de Riesgos (#fair-register-table-body), dibujada en
-                     ambos lugares por App.FairRegister.renderConcentratedTable(). Fuera de
-                     #fair-wizard-wrapper a propósito, para que siga visible sin importar en qué paso
-                     del wizard estés. -->
+                     (ver App.QuickAnalysis) para que Análisis de Riesgo sea un solo flujo. Es la ÚNICA
+                     copia de la tabla concentrada (ver App.FairRegister.renderConcentratedTable) —
+                     Registro de Riesgos ya no repite esta misma tabla, solo muestra la analítica
+                     consolidada (mapa de calor/Pareto/sensibilidad). Fuera de #fair-wizard-wrapper a
+                     propósito, para que siga visible sin importar en qué paso del wizard estés. -->
                 <section id="historySection" class="mt-10">
                     <div class="flex justify-between items-center mb-4 flex-wrap gap-2">
                         <h2 class="text-2xl font-semibold text-gray-800">Riesgos Guardados</h2>
@@ -876,33 +876,11 @@
                     <p class="description-text mb-4">
                         Cada riesgo FAIR que analizas queda guardado aquí automáticamente en cuanto corres su simulación —
                         no tienes que hacer nada extra. El mapa de calor de abajo posiciona cada riesgo según su Pérdida
-                        Anual Esperada (eje X) y la probabilidad de superar tu umbral de excedencia (eje Y).
+                        Anual Esperada (eje X) y la probabilidad de superar tu umbral de excedencia (eje Y). La tabla con
+                        cada riesgo individual (con sus acciones de Analizar/Simular) vive en Análisis de Riesgo — antes se
+                        repetía también aquí, en una copia idéntica que se desincronizaba en apariencia con la de arriba;
+                        se quitó para no tener la misma información dos veces.
                     </p>
-
-                    <!-- Misma tabla concentrada que en Análisis Rápido (ver #quick-concentrated-table-body) — se
-                         mantiene sincronizada en ambos lugares por App.FairRegister.renderConcentratedTable(),
-                         a propósito para no tener dos versiones distintas de la misma información. -->
-                    <div class="flex justify-between items-center mb-2 flex-wrap gap-2">
-                        <h3 class="text-lg font-semibold text-gray-800">Riesgos en el Registro</h3>
-                        <button id="fair-register-promote-selected-btn" class="btn btn-success" disabled><i class="fas fa-level-up-alt mr-2"></i>Analizar Selección con FAIR</button>
-                    </div>
-                    <p class="description-text mb-2">
-                        Todos tus riesgos, desde que se crean en Análisis Rápido hasta que se analizan por completo con FAIR — el
-                        número (#) es su posición actual en la lista, no un id fijo: si eliminas uno, el siguiente toma su lugar.
-                        Clic en "Simular" para ver el detalle de cualquiera ya analizado con FAIR (hasta 10,000 simulaciones Monte Carlo por corrida).
-                    </p>
-                    <div class="overflow-x-auto mb-8">
-                        <table class="w-full text-sm">
-                            <thead>
-                                <tr class="text-left border-b">
-                                    <th class="py-2"><input type="checkbox" id="fair-register-select-all" /></th>
-                                    <th>#</th><th>Riesgo</th><th>Etapa</th><th>Riesgo Inherente</th><th>Riesgo Residual</th><th>Categoría</th>
-                                    <th>Activo</th><th>Impacto</th><th>CVaR 95%</th><th>Evaluación</th><th>Fecha</th><th>Acciones</th>
-                                </tr>
-                            </thead>
-                            <tbody id="fair-register-table-body"></tbody>
-                        </table>
-                    </div>
 
                     <div id="fair-register-empty" class="text-center text-gray-500 py-8">
                         Aún no has corrido ninguna simulación FAIR. En cuanto ejecutes una, el mapa de calor, Pareto y sensibilidad consolidada aparecen aquí.
@@ -3552,8 +3530,6 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             document.getElementById('fair-export-report-btn').addEventListener('click', () => App.FairExport.exportFairReport());
             document.getElementById('fair-export-consolidated-btn').addEventListener('click', () => App.FairExport.exportConsolidatedReport());
-            document.getElementById('fair-register-promote-selected-btn').addEventListener('click', () => App.FairRegister.promoteSelectedFromTable('fair-register-table-body'));
-            document.getElementById('fair-register-select-all').addEventListener('change', (e) => App.FairRegister.toggleSelectAll('fair-register-table-body', e.target.checked));
             document.getElementById('fair-register-simulation-close').addEventListener('click', () => {
                 document.getElementById('fair-register-simulation').classList.add('hidden');
             });
@@ -5381,19 +5357,19 @@ document.addEventListener('DOMContentLoaded', () => {
             this.renderConsolidatedSensitivity();
         },
 
-        // Dibuja la tabla concentrada — la MISMA tabla en dos lugares del DOM (Análisis Rápido
-        // y Registro de Riesgos, ver #quick-concentrated-table-body / #fair-register-table-body
-        // en el HTML), para que ambas páginas muestren siempre exactamente la misma información
-        // en vez de dos vistas distintas que se desincronizan. Une lo que ya pasó por FAIR con
-        // lo que todavía está solo en Análisis Rápido (ver buildConcentratedList), e incluye
-        // tanto las columnas del viejo Historial (Riesgo Inherente/Residual/Categoría, por RRt%)
-        // como las del Registro (Etapa/Impacto/CVaR/Evaluación, por FAIR) — ningún dato se pierde
-        // al fusionar las dos tablas que existían antes por separado.
+        // Dibuja la tabla concentrada (#quick-concentrated-table-body, en Análisis de Riesgo) —
+        // antes se dibujaba TAMBIÉN en Registro de Riesgos, en una copia idéntica del mismo DOM;
+        // se quitó esa copia (ver #registerPage en el HTML) para no tener la misma información
+        // dos veces. Une lo que ya pasó por FAIR con lo que todavía está solo en Vista Rápida
+        // (ver buildConcentratedList), e incluye tanto las columnas del viejo Historial (Riesgo
+        // Inherente/Residual/Categoría, por RRt%) como las del Registro (Etapa/Impacto/CVaR/
+        // Evaluación, por FAIR) — ningún dato se pierde al fusionar las dos tablas que existían
+        // antes por separado.
         renderConcentratedTable(list) {
             const currencyDefault = state.quickUI.domElements.inputs.currencySelect.value || 'USD';
             const fmt = (v, currency) => new Intl.NumberFormat('en-US', { style: 'currency', currency: currency || currencyDefault, minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v);
             const formatDate = (d) => d ? new Date(d).toLocaleDateString('es-MX', { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
-            const bodies = ['fair-register-table-body', 'quick-concentrated-table-body']
+            const bodies = ['quick-concentrated-table-body']
                 .map(id => document.getElementById(id))
                 .filter(Boolean);
 
@@ -5497,22 +5473,17 @@ document.addEventListener('DOMContentLoaded', () => {
             this.updatePromoteBtnStates();
         },
 
-        // Cada instancia de la tabla (Análisis Rápido y Registro de Riesgos) tiene su propio
-        // checkbox "seleccionar todo" y su propio botón "Analizar Selección con FAIR" — la
-        // selección NO se sincroniza entre las dos (cada una lee solo sus propios checkboxes),
-        // para no complicar el estado con estar reflejando clics de una tabla en la otra.
         toggleSelectAll(tbodyId, checked) {
             document.querySelectorAll(`#${tbodyId} .concentrated-checkbox`).forEach(cb => { cb.checked = checked; });
             this.updatePromoteBtnStates();
         },
 
         updatePromoteBtnStates() {
-            [['quick-concentrated-table-body', 'promoteSelectedBtn'], ['fair-register-table-body', 'fair-register-promote-selected-btn']].forEach(([tbodyId, btnId]) => {
-                const btn = document.getElementById(btnId);
-                if (!btn) return;
-                const anyChecked = document.querySelectorAll(`#${tbodyId} .concentrated-checkbox:checked`).length > 0;
-                btn.disabled = !anyChecked;
-            });
+            const tbodyId = 'quick-concentrated-table-body';
+            const btn = document.getElementById('promoteSelectedBtn');
+            if (!btn) return;
+            const anyChecked = document.querySelectorAll(`#${tbodyId} .concentrated-checkbox:checked`).length > 0;
+            btn.disabled = !anyChecked;
         },
 
         promoteSelectedFromTable(tbodyId) {
