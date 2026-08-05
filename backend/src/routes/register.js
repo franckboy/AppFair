@@ -54,6 +54,10 @@ function createRegisterRouter(store) {
             // total", como si un beneficio grande fuera el peor riesgo del portafolio — ver
             // calculateParetoAnalysis, que ahora excluye 'oportunidad' de esa suma.
             riskType = 'amenaza',
+            // Vínculo opcional hacia el riesgo de origen en /api/risks (Análisis Rápido) — permite
+            // a la tabla concentrada del Registro reconocer que esta entrada FAIR es la
+            // continuación del mismo riesgo, en vez de mostrarlo como dos filas separadas.
+            sourceRiskId = null,
         } = req.body;
 
         if (typeof ale !== 'number') {
@@ -69,6 +73,7 @@ function createRegisterRouter(store) {
             sensitivity: sensitivity.slice(0, 5),
             securityPlan,
             tef, vuln, lossMagnitudes, seed,
+            sourceRiskId,
             date: new Date().toISOString(),
         };
 
