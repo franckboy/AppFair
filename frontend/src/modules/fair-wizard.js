@@ -122,6 +122,9 @@ export const FairWizard = {
             riskName,
             riskDescription: document.getElementById('fair-riskDescription').value.trim(),
             asset: document.getElementById('fair-asset').value.trim(),
+            // Mismo vínculo real que saveToRiskRegister — permite a App.AssetCatalog reconocer
+            // este borrador como vinculado a un activo aunque todavía no llegue a simularse.
+            assetId: state.quick.selectedAssetRef ? state.quick.selectedAssetRef.id : null,
             threat: document.getElementById('fair-threat').value.trim(),
             effect: document.getElementById('fair-effect').value,
             riskType: document.getElementById('fair-risk-type').value,
@@ -534,6 +537,10 @@ export const FairWizard = {
         // del Catálogo de Activos en Análisis Rápido, ese nombre se transfiere aquí en vez
         // de forzar a re-escribirlo (ver App.AssetCatalog y calculateAll()).
         if (data.asset) document.getElementById('fair-asset').value = data.asset;
+        // Restaura el vínculo real con el Catálogo de Activos (ver saveDraftToRisksList) —
+        // sin esto, re-guardar este mismo riesgo desde aquí perdería la conexión con su
+        // activo aunque el nombre ya estuviera prellenado en el campo de arriba.
+        if (data.assetId) state.quick.selectedAssetRef = { id: data.assetId };
 
         // La Descripción ahora tiene su propio campo en FAIR (fair-riskDescription) — antes
         // se perdía por completo (el usuario veía el wizard como un análisis nuevo, sin
@@ -666,6 +673,8 @@ export const FairWizard = {
         this.populateTriggeredByOptions();
         document.getElementById('fair-triggered-by').value = entry.triggeredByRiskName || '';
         if (entry.asset && entry.asset !== '—') document.getElementById('fair-asset').value = entry.asset;
+        // Restaura el vínculo real con el Catálogo de Activos (ver saveToRiskRegister).
+        if (entry.assetId) state.quick.selectedAssetRef = { id: entry.assetId };
         if (entry.owner && entry.owner !== '—') document.getElementById('fair-owner').value = entry.owner;
         if (entry.securityPlan && entry.securityPlan !== '—')
             document.getElementById('fair-security-plan').value = entry.securityPlan;

@@ -370,6 +370,37 @@ test('PUT /api/register/:riskName guarda sourceRiskId para vincularlo con /api/r
         .set('X-API-Key', TEST_API_KEY);
 });
 
+test('PUT /api/register/:riskName guarda assetId (vínculo real con el Catálogo de Activos, no solo el nombre copiado en "asset")', async () => {
+    const riskName = 'Riesgo con activo vinculado de prueba HTTP';
+    const putRes = await request(app)
+        .put(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ale: 50000, cvar95: 80000, evaluationLevel: 'Riesgo Medio', asset: 'Bodega 3', assetId: 'asset-xyz' });
+    assert.strictEqual(putRes.status, 200);
+    assert.strictEqual(putRes.body.entry.assetId, 'asset-xyz');
+
+    const getRes = await request(app).get('/api/register').set('X-API-Key', TEST_API_KEY);
+    assert.strictEqual(getRes.body.risks.find((r) => r.riskName === riskName).assetId, 'asset-xyz');
+
+    await request(app)
+        .delete(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY);
+});
+
+test('PUT /api/register/:riskName sin assetId lo guarda como null (riesgo sin activo del catálogo vinculado)', async () => {
+    const riskName = 'Riesgo sin activo vinculado de prueba HTTP';
+    const putRes = await request(app)
+        .put(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ale: 50000, cvar95: 80000, evaluationLevel: 'Riesgo Medio' });
+    assert.strictEqual(putRes.status, 200);
+    assert.strictEqual(putRes.body.entry.assetId, null);
+
+    await request(app)
+        .delete(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY);
+});
+
 test('PUT /api/register/:riskName guarda triggeredByRiskName (riesgo en cascada)', async () => {
     const parentName = 'Incendio en bodega (padre de prueba)';
     const childName = 'Interrupción operativa (hijo de prueba)';

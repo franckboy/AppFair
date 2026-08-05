@@ -50,6 +50,11 @@ function createRegisterRouter(store) {
             const criteria = (await store.get('riskCriteria')) || defaultRiskCriteria;
             const {
                 asset = '—',
+                // Vínculo real hacia el Catálogo de Activos (/api/assets), a diferencia de
+                // `asset` (arriba), que es solo el nombre copiado en el momento de guardar —
+                // permite reconocer qué riesgos referencian a un activo aunque el activo
+                // cambie de nombre después. null si el riesgo no se armó desde el catálogo.
+                assetId = null,
                 owner = '—',
                 ale,
                 cvar95,
@@ -148,6 +153,7 @@ function createRegisterRouter(store) {
                 id,
                 riskName,
                 asset,
+                assetId,
                 owner,
                 currency: 'USD',
                 ale,

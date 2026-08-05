@@ -792,8 +792,19 @@
                                 <input type="number" id="asset-valor" class="form-input" min="0" value="0" required>
                             </div>
                             <div class="input-group">
-                                <label for="asset-categoria">Categoría (opcional):</label>
-                                <input type="text" id="asset-categoria" class="form-input" placeholder="Ej. Inventario, Equipo, Inmueble">
+                                <label for="asset-categoria">
+                                    Categoría (opcional)
+                                    <i class="fas fa-info-circle text-blue-500 cursor-pointer ml-1" title="Clasificación de activos según RIMS RA.1-2015 (Personas / Tangibles: sitio, equipo / Intangibles: intelectual y abstracto) y ANSI/ASIS PAP.1 (Physical Asset Protection Standard)."></i>
+                                </label>
+                                <select id="asset-categoria" class="form-select">
+                                    <option value="">— Sin clasificar —</option>
+                                    <option value="Personas">Personas</option>
+                                    <option value="Instalaciones y Sitio">Instalaciones y Sitio</option>
+                                    <option value="Equipo y Maquinaria">Equipo y Maquinaria</option>
+                                    <option value="Inventario / Mercancía">Inventario / Mercancía</option>
+                                    <option value="Información y Procesos">Información y Procesos</option>
+                                    <option value="Imagen y Reputación">Imagen y Reputación</option>
+                                </select>
                             </div>
                             <div class="input-group">
                                 <label for="asset-ubicacion">Ubicación (opcional):</label>
@@ -818,7 +829,7 @@
                         <table class="w-full text-sm">
                             <thead>
                                 <tr class="text-left border-b">
-                                    <th class="py-2">Nombre</th><th>Valor Estimado</th><th>Categoría</th><th>Ubicación</th><th></th>
+                                    <th class="py-2">Nombre</th><th>Valor Estimado</th><th>Categoría</th><th>Ubicación</th><th>Riesgos Vinculados</th><th></th>
                                 </tr>
                             </thead>
                             <tbody id="assets-table-body"></tbody>
