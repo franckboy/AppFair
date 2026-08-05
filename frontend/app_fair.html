@@ -161,6 +161,15 @@
                                         <option value="5">5 años</option>
                                     </select>
                                 </div>
+                                <div class="input-group">
+                                    <label for="fair-triggered-by">
+                                        Riesgo Desencadenante (opcional)
+                                        <i class="fas fa-info-circle text-blue-500 cursor-pointer ml-1" title="Si este riesgo normalmente ocurre como consecuencia de otro riesgo ya registrado (ej. un incendio que desencadena una interrupción operativa), selecciónalo aquí. Es solo organizativo por ahora — no afecta ningún cálculo, solo deja registrada la relación."></i>
+                                    </label>
+                                    <select id="fair-triggered-by" class="form-select">
+                                        <option value="">— Ninguno (riesgo independiente) —</option>
+                                    </select>
+                                </div>
                                 <!-- Las 3 opciones originales eran Confidencialidad/Integridad/Disponibilidad (la tríada
                                      CIA de ciberseguridad) — se me pasaron en el barrido de "elimina toda referencia a
                                      ciberseguridad" de esta sesión porque no contenían ninguna de las palabras que
@@ -3733,6 +3742,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // (ver App.FairRegister.saveToRiskRegister y buildConcentratedList).
             state.fair.sourceRiskId = data.quickRiskId || null;
             document.getElementById('fair-riskName').value = data.riskName || '';
+            this.populateTriggeredByOptions();
             // Igual que la Descripción/norma de abajo: si el riesgo se armó eligiendo un activo
             // del Catálogo de Activos en Análisis Rápido, ese nombre se transfiere aquí en vez
             // de forzar a re-escribirlo (ver App.AssetCatalog y calculateAll()).
@@ -3792,6 +3802,38 @@ document.addEventListener('DOMContentLoaded', () => {
         // usuario al wizard de verdad para poder revisar/ajustar y decidir Mitigar/Transferir/
         // Evitar/Aceptar. Mismo patrón que duplicateFromTemplate(), pero la fuente son los datos
         // reales guardados de ESTE riesgo (no una plantilla genérica del último análisis).
+        // Llena "Riesgo Desencadenante" (Paso 1) con los demás riesgos del Registro — excluye el
+        // riesgo actual (por nombre) para que no se pueda seleccionar a sí mismo. Se llama cada
+        // vez que el Registro se recarga (ver App.FairRegister.loadRiskRegister) y cada vez que
+        // se carga un riesgo específico en el formulario, para que la exclusión quede al día con
+        // el nombre vigente. Solo organizativo por ahora — no alimenta ningún cálculo; deja lista
+        // la relación padre-hijo para poder dibujar un árbol de riesgos en cascada más adelante,
+        // sin tener que rediseñar el dato.
+        populateTriggeredByOptions() {
+            const select = document.getElementById('fair-triggered-by');
+            if (!select) return;
+            const currentValue = select.value;
+            const ownName = document.getElementById('fair-riskName').value.trim();
+            const register = state.fair.riskRegister || [];
+
+            select.innerHTML = '';
+            const noneOpt = document.createElement('option');
+            noneOpt.value = '';
+            noneOpt.textContent = '— Ninguno (riesgo independiente) —';
+            select.appendChild(noneOpt);
+
+            register.filter(r => r.riskName !== ownName).forEach(r => {
+                const opt = document.createElement('option');
+                opt.value = r.riskName;
+                opt.textContent = r.riskName;
+                select.appendChild(opt);
+            });
+
+            if (Array.from(select.options).some(opt => opt.value === currentValue)) {
+                select.value = currentValue;
+            }
+        },
+
         loadRegisteredRiskIntoForm(riskName) {
             const entry = (state.fair.riskRegister || []).find(r => r.riskName === riskName);
             if (!entry) {
@@ -3810,6 +3852,8 @@ document.addEventListener('DOMContentLoaded', () => {
             state.fair.sourceRiskId = entry.sourceRiskId || null;
 
             document.getElementById('fair-riskName').value = entry.riskName || '';
+            this.populateTriggeredByOptions();
+            document.getElementById('fair-triggered-by').value = entry.triggeredByRiskName || '';
             if (entry.asset && entry.asset !== '—') document.getElementById('fair-asset').value = entry.asset;
             if (entry.owner && entry.owner !== '—') document.getElementById('fair-owner').value = entry.owner;
             if (entry.securityPlan && entry.securityPlan !== '—') document.getElementById('fair-security-plan').value = entry.securityPlan;
@@ -4230,6 +4274,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.getElementById('fair-effect').value = 'material';
                 document.getElementById('fair-risk-type').value = 'amenaza';
                 document.getElementById('fair-time-horizon').value = '1';
+                this.populateTriggeredByOptions();
+                document.getElementById('fair-triggered-by').value = '';
                 this.toggleRiskTypeLabels();
                 document.getElementById('fair-owner').value = App.OrgDefaults.defaults.owner;
                 document.getElementById('fair-review-date').value = '';
@@ -4908,6 +4954,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     App.Api.request('/api/risks'),
                 ]);
                 state.fair.riskRegister = registerData.risks || [];
+                // El selector "Riesgo Desencadenante" (Paso 1 de FAIR) vive fuera de esta
+                // página — se refresca aquí, no solo cuando se dibuja el Registro, para que
+                // tenga la lista al día sin importar por dónde haya entrado el usuario.
+                App.FairWizard.populateTriggeredByOptions();
                 state.fair.registerPareto = registerData.pareto || null;
                 state.fair.registerConsolidatedSensitivity = registerData.consolidatedSensitivity || [];
                 state.fair.registerHeatmapZones = registerData.heatmapZones || [];
@@ -5032,12 +5082,23 @@ document.addEventListener('DOMContentLoaded', () => {
                         // que salió (si vino de ahí) — ver App.FairWizard.loadRiskIntoForm y
                         // App.FairRegister.buildConcentratedList.
                         sourceRiskId: state.fair.sourceRiskId || null,
+                        // Riesgo en cascada (Paso 1, "Riesgo Desencadenante") — solo organizativo
+                        // por ahora, ver el campo en el HTML para el detalle.
+                        triggeredByRiskName: document.getElementById('fair-triggered-by').value || null,
                     },
                 });
             } catch (e) {
                 console.error('No se pudo guardar en el Registro de Riesgos:', e);
                 showToast(e.userMessage || 'No se pudo guardar este riesgo en el Registro.');
+                return;
             }
+            // Bug real: sin esto, state.fair.riskRegister (en memoria) se quedaba desactualizado
+            // hasta que el usuario visitara la página de Registro — así que un riesgo recién
+            // simulado no aparecía todavía como opción en "Riesgo Desencadenante" (Paso 1) para
+            // el SIGUIENTE riesgo que se analizara en la misma sesión, sin necesidad real de
+            // ese rodeo. render=false porque no hace falta redibujar el Registro si no estamos
+            // viéndolo ahora mismo.
+            await this.loadRiskRegister(false);
         },
 
         // Elimina un riesgo de la tabla concentrada — si ya tiene simulación FAIR, borra esa

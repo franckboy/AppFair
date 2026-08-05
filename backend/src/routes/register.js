@@ -58,6 +58,13 @@ function createRegisterRouter(store) {
             // a la tabla concentrada del Registro reconocer que esta entrada FAIR es la
             // continuación del mismo riesgo, en vez de mostrarlo como dos filas separadas.
             sourceRiskId = null,
+            // Riesgo en cascada: el nombre de OTRO riesgo del Registro que, de ocurrir,
+            // desencadena este — ej. un incendio que desencadena una interrupción operativa. Se
+            // referencia por riskName (no por id) porque el Registro mismo se identifica así en
+            // todos lados (ver PUT/DELETE por :riskName) — es solo organizativo por ahora, no
+            // alimenta ningún cálculo, así que una referencia por nombre es suficiente y
+            // consistente con el resto de este archivo.
+            triggeredByRiskName = null,
         } = req.body;
 
         if (typeof ale !== 'number') {
@@ -74,6 +81,7 @@ function createRegisterRouter(store) {
             securityPlan,
             tef, vuln, lossMagnitudes, seed,
             sourceRiskId,
+            triggeredByRiskName,
             date: new Date().toISOString(),
         };
 
