@@ -3857,6 +3857,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 const data = {
                     timestamp: Date.now(),
+                    // Bug real: sin esto, "Reanudar análisis guardado" (ver checkForResumableAnalysis/
+                    // restoreFairAnalysis) restauraba todos los campos del formulario pero NO el id
+                    // que identifica esta entrada en el Registro — al volver a correr la simulación
+                    // después de reanudar, saveToRiskRegister() generaba un id nuevo (por no
+                    // encontrar ninguno en memoria) y el backend lo trataba como un riesgo distinto,
+                    // duplicando la entrada en vez de actualizar la original. Mismo problema de
+                    // identidad que loadRegisteredRiskIntoForm() ya resuelve para el botón
+                    // "Analizar" de la tabla — aquí faltaba para el botón "Reanudar".
+                    registerEntryId: state.fair.registerEntryId || null,
+                    sourceRiskId: state.fair.sourceRiskId || null,
                     riskName: document.getElementById('fair-riskName').value,
                     riskDescription: document.getElementById('fair-riskDescription').value,
                     asset: document.getElementById('fair-asset').value,
@@ -3960,6 +3970,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 const raw = localStorage.getItem('fairLastAnalysis');
                 if (!raw) return false;
                 const data = JSON.parse(raw);
+
+                // Restaura la identidad de esta entrada en el Registro (ver persistFairAnalysis)
+                // ANTES que nada más — si el usuario vuelve a simular tras reanudar, el próximo
+                // guardado debe reconocerse como una actualización de la misma entrada, no crear
+                // una segunda con el mismo nombre.
+                state.fair.registerEntryId = data.registerEntryId || null;
+                state.fair.sourceRiskId = data.sourceRiskId || null;
 
                 document.getElementById('fair-riskName').value = data.riskName || '';
                 document.getElementById('fair-riskDescription').value = data.riskDescription || '';
@@ -4732,15 +4749,24 @@ document.addEventListener('DOMContentLoaded', () => {
             const entry = item.fairEntry;
 
             if (!entry) {
+                const fd = item.fullData || {};
+                // Riesgo Inherente/Residual/ALE (%) solo existen en datos de la vieja Vista
+                // Rápida (eliminada) — un borrador guardado con "Guardar" (Paso 1) nunca los
+                // tiene. Se muestran solo si de verdad hay algo que mostrar, para no llenar la
+                // tarjeta de guiones sin sentido.
+                const hasLegacyEstimate = item.riesgoInherente || item.riesgoResidual || item.quickAle;
                 return `
                     <div class="p-4 bg-white rounded-lg border border-gray-200">
                         <h4 class="text-base font-semibold text-gray-800 mb-2">${sanitizeHTML(item.riskName)}</h4>
-                        <p class="description-text mb-2">Este riesgo todavía no se ha analizado con FAIR — solo tiene el estimado con el que se guardó en Análisis Rápido.</p>
+                        <p class="description-text mb-2">Este riesgo se guardó desde el Paso 1 sin completar el resto del análisis — usa "Analizar con FAIR" para calcular su Impacto, CVaR y Evaluación.</p>
                         <ul class="text-sm text-gray-700 space-y-1">
                             <li><strong>Activo:</strong> ${sanitizeHTML(item.asset || '—')}</li>
+                            <li><strong>Amenaza:</strong> ${sanitizeHTML(fd.threat) || '—'}</li>
+                            <li><strong>Descripción:</strong> ${sanitizeHTML(fd.riskDescription) || '—'}</li>
+                            ${hasLegacyEstimate ? `
                             <li><strong>Riesgo Inherente:</strong> ${item.riesgoInherente ?? '—'}</li>
                             <li><strong>Riesgo Residual:</strong> ${item.riesgoResidual ?? '—'}</li>
-                            <li><strong>ALE estimado:</strong> ${item.quickAle || '—'}</li>
+                            <li><strong>ALE estimado:</strong> ${item.quickAle || '—'}</li>` : ''}
                         </ul>
                     </div>`;
             }
