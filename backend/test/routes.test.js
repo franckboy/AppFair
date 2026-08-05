@@ -289,6 +289,30 @@ test('PUT /api/register/:riskName guarda sourceRiskId para vincularlo con /api/r
     await request(app).delete(`/api/register/${encodeURIComponent(riskName)}`).set('X-API-Key', TEST_API_KEY);
 });
 
+test('PUT /api/register/:riskName guarda triggeredByRiskName (riesgo en cascada)', async () => {
+    const parentName = 'Incendio en bodega (padre de prueba)';
+    const childName = 'Interrupción operativa (hijo de prueba)';
+    await request(app)
+        .put(`/api/register/${encodeURIComponent(parentName)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ale: 100000, cvar95: 150000, evaluationLevel: 'Riesgo Alto' });
+
+    const putRes = await request(app)
+        .put(`/api/register/${encodeURIComponent(childName)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ale: 40000, cvar95: 60000, evaluationLevel: 'Riesgo Medio', triggeredByRiskName: parentName });
+    assert.strictEqual(putRes.status, 200);
+    assert.strictEqual(putRes.body.entry.triggeredByRiskName, parentName);
+
+    const getRes = await request(app).get('/api/register').set('X-API-Key', TEST_API_KEY);
+    assert.strictEqual(getRes.body.risks.find((r) => r.riskName === childName).triggeredByRiskName, parentName);
+    assert.strictEqual(getRes.body.risks.find((r) => r.riskName === parentName).triggeredByRiskName, null,
+        'un riesgo sin desencadenante debe guardarse como null, no undefined ni una cadena vacía');
+
+    await request(app).delete(`/api/register/${encodeURIComponent(parentName)}`).set('X-API-Key', TEST_API_KEY);
+    await request(app).delete(`/api/register/${encodeURIComponent(childName)}`).set('X-API-Key', TEST_API_KEY);
+});
+
 // --- Catálogo de Activos ---
 
 test('GET /api/assets sin header X-API-Key responde 401', async () => {
