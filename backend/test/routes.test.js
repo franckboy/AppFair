@@ -273,3 +273,67 @@ test('PUT /api/register/:riskName con riskType "oportunidad" se guarda y se excl
 
     await request(app).delete(`/api/register/${encodeURIComponent(riskName)}`).set('X-API-Key', TEST_API_KEY);
 });
+
+// --- Catálogo de Activos ---
+
+test('GET /api/assets sin header X-API-Key responde 401', async () => {
+    const res = await request(app).get('/api/assets');
+    assert.strictEqual(res.status, 401);
+});
+
+test('POST /api/assets sin nombre responde 400', async () => {
+    const res = await request(app).post('/api/assets').set('X-API-Key', TEST_API_KEY).send({ valorEstimado: 1000 });
+    assert.strictEqual(res.status, 400);
+});
+
+test('POST /api/assets con valorEstimado negativo responde 400', async () => {
+    const res = await request(app).post('/api/assets').set('X-API-Key', TEST_API_KEY).send({ nombre: 'Bodega 1', valorEstimado: -5 });
+    assert.strictEqual(res.status, 400);
+});
+
+test('flujo completo del Catálogo de Activos: POST crea, GET lo lista, PUT lo actualiza, DELETE lo quita', async () => {
+    const postRes = await request(app)
+        .post('/api/assets')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ nombre: 'Bodega Central', valorEstimado: 500000, categoria: 'Inventario', ubicacion: 'Planta 1' });
+    assert.strictEqual(postRes.status, 201);
+    assert.ok(postRes.body.entry.id, 'debe generar un id único, no depender del nombre');
+    const id = postRes.body.entry.id;
+
+    const getRes = await request(app).get('/api/assets').set('X-API-Key', TEST_API_KEY);
+    assert.strictEqual(getRes.status, 200);
+    assert.ok(getRes.body.assets.some((a) => a.id === id && a.nombre === 'Bodega Central'));
+
+    const putRes = await request(app)
+        .put(`/api/assets/${id}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ nombre: 'Bodega Central Renombrada', valorEstimado: 750000 });
+    assert.strictEqual(putRes.status, 200);
+    assert.strictEqual(putRes.body.entry.valorEstimado, 750000);
+
+    const delRes = await request(app).delete(`/api/assets/${id}`).set('X-API-Key', TEST_API_KEY);
+    assert.strictEqual(delRes.status, 200);
+
+    const getRes2 = await request(app).get('/api/assets').set('X-API-Key', TEST_API_KEY);
+    assert.ok(!getRes2.body.assets.some((a) => a.id === id));
+});
+
+test('PUT /api/assets/:id con id inexistente responde 404', async () => {
+    const res = await request(app)
+        .put('/api/assets/id-que-no-existe')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ nombre: 'X', valorEstimado: 1 });
+    assert.strictEqual(res.status, 404);
+});
+
+test('dos activos pueden compartir el mismo nombre sin pisarse (identificados por id, no por nombre)', async () => {
+    const a = await request(app).post('/api/assets').set('X-API-Key', TEST_API_KEY).send({ nombre: 'Bodega 3', valorEstimado: 100 });
+    const b = await request(app).post('/api/assets').set('X-API-Key', TEST_API_KEY).send({ nombre: 'Bodega 3', valorEstimado: 200 });
+    assert.notStrictEqual(a.body.entry.id, b.body.entry.id);
+
+    const getRes = await request(app).get('/api/assets').set('X-API-Key', TEST_API_KEY);
+    assert.strictEqual(getRes.body.assets.filter((x) => x.nombre === 'Bodega 3').length, 2);
+
+    await request(app).delete(`/api/assets/${a.body.entry.id}`).set('X-API-Key', TEST_API_KEY);
+    await request(app).delete(`/api/assets/${b.body.entry.id}`).set('X-API-Key', TEST_API_KEY);
+});

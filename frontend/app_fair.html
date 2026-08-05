@@ -79,6 +79,9 @@
                 <button id="nav-org-context" class="nav-button nav-requires-boot" style="background-color:#374151;" title="Entendimiento de la organización (RIMS RA.1-2015, 5.2): misión, apetito de riesgo, partes interesadas">
                     <i class="fas fa-building mr-2"></i><span class="hidden md:inline">Contexto Organizacional</span>
                 </button>
+                <button id="nav-assets" class="nav-button nav-requires-boot" style="background-color:#374151;" title="Registra el valor estimado de tus activos, para no tener que recordarlo cada vez que analizas un riesgo">
+                    <i class="fas fa-boxes mr-2"></i><span class="hidden md:inline">Catálogo de Activos</span>
+                </button>
             </nav>
         </header>
 
@@ -134,6 +137,7 @@
                                 <div class="input-group">
                                     <label for="fair-asset">Activo Afectado:</label>
                                     <input type="text" id="fair-asset" class="form-input" list="datalist-assets" placeholder="Ej. Bodega de mercancía (Bodega 3)">
+                                    <button type="button" id="open-asset-catalog-btn-fair" class="btn btn-secondary text-sm mt-2">📋 Elegir del Catálogo de Activos</button>
                                 </div>
                                 <div class="input-group">
                                     <label for="fair-threat">Agente de Amenaza:</label>
@@ -693,6 +697,63 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Catálogo de Activos -->
+            <div id="assetsPage" class="page-content hidden">
+                <div class="bg-white p-6 rounded-lg shadow-md">
+                    <h2 class="text-2xl font-bold text-gray-800 mb-2">Catálogo de Activos</h2>
+                    <p class="description-text mb-4">
+                        Registra aquí el valor estimado de tus activos (bodegas, inventario, equipos, instalaciones)
+                        para no tener que recordarlo o recalcularlo cada vez que analizas un riesgo. Al elegir un
+                        activo desde Análisis Rápido o FAIR, su valor se usa como punto de partida — siempre editable.
+                    </p>
+
+                    <form id="asset-form" class="fair-section bg-gray-50 mb-6">
+                        <h4 id="asset-form-title">Agregar Activo</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div class="input-group">
+                                <label for="asset-nombre">Nombre del Activo:</label>
+                                <input type="text" id="asset-nombre" class="form-input" placeholder="Ej. Bodega de mercancía (Bodega 3)" required>
+                            </div>
+                            <div class="input-group">
+                                <label for="asset-valor">Valor Estimado:</label>
+                                <input type="number" id="asset-valor" class="form-input" min="0" value="0" required>
+                            </div>
+                            <div class="input-group">
+                                <label for="asset-categoria">Categoría (opcional):</label>
+                                <input type="text" id="asset-categoria" class="form-input" placeholder="Ej. Inventario, Equipo, Inmueble">
+                            </div>
+                            <div class="input-group">
+                                <label for="asset-ubicacion">Ubicación (opcional):</label>
+                                <input type="text" id="asset-ubicacion" class="form-input" placeholder="Ej. Planta 1, Sucursal Norte">
+                            </div>
+                            <div class="input-group md:col-span-2">
+                                <label for="asset-notas">Notas (opcional):</label>
+                                <input type="text" id="asset-notas" class="form-input" placeholder="Cualquier detalle adicional relevante">
+                            </div>
+                        </div>
+                        <span id="asset-form-error" class="error-message hidden" aria-live="polite"></span>
+                        <div class="flex gap-2 mt-2">
+                            <button type="submit" id="asset-form-submit-btn" class="btn btn-primary">Agregar Activo</button>
+                            <button type="button" id="asset-form-cancel-btn" class="btn btn-secondary hidden">Cancelar Edición</button>
+                        </div>
+                    </form>
+
+                    <div id="assets-empty" class="text-center text-gray-500 py-8">
+                        Aún no has registrado ningún activo.
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead>
+                                <tr class="text-left border-b">
+                                    <th class="py-2">Nombre</th><th>Valor Estimado</th><th>Categoría</th><th>Ubicación</th><th></th>
+                                </tr>
+                            </thead>
+                            <tbody id="assets-table-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
         </main>
 
         <!-- Listas de autocompletado: se llenan dinámicamente con valores usados antes (ver App.Autocomplete) -->
@@ -851,6 +912,14 @@ document.addEventListener('DOMContentLoaded', () => {
             // asociar por error la norma de un riesgo distinto (ver el listener 'input' de
             // riskName en App.QuickAnalysis.bindEvents()).
             selectedCatalogRef: null,
+            // Catálogo de Activos (backend, CRUD real — a diferencia de riskCatalog, que es
+            // curado en código y de solo lectura). Se carga en App.Api.bootstrap() y se
+            // refresca cada vez que se abre la página del catálogo (ver App.AssetCatalog.load).
+            assets: [],
+            // El activo elegido más recientemente en el picker (ver App.AssetCatalog.openPicker)
+            // para el riesgo que se está llenando ahora — mismo propósito que selectedCatalogRef,
+            // para poder guardar de qué activo salió el valor y transferirlo a FAIR al promover.
+            selectedAssetRef: null,
         },
         fair: {
             fairResultsChart: null,
@@ -1047,6 +1116,7 @@ document.addEventListener('DOMContentLoaded', () => {
             this.Navigation.init();
             this.QuickAnalysis.init();
             this.RiskCatalog.init();
+            this.AssetCatalog.init();
             this.FairAnalysis.init();
             this.UIMode.applyLabels(); // vuelve a aplicar por si algún módulo restauró estado que afecta las etiquetas
         }
@@ -1127,17 +1197,19 @@ document.addEventListener('DOMContentLoaded', () => {
         async bootstrap() {
             this.setConnectionStatus('conectando');
             try {
-                const [profiles, criteria, orgDefaults, orgContext] = await Promise.all([
+                const [profiles, criteria, orgDefaults, orgContext, assetsRes] = await Promise.all([
                     this.request('/api/config/profiles'),
                     this.request('/api/config/criteria'),
                     this.request('/api/config/org-defaults'),
                     this.request('/api/config/org-context'),
+                    this.request('/api/assets'),
                 ]);
 
                 state.quick.riskProfiles = profiles.riskProfiles;
                 state.quick.attackerProfiles = profiles.attackerProfiles;
                 state.quick.defenseProfiles = profiles.defenseProfiles;
                 state.quick.riskCatalog = profiles.riskCatalog;
+                state.quick.assets = assetsRes.assets;
                 state.config.riskCriteria = criteria;
                 App.OrgDefaults.defaults = { ...App.OrgDefaults.defaults, ...orgDefaults };
                 App.OrgContext.context = { ...App.OrgContext.context, ...orgContext };
@@ -1163,7 +1235,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         showBootGate(message) {
             document.querySelectorAll('.nav-requires-boot').forEach(btn => btn.disabled = true);
-            document.querySelectorAll('#quickAnalysisPage, #fairAnalysisPage, #registerPage').forEach(el => el.classList.add('hidden'));
+            document.querySelectorAll('#quickAnalysisPage, #fairAnalysisPage, #registerPage, #assetsPage').forEach(el => el.classList.add('hidden'));
             document.getElementById('boot-gate-message').textContent = message;
             document.getElementById('boot-gate').classList.remove('hidden');
         },
@@ -1471,10 +1543,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 this.switchPage('register');
                 App.FairAnalysis.loadRiskRegister();
             });
+            document.getElementById('nav-assets').addEventListener('click', () => {
+                this.switchPage('assets');
+                App.AssetCatalog.load();
+            });
         },
         switchPage(pageKey) {
-            const pages = { quick: document.getElementById('quickAnalysisPage'), fair: document.getElementById('fairAnalysisPage'), register: document.getElementById('registerPage') };
-            const navs = { quick: document.getElementById('nav-quick'), fair: document.getElementById('nav-fair'), register: document.getElementById('nav-register') };
+            const pages = { quick: document.getElementById('quickAnalysisPage'), fair: document.getElementById('fairAnalysisPage'), register: document.getElementById('registerPage'), assets: document.getElementById('assetsPage') };
+            const navs = { quick: document.getElementById('nav-quick'), fair: document.getElementById('nav-fair'), register: document.getElementById('nav-register'), assets: document.getElementById('nav-assets') };
             Object.keys(pages).forEach(key => {
                 pages[key].classList.toggle('hidden', key !== pageKey);
                 navs[key].classList.toggle('active', key === pageKey);
@@ -2011,6 +2087,205 @@ document.addEventListener('DOMContentLoaded', () => {
         },
     };
 
+    // --- Catálogo de Activos ---
+    // A diferencia de App.RiskCatalog (curado en código, solo lectura), esto es información
+    // propia de cada organización — CRUD real contra /api/assets, mismo patrón de backend que
+    // el Registro de Riesgos. Cierra el hueco de "el Costo Mínimo/Máximo de Análisis Rápido no
+    // toma en cuenta el valor del activo": permite registrar ese valor una vez y reusarlo como
+    // punto de partida (siempre editable) desde Análisis Rápido y FAIR.
+    App.AssetCatalog = {
+        editingId: null,
+
+        init() {
+            document.getElementById('asset-form').addEventListener('submit', (e) => { e.preventDefault(); this.handleSubmit(); });
+            document.getElementById('asset-form-cancel-btn').addEventListener('click', () => this.cancelEdit());
+            const quickBtn = document.getElementById('open-asset-catalog-btn');
+            if (quickBtn) quickBtn.addEventListener('click', () => this.openPicker((asset) => this.applyToQuickAnalysis(asset)));
+            const fairBtn = document.getElementById('open-asset-catalog-btn-fair');
+            if (fairBtn) fairBtn.addEventListener('click', () => this.openPicker((asset) => {
+                const input = document.getElementById('fair-asset');
+                input.value = asset.nombre;
+                input.dispatchEvent(new Event('input'));
+                showToast('Activo cargado desde el catálogo.');
+            }));
+        },
+
+        async load() {
+            try {
+                const res = await App.Api.request('/api/assets');
+                state.quick.assets = res.assets;
+            } catch (e) {
+                showToast(e.userMessage || 'No se pudieron cargar los activos.');
+            }
+            this.render();
+        },
+
+        render() {
+            const assets = state.quick.assets || [];
+            document.getElementById('assets-empty').classList.toggle('hidden', assets.length > 0);
+            const currency = state.quickUI.domElements.inputs.currencySelect.value || 'USD';
+            const fmt = (v) => new Intl.NumberFormat('en-US', { style: 'currency', currency, minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v);
+            const tbody = document.getElementById('assets-table-body');
+            tbody.innerHTML = assets.map(a => `
+                <tr class="border-b">
+                    <td class="py-2">${sanitizeHTML(a.nombre)}</td>
+                    <td>${fmt(a.valorEstimado)}</td>
+                    <td>${sanitizeHTML(a.categoria || '—')}</td>
+                    <td>${sanitizeHTML(a.ubicacion || '—')}</td>
+                    <td class="text-right whitespace-nowrap">
+                        <button type="button" class="text-blue-600 hover:underline text-sm mr-3" data-edit-id="${a.id}">Editar</button>
+                        <button type="button" class="text-red-600 hover:underline text-sm" data-delete-id="${a.id}">Eliminar</button>
+                    </td>
+                </tr>`
+            ).join('');
+            tbody.querySelectorAll('[data-edit-id]').forEach(btn => btn.addEventListener('click', () => this.startEdit(btn.dataset.editId)));
+            tbody.querySelectorAll('[data-delete-id]').forEach(btn => btn.addEventListener('click', () => this.remove(btn.dataset.deleteId)));
+        },
+
+        readForm() {
+            return {
+                nombre: document.getElementById('asset-nombre').value.trim(),
+                valorEstimado: getSafeNumber(document.getElementById('asset-valor')),
+                categoria: document.getElementById('asset-categoria').value.trim(),
+                ubicacion: document.getElementById('asset-ubicacion').value.trim(),
+                notas: document.getElementById('asset-notas').value.trim(),
+            };
+        },
+
+        async handleSubmit() {
+            const errorEl = document.getElementById('asset-form-error');
+            errorEl.classList.add('hidden');
+            const body = this.readForm();
+            if (!body.nombre) {
+                errorEl.textContent = 'El nombre del activo es obligatorio.';
+                errorEl.classList.remove('hidden');
+                return;
+            }
+            try {
+                if (this.editingId) {
+                    await App.Api.request(`/api/assets/${this.editingId}`, { method: 'PUT', body });
+                    showToast('Activo actualizado.');
+                } else {
+                    await App.Api.request('/api/assets', { method: 'POST', body });
+                    showToast('Activo agregado al catálogo.');
+                }
+                this.cancelEdit(); // limpia el formulario y el modo edición
+                await this.load();
+            } catch (e) {
+                errorEl.textContent = e.userMessage || 'No se pudo guardar el activo.';
+                errorEl.classList.remove('hidden');
+            }
+        },
+
+        startEdit(id) {
+            const asset = (state.quick.assets || []).find(a => a.id === id);
+            if (!asset) return;
+            this.editingId = id;
+            document.getElementById('asset-nombre').value = asset.nombre;
+            document.getElementById('asset-valor').value = asset.valorEstimado;
+            document.getElementById('asset-categoria').value = asset.categoria || '';
+            document.getElementById('asset-ubicacion').value = asset.ubicacion || '';
+            document.getElementById('asset-notas').value = asset.notas || '';
+            document.getElementById('asset-form-title').textContent = 'Editar Activo';
+            document.getElementById('asset-form-submit-btn').textContent = 'Guardar Cambios';
+            document.getElementById('asset-form-cancel-btn').classList.remove('hidden');
+            document.getElementById('asset-nombre').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        },
+
+        cancelEdit() {
+            this.editingId = null;
+            document.getElementById('asset-form').reset();
+            document.getElementById('asset-form-error').classList.add('hidden');
+            document.getElementById('asset-form-title').textContent = 'Agregar Activo';
+            document.getElementById('asset-form-submit-btn').textContent = 'Agregar Activo';
+            document.getElementById('asset-form-cancel-btn').classList.add('hidden');
+        },
+
+        remove(id) {
+            const asset = (state.quick.assets || []).find(a => a.id === id);
+            if (!asset) return;
+            Modal.confirm(`¿Eliminar el activo <strong>${sanitizeHTML(asset.nombre)}</strong> del catálogo? Esto no afecta a los riesgos que ya lo usaron.`, async () => {
+                try {
+                    await App.Api.request(`/api/assets/${id}`, { method: 'DELETE' });
+                    showToast('Activo eliminado.');
+                    await this.load();
+                } catch (e) {
+                    showToast(e.userMessage || 'No se pudo eliminar el activo.');
+                }
+            }, 'Eliminar Activo');
+        },
+
+        // Selector reutilizable: Análisis Rápido y FAIR pasan su propio callback para decidir
+        // qué hacer con el activo elegido (ver applyToQuickAnalysis y el botón de #fair-asset).
+        openPicker(onSelect) {
+            const assets = state.quick.assets || [];
+            if (assets.length === 0) {
+                showToast('Aún no hay activos en el catálogo. Agrega uno primero en "Catálogo de Activos".');
+                return;
+            }
+            const currency = state.quickUI.domElements.inputs.currencySelect.value || 'USD';
+            const fmt = (v) => new Intl.NumberFormat('en-US', { style: 'currency', currency, minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v);
+
+            Modal.title.textContent = 'Catálogo de Activos';
+            Modal.body.innerHTML = `
+                <div class="input-group">
+                    <label for="assetpick-select">Activo:</label>
+                    <select id="assetpick-select" class="form-select"></select>
+                </div>
+                <div id="assetpick-info" class="p-3 bg-gray-50 border rounded-md text-sm text-gray-700 mt-2"></div>
+            `;
+            Modal.footer.innerHTML = `
+                <button id="assetpick-cancel-btn" class="btn btn-secondary">Cancelar</button>
+                <button id="assetpick-use-btn" class="btn btn-primary">Usar este activo</button>
+            `;
+            Modal.modal.classList.remove('hidden');
+
+            const select = document.getElementById('assetpick-select');
+            const infoEl = document.getElementById('assetpick-info');
+            assets.forEach(a => {
+                const opt = document.createElement('option');
+                opt.value = a.id;
+                opt.textContent = `${a.nombre} — ${fmt(a.valorEstimado)}`;
+                select.appendChild(opt);
+            });
+            const currentAsset = () => assets.find(a => a.id === select.value);
+            const updateInfo = () => {
+                const a = currentAsset();
+                infoEl.innerHTML = a
+                    ? `<p><strong>Valor Estimado: ${fmt(a.valorEstimado)}</strong></p>${a.categoria ? `<p class="mt-1">Categoría: ${sanitizeHTML(a.categoria)}</p>` : ''}${a.ubicacion ? `<p>Ubicación: ${sanitizeHTML(a.ubicacion)}</p>` : ''}`
+                    : '';
+            };
+            select.addEventListener('change', updateInfo);
+            updateInfo();
+
+            document.getElementById('assetpick-cancel-btn').addEventListener('click', () => Modal.hide());
+            document.getElementById('assetpick-use-btn').addEventListener('click', () => {
+                const a = currentAsset();
+                if (!a) return;
+                onSelect(a);
+                Modal.hide();
+            });
+        },
+
+        // Al elegir un activo en Análisis Rápido, se sugiere (no se fuerza) su valor registrado
+        // como Costo Mínimo Y Máximo — el usuario sigue pudiendo ajustar el rango a mano para
+        // reflejar incertidumbre; esto solo evita partir de $1,000/$100,000 por defecto sin
+        // ninguna relación con el activo real.
+        applyToQuickAnalysis(asset) {
+            const dom = state.quickUI.domElements;
+            state.quick.selectedAssetRef = { id: asset.id };
+            dom.inputs.quickAsset.value = asset.nombre;
+            dom.inputs.quickAsset.dispatchEvent(new Event('input'));
+            dom.inputs.costoMinImpacto.value = asset.valorEstimado;
+            dom.inputs.costoMaxImpacto.value = asset.valorEstimado;
+            dom.inputs.costoMinImpacto.dispatchEvent(new Event('input'));
+            const hint = document.getElementById('quickAsset-value-hint');
+            hint.textContent = `Valor registrado del activo: ${new Intl.NumberFormat('en-US', { style: 'currency', currency: dom.inputs.currencySelect.value || 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(asset.valorEstimado)}. Costo Mínimo/Máximo se prellenaron con ese valor — ajústalos si tu impacto real no es el 100% del activo.`;
+            hint.classList.remove('hidden');
+            showToast('Activo cargado desde el catálogo.');
+        },
+    };
+
     // --- Quick Analysis Module ---
     App.QuickAnalysis = {
         init() {
@@ -2034,6 +2309,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         <div class="input-group">
                             <label for="riskDescription">Descripción Detallada del Riesgo:</label>
                             <textarea id="riskDescription" class="form-textarea" rows="4" placeholder="Describa el evento de riesgo, sus causas y posibles efectos..."></textarea>
+                        </div>
+                        <div class="input-group">
+                            <label for="quickAsset">Activo Afectado (opcional):</label>
+                            <input type="text" id="quickAsset" class="form-input" placeholder="Ej. Bodega de mercancía (Bodega 3)">
+                            <button type="button" id="open-asset-catalog-btn" class="btn btn-secondary text-sm mt-2">📋 Elegir del Catálogo de Activos</button>
+                            <p id="quickAsset-value-hint" class="description-text hidden"></p>
                         </div>
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div class="input-group">
@@ -2246,7 +2527,8 @@ document.addEventListener('DOMContentLoaded', () => {
             state.quickUI.domElements = {
                 inputs: {
                     riskName: document.getElementById('riskName'), riskDescription: document.getElementById('riskDescription'),
-                    profileSelect: document.getElementById('profileSelect'),  aro: document.getElementById('aro'),  
+                    quickAsset: document.getElementById('quickAsset'),
+                    profileSelect: document.getElementById('profileSelect'),  aro: document.getElementById('aro'),
                     vulnerabilidad: document.getElementById('vulnerabilidad'), impacto: document.getElementById('impacto'),
                     costoMinImpacto: document.getElementById('costoMinImpacto'), costoMaxImpacto: document.getElementById('costoMaxImpacto'),
                     currencySelect: document.getElementById('currencySelect'), rrMax: document.getElementById('rrMax'),
@@ -2299,6 +2581,12 @@ document.addEventListener('DOMContentLoaded', () => {
             // referencia que él mismo acaba de guardar).
             dom.inputs.riskName.addEventListener('input', (e) => {
                 if (e.isTrusted) state.quick.selectedCatalogRef = null;
+            });
+            dom.inputs.quickAsset.addEventListener('input', (e) => {
+                if (e.isTrusted) {
+                    state.quick.selectedAssetRef = null;
+                    document.getElementById('quickAsset-value-hint').classList.add('hidden');
+                }
             });
             document.querySelectorAll('.quick-cost-input').forEach(input => {
                  input.addEventListener('change', () => this.validateAndFixRange('costoMinImpacto', 'costoMaxImpacto'));
@@ -2365,6 +2653,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 // listener 'input' de riskName que limpia esto si el usuario escribe encima.
                 catalogStandard: (state.quick.selectedCatalogRef || {}).standard || null,
                 catalogCode: (state.quick.selectedCatalogRef || {}).code || null,
+                // Igual que catalogStandard/catalogCode arriba: guarda de qué activo (si alguno)
+                // salió este riesgo, para poder transferirlo a "Activo Afectado" en FAIR al
+                // promover (ver App.AssetCatalog y App.FairWizard.loadRiskIntoForm).
+                asset: sanitizeHTML(dom.inputs.quickAsset.value) || null,
+                assetId: (state.quick.selectedAssetRef || {}).id || null,
                 ARO_raw: getSafeNumber(dom.inputs.aro),
                 costoMinImpacto: getSafeNumber(dom.inputs.costoMinImpacto),
                 costoMaxImpacto: getSafeNumber(dom.inputs.costoMaxImpacto),
@@ -2826,6 +3119,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             dom.inputs.riskName.value = data.riskName;
             dom.inputs.riskDescription.value = data.riskDescription;
+            dom.inputs.quickAsset.value = data.asset || '';
             dom.inputs.aro.value = data.ARO_raw;
             dom.inputs.vulnerabilidad.value = data.VI_raw;
             dom.inputs.impacto.value = data.II_raw;
@@ -2839,6 +3133,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // silencio la norma del catálogo que ya tenía (calculateAll() la vuelve a leer de
             // state.quick.selectedCatalogRef, no del campo riskName).
             state.quick.selectedCatalogRef = data.catalogStandard ? { standard: data.catalogStandard, code: data.catalogCode } : null;
+            state.quick.selectedAssetRef = data.assetId ? { id: data.assetId } : null;
 
             this.toggleDeliberateThreatSection();
             this.calculateAll();
@@ -3336,6 +3631,10 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('fair-wizard-wrapper').classList.remove('hidden');
             this.resetForm(false);
             document.getElementById('fair-riskName').value = data.riskName || '';
+            // Igual que la Descripción/norma de abajo: si el riesgo se armó eligiendo un activo
+            // del Catálogo de Activos en Análisis Rápido, ese nombre se transfiere aquí en vez
+            // de forzar a re-escribirlo (ver App.AssetCatalog y calculateAll()).
+            if (data.asset) document.getElementById('fair-asset').value = data.asset;
 
             // Bug real: la Descripción y la norma del catálogo (si el riesgo se armó con
             // App.RiskCatalog en Análisis Rápido) no llegaban a ningún campo de FAIR — el
