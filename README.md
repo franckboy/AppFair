@@ -77,13 +77,17 @@ Análisis Profundo, exportar el Informe Consolidado, eliminar un riesgo.
 Las pruebas unitarias (Vitest, co-ubicadas junto al código que prueban — `*.test.js` dentro de
 `frontend/src/modules/`) cubren la lógica que ya es pura hoy: formateo/clasificación en
 `utils.js` (`getSafeNumber`, `sanitizeHTML`, `debounce`, `severityToClasses`/`severityToHex`,
-`sensitivityLabel`, y `buildHistogramBins` — el binning del histograma de Monte Carlo, que
-antes estaba duplicado literal en `fair-wizard.js` y `fair-register.js` y se unificó ahí de
-paso) y tres métodos de `FairRegister` (`classifyAleAgainstCriteria`,
-`computeFairRiskEquivalents`, `buildConcentratedList`). Corren en milisegundos, sin necesitar
-backend ni navegador. Otra lógica de cálculo (ej. `suggestTefRange`/`validateAndFixRange` en
-`fair-wizard.js`) sigue mezclada con lectura/escritura directa del DOM — candidata a extraerse
-más adelante, no cubierta todavía.
+`sensitivityLabel`, `buildHistogramBins`, `computeSuggestedTef`, `sortTriangularRange`) y tres
+métodos de `FairRegister` (`classifyAleAgainstCriteria`, `computeFairRiskEquivalents`,
+`buildConcentratedList`). Corren en milisegundos, sin necesitar backend ni navegador.
+
+`buildHistogramBins` (el binning del histograma de Monte Carlo) estaba duplicado literal en
+`fair-wizard.js` y `fair-register.js`; `computeSuggestedTef` (la fórmula de sugerencia de TEF,
+Paso 2 del wizard) y `sortTriangularRange` (ordenar min/más probable/max) vivían mezcladas con
+lectura/escritura directa del DOM en `fair-wizard.js` — se separó la fórmula (pura, ahora en
+`utils.js`) de la parte que lee/escribe los campos del formulario (que se quedó en
+`fair-wizard.js`, sin cambios de comportamiento — verificado con las 8 pruebas E2E antes y
+después de mover el código).
 
 Ambas suites (unitarias y E2E) corren en cada push/PR vía GitHub Actions
 (`.github/workflows/frontend-e2e.yml`), igual que las pruebas del backend.
