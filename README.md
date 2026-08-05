@@ -38,6 +38,11 @@ Abre `frontend/app_fair.html` directamente en el navegador (no necesita servidor
 en el botón **Conexión API** de la esquina superior, ingresa la URL del backend (por defecto
 `http://localhost:3000`) y la API key que te imprimió la consola al arrancar.
 
+Alternativa para desarrollo activo — `cd frontend && npm install && npm run dev` levanta un
+servidor de Vite con recarga rápida (ver "Plan de migración" abajo); `npm run build` +
+`npm run preview` generan y sirven una build de producción local. Ninguno de los dos hace
+falta para simplemente usar la app.
+
 ## Cómo se desplegó (portafolio / demo)
 
 - **Backend**: `render.yaml` en la raíz define el [Blueprint de Render](https://render.com)
@@ -67,8 +72,19 @@ vía GitHub Actions (`.github/workflows/frontend-e2e.yml`), igual que las prueba
 `app_fair.html` es un solo archivo de miles de líneas — funciona, pero cada cambio nuevo cuesta
 más de ubicar. Hay un plan de migración incremental en marcha (bundler → CSS formal → módulos ES,
 cada paso verificado con la suite E2E antes de avanzar al siguiente) — sin reescritura, sin
-framework nuevo por ahora. La suite de pruebas de arriba es la Fase 0 de ese plan: la red de
-seguridad que permite reorganizar el código con confianza.
+framework nuevo por ahora.
+
+- **Fase 0 (hecha)**: la suite de pruebas E2E de arriba — la red de seguridad que permite
+  reorganizar el código con confianza.
+- **Fase 1 (hecha)**: Vite como servidor de desarrollo y build local (`frontend/vite.config.js`,
+  scripts `dev`/`build`/`preview`). El único cambio de contenido en `app_fair.html` fue marcar
+  su `<script>` como `type="module"`. Producción sigue sin build por ahora: GitHub Pages
+  publica el archivo fuente tal cual — un `<script type="module">` corre nativo en el
+  navegador sin necesitar Vite — y las dependencias de CDN (Chart.js, html2canvas, Font
+  Awesome) siguen cargándose igual que antes. Cambiar el despliegue para servir la build de
+  Vite queda para más adelante, cuando la Fase 3 (módulos ES) le dé más contenido real que
+  optimizar.
+- **Fases 2-3 (pendientes)**: build formal de Tailwind, y dividir el script en módulos ES.
 
 ## Licencia
 

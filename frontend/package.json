@@ -2,13 +2,17 @@
   "name": "motor-riesgos-fair-frontend",
   "version": "1.0.0",
   "private": true,
-  "description": "Pruebas E2E (Playwright) del frontend de app_fair.html — no hay build de producción todavía, ver el plan de migración.",
+  "description": "Frontend de app_fair.html. Vite se usa como servidor de desarrollo y build local (Fase 1 del plan de migración) — producción sigue sirviendo el archivo fuente tal cual, sin build, ver README.",
   "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:headed": "playwright test --headed"
   },
   "devDependencies": {
-    "@playwright/test": "^1.56.1"
+    "@playwright/test": "^1.56.1",
+    "vite": "^6.4.3"
   }
 }

@@ -52,7 +52,9 @@ module.exports = defineConfig({
       stdout: 'pipe',
     },
     {
-      command: 'python3 -m http.server 8080',
+      // Servidor de desarrollo de Vite (Fase 1 del plan de migración) en vez de un servidor
+      // estático plano — sirve app_fair.html por su ruta de archivo real, igual que antes.
+      command: 'npm run dev -- --port 8080 --strictPort',
       url: 'http://localhost:8080/app_fair.html',
       reuseExistingServer: !process.env.CI,
       timeout: 15000,
