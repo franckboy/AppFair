@@ -1,0 +1,249 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  .nav-button {
+    @apply rounded-md bg-blue-500 px-4 py-2 font-semibold text-white transition-colors duration-200;
+  }
+  .nav-button.active,
+  .nav-button:hover {
+    @apply bg-blue-700;
+  }
+  .nav-button.active {
+    @apply text-white shadow-inner;
+  }
+  .nav-button:disabled {
+    @apply cursor-not-allowed opacity-40;
+  }
+  .nav-button:disabled:hover {
+    @apply bg-blue-500;
+  }
+
+  .page-content {
+    @apply rounded-lg bg-white p-6 shadow-lg;
+  }
+
+  .wizard-step {
+    @apply mb-6 rounded-lg border border-gray-200 p-6;
+  }
+
+  .input-group {
+    @apply mb-4;
+  }
+
+  .fair-label,
+  .input-group label {
+    @apply mb-1 block text-sm font-medium text-gray-700;
+  }
+
+  .form-input,
+  .form-select,
+  .form-textarea {
+    @apply mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-blue-500 sm:text-sm;
+  }
+
+  .form-checkbox {
+    @apply h-4 w-4 rounded border-gray-300 text-blue-600;
+  }
+
+  .btn {
+    @apply flex items-center justify-center rounded-md px-4 py-2 font-semibold shadow-md transition-colors duration-200;
+  }
+  .btn:disabled {
+    @apply cursor-not-allowed opacity-50;
+  }
+  .btn-primary {
+    @apply bg-blue-600 text-white;
+  }
+  .btn-primary:hover {
+    @apply bg-blue-700;
+  }
+  .btn-secondary {
+    @apply bg-gray-200 text-gray-800;
+  }
+  .btn-secondary:hover {
+    @apply bg-gray-300;
+  }
+  .btn-secondary.active {
+    @apply bg-gray-400 text-white;
+  }
+  .btn-success {
+    @apply bg-green-600 text-white;
+  }
+  .btn-success:hover {
+    @apply bg-green-700;
+  }
+  .btn-danger {
+    @apply bg-red-600 text-white;
+  }
+  .btn-danger:hover {
+    @apply bg-red-700;
+  }
+
+  /* Spinner: valores propios (borde translúcido, 16px), no se pueden expresar solo con @apply. */
+  .spinner {
+    border: 3px solid hsla(0, 0%, 100%, 0.3);
+    border-top-color: #fff;
+    border-radius: 50%;
+    width: 16px;
+    height: 16px;
+    animation: spin 1s linear infinite;
+  }
+  .spinner-dark {
+    border-top-color: #1d4ed8;
+  }
+  @keyframes spin {
+    0% {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(1turn);
+    }
+  }
+
+  .description-text {
+    @apply mt-1 text-xs italic text-gray-500;
+  }
+
+  .slider-value {
+    @apply text-sm font-semibold text-blue-700;
+  }
+
+  .fair-section {
+    @apply mt-6 rounded-lg border border-gray-200 p-4;
+  }
+  .fair-section h4 {
+    @apply mb-3 text-lg font-semibold text-gray-800;
+  }
+
+  .toggle-breakdown-btn {
+    @apply text-sm font-medium text-blue-600;
+  }
+  .toggle-breakdown-btn:hover {
+    @apply text-blue-800;
+  }
+  .toggle-breakdown-btn .arrow {
+    @apply ml-1 inline-block transition-transform duration-200;
+  }
+  .toggle-breakdown-btn.open .arrow {
+    @apply rotate-180;
+  }
+
+  .range-warning {
+    @apply mt-1 text-xs italic text-orange-600;
+  }
+  .error-message {
+    @apply mt-1 text-xs text-red-600;
+  }
+
+  .input-error,
+  .input-error:focus {
+    @apply border-red-500;
+  }
+  .input-error:focus {
+    @apply ring-red-500;
+  }
+
+  .wizard-progress {
+    @apply my-4 flex items-center justify-center space-x-2;
+  }
+  .wizard-progress-step {
+    @apply h-2 w-1/4 rounded-full bg-gray-300 transition-colors duration-300;
+  }
+  .wizard-progress-step.active {
+    @apply bg-blue-500;
+  }
+
+  .modal-overlay {
+    @apply fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50;
+  }
+  .modal-box {
+    @apply w-11/12 max-w-md rounded-lg bg-white p-6 shadow-xl;
+  }
+  .modal-title {
+    @apply mb-4 text-xl font-bold;
+  }
+  .modal-body {
+    @apply mb-6 text-gray-700;
+  }
+  .modal-footer {
+    @apply flex justify-end space-x-4;
+  }
+
+  .toast {
+    @apply fixed right-5 top-5 translate-x-full rounded-lg bg-green-500 px-4 py-2 text-white shadow-lg transition-transform duration-300;
+  }
+  .toast.show {
+    @apply translate-x-0;
+  }
+}
+
+/* Reglas propias del proyecto, fuera de cualquier @apply (no se derivan de utilidades). */
+body.modo-simple .advanced-only,
+body.modo-tecnico .simple-only {
+  display: none !important;
+}
+
+.wizard-guide {
+  background: #eff6ff;
+  border-left: 4px solid #3b82f6;
+  padding: 12px 16px;
+  border-radius: 6px;
+  margin-bottom: 16px;
+  color: #1e3a8a;
+}
+
+#fair-print-report {
+  display: none;
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #fair-print-report,
+  #fair-print-report * {
+    visibility: visible;
+  }
+  #fair-print-report {
+    display: block !important;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    padding: 20px;
+  }
+  #fair-print-report * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    color-adjust: exact;
+  }
+  #fair-print-report .print-section {
+    page-break-inside: avoid;
+    margin-bottom: 16px;
+  }
+  #fair-print-report table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  #fair-print-report td,
+  #fair-print-report th {
+    border: 1px solid #ccc;
+    padding: 6px 8px;
+    text-align: left;
+    font-size: 12px;
+  }
+  #fair-print-report h1 {
+    font-size: 20px;
+    margin-bottom: 4px;
+  }
+  #fair-print-report h2 {
+    font-size: 15px;
+    margin: 12px 0 6px;
+    border-bottom: 1px solid #999;
+  }
+  #fair-print-report img {
+    max-width: 100%;
+  }
+}
