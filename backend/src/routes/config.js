@@ -2,6 +2,7 @@
 
 const express = require('express');
 const { attackerProfiles, defenseProfiles, riskProfiles, riskCatalog, lossFormsKeys, lossFormsLabels, defaultRiskCriteria } = require('../data/profiles');
+const { asyncHandler } = require('../middleware/asyncHandler');
 
 function createConfigRouter(store) {
     const router = express.Router();
@@ -12,12 +13,12 @@ function createConfigRouter(store) {
     });
 
     // --- Criterios de Riesgo (Contexto — ISO 31000, 6.3.4) ---
-    router.get('/criteria', (req, res) => {
-        const criteria = store.get('riskCriteria') || defaultRiskCriteria;
+    router.get('/criteria', asyncHandler(async (req, res) => {
+        const criteria = (await store.get('riskCriteria')) || defaultRiskCriteria;
         res.json(criteria);
-    });
+    }));
 
-    router.put('/criteria', (req, res) => {
+    router.put('/criteria', asyncHandler(async (req, res) => {
         const { rrtBands, aleAceptable, aleCritico, aleUmbralExcedencia } = req.body;
 
         if (!rrtBands || !(rrtBands.medio < rrtBands.alto && rrtBands.alto < rrtBands.critico)) {
@@ -28,33 +29,33 @@ function createConfigRouter(store) {
         }
 
         const criteria = { rrtBands, aleAceptable, aleCritico, aleUmbralExcedencia: aleUmbralExcedencia || 0 };
-        store.set('riskCriteria', criteria);
+        await store.set('riskCriteria', criteria);
         res.json(criteria);
-    });
+    }));
 
     // --- Valores por Defecto de la organización ---
-    router.get('/org-defaults', (req, res) => {
-        res.json(store.get('orgDefaults'));
-    });
+    router.get('/org-defaults', asyncHandler(async (req, res) => {
+        res.json(await store.get('orgDefaults'));
+    }));
 
-    router.put('/org-defaults', (req, res) => {
-        const current = store.get('orgDefaults');
+    router.put('/org-defaults', asyncHandler(async (req, res) => {
+        const current = await store.get('orgDefaults');
         const updated = { ...current, ...req.body };
-        store.set('orgDefaults', updated);
+        await store.set('orgDefaults', updated);
         res.json(updated);
-    });
+    }));
 
     // --- Contexto Organizacional (RIMS RA.1-2015, 5.2 / ISO 28001) ---
-    router.get('/org-context', (req, res) => {
-        res.json(store.get('orgContext'));
-    });
+    router.get('/org-context', asyncHandler(async (req, res) => {
+        res.json(await store.get('orgContext'));
+    }));
 
-    router.put('/org-context', (req, res) => {
-        const current = store.get('orgContext');
+    router.put('/org-context', asyncHandler(async (req, res) => {
+        const current = await store.get('orgContext');
         const updated = { ...current, ...req.body };
-        store.set('orgContext', updated);
+        await store.set('orgContext', updated);
         res.json(updated);
-    });
+    }));
 
     return router;
 }

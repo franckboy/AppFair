@@ -21,3 +21,10 @@ services:
       # Environment y ponla ahí — no hace falta volver a desplegar el código para este cambio.
       - key: ALLOWED_ORIGIN
         sync: false
+      # Opcional pero recomendado: sin esto, los datos se guardan en un archivo local que
+      # Render borra en cada redeploy (disco efímero en el plan gratis). Con la cadena de
+      # conexión de una Postgres gratuita externa (ej. Neon — no expira, a diferencia de la
+      # Postgres gratis de Render), los datos sobreviven. Ver backend/README.md, sección
+      # "Base de datos persistente".
+      - key: DATABASE_URL
+        sync: false

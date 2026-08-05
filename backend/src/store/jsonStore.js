@@ -2,27 +2,24 @@
 
 const fs = require('fs');
 const path = require('path');
+const { DEFAULTS } = require('./defaults');
 
 const DB_PATH = path.join(__dirname, '..', '..', 'data', 'db.json');
 
-const DEFAULTS = {
-    riskCriteria: null, // se llena con defaultRiskCriteria si no existe
-    orgDefaults: { currency: 'USD', defenseKey: 'estandar', owner: '', dataSource: 'experto-sin-calibrar', dataConfidence: 'medio' },
-    orgContext: { mision: '', naturalezaNegocio: '', apetitoRiesgo: 'moderado', partesInteresadas: '', entornoLegal: '', alcanceCadenaSuministro: '' },
-    riskRegister: [],
-    assets: [],
-    risks: [],
-};
-
 /**
  * Almacenamiento mínimo basado en un archivo JSON local — pensado para que
- * el proyecto corra sin necesitar una base de datos externa desde el día 1.
- * Para producción con varios usuarios concurrentes, reemplázalo por
- * PostgreSQL/MongoDB/etc. manteniendo la misma interfaz (get/set).
+ * el proyecto corra sin necesitar una base de datos externa desde el día 1
+ * (desarrollo local, tests). En producción sobre una plataforma de disco
+ * efímero (ej. Render free tier) este archivo se pierde en cada redeploy —
+ * para eso existe PostgresStore (ver src/store/index.js), que se activa
+ * solo si hay DATABASE_URL configurada.
+ *
+ * Todos los métodos son async (aunque internamente sean síncronos) para que
+ * las rutas puedan hacer `await store.xxx()` sin importar cuál de los dos
+ * backends esté activo.
  *
  * NOTA: no es seguro para escrituras concurrentes de muchos procesos a la
- * vez (usa un solo archivo). Si vas a correr varias instancias del server,
- * cambia esto por una base de datos real antes de ese punto.
+ * vez (usa un solo archivo).
  */
 class JsonStore {
     constructor(dbPath = DB_PATH) {
@@ -35,6 +32,12 @@ class JsonStore {
             fs.mkdirSync(path.dirname(this.dbPath), { recursive: true });
             fs.writeFileSync(this.dbPath, JSON.stringify(DEFAULTS, null, 2));
         }
+    }
+
+    async init() {
+        // El constructor ya garantiza el archivo — este método existe solo para que el
+        // factory (src/store/index.js) pueda llamar `await store.init()` sin importar
+        // cuál de los dos backends esté activo.
     }
 
     _readAll() {
@@ -54,11 +57,11 @@ class JsonStore {
         fs.writeFileSync(this.dbPath, JSON.stringify(data, null, 2));
     }
 
-    get(key) {
+    async get(key) {
         return this._readAll()[key];
     }
 
-    set(key, value) {
+    async set(key, value) {
         const all = this._readAll();
         all[key] = value;
         this._writeAll(all);
@@ -66,7 +69,7 @@ class JsonStore {
     }
 
     /** Agrega o actualiza (por riskName) una entrada del Registro de Riesgos. */
-    upsertRiskInRegister(entry) {
+    async upsertRiskInRegister(entry) {
         const all = this._readAll();
         const register = all.riskRegister || [];
         const idx = register.findIndex((r) => r.riskName === entry.riskName);
@@ -77,7 +80,7 @@ class JsonStore {
         return register;
     }
 
-    deleteRiskFromRegister(riskName) {
+    async deleteRiskFromRegister(riskName) {
         const all = this._readAll();
         all.riskRegister = (all.riskRegister || []).filter((r) => r.riskName !== riskName);
         this._writeAll(all);
@@ -85,7 +88,7 @@ class JsonStore {
     }
 
     /** Agrega o actualiza (por id) una entrada del Catálogo de Activos. */
-    upsertAsset(entry) {
+    async upsertAsset(entry) {
         const all = this._readAll();
         const assets = all.assets || [];
         const idx = assets.findIndex((a) => a.id === entry.id);
@@ -96,7 +99,7 @@ class JsonStore {
         return assets;
     }
 
-    deleteAsset(id) {
+    async deleteAsset(id) {
         const all = this._readAll();
         all.assets = (all.assets || []).filter((a) => a.id !== id);
         this._writeAll(all);
@@ -109,7 +112,7 @@ class JsonStore {
      * actualizándose conforme avanza a FAIR/simulación. Igual que los activos, se identifica
      * por id (no por nombre) para poder editar/actualizar sin crear duplicados fantasma.
      */
-    upsertRisk(entry) {
+    async upsertRisk(entry) {
         const all = this._readAll();
         const risks = all.risks || [];
         const idx = risks.findIndex((r) => r.id === entry.id);
@@ -120,7 +123,7 @@ class JsonStore {
         return risks;
     }
 
-    deleteRisk(id) {
+    async deleteRisk(id) {
         const all = this._readAll();
         all.risks = (all.risks || []).filter((r) => r.id !== id);
         this._writeAll(all);

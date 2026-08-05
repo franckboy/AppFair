@@ -6,7 +6,7 @@ const express = require('express');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 
-const { JsonStore } = require('./src/store/jsonStore');
+const { createStore } = require('./src/store');
 const { createApiKeyAuth } = require('./src/middleware/apiKeyAuth');
 const createConfigRouter = require('./src/routes/config');
 const createAutocalcRouter = require('./src/routes/autocalc');
@@ -17,7 +17,12 @@ const createAssetsRouter = require('./src/routes/assets');
 const createRisksRouter = require('./src/routes/risks');
 
 const app = express();
-const store = new JsonStore();
+// Con DATABASE_URL configurada usa Postgres (persiste entre redeploys); si no, un archivo
+// JSON local (desarrollo, tests). Ver src/store/index.js.
+const store = createStore();
+if (!process.env.DATABASE_URL) {
+    console.warn('⚠️  DATABASE_URL no configurada — usando almacenamiento en archivo local (JsonStore). En plataformas de disco efímero (ej. Render free tier) los datos se pierden en cada redeploy. Ver backend/README.md para configurar una Postgres gratuita.');
+}
 
 // Sin API_KEY configurada, la API queda completamente abierta a cualquier origen
 // (Criterios de Riesgo, Contexto Organizacional y Registro de Riesgos incluidos).
@@ -74,10 +79,22 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 3000;
 if (require.main === module) {
-    app.listen(PORT, () => {
-        console.log(`Motor de Riesgos FAIR — backend corriendo en http://localhost:${PORT}`);
-        console.log(`Prueba: curl http://localhost:${PORT}/api/health`);
-    });
+    // store.init() crea la tabla en Postgres si hace falta (no-op en JsonStore) — se espera
+    // antes de aceptar tráfico para no correr con la tabla a medio crear en el primer request.
+    store.init()
+        .then(() => {
+            app.listen(PORT, () => {
+                console.log(`Motor de Riesgos FAIR — backend corriendo en http://localhost:${PORT}`);
+                console.log(`Prueba: curl http://localhost:${PORT}/api/health`);
+            });
+        })
+        .catch((err) => {
+            console.error('No se pudo inicializar el almacenamiento:', err);
+            process.exit(1);
+        });
 }
 
-module.exports = app; // exportado para pruebas (supertest, etc.)
+// Exportado para pruebas (supertest, etc.) — en modo test nunca hay DATABASE_URL, así que
+// esto siempre es un JsonStore ya listo por su constructor (no necesita await store.init()
+// antes del primer request, a diferencia de PostgresStore en producción, arriba).
+module.exports = app;

@@ -25,6 +25,8 @@ Variables de entorno (vía `.env` — copia `.env.example` — o el entorno del 
 - `ALLOWED_ORIGIN` — dominio(s) permitidos para CORS, separados por coma (ej.
   `https://tuusuario.github.io`). Si no la defines, CORS queda abierto a cualquier origen
   (cómodo en local; restríngela antes de publicar el frontend en un dominio real).
+- `DATABASE_URL` — opcional. Cadena de conexión de Postgres para persistencia real (ver
+  "Persistencia" abajo). Sin ella, usa un archivo JSON local.
 
 ## Autenticación
 
@@ -45,20 +47,39 @@ fuerza bruta contra la API key). Pasado el límite, responde `429`.
 
 ## Persistencia
 
-Los Criterios de Riesgo, Valores por Defecto, Contexto Organizacional y el Registro de
-Riesgos se guardan en `data/db.json` — un archivo JSON simple, para que el proyecto corra
-sin necesitar una base de datos externa desde el día 1.
+Los Criterios de Riesgo, Valores por Defecto, Contexto Organizacional, el Registro de
+Riesgos, el Catálogo de Activos y el Historial de Análisis Rápido se guardan detrás de una
+interfaz común (`get`, `set`, `upsertRiskInRegister`, `deleteRiskFromRegister`,
+`upsertAsset`, `deleteAsset`, `upsertRisk`, `deleteRisk` — ver `src/store/index.js`) con dos
+implementaciones intercambiables:
 
-**Esto es suficiente para un solo servidor con tráfico bajo.** Si vas a correr varias
-instancias del backend al mismo tiempo (por ejemplo, detrás de un balanceador de carga) o
-esperas muchas escrituras concurrentes, reemplaza `src/store/jsonStore.js` por una base de
-datos real (PostgreSQL, MongoDB, etc.) — la interfaz (`get`, `set`, `upsertRiskInRegister`,
-`deleteRiskFromRegister`) está pensada para que el resto del código no tenga que cambiar.
+- **Sin `DATABASE_URL` configurada** (default): `src/store/jsonStore.js`, un archivo JSON
+  local (`data/db.json`). Cero configuración — ideal para desarrollo local y para los tests
+  (que nunca configuran `DATABASE_URL` a propósito, para no depender de una base externa).
+- **Con `DATABASE_URL` configurada**: `src/store/postgresStore.js`, la misma estructura de
+  datos pero persistida en una tabla Postgres (una sola fila `jsonb` — no es un esquema
+  relacional, es el mismo documento de siempre, solo que sobrevive a un redeploy).
+
+### Base de datos persistente (recomendado para producción)
 
 **Nota si despliegas en un nivel gratis con disco efímero (ej. Render free tier):**
 `data/db.json` se borra en cada redeploy y cada vez que el servicio se reinicia tras dormirse
-por inactividad. Aceptable para una demo/portafolio; no uses ese nivel para datos reales de un
-cliente sin antes moverte a una base de datos real o a un plan con disco persistente.
+por inactividad — cualquier riesgo guardado se pierde. `DATABASE_URL` resuelve esto sin costo,
+usando una Postgres externa gratuita:
+
+1. Crea una cuenta gratis en [Neon](https://neon.tech) (u otro proveedor de Postgres gratis
+   que no expire, ej. Supabase — a diferencia de la Postgres gratis de Render, que expira a
+   los 30 días).
+2. Crea un proyecto — Neon te da una cadena de conexión lista para copiar, algo como
+   `postgresql://usuario:password@ep-xxxx.neon.tech/neondb?sslmode=require`.
+3. Ponla como `DATABASE_URL` en tu `.env` (local) o en **Settings → Environment** del
+   servicio en Render (producción) — ver `render.yaml`, ya la tiene declarada como variable a
+   configurar manualmente (`sync: false`, igual que `API_KEY`).
+4. Reinicia el servidor. En el primer arranque crea la tabla sola (`store.init()`) — no hay
+   que correr ninguna migración a mano.
+
+No hace falta volver a tocar código: el `server.js` detecta `DATABASE_URL` y cambia de
+`JsonStore` a `PostgresStore` automáticamente.
 
 ## Despliegue en Render
 
@@ -101,7 +122,10 @@ src/
   data/
     profiles.js                  Perfiles de Atacante/Defensa/Riesgo (constantes)
   store/
-    jsonStore.js                 Persistencia en archivo JSON (swap-eable por una BD real)
+    index.js                     Factory: Postgres si hay DATABASE_URL, si no JSON local
+    defaults.js                  Documento inicial, compartido por ambos stores
+    jsonStore.js                 Persistencia en archivo JSON local (dev/tests)
+    postgresStore.js             Persistencia en Postgres (producción, sobrevive redeploys)
   middleware/
     apiKeyAuth.js                Exige el header X-API-Key en todo /api/* salvo /api/health
   routes/
