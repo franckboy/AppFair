@@ -142,16 +142,7 @@
                     </div>
                     <div id="fair-wizard">
                         <section id="fair-step-1" class="wizard-step">
-                            <div class="flex justify-between items-center mb-4 flex-wrap gap-2">
-                                <h3 id="fair-step1-title" class="text-xl font-medium text-gray-700">Paso 1: Definición del Escenario de Riesgo</h3>
-                                <button type="button" id="fair-duplicate-btn-step1" class="btn btn-secondary text-sm" title="Copia perfil de atacante/defensa, rangos y categorías de pérdida del último análisis completado">
-                                    <i class="fas fa-copy mr-1"></i>Duplicar como Plantilla
-                                </button>
-                            </div>
-                            <p class="wizard-guide simple-only">
-                                👋 Empecemos con lo básico: ¿qué podría pasar, y qué o a quién afectaría? No te preocupes por ser exacto todavía —
-                                solo descríbelo con tus palabras. Lo demás lo vamos armando juntos, paso a paso.
-                            </p>
+                            <h3 id="fair-step1-title" class="text-xl font-medium text-gray-700 mb-4">Paso 1: Definición del Escenario de Riesgo</h3>
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <div class="input-group md:col-span-2">
                                     <label for="fair-riskName">Nombre del Riesgo:</label>
@@ -2561,7 +2552,6 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('run-simulation-btn').addEventListener('click', () => this.runMonteCarloSimulation());
             document.getElementById('fair-reset-btn').addEventListener('click', () => this.resetForm());
             document.getElementById('fair-duplicate-btn').addEventListener('click', () => this.duplicateFromTemplate());
-            document.getElementById('fair-duplicate-btn-step1').addEventListener('click', () => this.duplicateFromTemplate());
             const debouncedUpdateTreatmentView = debounce(() => this.updateTreatmentView(), 400);
             ['fair-costoControlAnual', 'fair-reduccionALE', 'fair-mitigar-fiabilidad', 'fair-mitigar-retraso', 'fair-seguro-prima', 'fair-seguro-deducible', 'fair-seguro-limite', 'fair-seguro-fiabilidad', 'fair-seguro-retraso', 'fair-evitar-costo', 'fair-evitar-fiabilidad', 'fair-evitar-retraso'].forEach(id => {
                 document.getElementById(id).addEventListener('input', debouncedUpdateTreatmentView);
