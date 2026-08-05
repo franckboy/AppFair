@@ -686,14 +686,14 @@
                                     <th scope="col" class="px-6 py-3">Riesgo</th><th scope="col" class="px-6 py-3">Etapa</th>
                                     <th scope="col" class="px-6 py-3">Riesgo Inherente</th><th scope="col" class="px-6 py-3">Efectividad de Controles</th>
                                     <th scope="col" class="px-6 py-3">Riesgo Residual</th>
-                                    <th scope="col" class="px-6 py-3">Categoría</th><th scope="col" class="px-6 py-3">Activo</th>
+                                    <th scope="col" class="px-6 py-3">Activo</th>
                                     <th scope="col" class="px-6 py-3">Impacto</th><th scope="col" class="px-6 py-3">CVaR 95%</th>
                                     <th scope="col" class="px-6 py-3">Evaluación</th><th scope="col" class="px-6 py-3">Fecha</th>
                                     <th scope="col" class="px-6 py-3">Acciones</th>
                                 </tr>
                             </thead>
                             <tbody id="quick-concentrated-table-body">
-                                <tr><td colspan="14" class="text-center py-4">No hay riesgos guardados.</td></tr>
+                                <tr><td colspan="13" class="text-center py-4">No hay riesgos guardados.</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -891,17 +891,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const LOSS_FIELD_LABELS = {
         tecnico: { min: 'Costo (min) — calculado', mode: 'Costo (Más Probable)', max: 'Costo (max) — calculado' },
         simple: { min: 'En el mejor caso (calculado)', mode: '¿Cuánto costaría en el caso típico?', max: 'En el peor caso (calculado)' },
-    };
-
-    // Mismos colores que App.QuickAnalysis.getRiskCategory (Bajo/Medio/Alto/Crítico) — se usan
-    // para la columna "Categoría" de la tabla concentrada cuando el riesgo ya tiene un
-    // resultado FAIR, mapeando la severidad que el backend ya calculó (evaluateFairThreat) en
-    // vez de re-derivar una segunda clasificación que podría no coincidir con "Evaluación".
-    const SEVERITY_TO_CATEGORY = {
-        bajo: { name: 'Bajo', color: 'text-green-800', bgColor: 'bg-green-100' },
-        medio: { name: 'Medio', color: 'text-yellow-800', bgColor: 'bg-yellow-100' },
-        alto: { name: 'Alto', color: 'text-orange-800', bgColor: 'bg-orange-100' },
-        critico: { name: 'Crítico', color: 'text-red-800', bgColor: 'bg-red-100' },
     };
 
     // Nombres cortos para el Análisis de Sensibilidad (Paso 4 y Registro consolidado) — el
@@ -2470,17 +2459,6 @@ document.addEventListener('DOMContentLoaded', () => {
             // para que Análisis de Riesgo y Registro de Riesgos siempre muestren exactamente lo
             // mismo en vez de dos versiones distintas de la misma información.
             await App.FairRegister.loadRiskRegister();
-        },
-
-        // Sigue en uso desde buildConcentratedList() para clasificar riesgos de /api/risks
-        // (creados antes de este cambio) por su Riesgo Residual (RRt%) guardado.
-        getRiskCategory(value, threshold = null) {
-            if (threshold !== null && value > threshold) return { name: 'Inaceptable', color: 'text-white', bgColor: 'bg-black' };
-            const { medio, alto, critico } = state.config.riskCriteria.rrtBands;
-            if (value > critico) return { name: 'Crítico', color: 'text-red-800', bgColor: 'bg-red-100' };
-            if (value > alto) return { name: 'Alto', color: 'text-orange-800', bgColor: 'bg-orange-100' };
-            if (value > medio) return { name: 'Medio', color: 'text-yellow-800', bgColor: 'bg-yellow-100' };
-            return { name: 'Bajo', color: 'text-green-800', bgColor: 'bg-green-100' };
         },
     };
 
@@ -4262,9 +4240,9 @@ document.addEventListener('DOMContentLoaded', () => {
         //     cuánto perderías sin las mitigaciones actuales.
         //   Efectividad de Controles (%) = 100% − Vulnerabilidad (Más Probable) — qué porcentaje
         //     de los intentos de amenaza bloquean tus controles actuales.
-        //   Categoría = la MISMA severidad que ya calculó el backend (evaluateFairThreat, ver
-        //     evaluationLevel/severity guardados en el Registro) — nunca una segunda escala que
-        //     pueda contradecir la columna "Evaluación".
+        // La clasificación (Bajo/Medio/Alto/Crítico) no se repite aquí — ya la muestra la
+        // columna "Evaluación" (evaluateFairThreat, en el backend); tener una "Categoría" aparte
+        // solo duplicaba esa misma severidad con otro formato.
         // Solo aplica a riesgos tipo Amenaza: uno de tipo Oportunidad es un beneficio esperado,
         // no una pérdida, y no tiene un "Riesgo Inherente/Residual" con el mismo sentido.
         computeFairRiskEquivalents(entry) {
@@ -4277,7 +4255,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 residualMoney: fmt(entry.ale),
                 inherentMoney: inherentAle != null ? fmt(inherentAle) : null,
                 controlEffectiveness: vulnMode != null ? `${(100 - vulnMode).toFixed(1)}%` : null,
-                category: SEVERITY_TO_CATEGORY[entry.severity] || null,
             };
         },
 
@@ -4298,13 +4275,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     riskName: (fairEntry && fairEntry.riskName) || risk.name,
                     stage: fairEntry ? 'fair' : 'triage',
                     createdAt: risk.createdAt || risk.date,
-                    // Prioridad: equivalente derivado de FAIR si ya hay simulación; si no, el
-                    // dato histórico de la vieja Vista Rápida (riesgos guardados antes de este
-                    // cambio); si tampoco hay eso, sin clasificación todavía.
-                    quickCategory: fairEquiv ? fairEquiv.category
-                        : (risk.fullData && typeof risk.fullData.RRt === 'number'
-                            ? App.QuickAnalysis.getRiskCategory(risk.fullData.RRt * 100, risk.fullData.rrMax)
-                            : null),
                     quickAle: risk.ale || null,
                     riesgoInherente: fairEquiv ? fairEquiv.inherentMoney : (risk.ri || null),
                     riesgoResidual: fairEquiv ? fairEquiv.residualMoney : (risk.rrt || null),
@@ -4330,7 +4300,6 @@ document.addEventListener('DOMContentLoaded', () => {
                         riskName: reg.riskName,
                         stage: 'fair',
                         createdAt: reg.date,
-                        quickCategory: fairEquiv ? fairEquiv.category : null,
                         quickAle: null,
                         riesgoInherente: fairEquiv ? fairEquiv.inherentMoney : null,
                         riesgoResidual: fairEquiv ? fairEquiv.residualMoney : null,
@@ -4617,7 +4586,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 .filter(Boolean);
 
             if (list.length === 0) {
-                bodies.forEach(tb => { tb.innerHTML = '<tr><td colspan="14" class="text-center py-4 text-gray-500">No hay riesgos guardados.</td></tr>'; });
+                bodies.forEach(tb => { tb.innerHTML = '<tr><td colspan="13" class="text-center py-4 text-gray-500">No hay riesgos guardados.</td></tr>'; });
                 return;
             }
 
@@ -4628,9 +4597,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 const evalCell = item.fairEntry
                     ? `<span class="px-2 py-1 rounded text-xs border-l-4 ${item.fairEntry.evaluationClasses}">${item.fairEntry.evaluationLevel}</span>`
-                    : '—';
-                const categoriaCell = item.quickCategory
-                    ? `<span class="inline-block px-2 py-1 text-xs font-semibold rounded-full ${item.quickCategory.color} ${item.quickCategory.bgColor}">${item.quickCategory.name}</span>`
                     : '—';
 
                 const impactCell = item.fairEntry ? fmt(item.fairEntry.ale) : (item.quickAle || '—');
@@ -4665,7 +4631,6 @@ document.addEventListener('DOMContentLoaded', () => {
                         <td>${item.riesgoInherente || '—'}</td>
                         <td>${item.controlEffectiveness || '—'}</td>
                         <td>${item.riesgoResidual || '—'}</td>
-                        <td>${categoriaCell}</td>
                         <td>${sanitizeHTML(item.asset)}</td>
                         <td>${impactCell}</td>
                         <td>${cvarCell}</td>
