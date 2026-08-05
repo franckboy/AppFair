@@ -10,6 +10,7 @@ import {
     severityToClasses,
     severityToHex,
     showToast,
+    triangularMean,
 } from './utils.js';
 
 // ============================================================
@@ -98,15 +99,24 @@ export const FairRegister = {
                 minimumFractionDigits: 0,
                 maximumFractionDigits: 0,
             }).format(v);
-        const vulnMode = entry.vuln && entry.vuln.mode;
-        const inherentAle = vulnMode && vulnMode > 0 ? entry.ale * (100 / vulnMode) : null;
+        // La media de la distribución triangular de Vulnerabilidad, NO su moda (ver
+        // triangularMean en utils.js) — el ALE Residual que guarda el motor es un promedio
+        // de todas las iteraciones de Monte Carlo, así que "des-mitigarlo" para estimar el
+        // Riesgo Inherente debe dividir entre ese mismo tipo de promedio, no entre el valor
+        // "más probable" de un solo punto.
+        const vuln = entry.vuln;
+        const vulnMean =
+            vuln && typeof vuln.min === 'number' && typeof vuln.mode === 'number' && typeof vuln.max === 'number'
+                ? triangularMean(vuln.min, vuln.mode, vuln.max)
+                : null;
+        const inherentAle = vulnMean && vulnMean > 0 ? entry.ale * (100 / vulnMean) : null;
 
         return {
             residualMoney: fmt(entry.ale),
             residualSeverity: entry.severity || null,
             inherentMoney: inherentAle != null ? fmt(inherentAle) : null,
             inherentSeverity: inherentAle != null ? this.classifyAleAgainstCriteria(inherentAle) : null,
-            controlEffectiveness: vulnMode != null ? `${(100 - vulnMode).toFixed(1)}%` : null,
+            controlEffectiveness: vulnMean != null ? `${(100 - vulnMean).toFixed(1)}%` : null,
         };
     },
 

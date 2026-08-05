@@ -12,6 +12,7 @@ import {
     buildHistogramBins,
     computeSuggestedTef,
     sortTriangularRange,
+    triangularMean,
 } from './utils.js';
 
 describe('LOSS_FORMS_KEYS / LOSS_FORM_LABELS consistency', () => {
@@ -183,5 +184,20 @@ describe('sortTriangularRange', () => {
         const original = [30, 10, 20];
         sortTriangularRange(original);
         expect(original).toEqual([30, 10, 20]);
+    });
+});
+
+describe('triangularMean', () => {
+    it('con un rango simétrico, la media coincide con la moda', () => {
+        expect(triangularMean(10, 20, 30)).toBe(20);
+    });
+
+    it('con un rango asimétrico, la media NO coincide con la moda', () => {
+        // min 10 / moda 20 / max 45 → media = 25, distinta de la moda (20)
+        expect(triangularMean(10, 20, 45)).toBeCloseTo(25);
+    });
+
+    it('es la fórmula estándar (min+mode+max)/3, no el promedio de min y max', () => {
+        expect(triangularMean(0, 90, 100)).toBeCloseTo(190 / 3);
     });
 });
