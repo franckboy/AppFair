@@ -1,0 +1,10 @@
+node_modules/
+data/
+coverage/
+
+# Alcance de esta ronda: solo código JS. Prosa/config (README, package.json, render.yaml) se
+# deja fuera a propósito para no arriesgar un reformateo no deseado de markdown/YAML.
+*.md
+*.json
+*.yml
+*.yaml

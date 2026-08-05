@@ -31,6 +31,14 @@ jobs:
         working-directory: frontend
         run: npm ci
 
+      - name: Lint del frontend
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Formato del frontend (Prettier)
+        working-directory: frontend
+        run: npm run format:check
+
       - name: Instalar el Chromium de Playwright
         working-directory: frontend
         run: npx playwright install --with-deps chromium

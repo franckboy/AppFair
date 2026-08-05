@@ -1,0 +1,20 @@
+node_modules/
+dist/
+test-results/
+playwright-report/
+
+# Copias textuales de paquetes npm publicados (Chart.js, html2canvas), a propósito
+# byte-por-byte iguales a la versión pineada en CDN — no se reformatean.
+tests/fixtures/
+
+# app_fair.html tiene un bloque <style> con CSS compilado y minificado a propósito en una sola
+# línea (ver Fase 2 del plan de migración) — Prettier lo reformatearía por completo.
+app_fair.html
+
+# Alcance de esta ronda: solo código JS. Prosa/config (README, package.json) y CSS (fuente de
+# Tailwind, Fase 2 del plan de migración) se dejan fuera a propósito.
+*.md
+*.json
+*.yml
+*.yaml
+*.css
