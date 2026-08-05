@@ -313,6 +313,21 @@ test('PUT /api/register/:riskName guarda triggeredByRiskName (riesgo en cascada)
     await request(app).delete(`/api/register/${encodeURIComponent(childName)}`).set('X-API-Key', TEST_API_KEY);
 });
 
+test('PUT /api/register/:riskName guarda description', async () => {
+    const riskName = 'Riesgo con descripción de prueba HTTP';
+    const putRes = await request(app)
+        .put(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ale: 30000, cvar95: 45000, evaluationLevel: 'Riesgo Medio', description: 'Robo de mercancía durante la noche.' });
+    assert.strictEqual(putRes.status, 200);
+    assert.strictEqual(putRes.body.entry.description, 'Robo de mercancía durante la noche.');
+
+    const getRes = await request(app).get('/api/register').set('X-API-Key', TEST_API_KEY);
+    assert.strictEqual(getRes.body.risks.find((r) => r.riskName === riskName).description, 'Robo de mercancía durante la noche.');
+
+    await request(app).delete(`/api/register/${encodeURIComponent(riskName)}`).set('X-API-Key', TEST_API_KEY);
+});
+
 // --- Catálogo de Activos ---
 
 test('GET /api/assets sin header X-API-Key responde 401', async () => {

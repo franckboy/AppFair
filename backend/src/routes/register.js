@@ -66,6 +66,7 @@ function createRegisterRouter(store) {
             // alimenta ningún cálculo, así que una referencia por nombre es suficiente y
             // consistente con el resto de este archivo.
             triggeredByRiskName = null,
+            description = null,
         } = req.body;
 
         if (typeof ale !== 'number') {
@@ -83,6 +84,7 @@ function createRegisterRouter(store) {
             tef, vuln, lossMagnitudes, seed,
             sourceRiskId,
             triggeredByRiskName,
+            description,
             date: new Date().toISOString(),
         };
 
