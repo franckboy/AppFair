@@ -4210,16 +4210,27 @@ document.addEventListener('DOMContentLoaded', () => {
             const lossMagnitudes = {};
             LOSS_FORMS_KEYS.forEach((key) => { lossMagnitudes[key] = readRange(`lm-${key}`); });
 
+            // Bug real: sin esto, un análisis nuevo armado directo en FAIR (sin pasar por un
+            // riesgo ya vinculado por sourceRiskId) no tenía NINGÚN id propio hasta que el
+            // backend le asignaba uno DESPUÉS de este mismo guardado — así que el primer PUT
+            // caía en el último criterio de identidad de findRegisterEntryIndex (por riskName),
+            // y dos riesgos nuevos sin ninguna relación con el mismo nombre (ej. "Robo en
+            // Bodega") se pisaban entre sí. Se genera aquí, ANTES del primer guardado, para que
+            // ese primer PUT ya traiga un id propio — el mismo problema que se corrigió para
+            // riesgos vinculados a Vista Rápida, ahora relevante para el caso más común (Vista
+            // Rápida ya no existe, así que ningún riesgo nuevo llega con sourceRiskId).
+            if (!state.fair.registerEntryId) state.fair.registerEntryId = crypto.randomUUID();
+
             let res;
             try {
                 res = await App.Api.request(`/api/register/${encodeURIComponent(riskName)}`, {
                     method: 'PUT',
                     body: {
-                        // Id propio de esta entrada del Registro, si ya se conoce (re-simular un
-                        // riesgo cargado desde aquí) — le permite al backend reconocer que esto
-                        // es una actualización de la MISMA entrada aunque el nombre haya
-                        // cambiado (ver findRegisterEntryIndex y loadRegisteredRiskIntoForm).
-                        id: state.fair.registerEntryId || null,
+                        // Id propio de esta entrada del Registro — le permite al backend
+                        // reconocer que esto es una actualización de la MISMA entrada aunque el
+                        // nombre haya cambiado, y evita colisionar con otro riesgo que comparta
+                        // nombre (ver findRegisterEntryIndex).
+                        id: state.fair.registerEntryId,
                         asset: document.getElementById('fair-asset').value.trim() || '—',
                         owner: document.getElementById('fair-owner').value.trim() || '—',
                         ale: summary.average,
@@ -4280,13 +4291,19 @@ document.addEventListener('DOMContentLoaded', () => {
         // entrada del Registro; si viene de Análisis Rápido, borra también /api/risks. Un
         // riesgo ya analizado con FAIR normalmente tiene ambas partes (se borran las dos, para
         // no dejar una mitad huérfana); uno que nunca pasó por FAIR solo tiene la de /api/risks.
-        async deleteConcentratedRisk({ riskName, sourceId }) {
+        async deleteConcentratedRisk({ riskName, sourceId, entryId }) {
             try {
                 if (riskName) {
-                    // sourceId (si se conoce) va como sourceRiskId en la URL — así el backend
-                    // borra la entrada de ESTE riesgo aunque otro riesgo distinto comparta el
-                    // mismo nombre (ver findRegisterEntryIndex).
-                    const qs = sourceId ? `?sourceRiskId=${encodeURIComponent(sourceId)}` : '';
+                    // Misma prioridad que findRegisterEntryIndex: el id propio de la entrada
+                    // primero (el más preciso — un riesgo armado directo en FAIR, sin
+                    // sourceRiskId, ya tiene uno propio desde su primer guardado, ver
+                    // saveToRiskRegister), sourceRiskId como respaldo. Sin esto, dos riesgos
+                    // distintos con el mismo nombre y sin sourceRiskId (el caso normal desde que
+                    // se eliminó Vista Rápida) podían borrar el equivocado.
+                    const params = new URLSearchParams();
+                    if (entryId) params.set('id', entryId);
+                    else if (sourceId) params.set('sourceRiskId', sourceId);
+                    const qs = params.toString() ? `?${params.toString()}` : '';
                     await App.Api.request(`/api/register/${encodeURIComponent(riskName)}${qs}`, { method: 'DELETE' });
                 }
                 if (sourceId) await App.Api.request(`/api/risks/${sourceId}`, { method: 'DELETE' });
@@ -4476,7 +4493,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <button class="btn btn-secondary text-xs ml-1" data-simulate-risk="${sanitizeHTML(item.fairEntry.riskName)}" ${item.fairEntry.tef && item.fairEntry.vuln && item.fairEntry.lossMagnitudes ? '' : 'disabled title="Este riesgo se guardó antes de esta función — vuelve a correr su simulación desde Análisis FAIR para poder verla aquí."'}>
                             <i class="fas fa-chart-bar mr-1"></i>Simular
                         </button>
-                        <button class="text-red-600 hover:text-red-800 text-sm ml-2" data-delete-risk="${sanitizeHTML(item.fairEntry.riskName)}" data-delete-source-id="${item.id || ''}"><i class="fas fa-trash"></i></button>`
+                        <button class="text-red-600 hover:text-red-800 text-sm ml-2" data-delete-risk="${sanitizeHTML(item.fairEntry.riskName)}" data-delete-source-id="${item.id || ''}" data-delete-entry-id="${item.fairEntry.id || ''}"><i class="fas fa-trash"></i></button>`
                     : `<button class="btn btn-primary text-xs" data-analyze-quick="${item.id}" ${item.fullData ? '' : 'disabled title="No se encontró la información completa de este riesgo."'}><i class="fas fa-balance-scale mr-1"></i>Analizar con FAIR</button>
                         <button class="text-red-600 hover:text-red-800 text-sm ml-2" data-delete-quick="${item.id}"><i class="fas fa-trash"></i></button>`;
 
@@ -4501,7 +4518,7 @@ document.addEventListener('DOMContentLoaded', () => {
             bodies.forEach(tb => { tb.innerHTML = rowsHTML; });
 
             document.querySelectorAll('[data-delete-risk]').forEach(btn => {
-                btn.addEventListener('click', () => this.deleteConcentratedRisk({ riskName: btn.dataset.deleteRisk, sourceId: btn.dataset.deleteSourceId || null }));
+                btn.addEventListener('click', () => this.deleteConcentratedRisk({ riskName: btn.dataset.deleteRisk, sourceId: btn.dataset.deleteSourceId || null, entryId: btn.dataset.deleteEntryId || null }));
             });
             document.querySelectorAll('[data-simulate-risk]').forEach(btn => {
                 btn.addEventListener('click', () => this.simulateRegisteredRisk(btn.dataset.simulateRisk));

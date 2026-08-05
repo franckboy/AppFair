@@ -425,6 +425,33 @@ test('PUT /api/register/:riskName: re-simular con el mismo sourceRiskId actualiz
         .set('X-API-Key', TEST_API_KEY);
 });
 
+test('PUT /api/register/:riskName: dos riesgos nuevos SIN sourceRiskId (armados directo en FAIR, sin Vista Rápida) y el mismo nombre no se pisan entre sí, si cada uno manda su propio id generado por el cliente', async () => {
+    const sharedName = 'Robo en Bodega Principal';
+    const clientIdA = 'client-uuid-aaaa';
+    const clientIdB = 'client-uuid-bbbb';
+
+    const putA = await request(app)
+        .put(`/api/register/${encodeURIComponent(sharedName)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ale: 15000, cvar95: 20000, evaluationLevel: 'Riesgo Bajo', id: clientIdA });
+    const putB = await request(app)
+        .put(`/api/register/${encodeURIComponent(sharedName)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ale: 500000, cvar95: 800000, evaluationLevel: 'Riesgo Crítico', id: clientIdB });
+
+    assert.strictEqual(putA.body.entry.id, clientIdA);
+    assert.strictEqual(putB.body.entry.id, clientIdB);
+
+    const getRes = await request(app).get('/api/register').set('X-API-Key', TEST_API_KEY);
+    const entries = getRes.body.risks.filter((r) => r.riskName === sharedName);
+    assert.strictEqual(entries.length, 2, 'ambos deben coexistir — el segundo NO debe pisar al primero solo por compartir nombre');
+    assert.ok(entries.some((r) => r.id === clientIdA && r.ale === 15000));
+    assert.ok(entries.some((r) => r.id === clientIdB && r.ale === 500000));
+
+    await request(app).delete(`/api/register/${encodeURIComponent(sharedName)}?id=${clientIdA}`).set('X-API-Key', TEST_API_KEY);
+    await request(app).delete(`/api/register/${encodeURIComponent(sharedName)}?id=${clientIdB}`).set('X-API-Key', TEST_API_KEY);
+});
+
 // --- Catálogo de Activos ---
 
 test('GET /api/assets sin header X-API-Key responde 401', async () => {
