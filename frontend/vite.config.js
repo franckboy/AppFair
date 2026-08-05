@@ -10,10 +10,10 @@ const { defineConfig } = require('vite');
 //   - `base` queda en el valor por defecto ('/'): no hace falta fijar el subpath de GitHub
 //     Pages porque este build no se despliega todavía.
 module.exports = defineConfig({
-  build: {
-    outDir: 'dist',
-    rollupOptions: {
-      input: resolve(__dirname, 'app_fair.html'),
+    build: {
+        outDir: 'dist',
+        rollupOptions: {
+            input: resolve(__dirname, 'app_fair.html'),
+        },
     },
-  },
 });

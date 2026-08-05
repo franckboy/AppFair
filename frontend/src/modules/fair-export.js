@@ -3,7 +3,6 @@ import { state } from './state.js';
 import { Modal } from './modal.js';
 import { LOSS_FORMS_KEYS, LOSS_FORM_LABELS, sanitizeHTML } from './utils.js';
 
-
 // ============================================================
 // App.FairExport — arma el HTML imprimible y dispara window.print() para el Informe
 // Consolidado (único PDF de la app: portafolio + detalle completo de cada riesgo). Antes
@@ -14,7 +13,6 @@ import { LOSS_FORMS_KEYS, LOSS_FORM_LABELS, sanitizeHTML } from './utils.js';
 // abierto en el wizard. Si el bug está en el PDF exportado, está aquí.
 // ============================================================
 export const FairExport = {
-
     // Mismos labels que los <select> del Paso 1/2 — se necesitan aquí porque el riesgo del
     // que se arma cada sección del reporte puede NO ser el que está abierto en el wizard
     // (viene del Registro guardado), así que no hay <select> del que leer el texto visible.
@@ -50,13 +48,25 @@ export const FairExport = {
                 type: 'bar',
                 data: {
                     labels,
-                    datasets: [{ label: 'Frecuencia de Pérdida Anual', data, backgroundColor: 'rgba(54, 162, 235, 0.6)', borderColor: 'rgba(54, 162, 235, 1)', borderWidth: 1 }],
+                    datasets: [
+                        {
+                            label: 'Frecuencia de Pérdida Anual',
+                            data,
+                            backgroundColor: 'rgba(54, 162, 235, 0.6)',
+                            borderColor: 'rgba(54, 162, 235, 1)',
+                            borderWidth: 1,
+                        },
+                    ],
                 },
                 options: {
-                    responsive: false, animation: false,
+                    responsive: false,
+                    animation: false,
                     scales: {
                         y: { beginAtZero: true, title: { display: true, text: 'Nº de Simulaciones' } },
-                        x: { title: { display: true, text: 'Pérdida Anual Estimada' }, ticks: { autoSkip: true, maxRotation: 45, minRotation: 45 } },
+                        x: {
+                            title: { display: true, text: 'Pérdida Anual Estimada' },
+                            ticks: { autoSkip: true, maxRotation: 45, minRotation: 45 },
+                        },
                     },
                 },
             });
@@ -76,18 +86,26 @@ export const FairExport = {
     // una por cada riesgo guardado (ver exportConsolidatedReport). Async porque recalcula el
     // Tratamiento (POST /api/treatment/evaluate) y puede regenerar el histograma.
     async buildFullRiskReportSection(r, index) {
-        const fmt = (v) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v);
-        const riskTypeLabel = r.riskType === 'oportunidad' ? 'Oportunidad (riesgo positivo)' : 'Amenaza (riesgo negativo)';
+        const fmt = (v) =>
+            new Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency: 'USD',
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0,
+            }).format(v);
+        const riskTypeLabel =
+            r.riskType === 'oportunidad' ? 'Oportunidad (riesgo positivo)' : 'Amenaza (riesgo negativo)';
         const evalBadge = `<span class="px-2 py-1 rounded text-xs border-l-4 ${r.evaluationClasses}">${r.evaluationLevel}</span>`;
 
-        const chartImg = (r.chartLabels && r.chartData) ? await this.renderOffscreenHistogram(r.chartLabels, r.chartData) : '';
+        const chartImg =
+            r.chartLabels && r.chartData ? await this.renderOffscreenHistogram(r.chartLabels, r.chartData) : '';
 
         const lossRowsHTML = r.lossMagnitudes
             ? LOSS_FORMS_KEYS.map((key) => {
-                const f = r.lossMagnitudes[key];
-                if (!f) return '';
-                return `<tr><td>${LOSS_FORM_LABELS.tecnico[key]}</td><td>${fmt(f.min)}</td><td>${fmt(f.mode)}</td><td>${fmt(f.max)}</td></tr>`;
-            }).join('')
+                  const f = r.lossMagnitudes[key];
+                  if (!f) return '';
+                  return `<tr><td>${LOSS_FORM_LABELS.tecnico[key]}</td><td>${fmt(f.min)}</td><td>${fmt(f.mode)}</td><td>${fmt(f.max)}</td></tr>`;
+              }).join('')
             : '<tr><td colspan="4">Este riesgo se guardó antes de que se registrara este desglose.</td></tr>';
 
         // Tratamiento: no se guardó ya calculado (para no duplicar la lógica de negocio del
@@ -103,10 +121,19 @@ export const FairExport = {
             try {
                 result = await App.Api.request('/api/treatment/evaluate', {
                     method: 'POST',
-                    body: { currentALE: r.ale, mitigar: r.mitigar, transferir: r.transferir, evitar: r.evitar, currency: 'USD' },
+                    body: {
+                        currentALE: r.ale,
+                        mitigar: r.mitigar,
+                        transferir: r.transferir,
+                        evitar: r.evitar,
+                        currency: 'USD',
+                    },
                 });
-            } catch (e) { /* se muestra el mensaje de "sin datos" de abajo */ }
-            treatmentHTML = result ? `
+            } catch (e) {
+                /* se muestra el mensaje de "sin datos" de abajo */
+            }
+            treatmentHTML = result
+                ? `
                 <table>
                     <tr><th>Estrategia</th><th>Costo Anual</th><th>Pérdida Residual</th><th>Beneficio Neto</th><th>Fiabilidad</th><th>Implementación</th></tr>
                     <tr><td>Mitigar</td><td>${fmt(result.mitigar.cost)}</td><td>${fmt(result.mitigar.residualALE)}</td><td>${fmt(result.mitigar.netBenefit)}</td><td>${this.RELIABILITY_LABELS[result.mitigar.reliability] || '—'}</td><td>${result.mitigar.delayDays} días</td></tr>
@@ -117,7 +144,8 @@ export const FairExport = {
                 <p style="margin-top:8px; font-size:12px;"><strong>Justificación de aceptación (si aplica):</strong> ${sanitizeHTML(r.aceptarJustificacion) || '—'}</p>`
                 : '<p>No se pudo calcular el tratamiento de este riesgo.</p>';
         } else {
-            treatmentHTML = '<p>Este riesgo se guardó antes de que existiera esta sección — vuelve a correr su simulación desde Análisis FAIR para completarla.</p>';
+            treatmentHTML =
+                '<p>Este riesgo se guardó antes de que existiera esta sección — vuelve a correr su simulación desde Análisis FAIR para completarla.</p>';
         }
 
         return `
@@ -143,19 +171,27 @@ export const FairExport = {
                     <tr><td><strong>Fecha de esta Apreciación</strong></td><td>${r.assessmentDate || '—'}</td></tr>
                     <tr><td><strong>Lugar / Ubicación Apreciada</strong></td><td>${sanitizeHTML(r.assessmentLocation) || '—'}</td></tr>
                 </table>
-                ${(r.attackerProfileName || r.defenseProfileName) ? `
+                ${
+                    r.attackerProfileName || r.defenseProfileName
+                        ? `
                 <h3>Perfil de Atacante y Defensa</h3>
                 <table>
                     <tr><td>Perfil de Atacante</td><td>${sanitizeHTML(r.attackerProfileName) || '—'}${r.attackerScore != null ? ` (Factor de Amenaza: ${r.attackerScore.toFixed(1)}%)` : ''}</td></tr>
                     <tr><td>Nivel de Defensa</td><td>${sanitizeHTML(r.defenseProfileName) || '—'}${r.defenseScore != null ? ` (${r.defenseScore.toFixed(1)}%)` : ''}</td></tr>
-                </table>` : ''}
-                ${(r.tef || r.vuln) ? `
+                </table>`
+                        : ''
+                }
+                ${
+                    r.tef || r.vuln
+                        ? `
                 <h3>Frecuencia y Vulnerabilidad</h3>
                 <table>
                     <tr><th></th><th>Mín</th><th>Más Probable</th><th>Máx</th></tr>
                     ${r.tef ? `<tr><td>Frecuencia de Evento de Amenaza (contactos/año)</td><td>${r.tef.min}</td><td>${r.tef.mode}</td><td>${r.tef.max}</td></tr>` : ''}
                     ${r.vuln ? `<tr><td>Vulnerabilidad (%)</td><td>${r.vuln.min}%</td><td>${r.vuln.mode}%</td><td>${r.vuln.max}%</td></tr>` : ''}
-                </table>` : ''}
+                </table>`
+                        : ''
+                }
                 <h3>Magnitud de Pérdida por Categoría</h3>
                 <table>
                     <tr><th>Categoría</th><th>Mín</th><th>Más Probable</th><th>Máx</th></tr>
@@ -179,7 +215,13 @@ export const FairExport = {
                 <h3>Análisis de Sensibilidad</h3>
                 <table>
                     <tr><th>Variable</th><th>Correlación con el resultado</th></tr>
-                    ${(r.sensitivity || []).slice(0, 8).map((s) => `<tr><td>${sanitizeHTML(s.name)}</td><td>${(s.correlation * 100).toFixed(1)}%</td></tr>`).join('')}
+                    ${(r.sensitivity || [])
+                        .slice(0, 8)
+                        .map(
+                            (s) =>
+                                `<tr><td>${sanitizeHTML(s.name)}</td><td>${(s.correlation * 100).toFixed(1)}%</td></tr>`,
+                        )
+                        .join('')}
                 </table>
                 <h3>Comparación de Estrategias de Tratamiento (ISO 31000 / Broder, 1984)</h3>
                 ${treatmentHTML}
@@ -192,16 +234,22 @@ export const FairExport = {
             Modal.alert('Aún no tienes ningún riesgo guardado en el Registro.', 'Nada que exportar');
             return;
         }
-        const formatCurrency = (value) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
+        const formatCurrency = (value) =>
+            new Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency: 'USD',
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0,
+            }).format(value);
         const ctx = App.OrgContext.context;
 
         // 'oportunidad' se excluye de la exposición total y del mapa de calor — su "ale" es
         // un beneficio esperado, no una pérdida (mismo criterio que calculateParetoAnalysis
         // en el backend; ver también renderRiskRegister).
-        const threatRegister = register.filter(r => r.riskType !== 'oportunidad');
+        const threatRegister = register.filter((r) => r.riskType !== 'oportunidad');
         const opportunityCount = register.length - threatRegister.length;
         const totalALE = threatRegister.reduce((sum, r) => sum + r.ale, 0);
-        const criticos = threatRegister.filter(r => r.evaluationLevel.includes('Crítico')).length;
+        const criticos = threatRegister.filter((r) => r.evaluationLevel.includes('Crítico')).length;
         const exposicionTotalTexto = formatCurrency(totalALE);
 
         const heatmapImg = document.getElementById('fair-register-chart').toDataURL('image/png');
@@ -209,20 +257,33 @@ export const FairExport = {
         const sensitivityHTML = document.getElementById('fair-consolidated-sensitivity-list').innerHTML;
         // Mismo orden que los puntos numerados del mapa de calor (ver renderRiskRegister) —
         // solo amenazas, para que el número en el mapa corresponda al mismo riesgo aquí.
-        const heatmapLegendHTML = threatRegister.map((r, i) => `<li>${i + 1}. ${sanitizeHTML(r.riskName)}</li>`).join('');
+        const heatmapLegendHTML = threatRegister
+            .map((r, i) => `<li>${i + 1}. ${sanitizeHTML(r.riskName)}</li>`)
+            .join('');
 
         // El backend guarda ale/cvar95 como números crudos (no strings ya formateados) — el
         // formateo es presentación, se hace aquí por entrada.
-        const formatEntryCurrency = (value) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
-        const formatEntryDate = (r) => new Date(r.date).toLocaleDateString('es-MX', { year: 'numeric', month: 'short', day: 'numeric' });
+        const formatEntryCurrency = (value) =>
+            new Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency: 'USD',
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0,
+            }).format(value);
+        const formatEntryDate = (r) =>
+            new Date(r.date).toLocaleDateString('es-MX', { year: 'numeric', month: 'short', day: 'numeric' });
 
         // Mismo badge de color que ya se ve en pantalla en la tabla del Registro
         // (r.evaluationClasses ya viene calculado por entrada, ver PUT /api/register) — antes
         // el PDF solo mostraba el texto de evaluationLevel plano, sin el color.
-        const evalBadgeHTML = (r) => `<span class="px-2 py-1 rounded text-xs border-l-4 ${r.evaluationClasses}">${r.evaluationLevel}</span>`;
-        const riskRowsHTML = register.map(r =>
-            `<tr><td>${sanitizeHTML(r.riskName)}</td><td>${sanitizeHTML(r.asset)}</td><td>${sanitizeHTML(r.owner)}</td><td>${formatEntryCurrency(r.ale)}</td><td>${formatEntryCurrency(r.cvar95)}</td><td>${evalBadgeHTML(r)}</td><td>${formatEntryDate(r)}</td></tr>`
-        ).join('');
+        const evalBadgeHTML = (r) =>
+            `<span class="px-2 py-1 rounded text-xs border-l-4 ${r.evaluationClasses}">${r.evaluationLevel}</span>`;
+        const riskRowsHTML = register
+            .map(
+                (r) =>
+                    `<tr><td>${sanitizeHTML(r.riskName)}</td><td>${sanitizeHTML(r.asset)}</td><td>${sanitizeHTML(r.owner)}</td><td>${formatEntryCurrency(r.ale)}</td><td>${formatEntryCurrency(r.cvar95)}</td><td>${evalBadgeHTML(r)}</td><td>${formatEntryDate(r)}</td></tr>`,
+            )
+            .join('');
 
         // Detalle técnico completo de cada riesgo (Alcance, Gobernanza, Perfil de Atacante/
         // Defensa, Frecuencia/Vulnerabilidad, Magnitud de Pérdida, Simulación, Evaluación,
@@ -301,7 +362,6 @@ export const FairExport = {
         document.getElementById('fair-print-report').innerHTML = reportHTML;
         window.print();
     },
-
 };
 
 App.FairExport = FairExport;

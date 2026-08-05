@@ -18,15 +18,23 @@ export const Navigation = {
         // App.ConfigMenu) — el cambio de página en sí sigue siendo switchPage('assets').
     },
     switchPage(pageKey) {
-        const pages = { fair: document.getElementById('fairAnalysisPage'), register: document.getElementById('registerPage'), assets: document.getElementById('assetsPage') };
+        const pages = {
+            fair: document.getElementById('fairAnalysisPage'),
+            register: document.getElementById('registerPage'),
+            assets: document.getElementById('assetsPage'),
+        };
         // "assets" resalta el botón "Configuración" (ya no tiene su propio botón de nav) —
         // así el usuario ve de dónde vino aunque haya entrado por un menú.
-        const navs = { fair: document.getElementById('nav-fair'), register: document.getElementById('nav-register'), assets: document.getElementById('nav-config') };
-        Object.keys(pages).forEach(key => {
+        const navs = {
+            fair: document.getElementById('nav-fair'),
+            register: document.getElementById('nav-register'),
+            assets: document.getElementById('nav-config'),
+        };
+        Object.keys(pages).forEach((key) => {
             pages[key].classList.toggle('hidden', key !== pageKey);
             navs[key].classList.toggle('active', key === pageKey);
         });
-    }
+    },
 };
 
 App.Navigation = Navigation;

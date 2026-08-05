@@ -16,9 +16,11 @@ export const Autocomplete = {
 
     init() {
         this.load();
-        this.fields.forEach(field => {
+        this.fields.forEach((field) => {
             this.renderDatalist(field);
-            document.getElementById(field.inputId).addEventListener('change', (e) => this.remember(field, e.target.value));
+            document
+                .getElementById(field.inputId)
+                .addEventListener('change', (e) => this.remember(field, e.target.value));
         });
     },
 
@@ -35,7 +37,7 @@ export const Autocomplete = {
         const clean = sanitizeHTML((value || '').trim());
         if (!clean) return;
         const list = this.history[field.key];
-        const existingIndex = list.findIndex(v => v.toLowerCase() === clean.toLowerCase());
+        const existingIndex = list.findIndex((v) => v.toLowerCase() === clean.toLowerCase());
         if (existingIndex !== -1) list.splice(existingIndex, 1);
         list.unshift(clean);
         if (list.length > this.MAX_ENTRIES) list.length = this.MAX_ENTRIES;
@@ -49,8 +51,8 @@ export const Autocomplete = {
 
     renderDatalist(field) {
         const datalist = document.getElementById(field.datalistId);
-        datalist.innerHTML = this.history[field.key].map(v => `<option value="${v}"></option>`).join('');
-    }
+        datalist.innerHTML = this.history[field.key].map((v) => `<option value="${v}"></option>`).join('');
+    },
 };
 
 App.Autocomplete = Autocomplete;

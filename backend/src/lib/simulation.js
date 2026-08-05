@@ -54,12 +54,20 @@ function runMonteCarloSimulation({ iterations, seed, tef, vuln, lossMagnitudes }
 /** Correlación de Pearson entre dos arreglos numéricos del mismo largo. */
 function pearsonCorrelation(x, y) {
     const n = x.length;
-    let sumX = 0, sumY = 0;
-    for (let i = 0; i < n; i++) { sumX += x[i]; sumY += y[i]; }
-    const meanX = sumX / n, meanY = sumY / n;
-    let num = 0, denX = 0, denY = 0;
+    let sumX = 0,
+        sumY = 0;
     for (let i = 0; i < n; i++) {
-        const dx = x[i] - meanX, dy = y[i] - meanY;
+        sumX += x[i];
+        sumY += y[i];
+    }
+    const meanX = sumX / n,
+        meanY = sumY / n;
+    let num = 0,
+        denX = 0,
+        denY = 0;
+    for (let i = 0; i < n; i++) {
+        const dx = x[i] - meanX,
+            dy = y[i] - meanY;
         num += dx * dy;
         denX += dx * dx;
         denY += dy * dy;
@@ -80,10 +88,18 @@ function calculateSensitivity(losses, tefSamples, vulnSamples, lmSamples, active
     const factors = [
         { key: 'tef', name: 'Frecuencia de Evento (TEF)', values: tefSamples },
         { key: 'vulnerabilidad', name: 'Vulnerabilidad', values: vulnSamples },
-        ...activeKeys.map((key, idx) => ({ key: `lm:${key}`, name: `Magnitud: ${lossFormsLabels[key] || key}`, values: lmSamples[idx] })),
+        ...activeKeys.map((key, idx) => ({
+            key: `lm:${key}`,
+            name: `Magnitud: ${lossFormsLabels[key] || key}`,
+            values: lmSamples[idx],
+        })),
     ];
 
-    const results = factors.map((f) => ({ key: f.key, name: f.name, correlation: pearsonCorrelation(f.values, losses) }));
+    const results = factors.map((f) => ({
+        key: f.key,
+        name: f.name,
+        correlation: pearsonCorrelation(f.values, losses),
+    }));
     results.sort((a, b) => Math.abs(b.correlation) - Math.abs(a.correlation));
     return results;
 }
@@ -101,19 +117,15 @@ function summarizeLosses(losses, exceedanceThreshold) {
     const sum = sorted.reduce((a, b) => a + b, 0);
     const avg = sum / n;
 
-    const median = n % 2 === 0
-        ? (sorted[n / 2 - 1] + sorted[n / 2]) / 2
-        : sorted[Math.floor(n / 2)];
+    const median = n % 2 === 0 ? (sorted[n / 2 - 1] + sorted[n / 2]) / 2 : sorted[Math.floor(n / 2)];
 
     const min = sorted[0];
     const max = sorted[n - 1];
-    const p90 = sorted[Math.floor(n * 0.90)];
+    const p90 = sorted[Math.floor(n * 0.9)];
 
     const cvarIndex = Math.floor(n * 0.95);
     const tailLosses = sorted.slice(cvarIndex);
-    const cvar95 = tailLosses.length > 0
-        ? tailLosses.reduce((a, b) => a + b, 0) / tailLosses.length
-        : max;
+    const cvar95 = tailLosses.length > 0 ? tailLosses.reduce((a, b) => a + b, 0) / tailLosses.length : max;
 
     let probExceedance = null;
     if (typeof exceedanceThreshold === 'number') {

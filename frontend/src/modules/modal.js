@@ -4,7 +4,7 @@ export const Modal = {
     title: document.getElementById('modalTitle'),
     body: document.getElementById('modalBody'),
     footer: document.getElementById('modalFooter'),
-    
+
     alert(message, title = 'Notificación') {
         this.title.textContent = title;
         this.body.innerHTML = message;
@@ -36,16 +36,16 @@ export const Modal = {
             this.hide();
             this.removeListeners();
         };
-        
+
         confirmBtn.addEventListener('click', confirmHandler);
         cancelBtn.addEventListener('click', cancelHandler);
-        
+
         confirmBtn.focus();
 
         this.removeListeners = () => {
             confirmBtn.removeEventListener('click', confirmHandler);
             cancelBtn.removeEventListener('click', cancelHandler);
-        }
+        };
     },
 
     hide() {
@@ -56,11 +56,15 @@ export const Modal = {
     // propia acción (abrir otro modal, cambiar de página, etc.).
     menu(title, options) {
         this.title.textContent = title;
-        this.body.innerHTML = `<div class="space-y-2">${options.map((opt, i) => `
+        this.body.innerHTML = `<div class="space-y-2">${options
+            .map(
+                (opt, i) => `
             <button type="button" class="btn btn-secondary w-full" style="justify-content:flex-start;text-align:left;" data-menu-option="${i}">
                 <i class="fas ${opt.icon} mr-2"></i>${opt.label}
             </button>
-        `).join('')}</div>`;
+        `,
+            )
+            .join('')}</div>`;
         this.footer.innerHTML = `<button id="modal-menu-close-btn" class="btn btn-secondary">Cerrar</button>`;
         this.modal.classList.remove('hidden');
 
@@ -71,5 +75,5 @@ export const Modal = {
             });
         });
         document.getElementById('modal-menu-close-btn').addEventListener('click', () => this.hide());
-    }
+    },
 };

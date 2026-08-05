@@ -13,10 +13,14 @@ export const AssetCatalog = {
     editingId: null,
 
     init() {
-        document.getElementById('asset-form').addEventListener('submit', (e) => { e.preventDefault(); this.handleSubmit(); });
+        document.getElementById('asset-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.handleSubmit();
+        });
         document.getElementById('asset-form-cancel-btn').addEventListener('click', () => this.cancelEdit());
         const assetBtn = document.getElementById('open-asset-catalog-btn-fair');
-        if (assetBtn) assetBtn.addEventListener('click', () => this.openPicker((asset) => this.applyAssetToFair(asset)));
+        if (assetBtn)
+            assetBtn.addEventListener('click', () => this.openPicker((asset) => this.applyAssetToFair(asset)));
     },
 
     async load() {
@@ -32,9 +36,17 @@ export const AssetCatalog = {
     render() {
         const assets = state.quick.assets || [];
         document.getElementById('assets-empty').classList.toggle('hidden', assets.length > 0);
-        const fmt = (v) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v);
+        const fmt = (v) =>
+            new Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency: 'USD',
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0,
+            }).format(v);
         const tbody = document.getElementById('assets-table-body');
-        tbody.innerHTML = assets.map(a => `
+        tbody.innerHTML = assets
+            .map(
+                (a) => `
             <tr class="border-b">
                 <td class="py-2">${sanitizeHTML(a.nombre)}</td>
                 <td>${fmt(a.valorEstimado)}</td>
@@ -44,10 +56,15 @@ export const AssetCatalog = {
                     <button type="button" class="text-blue-600 hover:underline text-sm mr-3" data-edit-id="${a.id}">Editar</button>
                     <button type="button" class="text-red-600 hover:underline text-sm" data-delete-id="${a.id}">Eliminar</button>
                 </td>
-            </tr>`
-        ).join('');
-        tbody.querySelectorAll('[data-edit-id]').forEach(btn => btn.addEventListener('click', () => this.startEdit(btn.dataset.editId)));
-        tbody.querySelectorAll('[data-delete-id]').forEach(btn => btn.addEventListener('click', () => this.remove(btn.dataset.deleteId)));
+            </tr>`,
+            )
+            .join('');
+        tbody
+            .querySelectorAll('[data-edit-id]')
+            .forEach((btn) => btn.addEventListener('click', () => this.startEdit(btn.dataset.editId)));
+        tbody
+            .querySelectorAll('[data-delete-id]')
+            .forEach((btn) => btn.addEventListener('click', () => this.remove(btn.dataset.deleteId)));
     },
 
     readForm() {
@@ -86,7 +103,7 @@ export const AssetCatalog = {
     },
 
     startEdit(id) {
-        const asset = (state.quick.assets || []).find(a => a.id === id);
+        const asset = (state.quick.assets || []).find((a) => a.id === id);
         if (!asset) return;
         this.editingId = id;
         document.getElementById('asset-nombre').value = asset.nombre;
@@ -110,17 +127,21 @@ export const AssetCatalog = {
     },
 
     remove(id) {
-        const asset = (state.quick.assets || []).find(a => a.id === id);
+        const asset = (state.quick.assets || []).find((a) => a.id === id);
         if (!asset) return;
-        Modal.confirm(`¿Eliminar el activo <strong>${sanitizeHTML(asset.nombre)}</strong> del catálogo? Esto no afecta a los riesgos que ya lo usaron.`, async () => {
-            try {
-                await App.Api.request(`/api/assets/${id}`, { method: 'DELETE' });
-                showToast('Activo eliminado.');
-                await this.load();
-            } catch (e) {
-                showToast(e.userMessage || 'No se pudo eliminar el activo.');
-            }
-        }, 'Eliminar Activo');
+        Modal.confirm(
+            `¿Eliminar el activo <strong>${sanitizeHTML(asset.nombre)}</strong> del catálogo? Esto no afecta a los riesgos que ya lo usaron.`,
+            async () => {
+                try {
+                    await App.Api.request(`/api/assets/${id}`, { method: 'DELETE' });
+                    showToast('Activo eliminado.');
+                    await this.load();
+                } catch (e) {
+                    showToast(e.userMessage || 'No se pudo eliminar el activo.');
+                }
+            },
+            'Eliminar Activo',
+        );
     },
 
     // Selector reutilizable (ver applyAssetToFair y el botón de #fair-asset).
@@ -130,7 +151,13 @@ export const AssetCatalog = {
             showToast('Aún no hay activos en el catálogo. Agrega uno primero en "Catálogo de Activos".');
             return;
         }
-        const fmt = (v) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v);
+        const fmt = (v) =>
+            new Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency: 'USD',
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0,
+            }).format(v);
 
         Modal.title.textContent = 'Catálogo de Activos';
         Modal.body.innerHTML = `
@@ -148,16 +175,19 @@ export const AssetCatalog = {
 
         const select = document.getElementById('assetpick-select');
         const infoEl = document.getElementById('assetpick-info');
-        assets.forEach(a => {
+        assets.forEach((a) => {
             const opt = document.createElement('option');
             opt.value = a.id;
             opt.textContent = `${a.nombre} — ${fmt(a.valorEstimado)}`;
             select.appendChild(opt);
         });
-        const currentAsset = () => assets.find(a => a.id === select.value);
+        const currentAsset = () => assets.find((a) => a.id === select.value);
         const updateInfo = () => {
             const a = currentAsset();
-            if (!a) { infoEl.innerHTML = ''; return; }
+            if (!a) {
+                infoEl.innerHTML = '';
+                return;
+            }
             infoEl.innerHTML = `<p><strong>Valor Estimado: ${fmt(a.valorEstimado)}</strong></p>${a.categoria ? `<p class="mt-1">Categoría: ${sanitizeHTML(a.categoria)}</p>` : ''}${a.ubicacion ? `<p>Ubicación: ${sanitizeHTML(a.ubicacion)}</p>` : ''}`;
         };
         select.addEventListener('change', updateInfo);
@@ -186,8 +216,15 @@ export const AssetCatalog = {
         const reemplazoInput = document.getElementById('lm-reemplazo-mode');
         reemplazoInput.value = asset.valorEstimado;
         reemplazoInput.dispatchEvent(new Event('change'));
-        const fmtAsset = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(asset.valorEstimado);
-        showToast(`Activo cargado — "Costos de Reemplazo" (Paso 3, Magnitud de Pérdida) se prellenó con su valor registrado (${fmtAsset}). Ajústalo si tu impacto real no es 100% costo de reemplazo.`);
+        const fmtAsset = new Intl.NumberFormat('en-US', {
+            style: 'currency',
+            currency: 'USD',
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 0,
+        }).format(asset.valorEstimado);
+        showToast(
+            `Activo cargado — "Costos de Reemplazo" (Paso 3, Magnitud de Pérdida) se prellenó con su valor registrado (${fmtAsset}). Ajústalo si tu impacto real no es 100% costo de reemplazo.`,
+        );
     },
 };
 

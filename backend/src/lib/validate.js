@@ -78,16 +78,24 @@ function validateTreatmentBody(body) {
     const { mitigar = {}, transferir = {}, evitar = {} } = body;
 
     if (mitigar.reductionPercent !== undefined) {
-        if (!isFiniteNumber(mitigar.reductionPercent) || mitigar.reductionPercent < 0 || mitigar.reductionPercent > 100) {
+        if (
+            !isFiniteNumber(mitigar.reductionPercent) ||
+            mitigar.reductionPercent < 0 ||
+            mitigar.reductionPercent > 100
+        ) {
             return 'mitigar.reductionPercent debe ser un número entre 0 y 100.';
         }
     }
 
     const nonNegativeFields = [
-        ['mitigar.cost', mitigar.cost], ['mitigar.delayDays', mitigar.delayDays],
-        ['transferir.premium', transferir.premium], ['transferir.deductible', transferir.deductible],
-        ['transferir.limit', transferir.limit], ['transferir.delayDays', transferir.delayDays],
-        ['evitar.cost', evitar.cost], ['evitar.delayDays', evitar.delayDays],
+        ['mitigar.cost', mitigar.cost],
+        ['mitigar.delayDays', mitigar.delayDays],
+        ['transferir.premium', transferir.premium],
+        ['transferir.deductible', transferir.deductible],
+        ['transferir.limit', transferir.limit],
+        ['transferir.delayDays', transferir.delayDays],
+        ['evitar.cost', evitar.cost],
+        ['evitar.delayDays', evitar.delayDays],
     ];
     for (const [label, value] of nonNegativeFields) {
         if (value !== undefined && (!isFiniteNumber(value) || value < 0)) {
@@ -97,4 +105,11 @@ function validateTreatmentBody(body) {
     return null;
 }
 
-module.exports = { MAX_ITERATIONS, isFiniteNumber, validateTriangularRange, validateIterations, validateSeed, validateTreatmentBody };
+module.exports = {
+    MAX_ITERATIONS,
+    isFiniteNumber,
+    validateTriangularRange,
+    validateIterations,
+    validateSeed,
+    validateTreatmentBody,
+};

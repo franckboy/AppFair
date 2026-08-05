@@ -74,6 +74,20 @@ y corre los flujos críticos de punta a punta: wizard completo, guardar borrador
 Análisis Profundo, exportar el Informe Consolidado, eliminar un riesgo. Corre en cada push/PR
 vía GitHub Actions (`.github/workflows/frontend-e2e.yml`), igual que las pruebas del backend.
 
+## Estilo de código
+
+```bash
+cd backend && npm run lint && npm run format:check    # o npm run format para corregir
+cd frontend && npm run lint && npm run format:check    # ídem
+```
+
+ESLint (regla `no-undef`, principalmente — atrapa referencias a variables que no existen antes
+de que lleguen a producción; ya demostró su valor durante la Fase 3a de más abajo) y Prettier
+(estilo consistente: comillas simples, punto y coma, indentación de 4 espacios) corren en cada
+push/PR vía GitHub Actions, junto a las pruebas de cada lado. El alcance es solo código JS —
+`app_fair.html` (con su bloque `<style>` compilado a propósito en una línea, ver Fase 2) y los
+archivos de prosa/config (`README.md`, `package.json`, etc.) quedan fuera.
+
 ## Plan de migración (arquitectura del frontend)
 
 `app_fair.html` era un solo archivo de miles de líneas — funcionaba, pero cada cambio nuevo

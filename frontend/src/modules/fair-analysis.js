@@ -12,9 +12,15 @@ export const FairAnalysis = {
         App.FairWizard.applyOrgDefaults();
         App.FairWizard.checkForResumableAnalysis();
     },
-    loadRiskRegister(render = true) { return App.FairRegister.loadRiskRegister(render); },
-    renderSensitivity(sensitivity) { return App.FairWizard.renderSensitivity(sensitivity); },
-    receiveData(data) { return App.FairWizard.receiveData(data); },
+    loadRiskRegister(render = true) {
+        return App.FairRegister.loadRiskRegister(render);
+    },
+    renderSensitivity(sensitivity) {
+        return App.FairWizard.renderSensitivity(sensitivity);
+    },
+    receiveData(data) {
+        return App.FairWizard.receiveData(data);
+    },
 };
 
 App.FairAnalysis = FairAnalysis;

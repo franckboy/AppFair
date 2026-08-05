@@ -55,7 +55,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // usuario haga clic en un botón del nav.
             this.Navigation.switchPage('fair');
             this.UIMode.applyLabels(); // vuelve a aplicar por si algún módulo restauró estado que afecta las etiquetas
-        }
+        },
     });
 
     // Start the application

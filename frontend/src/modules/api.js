@@ -42,7 +42,8 @@ export const Api = {
             });
         } catch (networkError) {
             const err = new Error('network_error');
-            err.userMessage = 'No se pudo conectar con el servidor. Verifica la URL en "Conexión API" y que el backend esté corriendo.';
+            err.userMessage =
+                'No se pudo conectar con el servidor. Verifica la URL en "Conexión API" y que el backend esté corriendo.';
             throw err;
         }
 
@@ -53,13 +54,16 @@ export const Api = {
         }
 
         let data = null;
-        try { data = await response.json(); } catch (e) { /* respuesta sin cuerpo, ej. 204 */ }
+        try {
+            data = await response.json();
+        } catch (e) {
+            /* respuesta sin cuerpo, ej. 204 */
+        }
 
         if (!response.ok) {
             const err = new Error('request_error');
-            err.userMessage = (data && data.error)
-                ? data.error
-                : `Error del servidor (${response.status}). Intenta de nuevo.`;
+            err.userMessage =
+                data && data.error ? data.error : `Error del servidor (${response.status}). Intenta de nuevo.`;
             throw err;
         }
         return data;
@@ -114,20 +118,24 @@ export const Api = {
     },
 
     showBootGate(message) {
-        document.querySelectorAll('.nav-requires-boot').forEach(btn => btn.disabled = true);
-        document.querySelectorAll('#fairAnalysisPage, #registerPage, #assetsPage').forEach(el => el.classList.add('hidden'));
+        document.querySelectorAll('.nav-requires-boot').forEach((btn) => (btn.disabled = true));
+        document
+            .querySelectorAll('#fairAnalysisPage, #registerPage, #assetsPage')
+            .forEach((el) => el.classList.add('hidden'));
         document.getElementById('boot-gate-message').textContent = message;
         document.getElementById('boot-gate').classList.remove('hidden');
     },
 
     hideBootGate() {
-        document.querySelectorAll('.nav-requires-boot').forEach(btn => btn.disabled = false);
+        document.querySelectorAll('.nav-requires-boot').forEach((btn) => (btn.disabled = false));
         document.getElementById('boot-gate').classList.add('hidden');
     },
 
     initConnectionUI() {
         document.getElementById('nav-api-connection').addEventListener('click', () => this.openConnectionModal());
-        document.getElementById('boot-gate-open-connection-btn').addEventListener('click', () => this.openConnectionModal());
+        document
+            .getElementById('boot-gate-open-connection-btn')
+            .addEventListener('click', () => this.openConnectionModal());
         document.getElementById('boot-gate-retry-btn').addEventListener('click', async () => {
             const retryBtn = document.getElementById('boot-gate-retry-btn');
             retryBtn.disabled = true;

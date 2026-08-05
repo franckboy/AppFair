@@ -62,7 +62,12 @@ test('GET /api/config/profiles trae el Catálogo de Riesgos en 3 niveles (Domini
     assert.strictEqual(res.status, 200);
     const domains = Object.keys(res.body.riskCatalog);
     assert.deepStrictEqual(domains.sort(), [
-        'cadena-suministro', 'humano', 'natural', 'operacional', 'operador-economico-autorizado', 'tecnologico',
+        'cadena-suministro',
+        'humano',
+        'natural',
+        'operacional',
+        'operador-economico-autorizado',
+        'tecnologico',
     ]);
     assert.strictEqual(Object.keys(res.body.riskCatalog.humano.categories).length, 10);
     for (const domain of Object.values(res.body.riskCatalog)) {
@@ -98,7 +103,12 @@ test('PUT /api/config/criteria rechaza aleAceptable >= aleCritico con 400', asyn
 });
 
 test('PUT /api/config/criteria guarda y un GET posterior refleja el cambio', async () => {
-    const body = { rrtBands: { medio: 20, alto: 40, critico: 60 }, aleAceptable: 1000, aleCritico: 5000, aleUmbralExcedencia: 2000 };
+    const body = {
+        rrtBands: { medio: 20, alto: 40, critico: 60 },
+        aleAceptable: 1000,
+        aleCritico: 5000,
+        aleUmbralExcedencia: 2000,
+    };
     const putRes = await request(app).put('/api/config/criteria').set('X-API-Key', TEST_API_KEY).send(body);
     assert.strictEqual(putRes.status, 200);
 
@@ -107,7 +117,10 @@ test('PUT /api/config/criteria guarda y un GET posterior refleja el cambio', asy
 });
 
 test('PUT /api/config/org-defaults guarda solo los campos enviados, conserva el resto', async () => {
-    const putRes = await request(app).put('/api/config/org-defaults').set('X-API-Key', TEST_API_KEY).send({ owner: 'QA HTTP' });
+    const putRes = await request(app)
+        .put('/api/config/org-defaults')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ owner: 'QA HTTP' });
     assert.strictEqual(putRes.status, 200);
     assert.strictEqual(putRes.body.owner, 'QA HTTP');
     assert.strictEqual(putRes.body.defenseKey, 'estandar'); // valor por defecto, no se mandó pero se conserva
@@ -136,7 +149,13 @@ test('POST /api/autocalc/loss-magnitude en batch devuelve un rango por cada item
     const res = await request(app)
         .post('/api/autocalc/loss-magnitude')
         .set('X-API-Key', TEST_API_KEY)
-        .send({ items: [{ key: 'respuesta', mode: 50000 }, { key: 'multas', mode: 20000 }], confidence: 'bajo' });
+        .send({
+            items: [
+                { key: 'respuesta', mode: 50000 },
+                { key: 'multas', mode: 20000 },
+            ],
+            confidence: 'bajo',
+        });
     assert.strictEqual(res.status, 200);
     assert.strictEqual(res.body.respuesta.mode, 50000);
     assert.ok(res.body.respuesta.min < 50000 && res.body.respuesta.max > 50000);
@@ -231,7 +250,12 @@ test('flujo completo del Registro: PUT crea, GET lo lista, DELETE lo quita', asy
     const putRes = await request(app)
         .put(`/api/register/${encodeURIComponent(riskName)}`)
         .set('X-API-Key', TEST_API_KEY)
-        .send({ ale: 50000, cvar95: 90000, evaluationLevel: 'Aceptable', evaluationJustification: 'prueba automatizada' });
+        .send({
+            ale: 50000,
+            cvar95: 90000,
+            evaluationLevel: 'Aceptable',
+            evaluationJustification: 'prueba automatizada',
+        });
     assert.strictEqual(putRes.status, 200);
     assert.strictEqual(putRes.body.entry.riskName, riskName);
 
@@ -240,7 +264,9 @@ test('flujo completo del Registro: PUT crea, GET lo lista, DELETE lo quita', asy
     assert.ok(getRes.body.risks.some((r) => r.riskName === riskName));
     assert.ok(getRes.body.pareto, 'con al menos un riesgo guardado, debe venir el análisis de Pareto');
 
-    const delRes = await request(app).delete(`/api/register/${encodeURIComponent(riskName)}`).set('X-API-Key', TEST_API_KEY);
+    const delRes = await request(app)
+        .delete(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY);
     assert.strictEqual(delRes.status, 200);
 
     const getRes2 = await request(app).get('/api/register').set('X-API-Key', TEST_API_KEY);
@@ -260,7 +286,9 @@ test('PUT /api/register/:riskName siempre guarda currency USD, ignorando lo que 
         .send({ ale: 10000, cvar95: 15000, evaluationLevel: 'Riesgo Bajo', currency: 'EUR' });
     assert.strictEqual(putRes.body.entry.currency, 'USD');
 
-    await request(app).delete(`/api/register/${encodeURIComponent(riskName)}`).set('X-API-Key', TEST_API_KEY);
+    await request(app)
+        .delete(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY);
 });
 
 test('POST /api/simulate y POST /api/treatment/evaluate siempre responden currency USD', async () => {
@@ -268,7 +296,8 @@ test('POST /api/simulate y POST /api/treatment/evaluate siempre responden curren
         .post('/api/simulate')
         .set('X-API-Key', TEST_API_KEY)
         .send({
-            iterations: 100, seed: 1,
+            iterations: 100,
+            seed: 1,
             tef: { min: 1, mode: 2, max: 3 },
             vuln: { min: 10, mode: 20, max: 30 },
             lossMagnitudes: {},
@@ -280,7 +309,8 @@ test('POST /api/simulate y POST /api/treatment/evaluate siempre responden curren
         .post('/api/treatment/evaluate')
         .set('X-API-Key', TEST_API_KEY)
         .send({
-            currentALE: 50000, currency: 'EUR',
+            currentALE: 50000,
+            currency: 'EUR',
             mitigar: { cost: 5000, reductionPercent: 40, reliability: 'media', delayDays: 0 },
         });
     assert.strictEqual(treatRes.status, 200);
@@ -305,10 +335,14 @@ test('PUT /api/register/:riskName con riskType "oportunidad" se guarda y se excl
     const getRes = await request(app).get('/api/register').set('X-API-Key', TEST_API_KEY);
     const saved = getRes.body.risks.find((r) => r.riskName === riskName);
     assert.strictEqual(saved.riskType, 'oportunidad');
-    assert.ok(!getRes.body.pareto.risks.some((r) => r.riskName === riskName),
-        'la oportunidad no debe aparecer en el Pareto (su "ale" es un beneficio, no una pérdida)');
+    assert.ok(
+        !getRes.body.pareto.risks.some((r) => r.riskName === riskName),
+        'la oportunidad no debe aparecer en el Pareto (su "ale" es un beneficio, no una pérdida)',
+    );
 
-    await request(app).delete(`/api/register/${encodeURIComponent(riskName)}`).set('X-API-Key', TEST_API_KEY);
+    await request(app)
+        .delete(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY);
 });
 
 test('PUT /api/register/:riskName guarda sourceRiskId para vincularlo con /api/risks (tabla concentrada)', async () => {
@@ -323,7 +357,9 @@ test('PUT /api/register/:riskName guarda sourceRiskId para vincularlo con /api/r
     const getRes = await request(app).get('/api/register').set('X-API-Key', TEST_API_KEY);
     assert.strictEqual(getRes.body.risks.find((r) => r.riskName === riskName).sourceRiskId, 'abc-123');
 
-    await request(app).delete(`/api/register/${encodeURIComponent(riskName)}`).set('X-API-Key', TEST_API_KEY);
+    await request(app)
+        .delete(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY);
 });
 
 test('PUT /api/register/:riskName guarda triggeredByRiskName (riesgo en cascada)', async () => {
@@ -343,11 +379,18 @@ test('PUT /api/register/:riskName guarda triggeredByRiskName (riesgo en cascada)
 
     const getRes = await request(app).get('/api/register').set('X-API-Key', TEST_API_KEY);
     assert.strictEqual(getRes.body.risks.find((r) => r.riskName === childName).triggeredByRiskName, parentName);
-    assert.strictEqual(getRes.body.risks.find((r) => r.riskName === parentName).triggeredByRiskName, null,
-        'un riesgo sin desencadenante debe guardarse como null, no undefined ni una cadena vacía');
+    assert.strictEqual(
+        getRes.body.risks.find((r) => r.riskName === parentName).triggeredByRiskName,
+        null,
+        'un riesgo sin desencadenante debe guardarse como null, no undefined ni una cadena vacía',
+    );
 
-    await request(app).delete(`/api/register/${encodeURIComponent(parentName)}`).set('X-API-Key', TEST_API_KEY);
-    await request(app).delete(`/api/register/${encodeURIComponent(childName)}`).set('X-API-Key', TEST_API_KEY);
+    await request(app)
+        .delete(`/api/register/${encodeURIComponent(parentName)}`)
+        .set('X-API-Key', TEST_API_KEY);
+    await request(app)
+        .delete(`/api/register/${encodeURIComponent(childName)}`)
+        .set('X-API-Key', TEST_API_KEY);
 });
 
 test('PUT /api/register/:riskName guarda description', async () => {
@@ -355,14 +398,24 @@ test('PUT /api/register/:riskName guarda description', async () => {
     const putRes = await request(app)
         .put(`/api/register/${encodeURIComponent(riskName)}`)
         .set('X-API-Key', TEST_API_KEY)
-        .send({ ale: 30000, cvar95: 45000, evaluationLevel: 'Riesgo Medio', description: 'Robo de mercancía durante la noche.' });
+        .send({
+            ale: 30000,
+            cvar95: 45000,
+            evaluationLevel: 'Riesgo Medio',
+            description: 'Robo de mercancía durante la noche.',
+        });
     assert.strictEqual(putRes.status, 200);
     assert.strictEqual(putRes.body.entry.description, 'Robo de mercancía durante la noche.');
 
     const getRes = await request(app).get('/api/register').set('X-API-Key', TEST_API_KEY);
-    assert.strictEqual(getRes.body.risks.find((r) => r.riskName === riskName).description, 'Robo de mercancía durante la noche.');
+    assert.strictEqual(
+        getRes.body.risks.find((r) => r.riskName === riskName).description,
+        'Robo de mercancía durante la noche.',
+    );
 
-    await request(app).delete(`/api/register/${encodeURIComponent(riskName)}`).set('X-API-Key', TEST_API_KEY);
+    await request(app)
+        .delete(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY);
 });
 
 test('PUT /api/register/:riskName: dos riesgos DISTINTOS con el mismo nombre no se pisan entre sí (identificados por sourceRiskId, no por nombre)', async () => {
@@ -376,8 +429,11 @@ test('PUT /api/register/:riskName: dos riesgos DISTINTOS con el mismo nombre no 
         .set('X-API-Key', TEST_API_KEY)
         .send({ ale: 90000, cvar95: 150000, evaluationLevel: 'Riesgo Alto', sourceRiskId: 'risk-b' });
 
-    assert.notStrictEqual(putA.body.entry.id, putB.body.entry.id,
-        'cada riesgo de origen distinto debe generar su propia entrada del Registro, aunque compartan nombre');
+    assert.notStrictEqual(
+        putA.body.entry.id,
+        putB.body.entry.id,
+        'cada riesgo de origen distinto debe generar su propia entrada del Registro, aunque compartan nombre',
+    );
 
     const getRes = await request(app).get('/api/register').set('X-API-Key', TEST_API_KEY);
     const entries = getRes.body.risks.filter((r) => r.riskName === sharedName);
@@ -444,12 +500,20 @@ test('PUT /api/register/:riskName: dos riesgos nuevos SIN sourceRiskId (armados 
 
     const getRes = await request(app).get('/api/register').set('X-API-Key', TEST_API_KEY);
     const entries = getRes.body.risks.filter((r) => r.riskName === sharedName);
-    assert.strictEqual(entries.length, 2, 'ambos deben coexistir — el segundo NO debe pisar al primero solo por compartir nombre');
+    assert.strictEqual(
+        entries.length,
+        2,
+        'ambos deben coexistir — el segundo NO debe pisar al primero solo por compartir nombre',
+    );
     assert.ok(entries.some((r) => r.id === clientIdA && r.ale === 15000));
     assert.ok(entries.some((r) => r.id === clientIdB && r.ale === 500000));
 
-    await request(app).delete(`/api/register/${encodeURIComponent(sharedName)}?id=${clientIdA}`).set('X-API-Key', TEST_API_KEY);
-    await request(app).delete(`/api/register/${encodeURIComponent(sharedName)}?id=${clientIdB}`).set('X-API-Key', TEST_API_KEY);
+    await request(app)
+        .delete(`/api/register/${encodeURIComponent(sharedName)}?id=${clientIdA}`)
+        .set('X-API-Key', TEST_API_KEY);
+    await request(app)
+        .delete(`/api/register/${encodeURIComponent(sharedName)}?id=${clientIdB}`)
+        .set('X-API-Key', TEST_API_KEY);
 });
 
 // --- Catálogo de Activos ---
@@ -465,7 +529,10 @@ test('POST /api/assets sin nombre responde 400', async () => {
 });
 
 test('POST /api/assets con valorEstimado negativo responde 400', async () => {
-    const res = await request(app).post('/api/assets').set('X-API-Key', TEST_API_KEY).send({ nombre: 'Bodega 1', valorEstimado: -5 });
+    const res = await request(app)
+        .post('/api/assets')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ nombre: 'Bodega 1', valorEstimado: -5 });
     assert.strictEqual(res.status, 400);
 });
 
@@ -530,8 +597,14 @@ test('POST/PUT /api/assets siempre guarda currency USD, ignorando lo que mande e
 });
 
 test('dos activos pueden compartir el mismo nombre sin pisarse (identificados por id, no por nombre)', async () => {
-    const a = await request(app).post('/api/assets').set('X-API-Key', TEST_API_KEY).send({ nombre: 'Bodega 3', valorEstimado: 100 });
-    const b = await request(app).post('/api/assets').set('X-API-Key', TEST_API_KEY).send({ nombre: 'Bodega 3', valorEstimado: 200 });
+    const a = await request(app)
+        .post('/api/assets')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ nombre: 'Bodega 3', valorEstimado: 100 });
+    const b = await request(app)
+        .post('/api/assets')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ nombre: 'Bodega 3', valorEstimado: 200 });
     assert.notStrictEqual(a.body.entry.id, b.body.entry.id);
 
     const getRes = await request(app).get('/api/assets').set('X-API-Key', TEST_API_KEY);
@@ -557,7 +630,14 @@ test('flujo completo del Historial unificado: POST crea, GET lo lista, PUT lo ac
     const postRes = await request(app)
         .post('/api/risks')
         .set('X-API-Key', TEST_API_KEY)
-        .send({ name: 'Robo armado en bodega', ri: '42.75%', rrt: '10.20%', ale: '$505.00', date: '5/8/2026', fullData: { riskName: 'Robo armado en bodega', RRt: 0.102, rrMax: 25 } });
+        .send({
+            name: 'Robo armado en bodega',
+            ri: '42.75%',
+            rrt: '10.20%',
+            ale: '$505.00',
+            date: '5/8/2026',
+            fullData: { riskName: 'Robo armado en bodega', RRt: 0.102, rrMax: 25 },
+        });
     assert.strictEqual(postRes.status, 201);
     assert.ok(postRes.body.entry.id, 'debe generar un id único, no depender del nombre');
     const id = postRes.body.entry.id;
@@ -565,12 +645,23 @@ test('flujo completo del Historial unificado: POST crea, GET lo lista, PUT lo ac
     const getRes = await request(app).get('/api/risks').set('X-API-Key', TEST_API_KEY);
     assert.strictEqual(getRes.status, 200);
     assert.ok(getRes.body.risks.some((r) => r.id === id && r.name === 'Robo armado en bodega'));
-    assert.strictEqual(getRes.body.risks.find((r) => r.id === id).fullData.RRt, 0.102, 'el body flexible (fullData) debe pasar tal cual');
+    assert.strictEqual(
+        getRes.body.risks.find((r) => r.id === id).fullData.RRt,
+        0.102,
+        'el body flexible (fullData) debe pasar tal cual',
+    );
 
     const putRes = await request(app)
         .put(`/api/risks/${id}`)
         .set('X-API-Key', TEST_API_KEY)
-        .send({ name: 'Robo armado en bodega (actualizado)', ri: '50.00%', rrt: '15.00%', ale: '$700.00', date: '5/8/2026', fullData: { riskName: 'Robo armado en bodega (actualizado)', RRt: 0.15, rrMax: 25 } });
+        .send({
+            name: 'Robo armado en bodega (actualizado)',
+            ri: '50.00%',
+            rrt: '15.00%',
+            ale: '$700.00',
+            date: '5/8/2026',
+            fullData: { riskName: 'Robo armado en bodega (actualizado)', RRt: 0.15, rrMax: 25 },
+        });
     assert.strictEqual(putRes.status, 200);
     assert.strictEqual(putRes.body.entry.name, 'Robo armado en bodega (actualizado)');
     assert.strictEqual(putRes.body.entry.id, id, 'actualizar no debe cambiar el id (misma identidad)');
@@ -603,7 +694,10 @@ test('dos riesgos pueden compartir el mismo nombre sin pisarse (identificados po
 });
 
 test('DELETE /api/risks/:id borra en cascada la entrada del Registro vinculada, sin dejarla huérfana', async () => {
-    const risk = await request(app).post('/api/risks').set('X-API-Key', TEST_API_KEY).send({ name: 'Incendio en planta (cascada HTTP)' });
+    const risk = await request(app)
+        .post('/api/risks')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ name: 'Incendio en planta (cascada HTTP)' });
     const riskId = risk.body.entry.id;
 
     const riskName = 'Análisis FAIR vinculado (cascada HTTP)';
@@ -613,7 +707,10 @@ test('DELETE /api/risks/:id borra en cascada la entrada del Registro vinculada, 
         .send({ ale: 40000, cvar95: 60000, evaluationLevel: 'Riesgo Medio', sourceRiskId: riskId });
 
     let registerRes = await request(app).get('/api/register').set('X-API-Key', TEST_API_KEY);
-    assert.ok(registerRes.body.risks.some((r) => r.sourceRiskId === riskId), 'la entrada debe existir antes de borrar el riesgo de origen');
+    assert.ok(
+        registerRes.body.risks.some((r) => r.sourceRiskId === riskId),
+        'la entrada debe existir antes de borrar el riesgo de origen',
+    );
 
     // Borrar SOLO /api/risks/:id — sin ninguna llamada explícita a /api/register — debe bastar
     // para que la entrada vinculada desaparezca también (antes esto dependía por completo de
@@ -623,7 +720,10 @@ test('DELETE /api/risks/:id borra en cascada la entrada del Registro vinculada, 
     assert.strictEqual(delRes.status, 200);
 
     registerRes = await request(app).get('/api/register').set('X-API-Key', TEST_API_KEY);
-    assert.ok(!registerRes.body.risks.some((r) => r.sourceRiskId === riskId), 'no debe quedar una entrada huérfana en el Registro');
+    assert.ok(
+        !registerRes.body.risks.some((r) => r.sourceRiskId === riskId),
+        'no debe quedar una entrada huérfana en el Registro',
+    );
 
     // Un riesgo del Registro SIN sourceRiskId (ej. "Duplicar como Plantilla") no debe verse
     // afectado por borrar un riesgo de /api/risks distinto — la cascada es por sourceRiskId
@@ -634,7 +734,12 @@ test('DELETE /api/risks/:id borra en cascada la entrada del Registro vinculada, 
         .set('X-API-Key', TEST_API_KEY)
         .send({ ale: 10000, cvar95: 15000, evaluationLevel: 'Riesgo Bajo' });
     registerRes = await request(app).get('/api/register').set('X-API-Key', TEST_API_KEY);
-    assert.ok(registerRes.body.risks.some((r) => r.riskName === standaloneName), 'la entrada sin sourceRiskId debe sobrevivir intacta');
+    assert.ok(
+        registerRes.body.risks.some((r) => r.riskName === standaloneName),
+        'la entrada sin sourceRiskId debe sobrevivir intacta',
+    );
 
-    await request(app).delete(`/api/register/${encodeURIComponent(standaloneName)}`).set('X-API-Key', TEST_API_KEY);
+    await request(app)
+        .delete(`/api/register/${encodeURIComponent(standaloneName)}`)
+        .set('X-API-Key', TEST_API_KEY);
 });

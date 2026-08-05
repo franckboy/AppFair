@@ -50,7 +50,8 @@ function getInvestmentVerdict(cost, lossAvoided, formatCurrency) {
     if (cost <= 0) {
         if (lossAvoided > 0) {
             return {
-                verdict: 'conviene', rosi: null,
+                verdict: 'conviene',
+                rosi: null,
                 message: `Sin costo capturado, evitarías perder ${formatCurrency(lossAvoided)} al año.`,
             };
         }
@@ -61,13 +62,15 @@ function getInvestmentVerdict(cost, lossAvoided, formatCurrency) {
 
     if (netBenefit > 0) {
         return {
-            verdict: 'conviene', rosi,
+            verdict: 'conviene',
+            rosi,
             message: `Si inviertes ${formatCurrency(cost)} al año, evitas perder ${formatCurrency(lossAvoided)} → te ahorras ${formatCurrency(netBenefit)} netos al año (por cada $1 invertido, recuperas $${(1 + rosi / 100).toFixed(2)}).`,
         };
     }
     if (netBenefit < 0) {
         return {
-            verdict: 'no_conviene', rosi,
+            verdict: 'no_conviene',
+            rosi,
             message: `Costaría ${formatCurrency(cost)} al año pero solo evitarías perder ${formatCurrency(lossAvoided)} → perderías ${formatCurrency(Math.abs(netBenefit))} netos al año.`,
         };
     }
@@ -95,37 +98,63 @@ function evaluateTreatmentStrategies({ currentALE, annualLosses, mitigar, transf
     const avoidedMitigar = currentALE - aleAfterMitigar;
     const netBenefitMitigar = avoidedMitigar - mitigar.cost;
     results.mitigar = {
-        cost: mitigar.cost, residualALE: aleAfterMitigar, avoidedLoss: avoidedMitigar, netBenefit: netBenefitMitigar,
-        reliability: mitigar.reliability, delayDays: mitigar.delayDays,
+        cost: mitigar.cost,
+        residualALE: aleAfterMitigar,
+        avoidedLoss: avoidedMitigar,
+        netBenefit: netBenefitMitigar,
+        reliability: mitigar.reliability,
+        delayDays: mitigar.delayDays,
         verdict: getInvestmentVerdict(mitigar.cost, avoidedMitigar, formatCurrency),
     };
 
     // 2. Transferir (Seguro)
     let retainedALE = currentALE;
-    if (annualLosses && annualLosses.length > 0 && (transferir.deductible > 0 || transferir.limit > 0 || transferir.unlimited)) {
-        retainedALE = calculateInsuranceRetainedALE(annualLosses, transferir.deductible || 0, transferir.limit || 0, !!transferir.unlimited);
+    if (
+        annualLosses &&
+        annualLosses.length > 0 &&
+        (transferir.deductible > 0 || transferir.limit > 0 || transferir.unlimited)
+    ) {
+        retainedALE = calculateInsuranceRetainedALE(
+            annualLosses,
+            transferir.deductible || 0,
+            transferir.limit || 0,
+            !!transferir.unlimited,
+        );
     }
     const avoidedTransferir = currentALE - retainedALE;
     const netBenefitTransferir = avoidedTransferir - transferir.premium;
     results.transferir = {
-        cost: transferir.premium, residualALE: retainedALE, avoidedLoss: avoidedTransferir, netBenefit: netBenefitTransferir,
-        reliability: transferir.reliability, delayDays: transferir.delayDays,
+        cost: transferir.premium,
+        residualALE: retainedALE,
+        avoidedLoss: avoidedTransferir,
+        netBenefit: netBenefitTransferir,
+        reliability: transferir.reliability,
+        delayDays: transferir.delayDays,
         verdict: getInvestmentVerdict(transferir.premium, avoidedTransferir, formatCurrency),
     };
 
     // 3. Evitar (elimina la fuente del riesgo → residual = 0 por definición)
     const netBenefitEvitar = currentALE - evitar.cost;
     results.evitar = {
-        cost: evitar.cost, residualALE: 0, avoidedLoss: currentALE, netBenefit: netBenefitEvitar,
-        reliability: evitar.reliability, delayDays: evitar.delayDays,
+        cost: evitar.cost,
+        residualALE: 0,
+        avoidedLoss: currentALE,
+        netBenefit: netBenefitEvitar,
+        reliability: evitar.reliability,
+        delayDays: evitar.delayDays,
         // A diferencia de Mitigar/Transferir, avoidedLoss de Evitar es SIEMPRE currentALE por
         // definición (elimina el 100% del riesgo) — con costo 0 (su default sin tocar), el
         // getInvestmentVerdict genérico diría "SÍ conviene, sin costo capturado" como si eliminar
         // la fuente del riesgo fuera gratis, lo cual nunca es cierto en la práctica. Se exige un
         // costo real antes de dar cualquier veredicto, mismo criterio que en la recomendación.
-        verdict: evitar.cost > 0
-            ? getInvestmentVerdict(evitar.cost, currentALE, formatCurrency)
-            : { verdict: 'sin_datos', rosi: null, message: 'Ingresa el costo anualizado de eliminar la fuente de este riesgo para ver si conviene.' },
+        verdict:
+            evitar.cost > 0
+                ? getInvestmentVerdict(evitar.cost, currentALE, formatCurrency)
+                : {
+                      verdict: 'sin_datos',
+                      rosi: null,
+                      message: 'Ingresa el costo anualizado de eliminar la fuente de este riesgo para ver si conviene.',
+                  },
     };
 
     // 4. Aceptar / Retener (sin costo, sin cambio)
@@ -140,21 +169,34 @@ function evaluateTreatmentStrategies({ currentALE, annualLosses, mitigar, transf
     // superar por Mitigar o Transferir — así que ganaba (o empataba) la recomendación siempre,
     // aunque el usuario nunca hubiera tocado esa sección. Eliminar la fuente de un riesgo real
     // nunca es gratis; se exige un costo > 0 para contarla como una opción real.
-    const activeStrategies = Object.entries(results)
-        .filter(([key, r]) => {
-            if (key === 'aceptar') return false;
-            if (key === 'evitar') return r.cost > 0;
-            return r.cost > 0 || r.avoidedLoss > 0;
-        });
+    const activeStrategies = Object.entries(results).filter(([key, r]) => {
+        if (key === 'aceptar') return false;
+        if (key === 'evitar') return r.cost > 0;
+        return r.cost > 0 || r.avoidedLoss > 0;
+    });
 
     let recommendation;
     if (activeStrategies.length === 0) {
-        recommendation = { strategy: 'aceptar', reason: 'No hay datos capturados en ninguna estrategia activa. Por defecto, este riesgo queda en Aceptar/Retener.' };
+        recommendation = {
+            strategy: 'aceptar',
+            reason: 'No hay datos capturados en ninguna estrategia activa. Por defecto, este riesgo queda en Aceptar/Retener.',
+        };
     } else {
-        const [bestKey, best] = activeStrategies.reduce((max, entry) => entry[1].netBenefit > max[1].netBenefit ? entry : max, activeStrategies[0]);
-        recommendation = best.netBenefit > 0
-            ? { strategy: bestKey, netBenefit: best.netBenefit, reason: `Mayor beneficio neto entre las estrategias con datos capturados.` }
-            : { strategy: 'aceptar', reason: 'Ninguna estrategia capturada tiene beneficio neto positivo con los datos actuales.' };
+        const [bestKey, best] = activeStrategies.reduce(
+            (max, entry) => (entry[1].netBenefit > max[1].netBenefit ? entry : max),
+            activeStrategies[0],
+        );
+        recommendation =
+            best.netBenefit > 0
+                ? {
+                      strategy: bestKey,
+                      netBenefit: best.netBenefit,
+                      reason: `Mayor beneficio neto entre las estrategias con datos capturados.`,
+                  }
+                : {
+                      strategy: 'aceptar',
+                      reason: 'Ninguna estrategia capturada tiene beneficio neto positivo con los datos actuales.',
+                  };
     }
 
     return { ...results, recommendation };

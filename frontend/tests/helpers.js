@@ -13,11 +13,14 @@ const HTML2CANVAS_JS = fs.readFileSync(path.join(STUBS_DIR, 'html2canvas.min.js'
 const test = base.test.extend({
     page: async ({ page }, use) => {
         await page.route('**://cdnjs.cloudflare.com/**', (route) =>
-            route.fulfill({ status: 200, contentType: 'text/css', body: '' }));
+            route.fulfill({ status: 200, contentType: 'text/css', body: '' }),
+        );
         await page.route('**chart.umd.js', (route) =>
-            route.fulfill({ status: 200, contentType: 'application/javascript', body: CHART_JS }));
+            route.fulfill({ status: 200, contentType: 'application/javascript', body: CHART_JS }),
+        );
         await page.route('**html2canvas.min.js', (route) =>
-            route.fulfill({ status: 200, contentType: 'application/javascript', body: HTML2CANVAS_JS }));
+            route.fulfill({ status: 200, contentType: 'application/javascript', body: HTML2CANVAS_JS }),
+        );
         await use(page);
     },
 });
@@ -34,8 +37,9 @@ async function connectAndBoot(page, { apiKey = 'test-e2e-key', baseUrl = 'http:/
     await page.click('#api-conn-save-btn');
     await page.waitForTimeout(1000);
 
-    const gateVisible = await page.evaluate(() =>
-        !document.getElementById('orgcontext-gate').classList.contains('hidden'));
+    const gateVisible = await page.evaluate(
+        () => !document.getElementById('orgcontext-gate').classList.contains('hidden'),
+    );
     if (gateVisible) {
         await page.fill('#orgctx-gate-mision', 'Proteger las operaciones de la organización.');
         await page.fill('#orgctx-gate-naturaleza', 'Operaciones logísticas y almacenaje.');

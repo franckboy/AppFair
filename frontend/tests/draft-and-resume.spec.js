@@ -2,14 +2,18 @@
 const { test, expect, connectAndBoot, runFullFairAnalysis } = require('./helpers');
 
 test.describe('Guardar borrador en el Paso 1', () => {
-    test('"Guardar" deja el riesgo como Triage, y "Analizar con FAIR" lo retoma y lo fusiona en una sola fila', async ({ page }) => {
+    test('"Guardar" deja el riesgo como Triage, y "Analizar con FAIR" lo retoma y lo fusiona en una sola fila', async ({
+        page,
+    }) => {
         await connectAndBoot(page);
 
         await page.fill('#fair-riskName', 'E2E — Sabotaje en Línea de Producción');
         await page.fill('#fair-asset', 'Línea de Producción 4');
         await page.fill('#fair-threat', 'Empleado descontento');
         await Promise.all([
-            page.waitForResponse((r) => r.url().includes('/api/risks') && r.request().method() === 'POST', { timeout: 10000 }),
+            page.waitForResponse((r) => r.url().includes('/api/risks') && r.request().method() === 'POST', {
+                timeout: 10000,
+            }),
             page.click('#fair-save-draft-btn'),
         ]);
         await page.waitForTimeout(800);
@@ -19,7 +23,9 @@ test.describe('Guardar borrador en el Paso 1', () => {
 
         await page.click('#nav-fair');
         await page.waitForTimeout(500);
-        const draftRow = page.locator('#quick-concentrated-table-body tr', { hasText: 'E2E — Sabotaje en Línea de Producción' });
+        const draftRow = page.locator('#quick-concentrated-table-body tr', {
+            hasText: 'E2E — Sabotaje en Línea de Producción',
+        });
         await expect(draftRow).toContainText('Triage');
 
         await draftRow.locator('[data-analyze-quick]').click();
@@ -53,7 +59,9 @@ test.describe('Guardar borrador en el Paso 1', () => {
 
         await page.click('#nav-fair');
         await page.waitForTimeout(500);
-        const rows = page.locator('#quick-concentrated-table-body tr', { hasText: 'E2E — Sabotaje en Línea de Producción' });
+        const rows = page.locator('#quick-concentrated-table-body tr', {
+            hasText: 'E2E — Sabotaje en Línea de Producción',
+        });
         await expect(rows).toHaveCount(1);
         await expect(rows.first()).toContainText('Analizado (FAIR)');
     });

@@ -4,7 +4,9 @@ const { test, expect, connectAndBoot, runFullFairAnalysis } = require('./helpers
 test.describe('Informe Consolidado (PDF único)', () => {
     test('incluye el resumen de portafolio y el detalle técnico completo de cada riesgo', async ({ page }) => {
         await page.addInitScript(() => {
-            window.print = () => { window.__printCalled = (window.__printCalled || 0) + 1; };
+            window.print = () => {
+                window.__printCalled = (window.__printCalled || 0) + 1;
+            };
         });
         await connectAndBoot(page);
         await runFullFairAnalysis(page, 'E2E — Incendio en Almacén Central');

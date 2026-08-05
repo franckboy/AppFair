@@ -19,7 +19,7 @@ export const state = {
             aleCritico: 250000,
             // Umbral usado para "Probabilidad de superar $X/año" en los resultados FAIR.
             aleUmbralExcedencia: 100000,
-        }
+        },
     },
     quick: {
         // attackerProfiles/defenseProfiles los sigue usando FAIR (Paso 2, resumen de
@@ -78,19 +78,19 @@ export const state = {
                     const min = getSafeNumber(document.getElementById(`${prefix}-min`));
                     const mode = getSafeNumber(document.getElementById(`${prefix}-mode`));
                     const max = getSafeNumber(document.getElementById(`${prefix}-max`));
-                    return (min <= mode && mode <= max);
+                    return min <= mode && mode <= max;
                 };
                 return checkRange('tef') && checkRange('vuln');
             },
             3: () => {
                 const lossFormsKeys = LOSS_FORMS_KEYS;
-                return lossFormsKeys.every(key => {
+                return lossFormsKeys.every((key) => {
                     const min = getSafeNumber(document.getElementById(`lm-${key}-min`));
                     const mode = getSafeNumber(document.getElementById(`lm-${key}-mode`));
                     const max = getSafeNumber(document.getElementById(`lm-${key}-max`));
-                    return (min <= mode && mode <= max);
+                    return min <= mode && mode <= max;
                 });
-            }
-        }
+            },
+        },
     },
 };

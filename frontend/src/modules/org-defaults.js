@@ -1,7 +1,7 @@
 import { App } from './app-namespace.js';
 import { state } from './state.js';
 import { Modal } from './modal.js';
-import { sanitizeHTML, showToast } from './utils.js';
+import { showToast } from './utils.js';
 
 // --- Valores por Defecto de la Organización ---
 // Datos que casi no cambian entre un análisis y otro (nivel de defensa típico, dueño del
@@ -25,7 +25,8 @@ export const OrgDefaults = {
     openEditor() {
         const d = this.defaults;
         const defenseOptions = Object.entries(state.quick.defenseProfiles)
-            .map(([key, p]) => `<option value="${key}" ${key === d.defenseKey ? 'selected' : ''}>${p.name}</option>`).join('');
+            .map(([key, p]) => `<option value="${key}" ${key === d.defenseKey ? 'selected' : ''}>${p.name}</option>`)
+            .join('');
 
         const formHTML = `
             <p class="description-text mb-4">
@@ -91,7 +92,7 @@ export const OrgDefaults = {
                 saveBtn.disabled = false;
             }
         });
-    }
+    },
 };
 
 App.OrgDefaults = OrgDefaults;
