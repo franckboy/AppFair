@@ -1,0 +1,14 @@
+{
+  "name": "motor-riesgos-fair-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Pruebas E2E (Playwright) del frontend de app_fair.html — no hay build de producción todavía, ver el plan de migración.",
+  "scripts": {
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:headed": "playwright test --headed"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.1"
+  }
+}

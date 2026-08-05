@@ -6,11 +6,11 @@ cuenta ni persiste en `localStorage` — todo el motor (perfiles, simulación Mo
 autocálculo, tratamiento de riesgos, Registro de Riesgos) vive en el backend, y el frontend es
 un cliente de su API REST.
 
-- `frontend/app_fair.html` — app de una sola página (Análisis Rápido + FAIR completo),
-  autocontenida en HTML/CSS/JS sin build. Análisis Rápido y el autocompletado de texto
-  siguen siendo 100% locales (el backend no tiene ni necesita un endpoint para eso); todo lo
-  demás (Criterios de Riesgo, Valores por Defecto, Contexto Organizacional, simulación FAIR,
-  tratamiento y Registro de Riesgos) se guarda y calcula en el backend.
+- `frontend/app_fair.html` — app de una sola página (el wizard de FAIR completo, 4 pasos),
+  autocontenida en HTML/CSS/JS sin build todavía (ver "Plan de migración" abajo). El
+  autocompletado de texto es 100% local; todo lo demás (Criterios de Riesgo, Valores por
+  Defecto, Contexto Organizacional, simulación FAIR, tratamiento y Registro de Riesgos) se
+  guarda y calcula en el backend.
 - `backend/` — API REST en Express con el motor de cálculo como módulos puros de Node,
   protegida por API key. Persistencia en archivo JSON local por defecto, o en Postgres
   (gratis, sin vencimiento — recomendado en producción) si se configura `DATABASE_URL`. Ver
@@ -48,6 +48,27 @@ en el botón **Conexión API** de la esquina superior, ingresa la URL del backen
 - El `ALLOWED_ORIGIN` del backend en Render está fijado al origen de GitHub Pages
   (`https://franckboy.github.io`), y la URL/API key del backend están cargadas en el
   frontend publicado vía **Conexión API** (se guardan en el navegador, no en el repo).
+
+## Pruebas
+
+```bash
+cd backend && npm test        # pruebas unitarias/integración del motor de cálculo (node --test)
+
+cd frontend && npm install && npm run test:e2e   # suite E2E (Playwright) contra un backend real
+```
+
+La suite E2E arranca su propio backend + servidor estático (ver `frontend/playwright.config.js`)
+y corre los flujos críticos de punta a punta: wizard completo, guardar borrador y reanudarlo,
+Análisis Profundo, exportar el Informe Consolidado, eliminar un riesgo. Corre en cada push/PR
+vía GitHub Actions (`.github/workflows/frontend-e2e.yml`), igual que las pruebas del backend.
+
+## Plan de migración (arquitectura del frontend)
+
+`app_fair.html` es un solo archivo de miles de líneas — funciona, pero cada cambio nuevo cuesta
+más de ubicar. Hay un plan de migración incremental en marcha (bundler → CSS formal → módulos ES,
+cada paso verificado con la suite E2E antes de avanzar al siguiente) — sin reescritura, sin
+framework nuevo por ahora. La suite de pruebas de arriba es la Fase 0 de ese plan: la red de
+seguridad que permite reorganizar el código con confianza.
 
 ## Licencia
 

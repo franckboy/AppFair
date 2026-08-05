@@ -1,0 +1,48 @@
+name: Frontend E2E tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "frontend/**"
+      - "backend/**"
+      - ".github/workflows/frontend-e2e.yml"
+  pull_request:
+    paths:
+      - "frontend/**"
+      - "backend/**"
+      - ".github/workflows/frontend-e2e.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Instalar dependencias del backend
+        working-directory: backend
+        run: npm ci
+
+      - name: Instalar dependencias del frontend
+        working-directory: frontend
+        run: npm ci
+
+      - name: Instalar el Chromium de Playwright
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Correr la suite E2E
+        working-directory: frontend
+        run: npm run test:e2e
+
+      - name: Subir el reporte de Playwright (si falló)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: frontend/playwright-report/
+          retention-days: 7

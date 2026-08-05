@@ -48,10 +48,13 @@ app.use(express.json({ limit: '2mb' })); // 2mb por si el cliente reenvía annua
 
 // Límite general de peticiones por IP — antes no había ninguno. Se aplica antes de la
 // autenticación a propósito, para que también frene intentos de adivinar la API key a fuerza
-// bruta, no solo el uso normal de la API ya autenticada.
+// bruta, no solo el uso normal de la API ya autenticada. Configurable por variables de entorno
+// (con el mismo default de siempre) porque una suite de pruebas E2E automatizada —o un backend
+// compartido por varios clientes detrás de la misma IP/proxy— puede superar 300 peticiones en
+// 15 minutos sin que sea abuso real; forzar ese límite ahí rompía la suite de Playwright.
 app.use('/api', rateLimit({
-    windowMs: 15 * 60 * 1000,
-    limit: 300,
+    windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
+    limit: Number(process.env.RATE_LIMIT_MAX) || 300,
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Demasiadas peticiones desde esta IP. Intenta de nuevo en unos minutos.' },

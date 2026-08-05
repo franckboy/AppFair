@@ -4661,9 +4661,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         <button class="btn btn-secondary text-xs ml-1" data-simulate-risk="${sanitizeHTML(item.fairEntry.riskName)}" ${item.fairEntry.tef && item.fairEntry.vuln && item.fairEntry.lossMagnitudes ? '' : 'disabled title="Este riesgo se guardó antes de esta función — vuelve a correr su simulación desde Análisis FAIR para poder verla aquí."'}>
                             <i class="fas fa-chart-bar mr-1"></i>Simular
                         </button>
-                        <button class="text-red-600 hover:text-red-800 text-sm ml-2" data-delete-risk="${sanitizeHTML(item.fairEntry.riskName)}" data-delete-source-id="${item.id || ''}" data-delete-entry-id="${item.fairEntry.id || ''}"><i class="fas fa-trash"></i></button>`
+                        <button class="inline-flex items-center justify-center p-2 text-red-600 hover:text-red-800 text-sm ml-2" title="Eliminar riesgo" aria-label="Eliminar riesgo" data-delete-risk="${sanitizeHTML(item.fairEntry.riskName)}" data-delete-source-id="${item.id || ''}" data-delete-entry-id="${item.fairEntry.id || ''}"><i class="fas fa-trash"></i></button>`
                     : `<button class="btn btn-primary text-xs" data-analyze-quick="${item.id}" ${item.fullData ? '' : 'disabled title="No se encontró la información completa de este riesgo."'}><i class="fas fa-balance-scale mr-1"></i>Analizar con FAIR</button>
-                        <button class="text-red-600 hover:text-red-800 text-sm ml-2" data-delete-quick="${item.id}"><i class="fas fa-trash"></i></button>`;
+                        <button class="inline-flex items-center justify-center p-2 text-red-600 hover:text-red-800 text-sm ml-2" title="Eliminar riesgo" aria-label="Eliminar riesgo" data-delete-quick="${item.id}"><i class="fas fa-trash"></i></button>`;
 
                 return `
                     <tr class="border-b">
