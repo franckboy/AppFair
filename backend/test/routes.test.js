@@ -274,6 +274,21 @@ test('PUT /api/register/:riskName con riskType "oportunidad" se guarda y se excl
     await request(app).delete(`/api/register/${encodeURIComponent(riskName)}`).set('X-API-Key', TEST_API_KEY);
 });
 
+test('PUT /api/register/:riskName guarda sourceRiskId para vincularlo con /api/risks (tabla concentrada)', async () => {
+    const riskName = 'Riesgo vinculado de prueba HTTP';
+    const putRes = await request(app)
+        .put(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ale: 50000, cvar95: 80000, evaluationLevel: 'Riesgo Medio', sourceRiskId: 'abc-123' });
+    assert.strictEqual(putRes.status, 200);
+    assert.strictEqual(putRes.body.entry.sourceRiskId, 'abc-123');
+
+    const getRes = await request(app).get('/api/register').set('X-API-Key', TEST_API_KEY);
+    assert.strictEqual(getRes.body.risks.find((r) => r.riskName === riskName).sourceRiskId, 'abc-123');
+
+    await request(app).delete(`/api/register/${encodeURIComponent(riskName)}`).set('X-API-Key', TEST_API_KEY);
+});
+
 // --- Catálogo de Activos ---
 
 test('GET /api/assets sin header X-API-Key responde 401', async () => {
