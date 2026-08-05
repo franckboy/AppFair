@@ -67,6 +67,12 @@ function createRegisterRouter(store) {
             // consistente con el resto de este archivo.
             triggeredByRiskName = null,
             description = null,
+            // Id propio de esta entrada del Registro, si el cliente ya la conoce (re-simular un
+            // riesgo cargado desde aquí — ver App.FairWizard.loadRegisteredRiskIntoForm). Junto
+            // con sourceRiskId, es lo que le permite al store (ver findRegisterEntryIndex)
+            // reconocer que esto es una ACTUALIZACIÓN de la misma entrada y no una nueva, sin
+            // depender de que el nombre no haya cambiado ni de que sea único.
+            id = null,
         } = req.body;
 
         if (typeof ale !== 'number') {
@@ -76,7 +82,7 @@ function createRegisterRouter(store) {
         const impactPercent = Math.max(0, Math.min(100, (ale / (criteria.aleCritico || 1)) * 100));
 
         const entry = {
-            riskName, asset, owner, currency, ale, cvar95, riskType,
+            id, riskName, asset, owner, currency, ale, cvar95, riskType,
             evaluationLevel, evaluationClasses, severity, evaluationJustification,
             impactPercent, probabilityPercent: probExceedance,
             sensitivity: sensitivity.slice(0, 5),
@@ -88,13 +94,19 @@ function createRegisterRouter(store) {
             date: new Date().toISOString(),
         };
 
+        // upsertRiskInRegister muta `entry.id` en el sitio (le asigna el id existente o genera
+        // uno nuevo) — por eso responder con `entry` tal cual ya trae el id correcto.
         const register = await store.upsertRiskInRegister(entry);
         res.json({ entry, totalRisks: register.length });
     }));
 
-    // DELETE /api/register/:riskName
+    // DELETE /api/register/:riskName — sourceRiskId (o id) por query string, cuando el cliente
+    // los conoce, para borrar la entrada correcta incluso si otro riesgo distinto comparte el
+    // mismo riskName (ver findRegisterEntryIndex). Sin ninguno de los dos, cae al comportamiento
+    // histórico (por riskName, solo para entradas sin sourceRiskId).
     router.delete('/:riskName', asyncHandler(async (req, res) => {
-        const register = await store.deleteRiskFromRegister(req.params.riskName);
+        const { id = null, sourceRiskId = null } = req.query;
+        const register = await store.deleteRiskFromRegister(req.params.riskName, { id, sourceRiskId });
         res.json({ totalRisks: register.length });
     }));
 

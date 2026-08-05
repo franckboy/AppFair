@@ -1187,6 +1187,11 @@ document.addEventListener('DOMContentLoaded', () => {
             // para que la tabla concentrada sepa que esta simulación es la continuación de ese
             // mismo riesgo y no lo liste dos veces. Null si el análisis se armó desde cero en FAIR.
             sourceRiskId: null,
+            // Id propio de la entrada del Registro que corresponde al análisis actualmente
+            // cargado (si ya se guardó al menos una vez) — permite que volver a simular
+            // actualice la MISMA entrada aunque el nombre del riesgo haya cambiado mientras
+            // tanto, en vez de crear una nueva huérfana (ver findRegisterEntryIndex, backend).
+            registerEntryId: null,
             currentStep: 1,
             // Promesa del autocálculo (Vulnerabilidad/Magnitud/etc.) en vuelo, si hay uno — lo
             // fija _trackPendingAutocalc() y navigateWizard() lo espera antes de validar, para
@@ -3903,6 +3908,10 @@ document.addEventListener('DOMContentLoaded', () => {
             // sigue siendo la MISMA entrada del Registro, no una nueva sin relación (ver
             // App.FairRegister.buildConcentratedList).
             state.fair.sourceRiskId = entry.sourceRiskId || null;
+            // Igual que sourceRiskId: conserva el id propio de esta entrada, para que re-guardar
+            // (aunque se renombre el riesgo mientras tanto) siga actualizando esta misma entrada
+            // en vez de crear una nueva huérfana (ver findRegisterEntryIndex en el backend).
+            state.fair.registerEntryId = entry.id || null;
 
             document.getElementById('fair-riskName').value = entry.riskName || '';
             document.getElementById('fair-riskDescription').value = entry.description || '';
@@ -4339,6 +4348,7 @@ document.addEventListener('DOMContentLoaded', () => {
         resetForm(confirm = true) {
             const doReset = () => {
                 state.fair.sourceRiskId = null;
+                state.fair.registerEntryId = null;
                 document.getElementById('fair-riskName').value = '';
                 document.getElementById('fair-riskDescription').value = '';
                 document.getElementById('fair-asset').value = '';
@@ -5141,7 +5151,9 @@ document.addEventListener('DOMContentLoaded', () => {
         // guardado aquí automáticamente al correr su simulación, para poder verlos todos juntos
         // en un mapa de calor — en vez de que cada análisis viva aislado del resto.
         // Guarda/actualiza este riesgo en el Registro del backend justo después de una
-        // simulación exitosa (PUT /api/register/:riskName, idempotente por nombre).
+        // simulación exitosa (PUT /api/register/:riskName). Idempotente por id/sourceRiskId
+        // cuando se conocen (ver findRegisterEntryIndex en el backend) — riskName en la URL es
+        // solo el punto de entrada, no la identidad real de la entrada.
         async saveToRiskRegister(summary, evaluation) {
             const riskName = document.getElementById('fair-riskName').value.trim();
             if (!riskName) return;
@@ -5158,10 +5170,16 @@ document.addEventListener('DOMContentLoaded', () => {
             const lossMagnitudes = {};
             LOSS_FORMS_KEYS.forEach((key) => { lossMagnitudes[key] = readRange(`lm-${key}`); });
 
+            let res;
             try {
-                await App.Api.request(`/api/register/${encodeURIComponent(riskName)}`, {
+                res = await App.Api.request(`/api/register/${encodeURIComponent(riskName)}`, {
                     method: 'PUT',
                     body: {
+                        // Id propio de esta entrada del Registro, si ya se conoce (re-simular un
+                        // riesgo cargado desde aquí) — le permite al backend reconocer que esto
+                        // es una actualización de la MISMA entrada aunque el nombre haya
+                        // cambiado (ver findRegisterEntryIndex y loadRegisteredRiskIntoForm).
+                        id: state.fair.registerEntryId || null,
                         asset: document.getElementById('fair-asset').value.trim() || '—',
                         owner: document.getElementById('fair-owner').value.trim() || '—',
                         ale: summary.average,
@@ -5199,6 +5217,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 showToast(e.userMessage || 'No se pudo guardar este riesgo en el Registro.');
                 return;
             }
+            // Guarda el id que acaba de asignar/confirmar el backend — así, si se vuelve a
+            // simular este mismo riesgo (sin recargar), el próximo PUT ya sabe que es una
+            // actualización de esta misma entrada, no una nueva (ver findRegisterEntryIndex).
+            state.fair.registerEntryId = res.entry.id;
             // Bug real: sin esto, state.fair.riskRegister (en memoria) se quedaba desactualizado
             // hasta que el usuario visitara la página de Registro — así que un riesgo recién
             // simulado no aparecía todavía como opción en "Riesgo Desencadenante" (Paso 1) para
@@ -5220,7 +5242,13 @@ document.addEventListener('DOMContentLoaded', () => {
         // no dejar una mitad huérfana); uno que nunca pasó por FAIR solo tiene la de /api/risks.
         async deleteConcentratedRisk({ riskName, sourceId }) {
             try {
-                if (riskName) await App.Api.request(`/api/register/${encodeURIComponent(riskName)}`, { method: 'DELETE' });
+                if (riskName) {
+                    // sourceId (si se conoce) va como sourceRiskId en la URL — así el backend
+                    // borra la entrada de ESTE riesgo aunque otro riesgo distinto comparta el
+                    // mismo nombre (ver findRegisterEntryIndex).
+                    const qs = sourceId ? `?sourceRiskId=${encodeURIComponent(sourceId)}` : '';
+                    await App.Api.request(`/api/register/${encodeURIComponent(riskName)}${qs}`, { method: 'DELETE' });
+                }
                 if (sourceId) await App.Api.request(`/api/risks/${sourceId}`, { method: 'DELETE' });
             } catch (e) {
                 showToast(e.userMessage || 'No se pudo eliminar el riesgo.');

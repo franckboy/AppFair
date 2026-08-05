@@ -2,7 +2,9 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { DEFAULTS } = require('./defaults');
+const { findRegisterEntryIndex } = require('../lib/registerIdentity');
 
 const DB_PATH = path.join(__dirname, '..', '..', 'data', 'db.json');
 
@@ -68,11 +70,15 @@ class JsonStore {
         return value;
     }
 
-    /** Agrega o actualiza (por riskName) una entrada del Registro de Riesgos. */
+    /** Agrega o actualiza una entrada del Registro de Riesgos (ver findRegisterEntryIndex). */
     async upsertRiskInRegister(entry) {
         const all = this._readAll();
         const register = all.riskRegister || [];
-        const idx = register.findIndex((r) => r.riskName === entry.riskName);
+        const idx = findRegisterEntryIndex(register, entry);
+        // Conserva el id existente si ya había una entrada; si no, usa el que trajo el cliente
+        // o genera uno nuevo — así la respuesta siempre trae un id estable que el frontend
+        // puede guardar y reutilizar en el próximo PUT/DELETE de este mismo riesgo.
+        entry.id = (idx !== -1 && register[idx].id) || entry.id || crypto.randomUUID();
         if (idx !== -1) register[idx] = entry;
         else register.push(entry);
         all.riskRegister = register;
@@ -80,9 +86,11 @@ class JsonStore {
         return register;
     }
 
-    async deleteRiskFromRegister(riskName) {
+    async deleteRiskFromRegister(riskName, { id = null, sourceRiskId = null } = {}) {
         const all = this._readAll();
-        all.riskRegister = (all.riskRegister || []).filter((r) => r.riskName !== riskName);
+        const register = all.riskRegister || [];
+        const idx = findRegisterEntryIndex(register, { riskName, id, sourceRiskId });
+        all.riskRegister = idx !== -1 ? register.filter((_, i) => i !== idx) : register;
         this._writeAll(all);
         return all.riskRegister;
     }
