@@ -574,3 +574,40 @@ test('dos riesgos pueden compartir el mismo nombre sin pisarse (identificados po
     await request(app).delete(`/api/risks/${a.body.entry.id}`).set('X-API-Key', TEST_API_KEY);
     await request(app).delete(`/api/risks/${b.body.entry.id}`).set('X-API-Key', TEST_API_KEY);
 });
+
+test('DELETE /api/risks/:id borra en cascada la entrada del Registro vinculada, sin dejarla huérfana', async () => {
+    const risk = await request(app).post('/api/risks').set('X-API-Key', TEST_API_KEY).send({ name: 'Incendio en planta (cascada HTTP)' });
+    const riskId = risk.body.entry.id;
+
+    const riskName = 'Análisis FAIR vinculado (cascada HTTP)';
+    await request(app)
+        .put(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ale: 40000, cvar95: 60000, evaluationLevel: 'Riesgo Medio', sourceRiskId: riskId });
+
+    let registerRes = await request(app).get('/api/register').set('X-API-Key', TEST_API_KEY);
+    assert.ok(registerRes.body.risks.some((r) => r.sourceRiskId === riskId), 'la entrada debe existir antes de borrar el riesgo de origen');
+
+    // Borrar SOLO /api/risks/:id — sin ninguna llamada explícita a /api/register — debe bastar
+    // para que la entrada vinculada desaparezca también (antes esto dependía por completo de
+    // que el frontend hiciera las dos llamadas por separado; ver App.FairRegister.
+    // deleteConcentratedRisk, y la nota en store.deleteRisk).
+    const delRes = await request(app).delete(`/api/risks/${riskId}`).set('X-API-Key', TEST_API_KEY);
+    assert.strictEqual(delRes.status, 200);
+
+    registerRes = await request(app).get('/api/register').set('X-API-Key', TEST_API_KEY);
+    assert.ok(!registerRes.body.risks.some((r) => r.sourceRiskId === riskId), 'no debe quedar una entrada huérfana en el Registro');
+
+    // Un riesgo del Registro SIN sourceRiskId (ej. "Duplicar como Plantilla") no debe verse
+    // afectado por borrar un riesgo de /api/risks distinto — la cascada es por sourceRiskId
+    // exacto, no un borrado general.
+    const standaloneName = 'Análisis FAIR sin vínculo (cascada HTTP)';
+    await request(app)
+        .put(`/api/register/${encodeURIComponent(standaloneName)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ale: 10000, cvar95: 15000, evaluationLevel: 'Riesgo Bajo' });
+    registerRes = await request(app).get('/api/register').set('X-API-Key', TEST_API_KEY);
+    assert.ok(registerRes.body.risks.some((r) => r.riskName === standaloneName), 'la entrada sin sourceRiskId debe sobrevivir intacta');
+
+    await request(app).delete(`/api/register/${encodeURIComponent(standaloneName)}`).set('X-API-Key', TEST_API_KEY);
+});

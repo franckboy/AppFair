@@ -117,6 +117,9 @@ class PostgresStore {
     async deleteRisk(id) {
         const all = await this._readAll();
         all.risks = (all.risks || []).filter((r) => r.id !== id);
+        // Cascada: ver la misma nota en jsonStore.js — evita entradas huérfanas del Registro
+        // sin depender de que quien llame a este método se acuerde de borrarlas aparte.
+        all.riskRegister = (all.riskRegister || []).filter((r) => r.sourceRiskId !== id);
         await this._writeAll(all);
         return all.risks;
     }

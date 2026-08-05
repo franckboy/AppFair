@@ -134,6 +134,12 @@ class JsonStore {
     async deleteRisk(id) {
         const all = this._readAll();
         all.risks = (all.risks || []).filter((r) => r.id !== id);
+        // Cascada: sin esto, una entrada del Registro vinculada a este riesgo (sourceRiskId)
+        // quedaba huérfana si quien llamaba a este método no se acordaba de borrarla aparte —
+        // antes esa garantía dependía por completo de la disciplina del frontend (ver
+        // App.FairRegister.deleteConcentratedRisk); ahora el propio store la impone siempre,
+        // sin importar quién o cómo se llame a este método.
+        all.riskRegister = (all.riskRegister || []).filter((r) => r.sourceRiskId !== id);
         this._writeAll(all);
         return all.risks;
     }
