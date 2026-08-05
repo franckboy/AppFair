@@ -61,12 +61,15 @@
             <h1 class="text-3xl font-bold text-center">Gestión de Riesgos Empresariales</h1>
             <p class="text-center text-blue-200 mt-1">Modelo Cuantitativo de Riesgos (FAIR)</p>
             <nav id="main-nav" class="mt-4 flex justify-center space-x-2 md:space-x-4 flex-wrap gap-y-2">
-                <!-- Primero en el nav a propósito: RIMS RA.1-2015 (5.2) pide entender la organización
-                     ANTES de apreciar sus riesgos — ver también el gate obligatorio de primer uso más
-                     abajo (#orgcontext-gate), que bloquea el resto de la app hasta completarlo una vez. -->
-                <button id="nav-org-context" class="nav-button nav-requires-boot" title="Entendimiento de la organización (RIMS RA.1-2015, 5.2): misión, apetito de riesgo, partes interesadas">
-                    <i class="fas fa-building mr-2"></i><span class="hidden md:inline">Contexto Organizacional</span>
-                </button>
+                <!-- Contexto Organizacional ya NO tiene su propio botón permanente en el nav — RIMS
+                     RA.1-2015 (5.2) pide entenderlo antes de apreciar riesgos, pero eso solo exige que
+                     se complete UNA VEZ (ver el gate obligatorio de primer uso más abajo,
+                     #orgcontext-gate, que bloquea el resto de la app hasta entonces y no depende de
+                     ningún botón). Después de esa primera vez, es exactamente el mismo tipo de dato
+                     que Criterios/Valores por Defecto/Catálogo de Activos — se configura una vez y
+                     rara vez se vuelve a tocar — así que su edición posterior vive ahí, agrupada bajo
+                     "Configuración" (ver App.ConfigMenu), en vez de ocupar un lugar permanente arriba
+                     para algo que casi nunca se vuelve a abrir. -->
                 <!-- Análisis Rápido (Triaje) y Análisis FAIR eran dos páginas separadas — en la
                      práctica casi todo riesgo triageado terminaba promovido a FAIR de todas formas,
                      así que duplicar la captura (nombre/descripción/activo) en dos formularios solo
@@ -83,11 +86,10 @@
                 <button id="nav-register" class="nav-button nav-requires-boot">
                     <i class="fas fa-th-large mr-2"></i><span class="hidden md:inline">Registro de Riesgos</span>
                 </button>
-                <!-- Criterios de Riesgo / Valores por Defecto / Catálogo de Activos: configúralos una
-                     vez y rara vez se vuelven a tocar — agrupados aquí para no competir visualmente
-                     con las 3 páginas de trabajo diario de arriba. Contexto Organizacional NO va aquí
-                     (ver nota arriba). -->
-                <button id="nav-config" class="nav-button nav-requires-boot" style="background-color:#374151;" title="Criterios de Riesgo, Valores por Defecto y Catálogo de Activos">
+                <!-- Contexto Organizacional / Criterios de Riesgo / Valores por Defecto / Catálogo de
+                     Activos: se configuran una vez y rara vez se vuelven a tocar — agrupados aquí
+                     para no competir visualmente con las 3 páginas de trabajo diario de arriba. -->
+                <button id="nav-config" class="nav-button nav-requires-boot" style="background-color:#374151;" title="Contexto Organizacional, Criterios de Riesgo, Valores por Defecto y Catálogo de Activos">
                     <i class="fas fa-cog mr-2"></i><span class="hidden md:inline">Configuración</span>
                 </button>
             </nav>
@@ -1160,10 +1162,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const booted = await this.Api.bootstrap();
             if (!booted) return; // Api.bootstrap ya mostró la pantalla de error (boot-gate)
 
-            // OrgContext.init() liga el botón de edición de siempre — se llama aquí (antes del
-            // gate) porque el botón del nav debe funcionar incluso si el usuario ya completó el
-            // contexto en una sesión anterior y nunca ve el gate.
-            this.OrgContext.init();
             if (!this.OrgContext.isComplete()) {
                 // RIMS RA.1-2015 (5.2): entender la organización es un paso previo obligatorio,
                 // no una configuración opcional más — bloquea el resto de la inicialización
@@ -1636,16 +1634,21 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // --- Menú "Configuración" ---
-    // Agrupa Criterios de Riesgo, Valores por Defecto y Catálogo de Activos — las 3 pantallas
-    // que se configuran una vez y rara vez se vuelven a tocar, para no competir visualmente en
-    // el nav con las páginas de trabajo diario. Contexto Organizacional NO va aquí a propósito:
-    // tiene su propio botón, primero en el nav (ver App.OrgContext y el gate de primer uso).
+    // Agrupa Contexto Organizacional, Criterios de Riesgo, Valores por Defecto y Catálogo de
+    // Activos — las 4 pantallas que se configuran una vez y rara vez se vuelven a tocar, para no
+    // competir visualmente en el nav con las páginas de trabajo diario. Contexto Organizacional
+    // SÍ vive aquí (a diferencia de un diseño anterior de esta misma sesión, que le daba su
+    // propio botón permanente en el nav) — el gate obligatorio de primer uso (#orgcontext-gate,
+    // ver App.OrgContext) no depende de ningún botón, así que separarlo del resto de
+    // "Configuración" solo agregaba un botón permanente para algo que, pasada la primera vez,
+    // casi nunca se vuelve a abrir.
     App.ConfigMenu = {
         init() {
             document.getElementById('nav-config').addEventListener('click', () => this.open());
         },
         open() {
             Modal.menu('Configuración', [
+                { label: 'Contexto Organizacional', icon: 'fa-building', onClick: () => App.OrgContext.openEditor() },
                 { label: 'Criterios de Riesgo', icon: 'fa-sliders-h', onClick: () => App.Criteria.openEditor() },
                 { label: 'Valores por Defecto', icon: 'fa-user-cog', onClick: () => App.OrgDefaults.openEditor() },
                 {
@@ -1973,10 +1976,6 @@ document.addEventListener('DOMContentLoaded', () => {
             partesInteresadas: '',
             entornoLegal: '',
             alcanceCadenaSuministro: '',
-        },
-
-        init() {
-            document.getElementById('nav-org-context').addEventListener('click', () => this.openEditor());
         },
 
         async save(newContext) {
