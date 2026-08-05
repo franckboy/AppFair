@@ -6,9 +6,10 @@ cuenta ni persiste en `localStorage` — todo el motor (perfiles, simulación Mo
 autocálculo, tratamiento de riesgos, Registro de Riesgos) vive en el backend, y el frontend es
 un cliente de su API REST.
 
-- `frontend/app_fair.html` — app de una sola página (el wizard de FAIR completo, 4 pasos),
-  autocontenida en HTML/CSS/JS sin build todavía (ver "Plan de migración" abajo). El
-  autocompletado de texto es 100% local; todo lo demás (Criterios de Riesgo, Valores por
+- `frontend/app_fair.html` — app de una sola página (el wizard de FAIR completo, 4 pasos). Su
+  lógica vive en `frontend/src/main.js` + `frontend/src/modules/*.js` (módulos ES reales, en
+  migración incremental — ver "Plan de migración" abajo); no hay build en producción todavía.
+  El autocompletado de texto es 100% local; todo lo demás (Criterios de Riesgo, Valores por
   Defecto, Contexto Organizacional, simulación FAIR, tratamiento y Registro de Riesgos) se
   guarda y calcula en el backend.
 - `backend/` — API REST en Express con el motor de cálculo como módulos puros de Node,
@@ -34,14 +35,20 @@ cd backend && npm install && npm start   # arranca en http://localhost:3000, imp
                                           # API key temporal si no defines API_KEY en .env
 ```
 
-Abre `frontend/app_fair.html` directamente en el navegador (no necesita servidor propio) y,
-en el botón **Conexión API** de la esquina superior, ingresa la URL del backend (por defecto
-`http://localhost:3000`) y la API key que te imprimió la consola al arrancar.
+```bash
+cd frontend && npm install && npm run dev   # servidor de Vite en http://localhost:5173
+```
 
-Alternativa para desarrollo activo — `cd frontend && npm install && npm run dev` levanta un
-servidor de Vite con recarga rápida (ver "Plan de migración" abajo); `npm run build` +
-`npm run preview` generan y sirven una build de producción local. Ninguno de los dos hace
-falta para simplemente usar la app.
+Abre la URL que imprime Vite y, en el botón **Conexión API** de la esquina superior, ingresa
+la URL del backend (por defecto `http://localhost:3000`) y la API key que te imprimió la
+consola al arrancar. `npm run build` + `npm run preview` generan y sirven una build de
+producción local, si la necesitas.
+
+**Nota**: `app_fair.html` ya no se puede abrir con doble clic directo desde el explorador de
+archivos (`file://`) — desde la Fase 3 del plan de migración, su lógica usa imports de ES
+modules reales, y los navegadores bloquean esos imports por CORS bajo `file://`. Necesita
+servirse por HTTP: `npm run dev` en local, o cualquier servidor estático (GitHub Pages en
+producción sigue funcionando igual, sin cambios — ver abajo).
 
 ## Cómo se desplegó (portafolio / demo)
 
@@ -95,7 +102,22 @@ framework nuevo por ahora.
   nota de ROI, el padding de la tabla de magnitud de pérdida y la lista de sensibilidad) no
   tenían estilo porque el bloque pegado nunca se había regenerado desde que se agregaron. El
   CSS sigue sirviéndose igual que antes (bloque estático en el HTML, sin build en producción).
-- **Fase 3 (pendiente)**: dividir el script en módulos ES.
+- **Fase 3a (hecha)**: dividir el script (antes ~4500 líneas en un solo `<script>` inline) en
+  módulos ES reales — `frontend/src/main.js` (punto de entrada, referenciado como
+  `<script type="module" src="./src/main.js">`) + `frontend/src/modules/*.js`. Se movieron los
+  15 módulos "hoja" (sin dependencias circulares complejas): `app-namespace` (el namespace
+  compartido `App`, al que cada módulo se auto-registra — así el código que todavía no se
+  movió sigue llamando `App.X.metodo()` sin reescribirse), `state`, `modal`, `utils`, `api`,
+  `navigation`, `criteria`, `autocomplete`, `risk-catalog`, `asset-catalog`, `ui-mode`,
+  `org-defaults`, `org-context`, `config-menu`, `fair-export`. `main.js` bajó de ~4500 a
+  ~2700 líneas. Producción sigue sin build (GitHub Pages sirve el árbol de módulos tal cual,
+  los imports relativos funcionan por HTTP sin necesitar bundler) — el único costo real es que
+  ya no se puede abrir `app_fair.html` por `file://` (ver arriba).
+- **Fase 3b (pendiente)**: los dos módulos más grandes e interconectados —
+  `FairWizard` (~1700 líneas) y `FairRegister` (~900 líneas, con dependencia circular entre
+  ambos) — más `FairAnalysis` (fachada delgada que los envuelve) y `QuickAnalysis` (depende de
+  `FairRegister`), que juntos son más de la mitad del código y se dejaron aparte a propósito
+  por su tamaño y riesgo.
 
 ## Licencia
 
