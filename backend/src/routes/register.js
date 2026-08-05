@@ -32,7 +32,7 @@ function createRegisterRouter(store) {
      * PUT /api/register/:riskName — guarda o actualiza un riesgo en el registro.
      * Se llama normalmente justo después de un /api/simulate exitoso, con su
      * resultado. Body esperado: { asset, owner, ale, cvar95, evaluationLevel,
-     * evaluationJustification, probExceedance, sensitivity, currency, securityPlan,
+     * evaluationJustification, probExceedance, sensitivity, securityPlan,
      * tef, vuln, lossMagnitudes, seed, riskType }
      */
     router.put('/:riskName', asyncHandler(async (req, res) => {
@@ -40,7 +40,7 @@ function createRegisterRouter(store) {
         const criteria = (await store.get('riskCriteria')) || defaultRiskCriteria;
         const {
             asset = '—', owner = '—', ale, cvar95, evaluationLevel, evaluationClasses, severity = null,
-            evaluationJustification, probExceedance = 0, sensitivity = [], currency = 'USD',
+            evaluationJustification, probExceedance = 0, sensitivity = [],
             securityPlan = '—',
             // tef/vuln/lossMagnitudes/seed son opcionales (un riesgo guardado antes de que
             // existiera esto no los trae) — se guardan tal cual para poder re-simular este
@@ -82,7 +82,10 @@ function createRegisterRouter(store) {
         const impactPercent = Math.max(0, Math.min(100, (ale / (criteria.aleCritico || 1)) * 100));
 
         const entry = {
-            id, riskName, asset, owner, currency, ale, cvar95, riskType,
+            // La app solo calcula en USD — no es un default, es fijo (ver la nota equivalente
+            // en assets.js). Eliminar la variable de moneda evita por construcción que el
+            // Pareto/mapa de calor terminen sumando/comparando riesgos en monedas distintas.
+            id, riskName, asset, owner, currency: 'USD', ale, cvar95, riskType,
             evaluationLevel, evaluationClasses, severity, evaluationJustification,
             impactPercent, probabilityPercent: probExceedance,
             sensitivity: sensitivity.slice(0, 5),

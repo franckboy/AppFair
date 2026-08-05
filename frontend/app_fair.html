@@ -283,10 +283,6 @@
                                         <span id="costoMaxImpacto-error" class="error-message hidden" aria-live="polite"></span>
                                     </div>
                                     <div class="input-group">
-                                        <label for="currencySelect">Moneda:</label>
-                                        <select id="currencySelect" class="form-select"></select>
-                                    </div>
-                                    <div class="input-group">
                                         <label for="rrMax">
                                             Apetito de Riesgo Máximo (%)
                                             <i class="fas fa-info-circle text-blue-500 cursor-pointer ml-1" title="Se prellena con el umbral 'Alto' de tus Criterios de Riesgo (menú superior), para no declarar tu apetito de riesgo dos veces. Puedes ajustarlo aquí si este riesgo en particular necesita un criterio distinto."></i>
@@ -966,10 +962,6 @@
                                 <input type="number" id="asset-valor" class="form-input" min="0" value="0" required>
                             </div>
                             <div class="input-group">
-                                <label for="asset-moneda">Moneda:</label>
-                                <select id="asset-moneda" class="form-select"></select>
-                            </div>
-                            <div class="input-group">
                                 <label for="asset-categoria">Categoría (opcional):</label>
                                 <input type="text" id="asset-categoria" class="form-input" placeholder="Ej. Inventario, Equipo, Inmueble">
                             </div>
@@ -1119,21 +1111,10 @@ document.addEventListener('DOMContentLoaded', () => {
         return factor.name;
     }
 
-    // Cada riesgo del Registro guarda su propia moneda (se puede analizar un riesgo en USD y
-    // otro en MXN sin querer, o a propósito) — sumar sus ALE crudos y ponerles un solo símbolo
-    // de moneda (Pareto, Interpretación General, Resumen Ejecutivo del PDF) sería sumar peras
-    // con manzanas y mostrar un número inventado. Esto detecta esa mezcla para poder avisar en
-    // vez de mostrar una "Exposición Total" mal calculada en silencio.
-    function registerHasMixedCurrencies(register) {
-        const currencies = new Set((register || []).map(r => r.currency || 'USD'));
-        return currencies.size > 1;
-    }
-
     // --- State Management ---
     const state = {
         config: {
             SIMULATION_ITERATIONS: 10000,
-            CURRENCY_SYMBOLS: { USD: '$', EUR: '€', MXN: '$' },
             // Criterios de Riesgo (Contexto — ISO 31000, cláusula 6.3.4).
             // Estos valores definen qué se considera un riesgo aceptable, alto o crítico
             // para esta organización. Son editables desde "Criterios de Riesgo" en el menú
@@ -1141,7 +1122,7 @@ document.addEventListener('DOMContentLoaded', () => {
             riskCriteria: {
                 // Bandas para clasificar el Riesgo Residual (%) del módulo de Análisis Rápido.
                 rrtBands: { medio: 25, alto: 50, critico: 75 },
-                // Pérdida Anual Esperada (ALE) del módulo FAIR, en la moneda seleccionada.
+                // Pérdida Anual Esperada (ALE) del módulo FAIR, en USD.
                 aleAceptable: 50000,
                 aleCritico: 250000,
                 // Umbral usado para "Probabilidad de superar $X/año" en los resultados FAIR.
@@ -2058,13 +2039,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }[severity] || '#7C3AED'); // severidad desconocida/faltante: el morado que ya se usaba antes
 
     // --- Valores por Defecto de la Organización ---
-    // Datos que casi no cambian entre un análisis y otro (moneda, nivel de defensa típico,
-    // dueño del riesgo, criterio de calidad de datos). Se capturan una sola vez aquí y se
+    // Datos que casi no cambian entre un análisis y otro (nivel de defensa típico, dueño del
+    // riesgo, criterio de calidad de datos). Se capturan una sola vez aquí y se
     // auto-rellenan en cada análisis nuevo, en vez de tener que volver a escribirlos.
     App.OrgDefaults = {
         // Valores de fábrica mientras App.Api.bootstrap() no haya traído los reales del backend.
         defaults: {
-            currency: 'USD',
             defenseKey: 'estandar',
             owner: '',
             dataSource: 'experto-sin-calibrar',
@@ -2079,8 +2059,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         openEditor() {
             const d = this.defaults;
-            const currencyOptions = Object.keys(state.config.CURRENCY_SYMBOLS)
-                .map(c => `<option value="${c}" ${c === d.currency ? 'selected' : ''}>${c}</option>`).join('');
             const defenseOptions = Object.entries(state.quick.defenseProfiles)
                 .map(([key, p]) => `<option value="${key}" ${key === d.defenseKey ? 'selected' : ''}>${p.name}</option>`).join('');
 
@@ -2090,10 +2068,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     para que no tengas que volver a escribirlos ni seleccionarlos cada vez. Se guardan en este navegador.
                 </p>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div class="input-group">
-                        <label for="orgdef-currency">Moneda por Defecto:</label>
-                        <select id="orgdef-currency" class="form-select">${currencyOptions}</select>
-                    </div>
                     <div class="input-group">
                         <label for="orgdef-defense">Nivel de Defensa Típico:</label>
                         <select id="orgdef-defense" class="form-select">${defenseOptions}</select>
@@ -2139,7 +2113,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 saveBtn.disabled = true;
                 try {
                     await this.save({
-                        currency: document.getElementById('orgdef-currency').value,
                         defenseKey: document.getElementById('orgdef-defense').value,
                         owner: document.getElementById('orgdef-owner').value,
                         dataConfidence: document.getElementById('orgdef-confidence').value,
@@ -2490,8 +2463,6 @@ document.addEventListener('DOMContentLoaded', () => {
         editingId: null,
 
         init() {
-            App.QuickAnalysis.populateDropdown(document.getElementById('asset-moneda'), Object.keys(state.config.CURRENCY_SYMBOLS).map(c => ({ name: c, value: c })));
-            document.getElementById('asset-moneda').value = App.OrgDefaults.defaults.currency || 'USD';
             document.getElementById('asset-form').addEventListener('submit', (e) => { e.preventDefault(); this.handleSubmit(); });
             document.getElementById('asset-form-cancel-btn').addEventListener('click', () => this.cancelEdit());
             // Antes había dos botones (uno en Análisis Rápido, otro en FAIR) — ahora es uno
@@ -2511,19 +2482,15 @@ document.addEventListener('DOMContentLoaded', () => {
             this.render();
         },
 
-        // Bug real corregido: antes se formateaba el valor de TODOS los activos con la moneda
-        // que estuviera seleccionada ahora mismo en Análisis Rápido, así que el mismo activo
-        // cambiaba de moneda con solo cambiar ese selector en otra pantalla. Cada activo trae
-        // su propia 'currency' (fijada al crearlo) y se formatea con esa, no con la global.
         render() {
             const assets = state.quick.assets || [];
             document.getElementById('assets-empty').classList.toggle('hidden', assets.length > 0);
-            const fmt = (v, currency) => new Intl.NumberFormat('en-US', { style: 'currency', currency: currency || 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v);
+            const fmt = (v) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v);
             const tbody = document.getElementById('assets-table-body');
             tbody.innerHTML = assets.map(a => `
                 <tr class="border-b">
                     <td class="py-2">${sanitizeHTML(a.nombre)}</td>
-                    <td>${fmt(a.valorEstimado, a.currency)}</td>
+                    <td>${fmt(a.valorEstimado)}</td>
                     <td>${sanitizeHTML(a.categoria || '—')}</td>
                     <td>${sanitizeHTML(a.ubicacion || '—')}</td>
                     <td class="text-right whitespace-nowrap">
@@ -2540,7 +2507,6 @@ document.addEventListener('DOMContentLoaded', () => {
             return {
                 nombre: document.getElementById('asset-nombre').value.trim(),
                 valorEstimado: getSafeNumber(document.getElementById('asset-valor')),
-                currency: document.getElementById('asset-moneda').value,
                 categoria: document.getElementById('asset-categoria').value.trim(),
                 ubicacion: document.getElementById('asset-ubicacion').value.trim(),
                 notas: document.getElementById('asset-notas').value.trim(),
@@ -2578,7 +2544,6 @@ document.addEventListener('DOMContentLoaded', () => {
             this.editingId = id;
             document.getElementById('asset-nombre').value = asset.nombre;
             document.getElementById('asset-valor').value = asset.valorEstimado;
-            document.getElementById('asset-moneda').value = asset.currency || 'USD';
             document.getElementById('asset-categoria').value = asset.categoria || '';
             document.getElementById('asset-ubicacion').value = asset.ubicacion || '';
             document.getElementById('asset-notas').value = asset.notas || '';
@@ -2591,7 +2556,6 @@ document.addEventListener('DOMContentLoaded', () => {
         cancelEdit() {
             this.editingId = null;
             document.getElementById('asset-form').reset();
-            document.getElementById('asset-moneda').value = App.OrgDefaults.defaults.currency || 'USD';
             document.getElementById('asset-form-error').classList.add('hidden');
             document.getElementById('asset-form-title').textContent = 'Agregar Activo';
             document.getElementById('asset-form-submit-btn').textContent = 'Agregar Activo';
@@ -2620,12 +2584,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 showToast('Aún no hay activos en el catálogo. Agrega uno primero en "Catálogo de Activos".');
                 return;
             }
-            // Moneda del análisis actual (el único selector de moneda que existe en la app,
-            // en Análisis Rápido — FAIR no tiene uno propio, hereda el que venga de ahí). Se usa
-            // para avisar si el activo elegido está en una moneda distinta, no para convertirlo:
-            // no hay tipos de cambio en la app, así que "convertir" sería inventar un número.
-            const activeCurrency = state.quickUI.domElements.inputs.currencySelect.value || 'USD';
-            const fmt = (v, currency) => new Intl.NumberFormat('en-US', { style: 'currency', currency: currency || 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v);
+            const fmt = (v) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v);
 
             Modal.title.textContent = 'Catálogo de Activos';
             Modal.body.innerHTML = `
@@ -2646,17 +2605,14 @@ document.addEventListener('DOMContentLoaded', () => {
             assets.forEach(a => {
                 const opt = document.createElement('option');
                 opt.value = a.id;
-                opt.textContent = `${a.nombre} — ${fmt(a.valorEstimado, a.currency)}`;
+                opt.textContent = `${a.nombre} — ${fmt(a.valorEstimado)}`;
                 select.appendChild(opt);
             });
             const currentAsset = () => assets.find(a => a.id === select.value);
             const updateInfo = () => {
                 const a = currentAsset();
                 if (!a) { infoEl.innerHTML = ''; return; }
-                const mismatchWarning = (a.currency || 'USD') !== activeCurrency
-                    ? `<p class="text-red-600 mt-1">⚠️ Este activo está registrado en ${a.currency || 'USD'}, pero tu análisis actual usa ${activeCurrency}. La app no convierte monedas — si lo usas, el número se aplicará tal cual, en ${activeCurrency}.</p>`
-                    : '';
-                infoEl.innerHTML = `<p><strong>Valor Estimado: ${fmt(a.valorEstimado, a.currency)}</strong></p>${a.categoria ? `<p class="mt-1">Categoría: ${sanitizeHTML(a.categoria)}</p>` : ''}${a.ubicacion ? `<p>Ubicación: ${sanitizeHTML(a.ubicacion)}</p>` : ''}${mismatchWarning}`;
+                infoEl.innerHTML = `<p><strong>Valor Estimado: ${fmt(a.valorEstimado)}</strong></p>${a.categoria ? `<p class="mt-1">Categoría: ${sanitizeHTML(a.categoria)}</p>` : ''}${a.ubicacion ? `<p>Ubicación: ${sanitizeHTML(a.ubicacion)}</p>` : ''}`;
             };
             select.addEventListener('change', updateInfo);
             updateInfo();
@@ -2676,8 +2632,6 @@ document.addEventListener('DOMContentLoaded', () => {
         // ninguna relación con el activo real.
         applyToQuickAnalysis(asset) {
             const dom = state.quickUI.domElements;
-            const activeCurrency = dom.inputs.currencySelect.value || 'USD';
-            const assetCurrency = asset.currency || 'USD';
             state.quick.selectedAssetRef = { id: asset.id };
             const assetInput = document.getElementById('fair-asset');
             assetInput.value = asset.nombre;
@@ -2685,10 +2639,8 @@ document.addEventListener('DOMContentLoaded', () => {
             dom.inputs.costoMinImpacto.value = asset.valorEstimado;
             dom.inputs.costoMaxImpacto.value = asset.valorEstimado;
             dom.inputs.costoMinImpacto.dispatchEvent(new Event('input'));
-            const fmtAsset = new Intl.NumberFormat('en-US', { style: 'currency', currency: assetCurrency, minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(asset.valorEstimado);
-            showToast(assetCurrency === activeCurrency
-                ? `Activo cargado — Costo Mínimo/Máximo de la Vista Rápida se prellenaron con su valor registrado (${fmtAsset}). Ajústalos si tu impacto real no es el 100% del activo.`
-                : `⚠️ Activo cargado, pero su valor (${fmtAsset}) está en otra moneda que tu análisis (${activeCurrency}) — se prellenó el número tal cual, SIN convertir. Revísalo antes de continuar.`);
+            const fmtAsset = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(asset.valorEstimado);
+            showToast(`Activo cargado — Costo Mínimo/Máximo de la Vista Rápida se prellenaron con su valor registrado (${fmtAsset}). Ajústalos si tu impacto real no es el 100% del activo.`);
         },
     };
 
@@ -2702,10 +2654,8 @@ document.addEventListener('DOMContentLoaded', () => {
             this.populateDropdown(state.quickUI.domElements.inputs.profileSelect, state.quick.riskProfiles);
             this.populateDropdown(state.quickUI.domElements.inputs.attackerProfileSelect, state.quick.attackerProfiles);
             this.populateDropdown(state.quickUI.domElements.inputs.defenseProfileSelect, state.quick.defenseProfiles);
-            this.populateDropdown(state.quickUI.domElements.inputs.currencySelect, Object.keys(state.config.CURRENCY_SYMBOLS).map(c => ({ name: c, value: c })));
 
             // Valores por Defecto de la organización, para no tener que re-seleccionarlos cada vez
-            state.quickUI.domElements.inputs.currencySelect.value = App.OrgDefaults.defaults.currency;
             state.quickUI.domElements.inputs.defenseProfileSelect.value = App.OrgDefaults.defaults.defenseKey;
             // El Apetito de Riesgo Máximo ya no es un 25% fijo sin relación con nada — toma su
             // valor inicial del umbral "Alto" de tus Criterios de Riesgo (Contexto ISO 31000),
@@ -2722,7 +2672,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     profileSelect: document.getElementById('profileSelect'),  aro: document.getElementById('aro'),
                     vulnerabilidad: document.getElementById('vulnerabilidad'), impacto: document.getElementById('impacto'),
                     costoMinImpacto: document.getElementById('costoMinImpacto'), costoMaxImpacto: document.getElementById('costoMaxImpacto'),
-                    currencySelect: document.getElementById('currencySelect'), rrMax: document.getElementById('rrMax'),
+                    rrMax: document.getElementById('rrMax'),
                     toggleDeliberateThreat: document.getElementById('toggleDeliberateThreat'),
                     attackerProfileSelect: document.getElementById('attackerProfileSelect'), defenseProfileSelect: document.getElementById('defenseProfileSelect'),
                     deliberateThreatPonderation: document.getElementById('deliberateThreatPonderation'),
@@ -2862,7 +2812,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ARO_raw: getSafeNumber(dom.inputs.aro),
                 costoMinImpacto: getSafeNumber(dom.inputs.costoMinImpacto),
                 costoMaxImpacto: getSafeNumber(dom.inputs.costoMaxImpacto),
-                currency: dom.inputs.currencySelect.value,
+                currency: 'USD',
                 rrMax: getSafeNumber(dom.inputs.rrMax),
                 isDeliberate: dom.inputs.toggleDeliberateThreat.checked,
                 deliberateThreatPonderation: getSafeNumber(dom.inputs.deliberateThreatPonderation),
@@ -2916,11 +2866,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         updateUI(data) {
             const dom = state.quickUI.domElements;
-            const formatCurrency = (value) => {
-                // Fallback to USD if currency is invalid or empty
-                const currencyCode = state.config.CURRENCY_SYMBOLS[data.currency] ? data.currency : 'USD';
-                return new Intl.NumberFormat('en-US', { style: 'currency', currency: currencyCode }).format(value);
-            }
+            const formatCurrency = (value) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
             const formatPercent = (value) => `${value.toFixed(2)}%`;
 
             dom.outputs.vulnerabilidadValue.textContent = formatPercent(data.VI_raw);
@@ -3298,7 +3244,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 name: data.riskName,
                 ri: `${(data.RI * 100).toFixed(2)}%`,
                 rrt: `${(data.RRt * 100).toFixed(2)}%`,
-                ale: new Intl.NumberFormat('en-US', { style: 'currency', currency: data.currency }).format(data.ALE),
+                ale: new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(data.ALE),
                 date: new Date().toLocaleDateString('es-MX'),
                 fullData: { ...data }
             };
@@ -3343,7 +3289,6 @@ document.addEventListener('DOMContentLoaded', () => {
             dom.inputs.impacto.value = data.II_raw;
             dom.inputs.costoMinImpacto.value = data.costoMinImpacto;
             dom.inputs.costoMaxImpacto.value = data.costoMaxImpacto;
-            dom.inputs.currencySelect.value = data.currency;
             dom.inputs.rrMax.value = data.rrMax;
             dom.inputs.toggleDeliberateThreat.checked = data.isDeliberate;
             dom.inputs.deliberateThreatPonderation.value = data.deliberateThreatPonderation;
@@ -3922,9 +3867,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (entry.securityPlan && entry.securityPlan !== '—') document.getElementById('fair-security-plan').value = entry.securityPlan;
             document.getElementById('fair-risk-type').value = entry.riskType || 'amenaza';
             this.toggleRiskTypeLabels();
-            // La moneda es un solo selector global (vive en Análisis Rápido, no hay uno propio
-            // en FAIR) — se ajusta a la de este riesgo para que los montos se interpreten bien.
-            if (entry.currency) state.quickUI.domElements.inputs.currencySelect.value = entry.currency;
 
             // El Registro no guarda todavía qué Perfil de Atacante/Defensa se usó (solo el
             // resultado: los rangos de TEF/Vulnerabilidad) — el selector se queda en su valor
@@ -3972,7 +3914,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // queda registrado. "Dejar todo en Costos de Respuesta" conserva el comportamiento
         // anterior para quien no quiera detenerse a repartir.
         openLossRedistributionModal(data, avgCost) {
-            const currency = state.quickUI.domElements.inputs.currencySelect.value;
+            const currency = 'USD';
             const fmt = (v) => new Intl.NumberFormat('en-US', { style: 'currency', currency, minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v);
             const total = { min: data.costoMinImpacto, mode: avgCost, max: data.costoMaxImpacto };
             const keys = LOSS_FORMS_KEYS;
@@ -4239,7 +4181,7 @@ document.addEventListener('DOMContentLoaded', () => {
         refreshLossMagnitudeCompactDisplay(key) {
             const summaryEl = document.getElementById(`lm-${key}-compact-summary`);
             if (!summaryEl) return;
-            const currency = state.quickUI.domElements.inputs.currencySelect.value;
+            const currency = 'USD';
             const fmt = (v) => new Intl.NumberFormat('en-US', { style: 'currency', currency, minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v);
             const min = fmt(getSafeNumber(document.getElementById(`lm-${key}-min`)));
             const max = fmt(getSafeNumber(document.getElementById(`lm-${key}-max`)));
@@ -4489,7 +4431,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 };
             });
             const riskType = document.getElementById('fair-risk-type').value;
-            const currency = state.quickUI.domElements.inputs.currencySelect.value;
+            const currency = 'USD';
 
             try {
                 const result = await App.Api.request('/api/simulate', {
@@ -4568,7 +4510,7 @@ document.addEventListener('DOMContentLoaded', () => {
             roiContent.classList.remove('hidden');
             opportunityNote.classList.add('hidden');
 
-            const currency = state.quickUI.domElements.inputs.currencySelect.value;
+            const currency = 'USD';
             const formatCurrency = (value) => new Intl.NumberFormat('en-US', { style: 'currency', currency: currency }).format(value);
             const aleActual = state.fair.simulatedALE || 0;
             document.getElementById('fair-treat-ale-base').textContent = formatCurrency(aleActual);
@@ -4665,8 +4607,8 @@ document.addEventListener('DOMContentLoaded', () => {
             state.fair.lastEvaluation = evaluation;
             state.fair.lastSeed = result.usedSeed;
 
-            const currency = result.currency || state.quickUI.domElements.inputs.currencySelect.value;
-            const currencySymbol = state.config.CURRENCY_SYMBOLS[currency] || '$';
+            const currency = 'USD';
+            const currencySymbol = '$';
             const formatCurrency = (value) => new Intl.NumberFormat('en-US', { style: 'currency', currency: currency, minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
 
             document.getElementById('ale-result').textContent = formatCurrency(summary.average);
@@ -4852,7 +4794,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         simulatedALE: state.fair.simulatedALE,
                         chartLabels: chart.data.labels,
                         chartData: chart.data.datasets[0].data,
-                        currency: state.quickUI.domElements.inputs.currencySelect.value,
+                        currency: 'USD',
                         evaluation: state.fair.lastEvaluation || null,
                         sensitivity: state.fair.lastSensitivity || null,
                         annualLosses: state.fair.lastAnnualLosses || null,
@@ -5158,7 +5100,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const riskName = document.getElementById('fair-riskName').value.trim();
             if (!riskName) return;
 
-            const currency = state.quickUI.domElements.inputs.currencySelect.value;
+            const currency = 'USD';
             const readRange = (prefix) => ({
                 min: getSafeNumber(document.getElementById(`${prefix}-min`)),
                 mode: getSafeNumber(document.getElementById(`${prefix}-mode`)),
@@ -5394,8 +5336,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Evaluación, por FAIR) — ningún dato se pierde al fusionar las dos tablas que existían
         // antes por separado.
         renderConcentratedTable(list) {
-            const currencyDefault = state.quickUI.domElements.inputs.currencySelect.value || 'USD';
-            const fmt = (v, currency) => new Intl.NumberFormat('en-US', { style: 'currency', currency: currency || currencyDefault, minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v);
+            const fmt = (v) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v);
             const formatDate = (d) => d ? new Date(d).toLocaleDateString('es-MX', { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
             const bodies = ['quick-concentrated-table-body']
                 .map(id => document.getElementById(id))
@@ -5418,8 +5359,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     ? `<span class="inline-block px-2 py-1 text-xs font-semibold rounded-full ${item.quickCategory.color} ${item.quickCategory.bgColor}">${item.quickCategory.name}</span>`
                     : '—';
 
-                const impactCell = item.fairEntry ? fmt(item.fairEntry.ale, item.fairEntry.currency) : (item.quickAle || '—');
-                const cvarCell = item.fairEntry ? fmt(item.fairEntry.cvar95, item.fairEntry.currency) : '—';
+                const impactCell = item.fairEntry ? fmt(item.fairEntry.ale) : (item.quickAle || '—');
+                const cvarCell = item.fairEntry ? fmt(item.fairEntry.cvar95) : '—';
                 const dateCell = formatDate(item.fairEntry ? item.fairEntry.date : item.createdAt);
 
                 // Solo tiene sentido seleccionar (para "Analizar Selección con FAIR") un riesgo
@@ -5529,18 +5470,10 @@ document.addEventListener('DOMContentLoaded', () => {
         renderParetoChart() {
             const pareto = state.fair.registerPareto;
             if (!pareto) return;
-            const currency = state.quickUI.domElements.inputs.currencySelect.value;
-            const formatCurrency = (value) => new Intl.NumberFormat('en-US', { style: 'currency', currency: currency, minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
+            const formatCurrency = (value) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
 
-            // `pareto` ya viene del backend excluyendo 'oportunidad' (su ale es un beneficio, no
-            // una pérdida) — el chequeo de monedas mixtas tiene que mirar ese mismo subconjunto,
-            // si no una oportunidad guardada en otra moneda dispara "no se muestra: distintas
-            // monedas" aunque las amenazas (lo único que pareto.totalExposure realmente suma)
-            // estén todas en la misma moneda y el total sí sea perfectamente calculable.
-            const mixedCurrencies = registerHasMixedCurrencies((state.fair.riskRegister || []).filter(r => r.riskType !== 'oportunidad'));
-            document.getElementById('fair-pareto-summary').textContent = mixedCurrencies
-                ? `${pareto.riskCountFor80Percent} de ${pareto.totalRiskCount} riesgo(s) concentran el 80% de tu exposición — el total en dinero no se muestra porque tienes riesgos guardados en distintas monedas (sumarlos daría un número sin sentido). Prioriza el tratamiento en esos primero.`
-                : `${pareto.riskCountFor80Percent} de ${pareto.totalRiskCount} riesgo(s) concentran el 80% de tu exposición total (${formatCurrency(pareto.totalExposure)}/año). Prioriza el tratamiento en esos primero.`;
+            document.getElementById('fair-pareto-summary').textContent =
+                `${pareto.riskCountFor80Percent} de ${pareto.totalRiskCount} riesgo(s) concentran el 80% de tu exposición total (${formatCurrency(pareto.totalExposure)}/año). Prioriza el tratamiento en esos primero.`;
 
             const canvas = document.getElementById('fair-pareto-chart');
             if (state.fair.paretoChart) state.fair.paretoChart.destroy();
@@ -5633,7 +5566,6 @@ document.addEventListener('DOMContentLoaded', () => {
                         tef: risk.tef,
                         vuln: risk.vuln,
                         lossMagnitudes: risk.lossMagnitudes,
-                        currency: risk.currency,
                         // Sin esto, una 'oportunidad' guardada se re-simulaba asumiendo
                         // 'amenaza' (el default del backend) — el `evaluation` que devuelve la
                         // respuesta quedaría mal calculado (aunque esta vista no lo muestre hoy).
@@ -5648,8 +5580,7 @@ document.addEventListener('DOMContentLoaded', () => {
             loading.classList.add('hidden');
             body.classList.remove('hidden');
 
-            const currencySymbol = state.config.CURRENCY_SYMBOLS[risk.currency] || '$';
-            const formatCurrency = (v) => `${currencySymbol}${Math.round(v).toLocaleString('en-US')}`;
+            const formatCurrency = (v) => `$${Math.round(v).toLocaleString('en-US')}`;
             document.getElementById('fair-register-sim-ale').textContent = formatCurrency(result.summary.average);
             document.getElementById('fair-register-sim-median').textContent = formatCurrency(result.summary.median);
             document.getElementById('fair-register-sim-p90').textContent = formatCurrency(result.summary.p90);
@@ -5688,7 +5619,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     responsive: true, maintainAspectRatio: false,
                     scales: {
                         y: { beginAtZero: true, title: { display: true, text: 'Nº de Simulaciones' } },
-                        x: { title: { display: true, text: `Pérdida Anual Estimada (miles de ${risk.currency})` }, ticks: { autoSkip: true, maxRotation: 45, minRotation: 45 } },
+                        x: { title: { display: true, text: 'Pérdida Anual Estimada (miles de USD)' }, ticks: { autoSkip: true, maxRotation: 45, minRotation: 45 } },
                     },
                 },
             });
@@ -5700,10 +5631,8 @@ document.addEventListener('DOMContentLoaded', () => {
         renderPortfolioInterpretation(register) {
             const container = document.getElementById('fair-register-interpretation');
             // Antes esta función solo se llamaba cuando el Registro ya tenía al menos un riesgo
-            // simulado (el guardián de arriba lo garantizaba). Ahora la tabla concentrada puede
-            // mostrarse con riesgos que aún están solo en Análisis Rápido (register vacío) — sin
-            // este guardián, `(threatRegister[0] || register[0]).currency` tronaba con "Cannot
-            // read properties of undefined" en cuanto register fuera [].
+            // simulado. Ahora la tabla concentrada puede mostrarse con riesgos que aún están
+            // solo en Vista Rápida (register vacío) — este guardián cubre ese caso.
             if (!register || register.length === 0) {
                 container.innerHTML = `<p class="description-text">Aún no tienes ningún riesgo analizado con FAIR — esta interpretación aparece en cuanto corras tu primera simulación.</p>`;
                 return;
@@ -5724,14 +5653,7 @@ document.addEventListener('DOMContentLoaded', () => {
             threatRegister.forEach(r => {
                 if (r.severity && bySeverity[r.severity] !== undefined) bySeverity[r.severity]++;
             });
-            // El símbolo tiene que venir de una amenaza (lo único que pareto.totalExposure suma)
-            // — si el primer registro guardado fuera una oportunidad en otra moneda, se mostraba
-            // el símbolo equivocado junto al total de las amenazas.
-            const currencySymbol = state.config.CURRENCY_SYMBOLS[(threatRegister[0] || register[0]).currency] || '$';
-            const formatCurrency = (v) => `${currencySymbol}${Math.round(v).toLocaleString('en-US')}`;
-            // Mismo criterio que renderParetoChart: el chequeo de monedas mixtas debe mirar solo
-            // las amenazas, que es lo único que pareto.totalExposure realmente suma.
-            const mixedCurrencies = registerHasMixedCurrencies(threatRegister);
+            const formatCurrency = (v) => `$${Math.round(v).toLocaleString('en-US')}`;
 
             const parts = [];
             if (threatRegister.length > 0) {
@@ -5744,9 +5666,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (pareto && pareto.risks.length > 0) {
                 const topNames = pareto.risks.slice(0, pareto.riskCountFor80Percent).map(r => sanitizeHTML(r.riskName));
-                const exposicionTexto = mixedCurrencies
-                    ? 'el 80% de tu exposición total (el monto no se muestra: tienes riesgos guardados en distintas monedas, sumarlos daría un número sin sentido)'
-                    : `el 80% de tu exposición total (${formatCurrency(pareto.totalExposure)}/año)`;
+                const exposicionTexto = `el 80% de tu exposición total (${formatCurrency(pareto.totalExposure)}/año)`;
                 parts.push(`<strong>${pareto.riskCountFor80Percent} de ${pareto.totalRiskCount}</strong> riesgo${pareto.riskCountFor80Percent === 1 ? '' : 's'} (${topNames.join(', ')}) concentra${pareto.riskCountFor80Percent === 1 ? '' : 'n'} ${exposicionTexto} — prioriza el tratamiento ahí antes que en los demás.`);
             }
 
@@ -5769,7 +5689,7 @@ document.addEventListener('DOMContentLoaded', () => {
     App.FairExport = {
         
         exportFairReport() {
-            const currency = state.quickUI.domElements.inputs.currencySelect.value;
+            const currency = 'USD';
             const formatCurrency = (value) => new Intl.NumberFormat('en-US', { style: 'currency', currency: currency, minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
 
             const riskName = sanitizeHTML(document.getElementById('fair-riskName').value) || 'Riesgo sin nombre';
@@ -5948,8 +5868,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 Modal.alert('Aún no tienes ningún riesgo guardado en el Registro.', 'Nada que exportar');
                 return;
             }
-            const currency = state.quickUI.domElements.inputs.currencySelect.value;
-            const formatCurrency = (value) => new Intl.NumberFormat('en-US', { style: 'currency', currency: currency, minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
+            const formatCurrency = (value) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
             const ctx = App.OrgContext.context;
 
             // 'oportunidad' se excluye de la exposición total y del mapa de calor — su "ale" es
@@ -5959,10 +5878,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const opportunityCount = register.length - threatRegister.length;
             const totalALE = threatRegister.reduce((sum, r) => sum + r.ale, 0);
             const criticos = threatRegister.filter(r => r.evaluationLevel.includes('Crítico')).length;
-            const mixedCurrencies = registerHasMixedCurrencies(threatRegister);
-            const exposicionTotalTexto = mixedCurrencies
-                ? 'No se muestra: hay riesgos guardados en distintas monedas (sumarlos daría un número sin sentido)'
-                : formatCurrency(totalALE);
+            const exposicionTotalTexto = formatCurrency(totalALE);
 
             const heatmapImg = document.getElementById('fair-register-chart').toDataURL('image/png');
             const paretoImg = document.getElementById('fair-pareto-chart').toDataURL('image/png');
@@ -5992,9 +5908,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>`;
             }
 
-            // El backend guarda ale/cvar95 como números crudos + la moneda de cada riesgo (no
-            // strings ya formateados) — el formateo es presentación, se hace aquí por entrada.
-            const formatEntryCurrency = (r, value) => new Intl.NumberFormat('en-US', { style: 'currency', currency: r.currency || 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
+            // El backend guarda ale/cvar95 como números crudos (no strings ya formateados) — el
+            // formateo es presentación, se hace aquí por entrada.
+            const formatEntryCurrency = (value) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
             const formatEntryDate = (r) => new Date(r.date).toLocaleDateString('es-MX', { year: 'numeric', month: 'short', day: 'numeric' });
 
             // Mismo badge de color que ya se ve en pantalla en la tabla del Registro
@@ -6002,7 +5918,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // el PDF solo mostraba el texto de evaluationLevel plano, sin el color.
             const evalBadgeHTML = (r) => `<span class="px-2 py-1 rounded text-xs border-l-4 ${r.evaluationClasses}">${r.evaluationLevel}</span>`;
             const riskRowsHTML = register.map(r =>
-                `<tr><td>${sanitizeHTML(r.riskName)}</td><td>${sanitizeHTML(r.asset)}</td><td>${sanitizeHTML(r.owner)}</td><td>${formatEntryCurrency(r, r.ale)}</td><td>${formatEntryCurrency(r, r.cvar95)}</td><td>${evalBadgeHTML(r)}</td><td>${formatEntryDate(r)}</td></tr>`
+                `<tr><td>${sanitizeHTML(r.riskName)}</td><td>${sanitizeHTML(r.asset)}</td><td>${sanitizeHTML(r.owner)}</td><td>${formatEntryCurrency(r.ale)}</td><td>${formatEntryCurrency(r.cvar95)}</td><td>${evalBadgeHTML(r)}</td><td>${formatEntryDate(r)}</td></tr>`
             ).join('');
 
             const riskCardsHTML = register.map((r, i) => `
@@ -6011,8 +5927,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     <table>
                         <tr><td><strong>Activo</strong></td><td>${sanitizeHTML(r.asset)}</td></tr>
                         <tr><td><strong>Dueño del Riesgo</strong></td><td>${sanitizeHTML(r.owner)}</td></tr>
-                        <tr><td><strong>Pérdida Anual Esperada (ALE)</strong></td><td>${formatEntryCurrency(r, r.ale)}</td></tr>
-                        <tr><td><strong>CVaR 95%</strong></td><td>${formatEntryCurrency(r, r.cvar95)}</td></tr>
+                        <tr><td><strong>Pérdida Anual Esperada (ALE)</strong></td><td>${formatEntryCurrency(r.ale)}</td></tr>
+                        <tr><td><strong>CVaR 95%</strong></td><td>${formatEntryCurrency(r.cvar95)}</td></tr>
                         <tr><td><strong>Evaluación</strong></td><td>${evalBadgeHTML(r)}</td></tr>
                         <tr><td><strong>Justificación</strong></td><td>${sanitizeHTML(r.evaluationJustification || '')}</td></tr>
                         <tr><td><strong>Variable más influyente</strong></td><td>${r.sensitivity && r.sensitivity[0] ? sanitizeHTML(r.sensitivity[0].name) : '—'}</td></tr>
