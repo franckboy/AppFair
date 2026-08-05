@@ -892,6 +892,17 @@ document.addEventListener('DOMContentLoaded', () => {
         simple: { min: 'En el mejor caso (calculado)', mode: '¿Cuánto costaría en el caso típico?', max: 'En el peor caso (calculado)' },
     };
 
+    // Mismos colores que App.QuickAnalysis.getRiskCategory (Bajo/Medio/Alto/Crítico) — se usan
+    // para la columna "Categoría" de la tabla concentrada cuando el riesgo ya tiene un
+    // resultado FAIR, mapeando la severidad que el backend ya calculó (evaluateFairThreat) en
+    // vez de re-derivar una segunda clasificación que podría no coincidir con "Evaluación".
+    const SEVERITY_TO_CATEGORY = {
+        bajo: { name: 'Bajo', color: 'text-green-800', bgColor: 'bg-green-100' },
+        medio: { name: 'Medio', color: 'text-yellow-800', bgColor: 'bg-yellow-100' },
+        alto: { name: 'Alto', color: 'text-orange-800', bgColor: 'bg-orange-100' },
+        critico: { name: 'Crítico', color: 'text-red-800', bgColor: 'bg-red-100' },
+    };
+
     // Nombres cortos para el Análisis de Sensibilidad (Paso 4 y Registro consolidado) — el
     // backend manda 'key' (ver backend/src/lib/simulation.js) además de 'name' (el nombre
     // técnico, usado tal cual en Modo Técnico) precisamente para que esto no tenga que
@@ -4240,9 +4251,39 @@ document.addEventListener('DOMContentLoaded', () => {
         // La numeración (#) es la posición en esta lista ordenada por fecha de creación — se
         // recalcula cada vez que se dibuja, así que si se borra un riesgo, el siguiente toma su
         // lugar en vez de dejar un hueco.
+        // Deriva un equivalente de Riesgo Inherente/Residual (%) y Categoría a partir de un
+        // resultado FAIR — el motor RI/RRt (ARO×Vulnerabilidad×Impacto) de la vieja Vista
+        // Rápida ya no existe, así que estas columnas se calculan a partir del ALE ya simulado:
+        //   Residual (%) = ALE ÷ Criterio ALE Crítico × 100 (Configuración → Criterios de Riesgo).
+        //   Inherente (%) = lo mismo pero con la Vulnerabilidad al 100% (sin controles) — una
+        //     aproximación razonable, ya que el ALE es proporcional a la Vulnerabilidad.
+        //   Categoría = la MISMA severidad que ya calculó el backend (evaluateFairThreat, ver
+        //     evaluationLevel/severity guardados en el Registro) — nunca una segunda escala que
+        //     pueda contradecir la columna "Evaluación".
+        // Solo aplica a riesgos tipo Amenaza: uno de tipo Oportunidad es un beneficio esperado,
+        // no una pérdida, y no tiene un "Riesgo Inherente/Residual" con el mismo sentido.
+        computeFairRiskPercents(entry) {
+            if (!entry || entry.riskType === 'oportunidad') return null;
+            const aleCritico = state.config.riskCriteria && state.config.riskCriteria.aleCritico;
+            if (!aleCritico || aleCritico <= 0 || typeof entry.ale !== 'number') return null;
+
+            const residualPercent = (entry.ale / aleCritico) * 100;
+            const vulnMode = entry.vuln && entry.vuln.mode;
+            const inherentPercent = (vulnMode && vulnMode > 0)
+                ? (entry.ale * (100 / vulnMode) / aleCritico) * 100
+                : null;
+
+            return {
+                residualPercent: `${residualPercent.toFixed(1)}%`,
+                inherentPercent: inherentPercent != null ? `${inherentPercent.toFixed(1)}%` : null,
+                category: SEVERITY_TO_CATEGORY[entry.severity] || null,
+            };
+        },
+
         buildConcentratedList(risks, register) {
             const merged = risks.map(risk => {
                 const fairEntry = register.find(r => r.sourceRiskId === risk.id) || null;
+                const fairPercents = this.computeFairRiskPercents(fairEntry);
                 return {
                     id: risk.id,
                     // Identificador estable para "Análisis Profundo" (ver renderConcentratedTable):
@@ -4256,15 +4297,16 @@ document.addEventListener('DOMContentLoaded', () => {
                     riskName: (fairEntry && fairEntry.riskName) || risk.name,
                     stage: fairEntry ? 'fair' : 'triage',
                     createdAt: risk.createdAt || risk.date,
-                    quickCategory: risk.fullData && typeof risk.fullData.RRt === 'number'
-                        ? App.QuickAnalysis.getRiskCategory(risk.fullData.RRt * 100, risk.fullData.rrMax)
-                        : null,
+                    // Prioridad: equivalente derivado de FAIR si ya hay simulación; si no, el
+                    // dato histórico de la vieja Vista Rápida (riesgos guardados antes de este
+                    // cambio); si tampoco hay eso, sin clasificación todavía.
+                    quickCategory: fairPercents ? fairPercents.category
+                        : (risk.fullData && typeof risk.fullData.RRt === 'number'
+                            ? App.QuickAnalysis.getRiskCategory(risk.fullData.RRt * 100, risk.fullData.rrMax)
+                            : null),
                     quickAle: risk.ale || null,
-                    // Riesgo Inherente/Residual (%) — solo existen en riesgos guardados con la
-                    // vieja Vista Rápida (ya eliminada, ver App.QuickAnalysis). Un riesgo nuevo
-                    // (o armado solo en FAIR) no tiene equivalente en esta escala y queda como '—'.
-                    riesgoInherente: risk.ri || null,
-                    riesgoResidual: risk.rrt || null,
+                    riesgoInherente: fairPercents ? fairPercents.inherentPercent : (risk.ri || null),
+                    riesgoResidual: fairPercents ? fairPercents.residualPercent : (risk.rrt || null),
                     asset: (fairEntry && fairEntry.asset) || (risk.fullData && risk.fullData.asset) || '—',
                     fairEntry,
                     // Para el botón "Analizar con FAIR" en filas de triage — mismo objeto que
@@ -4279,16 +4321,17 @@ document.addEventListener('DOMContentLoaded', () => {
             const linkedRiskIds = new Set(merged.map(item => item.id));
             register.forEach(reg => {
                 if (!reg.sourceRiskId || !linkedRiskIds.has(reg.sourceRiskId)) {
+                    const fairPercents = this.computeFairRiskPercents(reg);
                     merged.push({
                         id: null,
                         rowKey: reg.id,
                         riskName: reg.riskName,
                         stage: 'fair',
                         createdAt: reg.date,
-                        quickCategory: null,
+                        quickCategory: fairPercents ? fairPercents.category : null,
                         quickAle: null,
-                        riesgoInherente: null,
-                        riesgoResidual: null,
+                        riesgoInherente: fairPercents ? fairPercents.inherentPercent : null,
+                        riesgoResidual: fairPercents ? fairPercents.residualPercent : null,
                         asset: reg.asset,
                         fairEntry: reg,
                     });
