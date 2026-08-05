@@ -111,16 +111,49 @@ function getPertRandom(min, mode, max, lambda = 4, rng = Math.random) {
     return min + x * (max - min);
 }
 
+/** Varianza teórica de una triangular(min, mode, max) — fórmula estándar de libro de texto,
+ * usada como el "ancho de incertidumbre" que el usuario quiso decir con min/mode/max, para
+ * preservarlo al recalibrar hacia lognormal (ver getLognormalRandom). */
+function triangularVariance(min, mode, max) {
+    return (min * min + mode * mode + max * max - min * mode - min * max - mode * max) / 18;
+}
+
+/** Resuelve sigma² de una lognormal cuya moda es `mode` y cuya varianza es `targetVariance`,
+ * por bisección (no hay fórmula cerrada: sustituyendo mu = ln(mode) + sigma² en la fórmula de
+ * varianza de la lognormal queda mode²·(e^s - 1)·e^(3s) = targetVariance, una ecuación
+ * trascendente en s = sigma²). La función es monótona creciente en s (para s > 0), así que la
+ * bisección converge siempre — no hace falta Newton ni una cota superior fija: se dobla el
+ * límite hasta encontrar un cambio de signo. */
+function solveLognormalSigmaSquared(mode, targetVariance) {
+    if (targetVariance <= 0) return 0;
+    const f = (s) => mode * mode * (Math.exp(s) - 1) * Math.exp(3 * s) - targetVariance;
+    let lo = 0,
+        hi = 1;
+    while (f(hi) < 0) hi *= 2;
+    for (let i = 0; i < 100; i++) {
+        const mid = (lo + hi) / 2;
+        if (f(mid) > 0) hi = mid;
+        else lo = mid;
+    }
+    return (lo + hi) / 2;
+}
+
 /**
  * Muestreo lognormal (min, moda, max) — la distribución recomendada en la práctica de FAIR/
  * Monte Carlo para Magnitud de Pérdida: a diferencia de triangular/PERT, no tiene un techo
  * duro en `max` (las pérdidas reales sí pueden superar el "peor caso" estimado — por eso la
- * app ya reporta CVaR95/P90, no solo el máximo simulado). `min`/`max` se calibran como el
- * percentil 5/95 (IC 90%, la construcción estándar de estimados calibrados), y `mode` fija el
- * pico de la curva resultante (fórmula de la moda de la lognormal: mode = exp(mu - sigma²)).
- * Requiere min y mode estrictamente positivos (la lognormal no está definida en 0 o menos) —
- * si no se cumple (categoría de pérdida con costo 0 en el mejor caso o el típico, un caso real
- * y válido), cae a triangular para esa muestra en vez de reventar.
+ * app ya reporta CVaR95/P90, no solo el máximo simulado). En vez de reinterpretar min/max como
+ * un percentil (ej. 5/95) — lo que infla la cola sin control, porque min/max los calibró el
+ * usuario/`calculateLossMagnitudeRange` pensando en una triangular acotada, no en una promesa
+ * estadística de "IC 90%" — se ajusta por MOMENTOS: la lognormal resultante tiene la MISMA
+ * varianza que la triangular con ese mismo min/moda/max (ver triangularVariance +
+ * solveLognormalSigmaSquared), y su moda es exactamente `mode` (mode = exp(mu - sigma²)). Así
+ * el "ancho de incertidumbre" que el usuario quiso decir se preserva tal cual — lo único que
+ * cambia es la FORMA (sesgo a la derecha, cola realista sin techo duro), no cuánta
+ * incertidumbre hay.
+ * Requiere `mode` estrictamente positivo (la lognormal no está definida en 0 o menos) — si no
+ * se cumple (categoría de pérdida sin costo típico, un caso real y válido), cae a triangular
+ * para esa muestra en vez de reventar.
  * @param {number} min
  * @param {number} mode
  * @param {number} max
@@ -131,12 +164,19 @@ function getLognormalRandom(min, mode, max, rng = Math.random) {
     if (min > max) [min, max] = [max, min];
     if (mode < min || mode > max) mode = (min + max) / 2;
     if (min === max) return min;
-    if (min <= 0 || mode <= 0) return getTriangularRandom(min, mode, max, rng);
+    if (mode <= 0) return getTriangularRandom(min, mode, max, rng);
 
-    const Z90 = 1.6448536269514722; // percentil 95 de la normal estándar (IC 90% = ±Z90·sigma)
-    const sigma = (Math.log(max) - Math.log(min)) / (2 * Z90);
-    const mu = Math.log(mode) + sigma * sigma;
+    const sigmaSquared = solveLognormalSigmaSquared(mode, triangularVariance(min, mode, max));
+    const sigma = Math.sqrt(sigmaSquared);
+    const mu = Math.log(mode) + sigmaSquared;
     return Math.exp(mu + sigma * nextGaussian(rng));
 }
 
-module.exports = { mulberry32, getTriangularRandom, getPertRandom, getLognormalRandom };
+module.exports = {
+    mulberry32,
+    getTriangularRandom,
+    getPertRandom,
+    getLognormalRandom,
+    triangularVariance,
+    solveLognormalSigmaSquared,
+};
