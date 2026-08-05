@@ -48,12 +48,14 @@ describe('FairRegister.computeFairRiskEquivalents', () => {
         expect(FairRegister.computeFairRiskEquivalents({ ale: 'no-numero' })).toBeNull();
     });
 
-    it('calcula el Riesgo Inherente a partir de la Vulnerabilidad (ALE residual / (mode/100))', () => {
-        // ale residual = 10,000 con Vulnerabilidad (mode) 25% → inherente = 10,000 / 0.25 = 40,000
+    it('calcula el Riesgo Inherente a partir de la MEDIA del rango triangular de Vulnerabilidad, no de la moda', () => {
+        // Rango asimétrico min 10 / moda 20 / max 45 → media = (10+20+45)/3 = 25%, distinta de
+        // la moda (20%) a propósito, para probar que sí se usa la media y no la moda.
+        // ale residual = 10,000 / 0.25 = 40,000
         const result = FairRegister.computeFairRiskEquivalents({
             ale: 10000,
             severity: 'bajo',
-            vuln: { mode: 25 },
+            vuln: { min: 10, mode: 20, max: 45 },
         });
         expect(result.residualMoney).toBe('$10,000');
         expect(result.inherentMoney).toBe('$40,000');
@@ -68,6 +70,12 @@ describe('FairRegister.computeFairRiskEquivalents', () => {
         expect(result.residualMoney).toBe('$10,000');
         expect(result.inherentMoney).toBeNull();
         expect(result.inherentSeverity).toBeNull();
+        expect(result.controlEffectiveness).toBeNull();
+    });
+
+    it('con un rango incompleto (falta min/max), tampoco calcula el equivalente inherente', () => {
+        const result = FairRegister.computeFairRiskEquivalents({ ale: 10000, severity: 'bajo', vuln: { mode: 25 } });
+        expect(result.inherentMoney).toBeNull();
         expect(result.controlEffectiveness).toBeNull();
     });
 });
@@ -96,7 +104,7 @@ describe('FairRegister.buildConcentratedList', () => {
                 date: '2026-01-02',
                 ale: 10000,
                 severity: 'bajo',
-                vuln: { mode: 25 },
+                vuln: { min: 10, mode: 20, max: 45 },
             },
         ];
         const list = FairRegister.buildConcentratedList(risks, register);

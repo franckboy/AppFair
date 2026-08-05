@@ -77,9 +77,10 @@ Análisis Profundo, exportar el Informe Consolidado, eliminar un riesgo.
 Las pruebas unitarias (Vitest, co-ubicadas junto al código que prueban — `*.test.js` dentro de
 `frontend/src/modules/`) cubren la lógica que ya es pura hoy: formateo/clasificación en
 `utils.js` (`getSafeNumber`, `sanitizeHTML`, `debounce`, `severityToClasses`/`severityToHex`,
-`sensitivityLabel`, `buildHistogramBins`, `computeSuggestedTef`, `sortTriangularRange`) y tres
-métodos de `FairRegister` (`classifyAleAgainstCriteria`, `computeFairRiskEquivalents`,
-`buildConcentratedList`). Corren en milisegundos, sin necesitar backend ni navegador.
+`sensitivityLabel`, `buildHistogramBins`, `computeSuggestedTef`, `sortTriangularRange`,
+`triangularMean`) y tres métodos de `FairRegister` (`classifyAleAgainstCriteria`,
+`computeFairRiskEquivalents`, `buildConcentratedList`). Corren en milisegundos, sin necesitar
+backend ni navegador.
 
 `buildHistogramBins` (el binning del histograma de Monte Carlo) estaba duplicado literal en
 `fair-wizard.js` y `fair-register.js`; `computeSuggestedTef` (la fórmula de sugerencia de TEF,

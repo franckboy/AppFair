@@ -208,6 +208,17 @@ export const computeSuggestedTef = (attackerProfile, attackerKey, ponderacion, i
 // usuario edita a mano y puede dejar los tres valores desordenados.
 export const sortTriangularRange = (values) => [...values].sort((a, b) => a - b);
 
+// Media de una distribución triangular(min, mode, max) — fórmula estándar (min+mode+max)/3,
+// NO el promedio de min y max, y NO la moda. Se usa para "Riesgo Inherente" en el Registro
+// (ver App.FairRegister.computeFairRiskEquivalents): antes se dividía el ALE Residual entre
+// la MODA de Vulnerabilidad, que no es lo mismo que su media — la moda es solo el valor "más
+// probable" de la distribución, mientras que la media es el centro de masa de toda la
+// distribución (incluyendo la cola hacia min y hacia max), que es lo que corresponde usar para
+// "des-mitigar" un promedio (el ALE Residual que reporta el motor SÍ es un promedio de todas
+// las iteraciones de Monte Carlo). Con un rango simétrico (max-mode == mode-min) ambos
+// coinciden; con uno asimétrico (lo más común en la práctica) no.
+export const triangularMean = (min, mode, max) => (min + mode + max) / 3;
+
 // La evaluación de resultados FAIR (Crítico/Alto/Medio/Bajo + justificación) ahora la
 // calcula el backend en /api/simulate — este mapa solo traduce su `severity` a las
 // clases Tailwind que ya usaba la UI, porque el backend correctamente no sabe nada de CSS.
