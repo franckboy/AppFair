@@ -4,8 +4,9 @@ const express = require('express');
 const { evaluateTreatmentStrategies } = require('../lib/treatment');
 const { validateTreatmentBody } = require('../lib/validate');
 
-function makeCurrencyFormatter(currency = 'USD') {
-    const fmt = new Intl.NumberFormat('en-US', { style: 'currency', currency, minimumFractionDigits: 0, maximumFractionDigits: 0 });
+// La app solo calcula en USD (ver la nota equivalente en register.js/assets.js).
+function makeCurrencyFormatter() {
+    const fmt = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 });
     return (value) => fmt.format(value);
 }
 
@@ -21,14 +22,12 @@ function createTreatmentRouter() {
      *  - mitigar: { cost, reductionPercent, reliability, delayDays }
      *  - transferir: { premium, deductible, limit, unlimited, reliability, delayDays }
      *  - evitar: { cost, reliability, delayDays }
-     *  - currency
      */
     router.post('/evaluate', (req, res) => {
         const {
             currentALE,
             annualLosses,
             mitigar = {}, transferir = {}, evitar = {},
-            currency = 'USD',
         } = req.body;
 
         if (typeof currentALE !== 'number') {
@@ -38,7 +37,7 @@ function createTreatmentRouter() {
         const treatmentError = validateTreatmentBody(req.body);
         if (treatmentError) return res.status(400).json({ error: treatmentError });
 
-        const formatCurrency = makeCurrencyFormatter(currency);
+        const formatCurrency = makeCurrencyFormatter();
 
         const result = evaluateTreatmentStrategies({
             currentALE,

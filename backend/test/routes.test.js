@@ -110,7 +110,7 @@ test('PUT /api/config/org-defaults guarda solo los campos enviados, conserva el 
     const putRes = await request(app).put('/api/config/org-defaults').set('X-API-Key', TEST_API_KEY).send({ owner: 'QA HTTP' });
     assert.strictEqual(putRes.status, 200);
     assert.strictEqual(putRes.body.owner, 'QA HTTP');
-    assert.strictEqual(putRes.body.currency, 'USD'); // valor por defecto, no se mandó pero se conserva
+    assert.strictEqual(putRes.body.defenseKey, 'estandar'); // valor por defecto, no se mandó pero se conserva
 });
 
 // --- Autocálculo ---
@@ -250,6 +250,43 @@ test('flujo completo del Registro: PUT crea, GET lo lista, DELETE lo quita', asy
 test('PUT /api/register/:riskName sin ale (número) responde 400', async () => {
     const res = await request(app).put('/api/register/Riesgo%20Incompleto').set('X-API-Key', TEST_API_KEY).send({});
     assert.strictEqual(res.status, 400);
+});
+
+test('PUT /api/register/:riskName siempre guarda currency USD, ignorando lo que mande el body', async () => {
+    const riskName = 'Riesgo con moneda de prueba HTTP';
+    const putRes = await request(app)
+        .put(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ale: 10000, cvar95: 15000, evaluationLevel: 'Riesgo Bajo', currency: 'EUR' });
+    assert.strictEqual(putRes.body.entry.currency, 'USD');
+
+    await request(app).delete(`/api/register/${encodeURIComponent(riskName)}`).set('X-API-Key', TEST_API_KEY);
+});
+
+test('POST /api/simulate y POST /api/treatment/evaluate siempre responden currency USD', async () => {
+    const simRes = await request(app)
+        .post('/api/simulate')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            iterations: 100, seed: 1,
+            tef: { min: 1, mode: 2, max: 3 },
+            vuln: { min: 10, mode: 20, max: 30 },
+            lossMagnitudes: {},
+            currency: 'MXN',
+        });
+    assert.strictEqual(simRes.body.currency, 'USD');
+
+    const treatRes = await request(app)
+        .post('/api/treatment/evaluate')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            currentALE: 50000, currency: 'EUR',
+            mitigar: { cost: 5000, reductionPercent: 40, reliability: 'media', delayDays: 0 },
+        });
+    assert.strictEqual(treatRes.status, 200);
+    // treatment.js no devuelve "currency" en la respuesta — lo que importa es que los mensajes
+    // (formatCurrency interno) no truenen con una moneda no reconocida y usen USD tal cual.
+    assert.ok(treatRes.body.mitigar.verdict.message.includes('$'));
 });
 
 test('PUT /api/register/:riskName con riskType "oportunidad" se guarda y se excluye del Pareto', async () => {
@@ -440,25 +477,26 @@ test('PUT /api/assets/:id con id inexistente responde 404', async () => {
     assert.strictEqual(res.status, 404);
 });
 
-test('POST /api/assets sin currency usa USD por defecto, y PUT respeta la currency guardada', async () => {
+test('POST/PUT /api/assets siempre guarda currency USD, ignorando lo que mande el body', async () => {
+    // La app solo calcula en USD — mandar otra moneda no debe tener efecto (ver la nota en
+    // routes/assets.js): eliminar la variable evita por construcción mezclar monedas.
     const postRes = await request(app)
         .post('/api/assets')
         .set('X-API-Key', TEST_API_KEY)
         .send({ nombre: 'Equipo Importado', valorEstimado: 20000, currency: 'EUR' });
-    assert.strictEqual(postRes.body.entry.currency, 'EUR');
+    assert.strictEqual(postRes.body.entry.currency, 'USD');
 
     const postDefaultRes = await request(app)
         .post('/api/assets')
         .set('X-API-Key', TEST_API_KEY)
         .send({ nombre: 'Bodega Local', valorEstimado: 10000 });
-    assert.strictEqual(postDefaultRes.body.entry.currency, 'USD',
-        'sin currency en el body, debe caer en USD (mismo default que register.js/simulate.js/treatment.js)');
+    assert.strictEqual(postDefaultRes.body.entry.currency, 'USD');
 
     const putRes = await request(app)
         .put(`/api/assets/${postRes.body.entry.id}`)
         .set('X-API-Key', TEST_API_KEY)
-        .send({ nombre: 'Equipo Importado', valorEstimado: 25000, currency: 'EUR' });
-    assert.strictEqual(putRes.body.entry.currency, 'EUR');
+        .send({ nombre: 'Equipo Importado', valorEstimado: 25000, currency: 'MXN' });
+    assert.strictEqual(putRes.body.entry.currency, 'USD');
 
     await request(app).delete(`/api/assets/${postRes.body.entry.id}`).set('X-API-Key', TEST_API_KEY);
     await request(app).delete(`/api/assets/${postDefaultRes.body.entry.id}`).set('X-API-Key', TEST_API_KEY);

@@ -4,7 +4,9 @@
 // sin importar dónde se persista.
 const DEFAULTS = {
     riskCriteria: null, // se llena con defaultRiskCriteria si no existe
-    orgDefaults: { currency: 'USD', defenseKey: 'estandar', owner: '', dataSource: 'experto-sin-calibrar', dataConfidence: 'medio' },
+    // La app solo calcula en USD (ver la nota en routes/register.js) — ya no hay una moneda
+    // por defecto que configurar.
+    orgDefaults: { defenseKey: 'estandar', owner: '', dataSource: 'experto-sin-calibrar', dataConfidence: 'medio' },
     orgContext: { mision: '', naturalezaNegocio: '', apetitoRiesgo: 'moderado', partesInteresadas: '', entornoLegal: '', alcanceCadenaSuministro: '' },
     riskRegister: [],
     assets: [],

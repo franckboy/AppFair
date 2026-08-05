@@ -7,8 +7,11 @@ const { defaultRiskCriteria, lossFormsKeys } = require('../data/profiles');
 const { validateTriangularRange, validateIterations, validateSeed } = require('../lib/validate');
 const { asyncHandler } = require('../middleware/asyncHandler');
 
-function makeCurrencyFormatter(currency = 'USD') {
-    const fmt = new Intl.NumberFormat('en-US', { style: 'currency', currency, minimumFractionDigits: 0, maximumFractionDigits: 0 });
+// La app solo calcula en USD (ver la nota equivalente en register.js/assets.js) — no toma
+// moneda del body, para no reabrir la puerta a mezclar monedas sin convertir en el Pareto/mapa
+// de calor consolidado.
+function makeCurrencyFormatter() {
+    const fmt = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 });
     return (value) => fmt.format(value);
 }
 
@@ -24,7 +27,6 @@ function createSimulateRouter(store) {
      *  - vuln: { min, mode, max }  (en %, 0-100)
      *  - lossMagnitudes: { [key]: { min, mode, max } }  — claves de lossFormsKeys
      *  - riskType: 'amenaza' | 'oportunidad'
-     *  - currency: 'USD' | 'EUR' | 'MXN' | ...
      *  - riskCriteria: (opcional) sobreescribe los criterios guardados para esta corrida
      */
     router.post('/', asyncHandler(async (req, res) => {
@@ -35,7 +37,6 @@ function createSimulateRouter(store) {
             vuln,
             lossMagnitudes = {},
             riskType = 'amenaza',
-            currency = 'USD',
             riskCriteria,
         } = req.body;
 
@@ -61,7 +62,7 @@ function createSimulateRouter(store) {
         }
 
         const criteria = riskCriteria || (await store.get('riskCriteria')) || defaultRiskCriteria;
-        const formatCurrency = makeCurrencyFormatter(currency);
+        const formatCurrency = makeCurrencyFormatter();
 
         const { annualLosses, usedSeed, sensitivity } = runMonteCarloSimulation({
             iterations, seed, tef, vuln, lossMagnitudes,
@@ -76,7 +77,7 @@ function createSimulateRouter(store) {
         res.json({
             usedSeed,
             iterations,
-            currency,
+            currency: 'USD',
             riskType,
             summary: {
                 average: summary.average,
