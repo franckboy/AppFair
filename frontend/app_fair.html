@@ -671,7 +671,10 @@
                 <section id="historySection" class="mt-10">
                     <div class="flex justify-between items-center mb-4 flex-wrap gap-2">
                         <h2 class="text-2xl font-semibold text-gray-800">Riesgos Guardados</h2>
-                        <button id="promoteSelectedBtn" class="btn btn-success" disabled><i class="fas fa-level-up-alt mr-2"></i>Analizar Selección con FAIR</button>
+                        <div class="flex gap-2 flex-wrap">
+                            <button id="fair-deep-analysis-btn" class="btn btn-success" disabled><i class="fas fa-magnifying-glass-chart mr-2"></i>Análisis Profundo</button>
+                            <button id="fair-export-consolidated-btn" class="btn btn-primary"><i class="fas fa-file-pdf mr-2"></i>Exportar Informe Consolidado (PDF)</button>
+                        </div>
                     </div>
                     <div class="bg-white p-4 rounded-lg shadow-md overflow-x-auto">
                         <table class="w-full text-sm text-left text-gray-500">
@@ -692,6 +695,13 @@
                             </tbody>
                         </table>
                     </div>
+                    <div id="fair-deep-analysis-panel" class="hidden fair-section bg-blue-50 mt-6">
+                        <div class="flex justify-between items-center mb-3">
+                            <h3 class="text-lg font-semibold text-gray-800">Análisis Profundo</h3>
+                            <button id="fair-deep-analysis-close" class="text-gray-500 hover:text-gray-700 text-sm"><i class="fas fa-times mr-1"></i>Cerrar</button>
+                        </div>
+                        <div id="fair-deep-analysis-body" class="space-y-4"></div>
+                    </div>
                 </section>
             </div>
 
@@ -699,22 +709,16 @@
                 <div class="bg-white p-6 rounded-lg shadow-md">
                     <h2 class="text-2xl font-bold text-gray-800 mb-2">Registro de Riesgos (FAIR)</h2>
                     <p class="description-text mb-4">
-                        Cada riesgo FAIR que analizas queda guardado aquí automáticamente en cuanto corres su simulación —
-                        no tienes que hacer nada extra. El mapa de calor de abajo posiciona cada riesgo según su Pérdida
-                        Anual Esperada (eje X) y la probabilidad de superar tu umbral de excedencia (eje Y). La tabla con
-                        cada riesgo individual (con sus acciones de Analizar/Simular) vive en Análisis de Riesgo — antes se
-                        repetía también aquí, en una copia idéntica que se desincronizaba en apariencia con la de arriba;
-                        se quitó para no tener la misma información dos veces.
+                        El mapa de calor de abajo posiciona cada riesgo ya analizado con FAIR según su Pérdida Anual
+                        Esperada (eje X) y la probabilidad de superar tu umbral de excedencia (eje Y). Para ver el
+                        detalle de cada riesgo individual (con sus acciones de Analizar/Simular), ve a
+                        Análisis de Riesgo → Riesgos Guardados.
                     </p>
 
                     <div id="fair-register-empty" class="text-center text-gray-500 py-8">
                         Aún no has corrido ninguna simulación FAIR. En cuanto ejecutes una, el mapa de calor, Pareto y sensibilidad consolidada aparecen aquí.
                     </div>
                     <div id="fair-register-content" class="hidden">
-                        <div class="flex justify-end mb-4">
-                            <button id="fair-export-consolidated-btn" class="btn btn-primary"><i class="fas fa-file-pdf mr-2"></i>Exportar Informe Consolidado (PDF)</button>
-                        </div>
-
                         <h3 class="text-lg font-semibold text-gray-800 mb-2">Mapa de Calor Consolidado</h3>
                         <p class="description-text mb-2">Cada punto lleva un número — la lista de al lado dice qué riesgo es cada uno.</p>
                         <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
@@ -2624,6 +2628,11 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             document.getElementById('fair-export-report-btn').addEventListener('click', () => App.FairExport.exportFairReport());
             document.getElementById('fair-export-consolidated-btn').addEventListener('click', () => App.FairExport.exportConsolidatedReport());
+            document.getElementById('selectAllHistory').addEventListener('change', (e) => App.FairRegister.toggleSelectAll('quick-concentrated-table-body', e.target.checked));
+            document.getElementById('fair-deep-analysis-btn').addEventListener('click', () => App.FairRegister.showDeepAnalysis('quick-concentrated-table-body'));
+            document.getElementById('fair-deep-analysis-close').addEventListener('click', () => {
+                document.getElementById('fair-deep-analysis-panel').classList.add('hidden');
+            });
             document.getElementById('fair-register-simulation-close').addEventListener('click', () => {
                 document.getElementById('fair-register-simulation').classList.add('hidden');
             });
@@ -4169,6 +4178,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 const fairEntry = register.find(r => r.sourceRiskId === risk.id) || null;
                 return {
                     id: risk.id,
+                    // Identificador estable para "Análisis Profundo" (ver renderConcentratedTable):
+                    // una vez que este riesgo tiene entrada de FAIR, esa es la fuente de verdad —
+                    // el id del riesgo de Análisis Rápido ya no sirve para buscar sus datos.
+                    rowKey: fairEntry ? fairEntry.id : risk.id,
                     // Si ya existe una entrada de FAIR, su nombre/activo son los vigentes — el
                     // wizard de FAIR permite editarlos independientemente del nombre con el que
                     // se creó el riesgo en Análisis Rápido, así que quedarse con el de Análisis
@@ -4201,6 +4214,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!reg.sourceRiskId || !linkedRiskIds.has(reg.sourceRiskId)) {
                     merged.push({
                         id: null,
+                        rowKey: reg.id,
                         riskName: reg.riskName,
                         stage: 'fair',
                         createdAt: reg.date,
@@ -4510,11 +4524,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 const cvarCell = item.fairEntry ? fmt(item.fairEntry.cvar95) : '—';
                 const dateCell = formatDate(item.fairEntry ? item.fairEntry.date : item.createdAt);
 
-                // Solo tiene sentido seleccionar (para "Analizar Selección con FAIR") un riesgo
-                // que TODAVÍA no se analizó con FAIR y que tiene su fullData completo — uno ya
-                // promovido no necesita volver a promoverse.
-                const checkboxCell = (item.stage !== 'fair' && item.fullData)
-                    ? `<input type="checkbox" class="concentrated-checkbox" data-id="${item.id}" />`
+                // Selecciona uno o más riesgos (cualquier etapa) para verlos en "Análisis
+                // Profundo" — ver showDeepAnalysis(). rowKey es estable: el id de la entrada de
+                // FAIR si ya existe, o el id del riesgo de Análisis Rápido si todavía no.
+                const checkboxCell = item.rowKey
+                    ? `<input type="checkbox" class="concentrated-checkbox" data-id="${item.rowKey}" />`
                     : '';
 
                 // "Analizar" abre el wizard completo de FAIR (pasos 1-4, incluyendo Tratamiento)
@@ -4576,32 +4590,102 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             });
             document.querySelectorAll('.concentrated-checkbox').forEach(cb => {
-                cb.addEventListener('change', () => this.updatePromoteBtnStates());
+                cb.addEventListener('change', () => this.updateDeepAnalysisBtnState());
             });
-            this.updatePromoteBtnStates();
+            this.updateDeepAnalysisBtnState();
         },
 
         toggleSelectAll(tbodyId, checked) {
             document.querySelectorAll(`#${tbodyId} .concentrated-checkbox`).forEach(cb => { cb.checked = checked; });
-            this.updatePromoteBtnStates();
+            this.updateDeepAnalysisBtnState();
         },
 
-        updatePromoteBtnStates() {
+        updateDeepAnalysisBtnState() {
             const tbodyId = 'quick-concentrated-table-body';
-            const btn = document.getElementById('promoteSelectedBtn');
+            const btn = document.getElementById('fair-deep-analysis-btn');
             if (!btn) return;
             const anyChecked = document.querySelectorAll(`#${tbodyId} .concentrated-checkbox:checked`).length > 0;
             btn.disabled = !anyChecked;
         },
 
-        promoteSelectedFromTable(tbodyId) {
-            const selectedIds = Array.from(document.querySelectorAll(`#${tbodyId} .concentrated-checkbox:checked`)).map(cb => cb.dataset.id);
-            const selectedRisks = (state.fair.concentratedRisks || [])
-                .filter(item => selectedIds.includes(String(item.id)) && item.fullData)
-                .map(item => item.fullData);
-            if (selectedRisks.length === 0) return;
-            App.Navigation.switchPage('fair');
-            App.FairAnalysis.receiveData(selectedRisks);
+        // "Análisis Profundo": muestra, de un vistazo y sin salir del Registro, todos los datos
+        // con los que se calculó cada riesgo seleccionado (TEF, Vulnerabilidad, Magnitud de
+        // Pérdida por categoría, sensibilidad, evaluación) — de momento el detalle básico ya
+        // guardado en el Registro; ver buildDeepAnalysisCard.
+        showDeepAnalysis(tbodyId) {
+            const selectedKeys = Array.from(document.querySelectorAll(`#${tbodyId} .concentrated-checkbox:checked`)).map(cb => cb.dataset.id);
+            const selectedItems = (state.fair.concentratedRisks || []).filter(item => selectedKeys.includes(String(item.rowKey)));
+            if (selectedItems.length === 0) return;
+
+            document.getElementById('fair-deep-analysis-body').innerHTML = selectedItems.map(item => this.buildDeepAnalysisCard(item)).join('');
+            document.getElementById('fair-deep-analysis-panel').classList.remove('hidden');
+            document.getElementById('fair-deep-analysis-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        },
+
+        buildDeepAnalysisCard(item) {
+            const fmt = (v) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v);
+            const entry = item.fairEntry;
+
+            if (!entry) {
+                return `
+                    <div class="p-4 bg-white rounded-lg border border-gray-200">
+                        <h4 class="text-base font-semibold text-gray-800 mb-2">${sanitizeHTML(item.riskName)}</h4>
+                        <p class="description-text mb-2">Este riesgo todavía no se ha analizado con FAIR — solo tiene el estimado con el que se guardó en Análisis Rápido.</p>
+                        <ul class="text-sm text-gray-700 space-y-1">
+                            <li><strong>Activo:</strong> ${sanitizeHTML(item.asset || '—')}</li>
+                            <li><strong>Riesgo Inherente:</strong> ${item.riesgoInherente ?? '—'}</li>
+                            <li><strong>Riesgo Residual:</strong> ${item.riesgoResidual ?? '—'}</li>
+                            <li><strong>ALE estimado:</strong> ${item.quickAle || '—'}</li>
+                        </ul>
+                    </div>`;
+            }
+
+            const rangeRow = (label, range, suffix = '') => range
+                ? `<tr><td class="py-1 pr-3 text-gray-600">${label}</td><td class="py-1 pr-3">${range.min}${suffix}</td><td class="py-1 pr-3 font-semibold">${range.mode}${suffix}</td><td class="py-1">${range.max}${suffix}</td></tr>`
+                : '';
+            const lossRows = entry.lossMagnitudes
+                ? LOSS_FORMS_KEYS.map((key) => {
+                    const f = entry.lossMagnitudes[key];
+                    if (!f) return '';
+                    return `<tr><td class="py-1 pr-3 text-gray-600">${LOSS_FORM_LABELS.tecnico[key]}</td><td class="py-1 pr-3">${fmt(f.min)}</td><td class="py-1 pr-3 font-semibold">${fmt(f.mode)}</td><td class="py-1">${fmt(f.max)}</td></tr>`;
+                }).join('')
+                : '';
+            const sensitivityHTML = (entry.sensitivity || []).slice(0, 5)
+                .map((s) => `<li>${sensitivityLabel(s)}: ${(s.correlation * 100).toFixed(1)}%</li>`)
+                .join('');
+
+            return `
+                <div class="p-4 bg-white rounded-lg border border-gray-200">
+                    <div class="flex justify-between items-start flex-wrap gap-2 mb-2">
+                        <h4 class="text-base font-semibold text-gray-800">${sanitizeHTML(item.riskName)}</h4>
+                        <span class="px-2 py-1 rounded text-xs border-l-4 ${entry.evaluationClasses}">${entry.evaluationLevel}</span>
+                    </div>
+                    <ul class="text-sm text-gray-700 space-y-1 mb-3">
+                        <li><strong>Activo:</strong> ${sanitizeHTML(entry.asset || '—')}</li>
+                        <li><strong>Responsable:</strong> ${sanitizeHTML(entry.owner || '—')}</li>
+                        <li><strong>Pérdida Anual Esperada (ALE):</strong> ${fmt(entry.ale)}</li>
+                        <li><strong>CVaR 95%:</strong> ${fmt(entry.cvar95)}</li>
+                        <li><strong>Fecha del análisis:</strong> ${entry.date ? new Date(entry.date).toLocaleDateString('es-MX', { year: 'numeric', month: 'short', day: 'numeric' }) : '—'}</li>
+                        ${entry.evaluationJustification ? `<li><strong>Justificación:</strong> ${sanitizeHTML(entry.evaluationJustification)}</li>` : ''}
+                    </ul>
+                    ${(entry.tef || entry.vuln) ? `
+                    <table class="w-full text-sm mb-3">
+                        <thead><tr class="text-left text-gray-500"><th></th><th>Mín</th><th>Más Probable</th><th>Máx</th></tr></thead>
+                        <tbody>
+                            ${rangeRow('Frecuencia de Evento de Amenaza (contactos/año)', entry.tef)}
+                            ${rangeRow('Vulnerabilidad', entry.vuln, '%')}
+                        </tbody>
+                    </table>` : ''}
+                    ${lossRows ? `
+                    <h5 class="text-sm font-semibold text-gray-800 mb-1">Magnitud de Pérdida</h5>
+                    <table class="w-full text-sm mb-3">
+                        <thead><tr class="text-left text-gray-500"><th></th><th>Mín</th><th>Más Probable</th><th>Máx</th></tr></thead>
+                        <tbody>${lossRows}</tbody>
+                    </table>` : ''}
+                    ${sensitivityHTML ? `
+                    <h5 class="text-sm font-semibold text-gray-800 mb-1">Variables más influyentes</h5>
+                    <ul class="text-sm text-gray-700 list-disc list-inside">${sensitivityHTML}</ul>` : ''}
+                </div>`;
         },
 
         // El Pareto 80-20 (ordenado, con % acumulado) ya viene calculado del backend
