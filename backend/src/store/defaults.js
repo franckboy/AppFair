@@ -7,7 +7,14 @@ const DEFAULTS = {
     // La app solo calcula en USD (ver la nota en routes/register.js) — ya no hay una moneda
     // por defecto que configurar.
     orgDefaults: { defenseKey: 'estandar', owner: '', dataSource: 'experto-sin-calibrar', dataConfidence: 'medio' },
-    orgContext: { mision: '', naturalezaNegocio: '', apetitoRiesgo: 'moderado', partesInteresadas: '', entornoLegal: '', alcanceCadenaSuministro: '' },
+    orgContext: {
+        mision: '',
+        naturalezaNegocio: '',
+        apetitoRiesgo: 'moderado',
+        partesInteresadas: '',
+        entornoLegal: '',
+        alcanceCadenaSuministro: '',
+    },
     riskRegister: [],
     assets: [],
     risks: [],

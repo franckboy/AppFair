@@ -58,7 +58,7 @@ export const RiskCatalog = {
         const threatSelect = document.getElementById('riskcat-threat');
         const infoEl = document.getElementById('riskcat-info');
 
-        domainKeys.forEach(key => {
+        domainKeys.forEach((key) => {
             const opt = document.createElement('option');
             opt.value = key;
             opt.textContent = catalog[key].label;
@@ -67,7 +67,7 @@ export const RiskCatalog = {
 
         const currentCategories = () => (catalog[domainSelect.value] || {}).categories || {};
         const currentThreats = () => (currentCategories()[categorySelect.value] || {}).threats || [];
-        const currentThreat = () => currentThreats().find(t => t.key === threatSelect.value);
+        const currentThreat = () => currentThreats().find((t) => t.key === threatSelect.value);
 
         const updateInfo = () => {
             const threat = currentThreat();
@@ -78,7 +78,7 @@ export const RiskCatalog = {
 
         const populateThreats = () => {
             threatSelect.innerHTML = '';
-            currentThreats().forEach(t => {
+            currentThreats().forEach((t) => {
                 const opt = document.createElement('option');
                 opt.value = t.key;
                 opt.textContent = t.name;

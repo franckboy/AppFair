@@ -1,6 +1,15 @@
 import { App } from './app-namespace.js';
 import { state } from './state.js';
-import { LOSS_FORMS_KEYS, LOSS_FORM_LABELS, getSafeNumber, sanitizeHTML, sensitivityLabel, severityToClasses, severityToHex, showToast } from './utils.js';
+import {
+    LOSS_FORMS_KEYS,
+    LOSS_FORM_LABELS,
+    getSafeNumber,
+    sanitizeHTML,
+    sensitivityLabel,
+    severityToClasses,
+    severityToHex,
+    showToast,
+} from './utils.js';
 
 // ============================================================
 // App.FairRegister — el Registro de Riesgos consolidado: guardar/borrar
@@ -9,7 +18,6 @@ import { LOSS_FORMS_KEYS, LOSS_FORM_LABELS, getSafeNumber, sanitizeHTML, sensiti
 // guardado). Si el bug está en la página "Registro de Riesgos", está aquí.
 // ============================================================
 export const FairRegister = {
-
     // El Registro de Riesgos vive en el backend (GET/PUT/DELETE /api/register) — ya no en
     // localStorage. `render=false` se usa en el arranque (la página aún está oculta; crear
     // los gráficos de Chart.js sobre un <canvas> de tamaño 0 los deja mal dimensionados).
@@ -82,9 +90,15 @@ export const FairRegister = {
     // no una pérdida, y no tiene un "Riesgo Inherente/Residual" con el mismo sentido.
     computeFairRiskEquivalents(entry) {
         if (!entry || entry.riskType === 'oportunidad' || typeof entry.ale !== 'number') return null;
-        const fmt = (v) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v);
+        const fmt = (v) =>
+            new Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency: 'USD',
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0,
+            }).format(v);
         const vulnMode = entry.vuln && entry.vuln.mode;
-        const inherentAle = (vulnMode && vulnMode > 0) ? entry.ale * (100 / vulnMode) : null;
+        const inherentAle = vulnMode && vulnMode > 0 ? entry.ale * (100 / vulnMode) : null;
 
         return {
             residualMoney: fmt(entry.ale),
@@ -96,8 +110,8 @@ export const FairRegister = {
     },
 
     buildConcentratedList(risks, register) {
-        const merged = risks.map(risk => {
-            const fairEntry = register.find(r => r.sourceRiskId === risk.id) || null;
+        const merged = risks.map((risk) => {
+            const fairEntry = register.find((r) => r.sourceRiskId === risk.id) || null;
             const fairEquiv = this.computeFairRiskEquivalents(fairEntry);
             return {
                 id: risk.id,
@@ -113,9 +127,9 @@ export const FairRegister = {
                 stage: fairEntry ? 'fair' : 'triage',
                 createdAt: risk.createdAt || risk.date,
                 quickAle: risk.ale || null,
-                riesgoInherente: fairEquiv ? fairEquiv.inherentMoney : (risk.ri || null),
+                riesgoInherente: fairEquiv ? fairEquiv.inherentMoney : risk.ri || null,
                 riesgoInherenteSeverity: fairEquiv ? fairEquiv.inherentSeverity : null,
-                riesgoResidual: fairEquiv ? fairEquiv.residualMoney : (risk.rrt || null),
+                riesgoResidual: fairEquiv ? fairEquiv.residualMoney : risk.rrt || null,
                 riesgoResidualSeverity: fairEquiv ? fairEquiv.residualSeverity : null,
                 controlEffectiveness: fairEquiv ? fairEquiv.controlEffectiveness : null,
                 asset: (fairEntry && fairEntry.asset) || (risk.fullData && risk.fullData.asset) || '—',
@@ -129,8 +143,8 @@ export const FairRegister = {
             };
         });
 
-        const linkedRiskIds = new Set(merged.map(item => item.id));
-        register.forEach(reg => {
+        const linkedRiskIds = new Set(merged.map((item) => item.id));
+        register.forEach((reg) => {
             if (!reg.sourceRiskId || !linkedRiskIds.has(reg.sourceRiskId)) {
                 const fairEquiv = this.computeFairRiskEquivalents(reg);
                 merged.push({
@@ -152,7 +166,9 @@ export const FairRegister = {
         });
 
         merged.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-        merged.forEach((item, i) => { item.number = i + 1; });
+        merged.forEach((item, i) => {
+            item.number = i + 1;
+        });
         return merged;
     },
 
@@ -177,7 +193,9 @@ export const FairRegister = {
         // después desde el botón "Simular" del Registro sin pedirle los datos de nuevo al
         // usuario — junto con la semilla usada, la simulación siempre da el mismo resultado.
         const lossMagnitudes = {};
-        LOSS_FORMS_KEYS.forEach((key) => { lossMagnitudes[key] = readRange(`lm-${key}`); });
+        LOSS_FORMS_KEYS.forEach((key) => {
+            lossMagnitudes[key] = readRange(`lm-${key}`);
+        });
 
         // Bug real: sin esto, un análisis nuevo armado directo en FAIR (sin pasar por un
         // riesgo ya vinculado por sourceRiskId) no tenía NINGÚN id propio hasta que el
@@ -279,7 +297,9 @@ export const FairRegister = {
                     attackerScore: state.fair.attackerScore || null,
                     defenseProfileName: defenseProfile.name || null,
                     defenseScore: state.fair.defenseScore || null,
-                    mitigar, transferir, evitar,
+                    mitigar,
+                    transferir,
+                    evitar,
                     aceptarJustificacion: document.getElementById('fair-aceptar-justificacion').value.trim() || null,
                     chartLabels: chart ? chart.data.labels : null,
                     chartData: chart ? chart.data.datasets[0].data : null,
@@ -368,35 +388,43 @@ export const FairRegister = {
         // aunque fuera una oportunidad grande y buena — se excluye del mapa (y del Pareto,
         // ver backend calculateParetoAnalysis), pero se sigue listando en la tabla de abajo
         // con su propia evaluación correcta ("Oportunidad Significativa...", etc.).
-        const threatRegister = register.filter(r => r.riskType !== 'oportunidad');
+        const threatRegister = register.filter((r) => r.riskType !== 'oportunidad');
         const opportunityCount = register.length - threatRegister.length;
 
         // Las zonas del mapa de calor (colores + rangos) ya vienen del backend en la
         // respuesta de GET /api/register — solo falta el color del texto, que es
         // puramente presentación (blanco sobre fondos oscuros, negro sobre claros).
-        const textColorByLevel = { 'Bajo': '#000', 'Medio': '#000', 'Alto': '#fff', 'Crítico': '#fff' };
+        const textColorByLevel = { Bajo: '#000', Medio: '#000', Alto: '#fff', Crítico: '#fff' };
         const canvas = document.getElementById('fair-register-chart');
         const matrixBackgroundPlugin = {
             id: 'fairRegisterMatrixBackground',
             beforeDatasetsDraw(chart) {
-                const { ctx, scales: { x, y } } = chart;
+                const {
+                    ctx,
+                    scales: { x, y },
+                } = chart;
                 ctx.save();
                 const zones = state.fair.registerHeatmapZones || [];
-                zones.forEach(zone => {
+                zones.forEach((zone) => {
                     ctx.fillStyle = zone.color;
-                    ctx.fillRect(x.getPixelForValue(zone.x[0]), y.getPixelForValue(zone.y[1]), x.getPixelForValue(zone.x[1]) - x.getPixelForValue(zone.x[0]), y.getPixelForValue(zone.y[0]) - y.getPixelForValue(zone.y[1]));
+                    ctx.fillRect(
+                        x.getPixelForValue(zone.x[0]),
+                        y.getPixelForValue(zone.y[1]),
+                        x.getPixelForValue(zone.x[1]) - x.getPixelForValue(zone.x[0]),
+                        y.getPixelForValue(zone.y[0]) - y.getPixelForValue(zone.y[1]),
+                    );
                 });
                 ctx.font = 'bold 14px Arial';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
-                zones.forEach(zone => {
+                zones.forEach((zone) => {
                     const midX = x.getPixelForValue((zone.x[0] + zone.x[1]) / 2);
                     const midY = y.getPixelForValue((zone.y[0] + zone.y[1]) / 2);
                     ctx.fillStyle = textColorByLevel[zone.level] || '#000';
                     ctx.fillText(zone.level, midX, midY);
                 });
                 ctx.restore();
-            }
+            },
         };
 
         // Cada punto lleva su número (1, 2, 3...) encima, en el mismo orden que el registro
@@ -406,17 +434,24 @@ export const FairRegister = {
         const pointNumberPlugin = {
             id: 'fairRegisterPointNumbers',
             afterDatasetsDraw(chart) {
-                const { ctx, scales: { x, y } } = chart;
+                const {
+                    ctx,
+                    scales: { x, y },
+                } = chart;
                 ctx.save();
                 ctx.font = 'bold 11px Arial';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
                 ctx.fillStyle = '#fff';
                 threatRegister.forEach((r, i) => {
-                    ctx.fillText(String(i + 1), x.getPixelForValue(r.impactPercent), y.getPixelForValue(r.probabilityPercent));
+                    ctx.fillText(
+                        String(i + 1),
+                        x.getPixelForValue(r.impactPercent),
+                        y.getPixelForValue(r.probabilityPercent),
+                    );
                 });
                 ctx.restore();
-            }
+            },
         };
         document.getElementById('fair-register-legend').innerHTML = `
             <p class="font-semibold text-gray-700 mb-2">Riesgos en el mapa</p>
@@ -429,35 +464,54 @@ export const FairRegister = {
         state.fair.registerChart = new Chart(canvas, {
             type: 'scatter',
             data: {
-                datasets: [{
-                    label: 'Riesgos FAIR',
-                    // Antes cada punto era del mismo morado fijo sin importar qué tan grave
-                    // fuera el riesgo — el color solo venía del fondo por cuadrante (zona),
-                    // no del punto en sí. Ahora cada punto usa el mismo color que ya tiene su
-                    // badge de Evaluación en la tabla/PDF (severity: crítico/alto/medio/bajo).
-                    data: threatRegister.map(r => ({ x: r.impactPercent, y: r.probabilityPercent, name: r.riskName, level: r.evaluationLevel })),
-                    pointBackgroundColor: threatRegister.map(r => severityToHex(r.severity)),
-                    pointBorderColor: 'white',
-                    pointRadius: 10,
-                    pointHoverRadius: 13,
-                }]
+                datasets: [
+                    {
+                        label: 'Riesgos FAIR',
+                        // Antes cada punto era del mismo morado fijo sin importar qué tan grave
+                        // fuera el riesgo — el color solo venía del fondo por cuadrante (zona),
+                        // no del punto en sí. Ahora cada punto usa el mismo color que ya tiene su
+                        // badge de Evaluación en la tabla/PDF (severity: crítico/alto/medio/bajo).
+                        data: threatRegister.map((r) => ({
+                            x: r.impactPercent,
+                            y: r.probabilityPercent,
+                            name: r.riskName,
+                            level: r.evaluationLevel,
+                        })),
+                        pointBackgroundColor: threatRegister.map((r) => severityToHex(r.severity)),
+                        pointBorderColor: 'white',
+                        pointRadius: 10,
+                        pointHoverRadius: 13,
+                    },
+                ],
             },
             options: {
-                responsive: true, maintainAspectRatio: false,
+                responsive: true,
+                maintainAspectRatio: false,
                 scales: {
-                    x: { title: { display: true, text: 'Impacto (ALE como % del umbral Crítico)' }, min: 0, max: 100, ticks: { stepSize: 25 } },
-                    y: { title: { display: true, text: 'Probabilidad de superar el umbral de excedencia (%)' }, min: 0, max: 100, ticks: { stepSize: 25 } },
+                    x: {
+                        title: { display: true, text: 'Impacto (ALE como % del umbral Crítico)' },
+                        min: 0,
+                        max: 100,
+                        ticks: { stepSize: 25 },
+                    },
+                    y: {
+                        title: { display: true, text: 'Probabilidad de superar el umbral de excedencia (%)' },
+                        min: 0,
+                        max: 100,
+                        ticks: { stepSize: 25 },
+                    },
                 },
                 plugins: {
                     legend: { display: false },
                     tooltip: {
                         callbacks: {
-                            label: (context) => `${context.dataIndex + 1}. ${context.raw.name}: Impacto ${context.raw.x.toFixed(0)}%, Probabilidad ${context.raw.y.toFixed(0)}% — ${context.raw.level}`
-                        }
-                    }
-                }
+                            label: (context) =>
+                                `${context.dataIndex + 1}. ${context.raw.name}: Impacto ${context.raw.x.toFixed(0)}%, Probabilidad ${context.raw.y.toFixed(0)}% — ${context.raw.level}`,
+                        },
+                    },
+                },
             },
-            plugins: [matrixBackgroundPlugin, pointNumberPlugin]
+            plugins: [matrixBackgroundPlugin, pointNumberPlugin],
         });
 
         this.renderParetoChart();
@@ -473,61 +527,73 @@ export const FairRegister = {
     // Evaluación, por FAIR) — ningún dato se pierde al fusionar las dos tablas que existían
     // antes por separado.
     renderConcentratedTable(list) {
-        const fmt = (v) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v);
-        const formatDate = (d) => d ? new Date(d).toLocaleDateString('es-MX', { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
-        const bodies = ['quick-concentrated-table-body']
-            .map(id => document.getElementById(id))
-            .filter(Boolean);
+        const fmt = (v) =>
+            new Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency: 'USD',
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0,
+            }).format(v);
+        const formatDate = (d) =>
+            d ? new Date(d).toLocaleDateString('es-MX', { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
+        const bodies = ['quick-concentrated-table-body'].map((id) => document.getElementById(id)).filter(Boolean);
 
         if (list.length === 0) {
-            bodies.forEach(tb => { tb.innerHTML = '<tr><td colspan="13" class="text-center py-4 text-gray-500">No hay riesgos guardados.</td></tr>'; });
+            bodies.forEach((tb) => {
+                tb.innerHTML =
+                    '<tr><td colspan="13" class="text-center py-4 text-gray-500">No hay riesgos guardados.</td></tr>';
+            });
             return;
         }
 
-        const rowsHTML = list.map(item => {
-            const stageBadge = item.stage === 'fair'
-                ? `<span class="px-2 py-1 rounded text-xs bg-blue-50 text-blue-700 border-l-4 border-blue-500">Analizado (FAIR)</span>`
-                : `<span class="px-2 py-1 rounded text-xs bg-gray-100 text-gray-700 border-l-4 border-gray-400">Triage</span>`;
+        const rowsHTML = list
+            .map((item) => {
+                const stageBadge =
+                    item.stage === 'fair'
+                        ? `<span class="px-2 py-1 rounded text-xs bg-blue-50 text-blue-700 border-l-4 border-blue-500">Analizado (FAIR)</span>`
+                        : `<span class="px-2 py-1 rounded text-xs bg-gray-100 text-gray-700 border-l-4 border-gray-400">Triage</span>`;
 
-            const evalCell = item.fairEntry
-                ? `<span class="px-2 py-1 rounded text-xs border-l-4 ${item.fairEntry.evaluationClasses}">${item.fairEntry.evaluationLevel}</span>`
-                : '—';
+                const evalCell = item.fairEntry
+                    ? `<span class="px-2 py-1 rounded text-xs border-l-4 ${item.fairEntry.evaluationClasses}">${item.fairEntry.evaluationLevel}</span>`
+                    : '—';
 
-            // Mismo Criterio ALE que ya usa "Evaluación" — cada monto se colorea según ESE
-            // mismo umbral (ver computeFairRiskEquivalents), para que un riesgo "Crítico" se
-            // vea igual de rojo en Inherente/Residual/Impacto que en Evaluación, no distinto.
-            const moneyBadge = (text, severity) => (text && severity)
-                ? `<span class="px-2 py-1 rounded text-xs border-l-4 ${severityToClasses(severity)}">${text}</span>`
-                : (text || '—');
+                // Mismo Criterio ALE que ya usa "Evaluación" — cada monto se colorea según ESE
+                // mismo umbral (ver computeFairRiskEquivalents), para que un riesgo "Crítico" se
+                // vea igual de rojo en Inherente/Residual/Impacto que en Evaluación, no distinto.
+                const moneyBadge = (text, severity) =>
+                    text && severity
+                        ? `<span class="px-2 py-1 rounded text-xs border-l-4 ${severityToClasses(severity)}">${text}</span>`
+                        : text || '—';
 
-            const inherenteCell = moneyBadge(item.riesgoInherente, item.riesgoInherenteSeverity);
-            const residualCell = moneyBadge(item.riesgoResidual, item.riesgoResidualSeverity);
-            const impactCell = item.fairEntry
-                ? moneyBadge(fmt(item.fairEntry.ale), item.fairEntry.severity)
-                : (item.quickAle || '—');
-            const cvarCell = item.fairEntry ? fmt(item.fairEntry.cvar95) : '—';
-            const dateCell = formatDate(item.fairEntry ? item.fairEntry.date : item.createdAt);
+                const inherenteCell = moneyBadge(item.riesgoInherente, item.riesgoInherenteSeverity);
+                const residualCell = moneyBadge(item.riesgoResidual, item.riesgoResidualSeverity);
+                const impactCell = item.fairEntry
+                    ? moneyBadge(fmt(item.fairEntry.ale), item.fairEntry.severity)
+                    : item.quickAle || '—';
+                const cvarCell = item.fairEntry ? fmt(item.fairEntry.cvar95) : '—';
+                const dateCell = formatDate(item.fairEntry ? item.fairEntry.date : item.createdAt);
 
-            // Selecciona uno o más riesgos (cualquier etapa) para verlos en "Análisis
-            // Profundo" — ver showDeepAnalysis(). rowKey es estable: el id de la entrada de
-            // FAIR si ya existe, o el id del riesgo de Análisis Rápido si todavía no.
-            const checkboxCell = item.rowKey
-                ? `<input type="checkbox" class="concentrated-checkbox" data-id="${item.rowKey}" />`
-                : '';
+                // Selecciona uno o más riesgos (cualquier etapa) para verlos en "Análisis
+                // Profundo" — ver showDeepAnalysis(). rowKey es estable: el id de la entrada de
+                // FAIR si ya existe, o el id del riesgo de Análisis Rápido si todavía no.
+                const checkboxCell = item.rowKey
+                    ? `<input type="checkbox" class="concentrated-checkbox" data-id="${item.rowKey}" />`
+                    : '';
 
-            // "Analizar" abre el wizard completo de FAIR (pasos 1-4, incluyendo Tratamiento)
-            // para ESTE riesgo — a diferencia de "Simular" (un vistazo rápido de solo lectura
-            // sin salir del Registro). Es la vista de detalle por riesgo.
-            const actionsCell = item.stage === 'fair'
-                ? `<button class="btn btn-primary text-xs" data-analyze-fair="${sanitizeHTML(item.fairEntry.riskName)}"><i class="fas fa-balance-scale mr-1"></i>Analizar</button>
+                // "Analizar" abre el wizard completo de FAIR (pasos 1-4, incluyendo Tratamiento)
+                // para ESTE riesgo — a diferencia de "Simular" (un vistazo rápido de solo lectura
+                // sin salir del Registro). Es la vista de detalle por riesgo.
+                const actionsCell =
+                    item.stage === 'fair'
+                        ? `<button class="btn btn-primary text-xs" data-analyze-fair="${sanitizeHTML(item.fairEntry.riskName)}"><i class="fas fa-balance-scale mr-1"></i>Analizar</button>
                     <button class="btn btn-secondary text-xs ml-1" data-simulate-risk="${sanitizeHTML(item.fairEntry.riskName)}" ${item.fairEntry.tef && item.fairEntry.vuln && item.fairEntry.lossMagnitudes ? '' : 'disabled title="Este riesgo se guardó antes de esta función — vuelve a correr su simulación desde Análisis FAIR para poder verla aquí."'}>
                         <i class="fas fa-chart-bar mr-1"></i>Simular
                     </button>
                     <button class="inline-flex items-center justify-center p-2 text-red-600 hover:text-red-800 text-sm ml-2" title="Eliminar riesgo" aria-label="Eliminar riesgo" data-delete-risk="${sanitizeHTML(item.fairEntry.riskName)}" data-delete-source-id="${item.id || ''}" data-delete-entry-id="${item.fairEntry.id || ''}"><i class="fas fa-trash"></i></button>`
-                : `<button class="btn btn-primary text-xs" data-analyze-quick="${item.id}" ${item.fullData ? '' : 'disabled title="No se encontró la información completa de este riesgo."'}><i class="fas fa-balance-scale mr-1"></i>Analizar con FAIR</button>
+                        : `<button class="btn btn-primary text-xs" data-analyze-quick="${item.id}" ${item.fullData ? '' : 'disabled title="No se encontró la información completa de este riesgo."'}><i class="fas fa-balance-scale mr-1"></i>Analizar con FAIR</button>
                     <button class="inline-flex items-center justify-center p-2 text-red-600 hover:text-red-800 text-sm ml-2" title="Eliminar riesgo" aria-label="Eliminar riesgo" data-delete-quick="${item.id}"><i class="fas fa-trash"></i></button>`;
 
-            return `
+                return `
                 <tr class="border-b">
                     <td class="py-2 text-center">${checkboxCell}</td>
                     <td class="text-center text-gray-500">${item.number}</td>
@@ -543,28 +609,39 @@ export const FairRegister = {
                     <td>${dateCell}</td>
                     <td class="whitespace-nowrap">${actionsCell}</td>
                 </tr>`;
-        }).join('');
+            })
+            .join('');
 
-        bodies.forEach(tb => { tb.innerHTML = rowsHTML; });
-
-        document.querySelectorAll('[data-delete-risk]').forEach(btn => {
-            btn.addEventListener('click', () => this.deleteConcentratedRisk({ riskName: btn.dataset.deleteRisk, sourceId: btn.dataset.deleteSourceId || null, entryId: btn.dataset.deleteEntryId || null }));
+        bodies.forEach((tb) => {
+            tb.innerHTML = rowsHTML;
         });
-        document.querySelectorAll('[data-simulate-risk]').forEach(btn => {
+
+        document.querySelectorAll('[data-delete-risk]').forEach((btn) => {
+            btn.addEventListener('click', () =>
+                this.deleteConcentratedRisk({
+                    riskName: btn.dataset.deleteRisk,
+                    sourceId: btn.dataset.deleteSourceId || null,
+                    entryId: btn.dataset.deleteEntryId || null,
+                }),
+            );
+        });
+        document.querySelectorAll('[data-simulate-risk]').forEach((btn) => {
             btn.addEventListener('click', () => this.simulateRegisteredRisk(btn.dataset.simulateRisk));
         });
-        document.querySelectorAll('[data-delete-quick]').forEach(btn => {
-            btn.addEventListener('click', () => this.deleteConcentratedRisk({ riskName: null, sourceId: btn.dataset.deleteQuick }));
+        document.querySelectorAll('[data-delete-quick]').forEach((btn) => {
+            btn.addEventListener('click', () =>
+                this.deleteConcentratedRisk({ riskName: null, sourceId: btn.dataset.deleteQuick }),
+            );
         });
-        document.querySelectorAll('[data-analyze-fair]').forEach(btn => {
+        document.querySelectorAll('[data-analyze-fair]').forEach((btn) => {
             btn.addEventListener('click', () => {
                 App.Navigation.switchPage('fair');
                 App.FairWizard.loadRegisteredRiskIntoForm(btn.dataset.analyzeFair);
             });
         });
-        document.querySelectorAll('[data-analyze-quick]').forEach(btn => {
+        document.querySelectorAll('[data-analyze-quick]').forEach((btn) => {
             btn.addEventListener('click', () => {
-                const item = (state.fair.concentratedRisks || []).find(x => x.id === btn.dataset.analyzeQuick);
+                const item = (state.fair.concentratedRisks || []).find((x) => x.id === btn.dataset.analyzeQuick);
                 if (!item || !item.fullData) {
                     showToast('No se encontró la información de este riesgo.');
                     return;
@@ -573,14 +650,16 @@ export const FairRegister = {
                 App.FairAnalysis.receiveData([item.fullData]);
             });
         });
-        document.querySelectorAll('.concentrated-checkbox').forEach(cb => {
+        document.querySelectorAll('.concentrated-checkbox').forEach((cb) => {
             cb.addEventListener('change', () => this.updateDeepAnalysisBtnState());
         });
         this.updateDeepAnalysisBtnState();
     },
 
     toggleSelectAll(tbodyId, checked) {
-        document.querySelectorAll(`#${tbodyId} .concentrated-checkbox`).forEach(cb => { cb.checked = checked; });
+        document.querySelectorAll(`#${tbodyId} .concentrated-checkbox`).forEach((cb) => {
+            cb.checked = checked;
+        });
         this.updateDeepAnalysisBtnState();
     },
 
@@ -597,17 +676,29 @@ export const FairRegister = {
     // Pérdida por categoría, sensibilidad, evaluación) — de momento el detalle básico ya
     // guardado en el Registro; ver buildDeepAnalysisCard.
     showDeepAnalysis(tbodyId) {
-        const selectedKeys = Array.from(document.querySelectorAll(`#${tbodyId} .concentrated-checkbox:checked`)).map(cb => cb.dataset.id);
-        const selectedItems = (state.fair.concentratedRisks || []).filter(item => selectedKeys.includes(String(item.rowKey)));
+        const selectedKeys = Array.from(document.querySelectorAll(`#${tbodyId} .concentrated-checkbox:checked`)).map(
+            (cb) => cb.dataset.id,
+        );
+        const selectedItems = (state.fair.concentratedRisks || []).filter((item) =>
+            selectedKeys.includes(String(item.rowKey)),
+        );
         if (selectedItems.length === 0) return;
 
-        document.getElementById('fair-deep-analysis-body').innerHTML = selectedItems.map(item => this.buildDeepAnalysisCard(item)).join('');
+        document.getElementById('fair-deep-analysis-body').innerHTML = selectedItems
+            .map((item) => this.buildDeepAnalysisCard(item))
+            .join('');
         document.getElementById('fair-deep-analysis-panel').classList.remove('hidden');
         document.getElementById('fair-deep-analysis-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
     },
 
     buildDeepAnalysisCard(item) {
-        const fmt = (v) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v);
+        const fmt = (v) =>
+            new Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency: 'USD',
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0,
+            }).format(v);
         const entry = item.fairEntry;
 
         if (!entry) {
@@ -625,25 +716,31 @@ export const FairRegister = {
                         <li><strong>Activo:</strong> ${sanitizeHTML(item.asset || '—')}</li>
                         <li><strong>Amenaza:</strong> ${sanitizeHTML(fd.threat) || '—'}</li>
                         <li><strong>Descripción:</strong> ${sanitizeHTML(fd.riskDescription) || '—'}</li>
-                        ${hasLegacyEstimate ? `
+                        ${
+                            hasLegacyEstimate
+                                ? `
                         <li><strong>Riesgo Inherente:</strong> ${item.riesgoInherente ?? '—'}</li>
                         <li><strong>Riesgo Residual:</strong> ${item.riesgoResidual ?? '—'}</li>
-                        <li><strong>ALE estimado:</strong> ${item.quickAle || '—'}</li>` : ''}
+                        <li><strong>ALE estimado:</strong> ${item.quickAle || '—'}</li>`
+                                : ''
+                        }
                     </ul>
                 </div>`;
         }
 
-        const rangeRow = (label, range, suffix = '') => range
-            ? `<tr><td class="py-1 pr-3 text-gray-600">${label}</td><td class="py-1 pr-3">${range.min}${suffix}</td><td class="py-1 pr-3 font-semibold">${range.mode}${suffix}</td><td class="py-1">${range.max}${suffix}</td></tr>`
-            : '';
+        const rangeRow = (label, range, suffix = '') =>
+            range
+                ? `<tr><td class="py-1 pr-3 text-gray-600">${label}</td><td class="py-1 pr-3">${range.min}${suffix}</td><td class="py-1 pr-3 font-semibold">${range.mode}${suffix}</td><td class="py-1">${range.max}${suffix}</td></tr>`
+                : '';
         const lossRows = entry.lossMagnitudes
             ? LOSS_FORMS_KEYS.map((key) => {
-                const f = entry.lossMagnitudes[key];
-                if (!f) return '';
-                return `<tr><td class="py-1 pr-3 text-gray-600">${LOSS_FORM_LABELS.tecnico[key]}</td><td class="py-1 pr-3">${fmt(f.min)}</td><td class="py-1 pr-3 font-semibold">${fmt(f.mode)}</td><td class="py-1">${fmt(f.max)}</td></tr>`;
-            }).join('')
+                  const f = entry.lossMagnitudes[key];
+                  if (!f) return '';
+                  return `<tr><td class="py-1 pr-3 text-gray-600">${LOSS_FORM_LABELS.tecnico[key]}</td><td class="py-1 pr-3">${fmt(f.min)}</td><td class="py-1 pr-3 font-semibold">${fmt(f.mode)}</td><td class="py-1">${fmt(f.max)}</td></tr>`;
+              }).join('')
             : '';
-        const sensitivityHTML = (entry.sensitivity || []).slice(0, 5)
+        const sensitivityHTML = (entry.sensitivity || [])
+            .slice(0, 5)
             .map((s) => `<li>${sensitivityLabel(s)}: ${(s.correlation * 100).toFixed(1)}%</li>`)
             .join('');
 
@@ -663,23 +760,35 @@ export const FairRegister = {
                     <li><strong>Fecha del análisis:</strong> ${entry.date ? new Date(entry.date).toLocaleDateString('es-MX', { year: 'numeric', month: 'short', day: 'numeric' }) : '—'}</li>
                     ${entry.evaluationJustification ? `<li><strong>Justificación:</strong> ${sanitizeHTML(entry.evaluationJustification)}</li>` : ''}
                 </ul>
-                ${(entry.tef || entry.vuln) ? `
+                ${
+                    entry.tef || entry.vuln
+                        ? `
                 <table class="w-full text-sm mb-3">
                     <thead><tr class="text-left text-gray-500"><th></th><th>Mín</th><th>Más Probable</th><th>Máx</th></tr></thead>
                     <tbody>
                         ${rangeRow('Frecuencia de Evento de Amenaza (contactos/año)', entry.tef)}
                         ${rangeRow('Vulnerabilidad', entry.vuln, '%')}
                     </tbody>
-                </table>` : ''}
-                ${lossRows ? `
+                </table>`
+                        : ''
+                }
+                ${
+                    lossRows
+                        ? `
                 <h5 class="text-sm font-semibold text-gray-800 mb-1">Magnitud de Pérdida</h5>
                 <table class="w-full text-sm mb-3">
                     <thead><tr class="text-left text-gray-500"><th></th><th>Mín</th><th>Más Probable</th><th>Máx</th></tr></thead>
                     <tbody>${lossRows}</tbody>
-                </table>` : ''}
-                ${sensitivityHTML ? `
+                </table>`
+                        : ''
+                }
+                ${
+                    sensitivityHTML
+                        ? `
                 <h5 class="text-sm font-semibold text-gray-800 mb-1">Variables más influyentes</h5>
-                <ul class="text-sm text-gray-700 list-disc list-inside">${sensitivityHTML}</ul>` : ''}
+                <ul class="text-sm text-gray-700 list-disc list-inside">${sensitivityHTML}</ul>`
+                        : ''
+                }
             </div>`;
     },
 
@@ -688,7 +797,13 @@ export const FairRegister = {
     renderParetoChart() {
         const pareto = state.fair.registerPareto;
         if (!pareto) return;
-        const formatCurrency = (value) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
+        const formatCurrency = (value) =>
+            new Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency: 'USD',
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0,
+            }).format(value);
 
         document.getElementById('fair-pareto-summary').textContent =
             `${pareto.riskCountFor80Percent} de ${pareto.totalRiskCount} riesgo(s) concentran el 80% de tu exposición total (${formatCurrency(pareto.totalExposure)}/año). Prioriza el tratamiento en esos primero.`;
@@ -701,35 +816,47 @@ export const FairRegister = {
             // justo lo que pasaba aquí.
             type: 'bar',
             data: {
-                labels: pareto.risks.map(r => r.riskName),
+                labels: pareto.risks.map((r) => r.riskName),
                 datasets: [
                     {
                         type: 'bar',
                         label: 'Pérdida Anual Esperada',
-                        data: pareto.risks.map(r => r.ale),
+                        data: pareto.risks.map((r) => r.ale),
                         backgroundColor: 'rgba(124, 58, 237, 0.6)',
                         yAxisID: 'y',
                     },
                     {
                         type: 'line',
                         label: '% Acumulado',
-                        data: pareto.risks.map(r => r.cumulativePercent),
+                        data: pareto.risks.map((r) => r.cumulativePercent),
                         borderColor: '#B22222',
                         backgroundColor: '#B22222',
                         yAxisID: 'y1',
                         tension: 0.1,
-                    }
-                ]
+                    },
+                ],
             },
             options: {
-                responsive: true, maintainAspectRatio: false,
+                responsive: true,
+                maintainAspectRatio: false,
                 scales: {
-                    y: { position: 'left', beginAtZero: true, title: { display: true, text: 'Pérdida Anual Esperada' }, ticks: { callback: (v) => formatCurrency(v) } },
-                    y1: { position: 'right', beginAtZero: true, max: 100, title: { display: true, text: '% Acumulado' }, grid: { drawOnChartArea: false } },
+                    y: {
+                        position: 'left',
+                        beginAtZero: true,
+                        title: { display: true, text: 'Pérdida Anual Esperada' },
+                        ticks: { callback: (v) => formatCurrency(v) },
+                    },
+                    y1: {
+                        position: 'right',
+                        beginAtZero: true,
+                        max: 100,
+                        title: { display: true, text: '% Acumulado' },
+                        grid: { drawOnChartArea: false },
+                    },
                     x: { ticks: { maxRotation: 45, minRotation: 45 } },
                 },
-                plugins: { legend: { position: 'bottom' } }
-            }
+                plugins: { legend: { position: 'bottom' } },
+            },
         });
     },
 
@@ -743,31 +870,36 @@ export const FairRegister = {
             container.innerHTML = `<p class="description-text">Aún no hay suficientes datos de sensibilidad guardados.</p>`;
             return;
         }
-        const maxVal = Math.max(...averaged.map(a => a.averageCorrelation), 0.0001);
-        container.innerHTML = averaged.map(a => {
-            const pct = Math.max(2, Math.round((a.averageCorrelation / maxVal) * 100));
-            return `
+        const maxVal = Math.max(...averaged.map((a) => a.averageCorrelation), 0.0001);
+        container.innerHTML = averaged
+            .map((a) => {
+                const pct = Math.max(2, Math.round((a.averageCorrelation / maxVal) * 100));
+                return `
                 <div class="mb-2">
                     <div class="flex justify-between text-sm"><span>${sensitivityLabel(a)}</span><span>${(a.averageCorrelation * 100).toFixed(1)}%</span></div>
                     <div class="w-full bg-gray-200 rounded h-2"><div class="h-2 rounded bg-purple-600" style="width:${pct}%;"></div></div>
                 </div>`;
-        }).join('');
+            })
+            .join('');
     },
 
     // Re-simula un riesgo ya guardado usando sus inputs originales (tef/vuln/lossMagnitudes)
     // y su semilla — misma reproducibilidad exacta que documenta /api/simulate. Siempre a
     // 10,000 iteraciones (tope único para todas las simulaciones, ver backend/validate.js).
     async simulateRegisteredRisk(riskName) {
-        const risk = (state.fair.riskRegister || []).find(r => r.riskName === riskName);
+        const risk = (state.fair.riskRegister || []).find((r) => r.riskName === riskName);
         if (!risk || !risk.tef || !risk.vuln || !risk.lossMagnitudes) {
-            showToast('Este riesgo no tiene los datos guardados para re-simular. Vuelve a correrlo desde Análisis FAIR.');
+            showToast(
+                'Este riesgo no tiene los datos guardados para re-simular. Vuelve a correrlo desde Análisis FAIR.',
+            );
             return;
         }
 
         const section = document.getElementById('fair-register-simulation');
         const loading = document.getElementById('fair-register-simulation-loading');
         const body = document.getElementById('fair-register-simulation-body');
-        document.getElementById('fair-register-simulation-title').textContent = `Simulación Detallada: ${risk.riskName}`;
+        document.getElementById('fair-register-simulation-title').textContent =
+            `Simulación Detallada: ${risk.riskName}`;
         section.classList.remove('hidden');
         loading.classList.remove('hidden');
         loading.textContent = 'Simulando 10,000 escenarios…';
@@ -806,16 +938,18 @@ export const FairRegister = {
 
         const sensContainer = document.getElementById('fair-register-sim-sensitivity');
         const top = (result.sensitivity || []).slice(0, 5);
-        const maxAbs = Math.max(...top.map(s => Math.abs(s.correlation)), 0.0001);
-        sensContainer.innerHTML = top.map(s => {
-            const pct = Math.max(2, Math.round((Math.abs(s.correlation) / maxAbs) * 100));
-            const color = s.correlation >= 0 ? '#3B82F6' : '#EF4444';
-            return `
+        const maxAbs = Math.max(...top.map((s) => Math.abs(s.correlation)), 0.0001);
+        sensContainer.innerHTML = top
+            .map((s) => {
+                const pct = Math.max(2, Math.round((Math.abs(s.correlation) / maxAbs) * 100));
+                const color = s.correlation >= 0 ? '#3B82F6' : '#EF4444';
+                return `
                 <div class="mb-2">
                     <div class="flex justify-between text-sm"><span>${sensitivityLabel(s)}</span><span>${(s.correlation * 100).toFixed(1)}%</span></div>
                     <div class="w-full bg-gray-200 rounded h-2"><div class="h-2 rounded" style="width:${pct}%; background-color:${color};"></div></div>
                 </div>`;
-        }).join('');
+            })
+            .join('');
 
         // Histograma — mismo binning que el de Análisis FAIR (ver runMonteCarloSimulation).
         const ctx = document.getElementById('fair-register-sim-chart').getContext('2d');
@@ -823,21 +957,36 @@ export const FairRegister = {
         const maxLoss = result.summary.max;
         const binWidth = maxLoss > 0 ? maxLoss / numBins : 1;
         const labels = [];
-        for (let i = 0; i < numBins; i++) labels.push(`${(i * binWidth / 1000).toFixed(0)}k`);
+        for (let i = 0; i < numBins; i++) labels.push(`${((i * binWidth) / 1000).toFixed(0)}k`);
         const binCounts = new Array(numBins).fill(0);
-        result.annualLosses.forEach(loss => {
+        result.annualLosses.forEach((loss) => {
             const binIndex = Math.min(Math.floor(loss / binWidth), numBins - 1);
             binCounts[binIndex]++;
         });
         if (state.fair.registerSimChart) state.fair.registerSimChart.destroy();
         state.fair.registerSimChart = new Chart(ctx, {
             type: 'bar',
-            data: { labels, datasets: [{ label: 'Frecuencia de Pérdida Anual', data: binCounts, backgroundColor: 'rgba(54, 162, 235, 0.6)', borderColor: 'rgba(54, 162, 235, 1)', borderWidth: 1 }] },
+            data: {
+                labels,
+                datasets: [
+                    {
+                        label: 'Frecuencia de Pérdida Anual',
+                        data: binCounts,
+                        backgroundColor: 'rgba(54, 162, 235, 0.6)',
+                        borderColor: 'rgba(54, 162, 235, 1)',
+                        borderWidth: 1,
+                    },
+                ],
+            },
             options: {
-                responsive: true, maintainAspectRatio: false,
+                responsive: true,
+                maintainAspectRatio: false,
                 scales: {
                     y: { beginAtZero: true, title: { display: true, text: 'Nº de Simulaciones' } },
-                    x: { title: { display: true, text: 'Pérdida Anual Estimada (miles de USD)' }, ticks: { autoSkip: true, maxRotation: 45, minRotation: 45 } },
+                    x: {
+                        title: { display: true, text: 'Pérdida Anual Estimada (miles de USD)' },
+                        ticks: { autoSkip: true, maxRotation: 45, minRotation: 45 },
+                    },
                 },
             },
         });
@@ -866,36 +1015,48 @@ export const FairRegister = {
         // bucket "Bajo" con oportunidades buenas como si fueran riesgos triviales.
         const severityLabels = { critico: 'Crítico', alto: 'Alto', medio: 'Medio', bajo: 'Bajo' };
         const bySeverity = { critico: 0, alto: 0, medio: 0, bajo: 0 };
-        const threatRegister = register.filter(r => r.riskType !== 'oportunidad');
+        const threatRegister = register.filter((r) => r.riskType !== 'oportunidad');
         const opportunityCount = register.length - threatRegister.length;
-        threatRegister.forEach(r => {
+        threatRegister.forEach((r) => {
             if (r.severity && bySeverity[r.severity] !== undefined) bySeverity[r.severity]++;
         });
         const formatCurrency = (v) => `$${Math.round(v).toLocaleString('en-US')}`;
 
         const parts = [];
         if (threatRegister.length > 0) {
-            parts.push(`Tienes <strong>${threatRegister.length}</strong> amenaza${threatRegister.length === 1 ? '' : 's'} guardada${threatRegister.length === 1 ? '' : 's'}: ` +
-                Object.entries(bySeverity).filter(([, n]) => n > 0).map(([sev, n]) => `${n} en nivel <strong>${severityLabels[sev]}</strong>`).join(', ') +
-                (opportunityCount > 0 ? ` (+ ${opportunityCount} oportunidad${opportunityCount === 1 ? '' : 'es'}, ver tabla abajo).` : '.'));
+            parts.push(
+                `Tienes <strong>${threatRegister.length}</strong> amenaza${threatRegister.length === 1 ? '' : 's'} guardada${threatRegister.length === 1 ? '' : 's'}: ` +
+                    Object.entries(bySeverity)
+                        .filter(([, n]) => n > 0)
+                        .map(([sev, n]) => `${n} en nivel <strong>${severityLabels[sev]}</strong>`)
+                        .join(', ') +
+                    (opportunityCount > 0
+                        ? ` (+ ${opportunityCount} oportunidad${opportunityCount === 1 ? '' : 'es'}, ver tabla abajo).`
+                        : '.'),
+            );
         } else {
-            parts.push(`Tienes <strong>${opportunityCount}</strong> oportunidad${opportunityCount === 1 ? '' : 'es'} guardada${opportunityCount === 1 ? '' : 's'} y ninguna amenaza — ver tabla abajo.`);
+            parts.push(
+                `Tienes <strong>${opportunityCount}</strong> oportunidad${opportunityCount === 1 ? '' : 'es'} guardada${opportunityCount === 1 ? '' : 's'} y ninguna amenaza — ver tabla abajo.`,
+            );
         }
 
         if (pareto && pareto.risks.length > 0) {
-            const topNames = pareto.risks.slice(0, pareto.riskCountFor80Percent).map(r => sanitizeHTML(r.riskName));
+            const topNames = pareto.risks.slice(0, pareto.riskCountFor80Percent).map((r) => sanitizeHTML(r.riskName));
             const exposicionTexto = `el 80% de tu exposición total (${formatCurrency(pareto.totalExposure)}/año)`;
-            parts.push(`<strong>${pareto.riskCountFor80Percent} de ${pareto.totalRiskCount}</strong> riesgo${pareto.riskCountFor80Percent === 1 ? '' : 's'} (${topNames.join(', ')}) concentra${pareto.riskCountFor80Percent === 1 ? '' : 'n'} ${exposicionTexto} — prioriza el tratamiento ahí antes que en los demás.`);
+            parts.push(
+                `<strong>${pareto.riskCountFor80Percent} de ${pareto.totalRiskCount}</strong> riesgo${pareto.riskCountFor80Percent === 1 ? '' : 's'} (${topNames.join(', ')}) concentra${pareto.riskCountFor80Percent === 1 ? '' : 'n'} ${exposicionTexto} — prioriza el tratamiento ahí antes que en los demás.`,
+            );
         }
 
         const topSensitivity = (state.fair.registerConsolidatedSensitivity || [])[0];
         if (topSensitivity) {
-            parts.push(`La variable que más mueve tus resultados, en promedio, es <strong>"${sensitivityLabel(topSensitivity)}"</strong> — mejorar la calidad de ese dato es donde más rendiría tu esfuerzo.`);
+            parts.push(
+                `La variable que más mueve tus resultados, en promedio, es <strong>"${sensitivityLabel(topSensitivity)}"</strong> — mejorar la calidad de ese dato es donde más rendiría tu esfuerzo.`,
+            );
         }
 
-        container.innerHTML = parts.map(p => `<p class="mb-2">${p}</p>`).join('');
+        container.innerHTML = parts.map((p) => `<p class="mb-2">${p}</p>`).join('');
     },
-
 };
 
 App.FairRegister = FairRegister;

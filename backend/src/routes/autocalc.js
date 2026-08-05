@@ -2,7 +2,12 @@
 
 const express = require('express');
 const { attackerProfiles, defenseProfiles } = require('../data/profiles');
-const { calculateProfileAverage, calculateVulnerability, calculateLossMagnitudeRange, calculateReduccionALE } = require('../lib/autocalc');
+const {
+    calculateProfileAverage,
+    calculateVulnerability,
+    calculateLossMagnitudeRange,
+    calculateReduccionALE,
+} = require('../lib/autocalc');
 
 function createAutocalcRouter() {
     const router = express.Router();
@@ -24,7 +29,8 @@ function createAutocalcRouter() {
     // POST /api/autocalc/loss-magnitude { items: [{ key, mode }], confidence }
     router.post('/loss-magnitude', (req, res) => {
         const { items, confidence = 'medio' } = req.body;
-        if (!Array.isArray(items)) return res.status(400).json({ error: 'items debe ser un arreglo de { key, mode }.' });
+        if (!Array.isArray(items))
+            return res.status(400).json({ error: 'items debe ser un arreglo de { key, mode }.' });
 
         const result = {};
         items.forEach(({ key, mode }) => {
@@ -60,7 +66,10 @@ function createAutocalcRouter() {
         const attackerScore = calculateProfileAverage(attackerProfile);
         const defenseScore = calculateProfileAverage(defenseProfile);
         res.json({
-            attackerProfile, defenseProfile, attackerScore, defenseScore,
+            attackerProfile,
+            defenseProfile,
+            attackerScore,
+            defenseScore,
             differential: attackerScore - defenseScore,
         });
     });

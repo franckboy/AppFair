@@ -15,14 +15,9 @@ const INPUT_CSS = path.join(FRONTEND_DIR, 'src', 'tailwind-input.css');
 const TMP_OUTPUT = path.join(FRONTEND_DIR, '.tailwind-build-tmp.css');
 
 execFileSync(
-  process.execPath,
-  [
-    require.resolve('tailwindcss/lib/cli.js'),
-    '-i', INPUT_CSS,
-    '-o', TMP_OUTPUT,
-    '--minify',
-  ],
-  { cwd: FRONTEND_DIR, stdio: 'inherit' }
+    process.execPath,
+    [require.resolve('tailwindcss/lib/cli.js'), '-i', INPUT_CSS, '-o', TMP_OUTPUT, '--minify'],
+    { cwd: FRONTEND_DIR, stdio: 'inherit' },
 );
 
 const compiledCss = fs.readFileSync(TMP_OUTPUT, 'utf8').trim();
@@ -35,8 +30,8 @@ const openIdx = html.indexOf(openTag);
 const closeIdx = html.indexOf(closeTag, openIdx);
 
 if (openIdx === -1 || closeIdx === -1) {
-  console.error('No se encontró el bloque <style>...</style> en app_fair.html — revisa el formato esperado.');
-  process.exit(1);
+    console.error('No se encontró el bloque <style>...</style> en app_fair.html — revisa el formato esperado.');
+    process.exit(1);
 }
 
 const before = html.slice(0, openIdx + openTag.length);

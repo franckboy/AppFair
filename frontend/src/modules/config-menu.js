@@ -20,13 +20,15 @@ export const ConfigMenu = {
             { label: 'Criterios de Riesgo', icon: 'fa-sliders-h', onClick: () => App.Criteria.openEditor() },
             { label: 'Valores por Defecto', icon: 'fa-user-cog', onClick: () => App.OrgDefaults.openEditor() },
             {
-                label: 'Catálogo de Activos', icon: 'fa-boxes', onClick: () => {
+                label: 'Catálogo de Activos',
+                icon: 'fa-boxes',
+                onClick: () => {
                     App.Navigation.switchPage('assets');
                     App.AssetCatalog.load();
                 },
             },
         ]);
-    }
+    },
 };
 
 App.ConfigMenu = ConfigMenu;

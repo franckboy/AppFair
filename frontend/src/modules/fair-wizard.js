@@ -1,7 +1,19 @@
 import { App } from './app-namespace.js';
 import { state } from './state.js';
 import { Modal } from './modal.js';
-import { LOSS_FORMS_KEYS, LOSS_FORM_LABELS, LOSS_FIELD_LABELS, debounce, getSafeNumber, sanitizeHTML, sensitivityLabel, severityToClasses, showToast, toggleErrorState, updateProgressBar } from './utils.js';
+import {
+    LOSS_FORMS_KEYS,
+    LOSS_FORM_LABELS,
+    LOSS_FIELD_LABELS,
+    debounce,
+    getSafeNumber,
+    sanitizeHTML,
+    sensitivityLabel,
+    severityToClasses,
+    showToast,
+    toggleErrorState,
+    updateProgressBar,
+} from './utils.js';
 
 // --- FAIR Analysis Module ---
 // ============================================================
@@ -25,7 +37,10 @@ export const FairWizard = {
         try {
             const raw = localStorage.getItem('fairAnalysisTemplate');
             if (!raw) {
-                Modal.alert('Aún no tienes ningún análisis FAIR completado (con simulación corrida) para usar como plantilla.', 'Sin plantilla disponible');
+                Modal.alert(
+                    'Aún no tienes ningún análisis FAIR completado (con simulación corrida) para usar como plantilla.',
+                    'Sin plantilla disponible',
+                );
                 return;
             }
             data = JSON.parse(raw);
@@ -42,14 +57,16 @@ export const FairWizard = {
         this.toggleRiskTypeLabels();
         document.getElementById('fair-owner').value = data.owner || App.OrgDefaults.defaults.owner;
         document.getElementById('fair-data-source').value = data.dataSource || App.OrgDefaults.defaults.dataSource;
-        document.getElementById('fair-data-confidence').value = data.dataConfidence || App.OrgDefaults.defaults.dataConfidence;
+        document.getElementById('fair-data-confidence').value =
+            data.dataConfidence || App.OrgDefaults.defaults.dataConfidence;
         if (data.attackerKey) document.getElementById('fair-attacker-profile').value = data.attackerKey;
         if (data.defenseKey) document.getElementById('fair-defense-profile').value = data.defenseKey;
         document.getElementById('fair-deliberate-threat').checked = !!data.isDeliberate;
         document.getElementById('fair-deliberate-ponderation-container').classList.toggle('hidden', !data.isDeliberate);
         if (data.deliberateThreatPonderation) {
             document.getElementById('fair-deliberate-ponderation').value = data.deliberateThreatPonderation;
-            document.getElementById('fair-deliberate-ponderation-value').textContent = `x${parseFloat(data.deliberateThreatPonderation).toFixed(2)}`;
+            document.getElementById('fair-deliberate-ponderation-value').textContent =
+                `x${parseFloat(data.deliberateThreatPonderation).toFixed(2)}`;
         }
         this.updateAttackerDefenseSummary();
 
@@ -81,7 +98,9 @@ export const FairWizard = {
         }
 
         this.navigateWizard(1, true);
-        showToast('Plantilla aplicada. Revisa el Nombre del Escenario, Activo y Agente de Amenaza — son lo único que casi siempre cambia entre un riesgo y otro.');
+        showToast(
+            'Plantilla aplicada. Revisa el Nombre del Escenario, Activo y Agente de Amenaza — son lo único que casi siempre cambia entre un riesgo y otro.',
+        );
     },
 
     // Guarda lo que ya se llenó en el Paso 1 en /api/risks, SIN pasar por TEF/Vulnerabilidad/
@@ -149,7 +168,20 @@ export const FairWizard = {
             document.getElementById('fair-resume-banner').classList.add('hidden');
         });
         const debouncedUpdateTreatmentView = debounce(() => this.updateTreatmentView(), 400);
-        ['fair-costoControlAnual', 'fair-reduccionALE', 'fair-mitigar-fiabilidad', 'fair-mitigar-retraso', 'fair-seguro-prima', 'fair-seguro-deducible', 'fair-seguro-limite', 'fair-seguro-fiabilidad', 'fair-seguro-retraso', 'fair-evitar-costo', 'fair-evitar-fiabilidad', 'fair-evitar-retraso'].forEach(id => {
+        [
+            'fair-costoControlAnual',
+            'fair-reduccionALE',
+            'fair-mitigar-fiabilidad',
+            'fair-mitigar-retraso',
+            'fair-seguro-prima',
+            'fair-seguro-deducible',
+            'fair-seguro-limite',
+            'fair-seguro-fiabilidad',
+            'fair-seguro-retraso',
+            'fair-evitar-costo',
+            'fair-evitar-fiabilidad',
+            'fair-evitar-retraso',
+        ].forEach((id) => {
             document.getElementById(id).addEventListener('input', debouncedUpdateTreatmentView);
         });
         document.getElementById('fair-seguro-sin-limite').addEventListener('change', (e) => {
@@ -158,17 +190,31 @@ export const FairWizard = {
             limiteInput.classList.toggle('bg-gray-100', e.target.checked);
             this.updateTreatmentView();
         });
-        document.getElementById('fair-aceptar-justificacion').addEventListener('input', () => this.persistFairAnalysis());
-        document.getElementById('fair-attacker-profile').addEventListener('change', () => this._trackPendingAutocalc(this.updateAttackerDefenseSummary()));
-        document.getElementById('fair-defense-profile').addEventListener('change', () => this._trackPendingAutocalc(this.updateAttackerDefenseSummary()));
+        document
+            .getElementById('fair-aceptar-justificacion')
+            .addEventListener('input', () => this.persistFairAnalysis());
+        document
+            .getElementById('fair-attacker-profile')
+            .addEventListener('change', () => this._trackPendingAutocalc(this.updateAttackerDefenseSummary()));
+        document
+            .getElementById('fair-defense-profile')
+            .addEventListener('change', () => this._trackPendingAutocalc(this.updateAttackerDefenseSummary()));
         document.getElementById('fair-data-confidence').addEventListener('change', () => {
-            this._trackPendingAutocalc(Promise.all([this.updateVulnerabilityAuto(), this.updateAllLossMagnitudeAuto()]));
+            this._trackPendingAutocalc(
+                Promise.all([this.updateVulnerabilityAuto(), this.updateAllLossMagnitudeAuto()]),
+            );
         });
         document.getElementById('lm-manual-override').addEventListener('change', (e) => {
             this.setLossMagnitudeManualOverride(e.target.checked);
-            showToast(e.target.checked ? 'Ahora puedes editar Mín/Máx manualmente en todas las categorías.' : 'Mín/Máx calculados automáticamente de nuevo.');
+            showToast(
+                e.target.checked
+                    ? 'Ahora puedes editar Mín/Máx manualmente en todas las categorías.'
+                    : 'Mín/Máx calculados automáticamente de nuevo.',
+            );
         });
-        document.getElementById('fair-mitigar-defensa-objetivo').addEventListener('change', () => this.updateReduccionALEAuto());
+        document
+            .getElementById('fair-mitigar-defensa-objetivo')
+            .addEventListener('change', () => this.updateReduccionALEAuto());
         document.getElementById('fair-reduccionALE-manual-override').addEventListener('change', (e) => {
             const manual = e.target.checked;
             document.getElementById('fair-reduccionALE').readOnly = !manual;
@@ -199,18 +245,29 @@ export const FairWizard = {
         document.getElementById('fair-risk-type').addEventListener('change', () => this.toggleRiskTypeLabels());
         document.getElementById('fair-deliberate-ponderation').addEventListener('change', () => this.suggestTefRange());
         document.getElementById('fair-deliberate-ponderation').addEventListener('input', (e) => {
-            document.getElementById('fair-deliberate-ponderation-value').textContent = `x${parseFloat(e.target.value).toFixed(2)}`;
+            document.getElementById('fair-deliberate-ponderation-value').textContent =
+                `x${parseFloat(e.target.value).toFixed(2)}`;
         });
         // Si el usuario escribe directamente en TEF, dejamos de pisarlo con la sugerencia
         // automática — la sugerencia es solo un punto de partida, no debe robarle el control
         // a alguien que ya puso su propio dato. .value=... por JS no dispara 'input', así que
         // este listener solo detecta tecleo real del usuario, nunca nuestras propias sugerencias.
-        ['tef-min', 'tef-mode', 'tef-max'].forEach(id => {
-            document.getElementById(id).addEventListener('input', () => { state.fair.tefManuallyEdited = true; });
+        ['tef-min', 'tef-mode', 'tef-max'].forEach((id) => {
+            document.getElementById(id).addEventListener('input', () => {
+                state.fair.tefManuallyEdited = true;
+            });
         });
-        document.getElementById('fair-export-consolidated-btn').addEventListener('click', () => App.FairExport.exportConsolidatedReport());
-        document.getElementById('selectAllHistory').addEventListener('change', (e) => App.FairRegister.toggleSelectAll('quick-concentrated-table-body', e.target.checked));
-        document.getElementById('fair-deep-analysis-btn').addEventListener('click', () => App.FairRegister.showDeepAnalysis('quick-concentrated-table-body'));
+        document
+            .getElementById('fair-export-consolidated-btn')
+            .addEventListener('click', () => App.FairExport.exportConsolidatedReport());
+        document
+            .getElementById('selectAllHistory')
+            .addEventListener('change', (e) =>
+                App.FairRegister.toggleSelectAll('quick-concentrated-table-body', e.target.checked),
+            );
+        document
+            .getElementById('fair-deep-analysis-btn')
+            .addEventListener('click', () => App.FairRegister.showDeepAnalysis('quick-concentrated-table-body'));
         document.getElementById('fair-deep-analysis-close').addEventListener('click', () => {
             document.getElementById('fair-deep-analysis-panel').classList.add('hidden');
         });
@@ -223,7 +280,7 @@ export const FairWizard = {
         // selector también los agarrara, quedarían con DOS listeners en el mismo 'change' y
         // el segundo (síncrono) reordenaría con min/max viejos antes de que el primero
         // terminara, pisando el valor "Más Probable" que el usuario acaba de escribir.
-        document.querySelectorAll('#fair-step-2 .fair-range-input').forEach(input => {
+        document.querySelectorAll('#fair-step-2 .fair-range-input').forEach((input) => {
             input.addEventListener('change', (e) => {
                 const parentSection = e.target.closest('.fair-section');
                 const prefix = parentSection.querySelector('[data-min="true"]').id.replace('-min', '');
@@ -243,7 +300,10 @@ export const FairWizard = {
 
         let data;
         try {
-            data = await App.Api.request('/api/autocalc/attacker-defense-summary', { method: 'POST', body: { attackerKey, defenseKey } });
+            data = await App.Api.request('/api/autocalc/attacker-defense-summary', {
+                method: 'POST',
+                body: { attackerKey, defenseKey },
+            });
         } catch (err) {
             summaryEl.innerHTML = '<p class="text-red-600">No se pudo calcular. Verifica tu conexión.</p>';
             showToast(err.userMessage || 'No se pudo calcular el resumen de atacante/defensa.');
@@ -258,15 +318,18 @@ export const FairWizard = {
         state.fair.defenseScore = defenseScore;
         state.fair.FAD_raw = differential / 100;
 
-        const rowsHTML = (profile) => Object.entries(profile)
-            .filter(([key]) => key !== 'name')
-            .map(([key, value]) => `<span class="inline-block mr-3 capitalize">${key}: <strong>${value}%</strong></span>`)
-            .join('');
+        const rowsHTML = (profile) =>
+            Object.entries(profile)
+                .filter(([key]) => key !== 'name')
+                .map(
+                    ([key, value]) =>
+                        `<span class="inline-block mr-3 capitalize">${key}: <strong>${value}%</strong></span>`,
+                )
+                .join('');
 
         const diffClass = differential >= 0 ? 'text-red-700' : 'text-green-700';
-        const diffText = differential >= 0
-            ? 'el atacante supera a tu defensa actual'
-            : 'tu defensa actual supera al atacante';
+        const diffText =
+            differential >= 0 ? 'el atacante supera a tu defensa actual' : 'tu defensa actual supera al atacante';
 
         summaryEl.innerHTML = `
             <p class="mb-1"><strong>Factor de Amenaza (FA):</strong> ${attackerScore.toFixed(1)}% — ${rowsHTML(attackerProfile)}</p>
@@ -295,7 +358,8 @@ export const FairWizard = {
         let data;
         try {
             data = await App.Api.request('/api/autocalc/reduccion-ale', {
-                method: 'POST', body: { currentDefenseKey: state.fair.defenseKey, targetDefenseKey: objetivoKey },
+                method: 'POST',
+                body: { currentDefenseKey: state.fair.defenseKey, targetDefenseKey: objetivoKey },
             });
         } catch (err) {
             explanationEl.textContent = 'No se pudo calcular automáticamente. Verifica tu conexión.';
@@ -303,8 +367,7 @@ export const FairWizard = {
         }
 
         document.getElementById('fair-reduccionALE').value = data.reductionPercent;
-        explanationEl.textContent =
-            `Calculado como: pasar de tu defensa actual (${data.currentScore.toFixed(0)}%) a "${state.quick.defenseProfiles[objetivoKey].name}" (${data.targetScore.toFixed(0)}%) = ${data.reductionPercent}% de reducción estimada.`;
+        explanationEl.textContent = `Calculado como: pasar de tu defensa actual (${data.currentScore.toFixed(0)}%) a "${state.quick.defenseProfiles[objetivoKey].name}" (${data.targetScore.toFixed(0)}%) = ${data.reductionPercent}% de reducción estimada.`;
 
         if (this.updateTreatmentView) this.updateTreatmentView();
     },
@@ -315,7 +378,7 @@ export const FairWizard = {
     // se ajusta según el Nivel de Confianza que ya declaraste — confianza baja = rango ancho.
     setVulnManualOverride(isManual) {
         document.getElementById('vuln-manual-override').checked = isManual;
-        ['vuln-min', 'vuln-mode', 'vuln-max'].forEach(id => {
+        ['vuln-min', 'vuln-mode', 'vuln-max'].forEach((id) => {
             const el = document.getElementById(id);
             el.readOnly = !isManual;
             el.classList.toggle('bg-gray-100', !isManual);
@@ -334,7 +397,8 @@ export const FairWizard = {
         let data;
         try {
             data = await App.Api.request('/api/autocalc/vulnerability', {
-                method: 'POST', body: { attackerKey: state.fair.attackerKey, defenseKey: state.fair.defenseKey, confidence },
+                method: 'POST',
+                body: { attackerKey: state.fair.attackerKey, defenseKey: state.fair.defenseKey, confidence },
             });
         } catch (err) {
             explanationEl.textContent = 'No se pudo calcular automáticamente. Verifica tu conexión.';
@@ -346,8 +410,7 @@ export const FairWizard = {
         document.getElementById('vuln-max').value = data.max;
 
         const confidenceLabel = { alto: 'Alta', medio: 'Media', bajo: 'Baja' }[confidence] || 'Media';
-        explanationEl.textContent =
-            `Calculado como: Factor de Amenaza (${data.attackerScore.toFixed(0)}%) × [1 − Nivel de Defensa (${data.defenseScore.toFixed(0)}%)] = ${data.mode}%. Rango ±según tu Nivel de Confianza declarado (${confidenceLabel}).`;
+        explanationEl.textContent = `Calculado como: Factor de Amenaza (${data.attackerScore.toFixed(0)}%) × [1 − Nivel de Defensa (${data.defenseScore.toFixed(0)}%)] = ${data.mode}%. Rango ±según tu Nivel de Confianza declarado (${confidenceLabel}).`;
     },
 
     // Conecta la Fecha de Revisión con qué tan grave salió la Evaluación (ISO 31000, 6.6):
@@ -412,7 +475,7 @@ export const FairWizard = {
         const isDeliberate = document.getElementById('fair-deliberate-threat').checked;
         const frequencyFactor = (attackerProfile.motivation + attackerProfile.persistence) / 2;
         const attackerThreatFactor = frequencyFactor / 100;
-        const multiplier = isDeliberate ? (1 + (attackerThreatFactor * ponderacion)) : 1;
+        const multiplier = isDeliberate ? 1 + attackerThreatFactor * ponderacion : 1;
 
         const BASE_MODE = 10; // punto de partida neutral (amenaza no deliberada, o ponderación=0)
         const suggestedMode = Math.max(1, Math.round(BASE_MODE * multiplier));
@@ -427,14 +490,14 @@ export const FairWizard = {
         const minInput = document.getElementById(`${prefix}-min`);
         const modeInput = document.getElementById(`${prefix}-mode`);
         const maxInput = document.getElementById(`${prefix}-max`);
-        
+
         let minVal = getSafeNumber(minInput);
         let modeVal = getSafeNumber(modeInput);
         let maxVal = getSafeNumber(maxInput);
 
         let values = [minVal, modeVal, maxVal];
         values.sort((a, b) => a - b);
-        
+
         minInput.value = values[0];
         modeInput.value = values[1];
         maxInput.value = values[2];
@@ -444,11 +507,11 @@ export const FairWizard = {
 
     receiveData(data) {
         state.fair.pendingRisks = Array.isArray(data) ? data : [data];
-        
+
         const selectionContainer = document.getElementById('fair-selection-container');
         const wizardWrapper = document.getElementById('fair-wizard-wrapper');
         const riskList = document.getElementById('fair-risk-list');
-        
+
         if (state.fair.pendingRisks.length > 1) {
             riskList.innerHTML = '';
             state.fair.pendingRisks.forEach((risk, index) => {
@@ -511,7 +574,8 @@ export const FairWizard = {
         document.getElementById('fair-deliberate-ponderation-container').classList.toggle('hidden', !data.isDeliberate);
         if (data.deliberateThreatPonderation) {
             document.getElementById('fair-deliberate-ponderation').value = data.deliberateThreatPonderation;
-            document.getElementById('fair-deliberate-ponderation-value').textContent = `x${parseFloat(data.deliberateThreatPonderation).toFixed(2)}`;
+            document.getElementById('fair-deliberate-ponderation-value').textContent =
+                `x${parseFloat(data.deliberateThreatPonderation).toFixed(2)}`;
         }
         this.updateAttackerDefenseSummary();
 
@@ -575,20 +639,22 @@ export const FairWizard = {
         noneOpt.textContent = '— Ninguno (riesgo independiente) —';
         select.appendChild(noneOpt);
 
-        register.filter(r => r.riskName !== ownName).forEach(r => {
-            const opt = document.createElement('option');
-            opt.value = r.riskName;
-            opt.textContent = r.riskName;
-            select.appendChild(opt);
-        });
+        register
+            .filter((r) => r.riskName !== ownName)
+            .forEach((r) => {
+                const opt = document.createElement('option');
+                opt.value = r.riskName;
+                opt.textContent = r.riskName;
+                select.appendChild(opt);
+            });
 
-        if (Array.from(select.options).some(opt => opt.value === currentValue)) {
+        if (Array.from(select.options).some((opt) => opt.value === currentValue)) {
             select.value = currentValue;
         }
     },
 
     loadRegisteredRiskIntoForm(riskName) {
-        const entry = (state.fair.riskRegister || []).find(r => r.riskName === riskName);
+        const entry = (state.fair.riskRegister || []).find((r) => r.riskName === riskName);
         if (!entry) {
             showToast('No se encontró este riesgo en el Registro.');
             return;
@@ -614,7 +680,8 @@ export const FairWizard = {
         document.getElementById('fair-triggered-by').value = entry.triggeredByRiskName || '';
         if (entry.asset && entry.asset !== '—') document.getElementById('fair-asset').value = entry.asset;
         if (entry.owner && entry.owner !== '—') document.getElementById('fair-owner').value = entry.owner;
-        if (entry.securityPlan && entry.securityPlan !== '—') document.getElementById('fair-security-plan').value = entry.securityPlan;
+        if (entry.securityPlan && entry.securityPlan !== '—')
+            document.getElementById('fair-security-plan').value = entry.securityPlan;
         document.getElementById('fair-risk-type').value = entry.riskType || 'amenaza';
         this.toggleRiskTypeLabels();
 
@@ -651,7 +718,9 @@ export const FairWizard = {
         if (entry.seed) document.getElementById('fair-simulation-seed').value = entry.seed;
 
         this.navigateWizard(1, true);
-        showToast(`"${sanitizeHTML(entry.riskName)}" cargado desde el Registro — corre la simulación (Paso 4) para ver resultados y tratamiento actualizados.`);
+        showToast(
+            `"${sanitizeHTML(entry.riskName)}" cargado desde el Registro — corre la simulación (Paso 4) para ver resultados y tratamiento actualizados.`,
+        );
     },
 
     // Al promover desde Análisis Rápido, el total estimado (Costo Mín/Máx) no viene
@@ -665,11 +734,19 @@ export const FairWizard = {
     // anterior para quien no quiera detenerse a repartir.
     openLossRedistributionModal(data, avgCost) {
         const currency = 'USD';
-        const fmt = (v) => new Intl.NumberFormat('en-US', { style: 'currency', currency, minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v);
+        const fmt = (v) =>
+            new Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency,
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0,
+            }).format(v);
         const total = { min: data.costoMinImpacto, mode: avgCost, max: data.costoMaxImpacto };
         const keys = LOSS_FORMS_KEYS;
         const defaultPct = {};
-        keys.forEach(k => { defaultPct[k] = k === 'respuesta' ? 100 : 0; });
+        keys.forEach((k) => {
+            defaultPct[k] = k === 'respuesta' ? 100 : 0;
+        });
 
         Modal.title.textContent = 'Distribuir el Impacto Estimado';
         Modal.body.innerHTML = `
@@ -686,14 +763,14 @@ export const FairWizard = {
             </p>
         `;
         const rowsEl = Modal.body.querySelector('#lm-redistribute-rows');
-        keys.forEach(k => {
+        keys.forEach((k) => {
             const row = document.createElement('div');
             row.className = 'flex items-center gap-2';
             row.innerHTML = `
                 <label for="lm-redistribute-${k}" class="text-sm" style="flex:1">${sanitizeHTML(LOSS_FORM_LABELS.tecnico[k])}</label>
                 <input type="number" id="lm-redistribute-${k}" class="form-input" style="width:70px" min="0" max="100" value="${defaultPct[k]}">
                 <span class="text-sm">%</span>
-                <span id="lm-redistribute-${k}-amount" class="text-sm text-gray-500" style="width:90px; text-align:right">${fmt(total.mode * defaultPct[k] / 100)}</span>
+                <span id="lm-redistribute-${k}-amount" class="text-sm text-gray-500" style="width:90px; text-align:right">${fmt((total.mode * defaultPct[k]) / 100)}</span>
             `;
             rowsEl.appendChild(row);
         });
@@ -703,8 +780,8 @@ export const FairWizard = {
         `;
         Modal.modal.classList.remove('hidden');
 
-        const inputs = keys.map(k => document.getElementById(`lm-redistribute-${k}`));
-        const amountEls = keys.map(k => document.getElementById(`lm-redistribute-${k}-amount`));
+        const inputs = keys.map((k) => document.getElementById(`lm-redistribute-${k}`));
+        const amountEls = keys.map((k) => document.getElementById(`lm-redistribute-${k}-amount`));
         const sumEl = document.getElementById('lm-redistribute-sum');
         const sumAmountEl = document.getElementById('lm-redistribute-sum-amount');
         const warnEl = document.getElementById('lm-redistribute-sum-warning');
@@ -719,19 +796,19 @@ export const FairWizard = {
             inputs.forEach((inp, i) => {
                 const pct = getSafeNumber(inp);
                 sum += pct;
-                amountEls[i].textContent = fmt(total.mode * pct / 100);
+                amountEls[i].textContent = fmt((total.mode * pct) / 100);
             });
             sumEl.textContent = sum;
-            sumAmountEl.textContent = fmt(total.mode * sum / 100);
+            sumAmountEl.textContent = fmt((total.mode * sum) / 100);
             const ok = Math.abs(sum - 100) < 0.001;
             warnEl.classList.toggle('hidden', ok);
             confirmBtn.disabled = !ok;
         };
-        inputs.forEach(inp => inp.addEventListener('input', recomputeSum));
+        inputs.forEach((inp) => inp.addEventListener('input', recomputeSum));
         recomputeSum();
 
         const applyDistribution = (pctByKey) => {
-            keys.forEach(k => {
+            keys.forEach((k) => {
                 const pct = (pctByKey[k] || 0) / 100;
                 document.getElementById(`lm-${k}-min`).value = (total.min * pct).toFixed(0);
                 document.getElementById(`lm-${k}-mode`).value = (total.mode * pct).toFixed(0);
@@ -747,7 +824,9 @@ export const FairWizard = {
         confirmBtn.addEventListener('click', () => {
             if (confirmBtn.disabled) return;
             const pctByKey = {};
-            keys.forEach((k, i) => { pctByKey[k] = getSafeNumber(inputs[i]); });
+            keys.forEach((k, i) => {
+                pctByKey[k] = getSafeNumber(inputs[i]);
+            });
             applyDistribution(pctByKey);
             Modal.hide();
         });
@@ -766,7 +845,11 @@ export const FairWizard = {
 
     async navigateWizard(step, force = false) {
         if (state.fair.pendingAutocalc) {
-            try { await state.fair.pendingAutocalc; } catch (e) { /* el propio autocálculo ya avisó del error */ }
+            try {
+                await state.fair.pendingAutocalc;
+            } catch (e) {
+                /* el propio autocálculo ya avisó del error */
+            }
         }
         // stepValidations solo tiene entradas para 1-3 (avanzar hacia el Paso 4 es lo único
         // que necesita validarse) — el Paso 4 no tiene validador, así que sin este chequeo
@@ -777,19 +860,21 @@ export const FairWizard = {
             return;
         }
         state.fair.currentStep = step;
-        document.querySelectorAll('#fairAnalysisPage .wizard-step').forEach(section => section.classList.add('hidden'));
+        document
+            .querySelectorAll('#fairAnalysisPage .wizard-step')
+            .forEach((section) => section.classList.add('hidden'));
         document.getElementById(`fair-step-${step}`).classList.remove('hidden');
         updateProgressBar('fair-progress-bar', step, 4);
     },
 
     displayFairValidationErrors() {
-        document.querySelectorAll('.input-error, .error-message').forEach(el => {
+        document.querySelectorAll('.input-error, .error-message').forEach((el) => {
             el.classList.remove('input-error');
             el.classList.add('hidden');
         });
-        
+
         const currentStep = state.fair.currentStep;
-        
+
         if (currentStep === 1) {
             if (!document.getElementById('fair-riskName').value.trim()) {
                 toggleErrorState('fair-riskName', 'El nombre del escenario es obligatorio.');
@@ -835,7 +920,8 @@ export const FairWizard = {
                         // sin esto, una vez que esa rama lo pisaba una vez, este mensaje se
                         // quedaba con el texto equivocado para siempre (bug reportado: un
                         // rango válido mostraba "Rango numérico inválido").
-                        warningEl.textContent = 'Advertencia: Min, Modo y Max son iguales. Esto elimina la incertidumbre para este factor.';
+                        warningEl.textContent =
+                            'Advertencia: Min, Modo y Max son iguales. Esto elimina la incertidumbre para este factor.';
                         warningEl.classList.remove('hidden');
                     } else {
                         warningEl.classList.add('hidden');
@@ -856,7 +942,8 @@ export const FairWizard = {
         const isSimple = App.UIMode.mode === 'simple';
         const titles = isSimple ? LOSS_FORM_LABELS.simple : LOSS_FORM_LABELS.tecnico;
         const fieldLabels = isSimple ? LOSS_FIELD_LABELS.simple : LOSS_FIELD_LABELS.tecnico;
-        container.innerHTML = LOSS_FORMS_KEYS.map(key => `
+        container.innerHTML = LOSS_FORMS_KEYS.map(
+            (key) => `
             <div class="fair-section bg-gray-50">
                 <h5 class="font-semibold text-gray-700" id="lm-title-${key}">${titles[key]}</h5>
                 <div class="input-group mt-2">
@@ -875,10 +962,10 @@ export const FairWizard = {
                     </div>
                 </div>
                 <span id="lm-warning-${key}" class="range-warning hidden">Advertencia: Min, Modo y Max son iguales. Esto elimina la incertidumbre para este factor.</span>
-            </div>`
+            </div>`,
         ).join('');
         this.refreshAllLossMagnitudeCompactDisplays();
-        document.querySelectorAll('.fair-range-input').forEach(input => {
+        document.querySelectorAll('.fair-range-input').forEach((input) => {
             if (input.dataset.key) {
                 input.addEventListener('change', async () => {
                     let autocalcOk = true;
@@ -915,14 +1002,20 @@ export const FairWizard = {
         const summaryEl = document.getElementById(`lm-${key}-compact-summary`);
         if (!summaryEl) return;
         const currency = 'USD';
-        const fmt = (v) => new Intl.NumberFormat('en-US', { style: 'currency', currency, minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v);
+        const fmt = (v) =>
+            new Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency,
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0,
+            }).format(v);
         const min = fmt(getSafeNumber(document.getElementById(`lm-${key}-min`)));
         const max = fmt(getSafeNumber(document.getElementById(`lm-${key}-max`)));
         summaryEl.textContent = `Mín: ${min} · Máx: ${max}`;
     },
 
     refreshAllLossMagnitudeCompactDisplays() {
-        LOSS_FORMS_KEYS.forEach(key => this.refreshLossMagnitudeCompactDisplay(key));
+        LOSS_FORMS_KEYS.forEach((key) => this.refreshLossMagnitudeCompactDisplay(key));
     },
 
     // Mismo criterio que Vulnerabilidad: el usuario solo da el valor "Más Probable" y el
@@ -948,8 +1041,8 @@ export const FairWizard = {
     async _applyLossMagnitudeAuto(keys) {
         const confidence = document.getElementById('fair-data-confidence').value;
         const items = keys
-            .map(key => ({ key, mode: getSafeNumber(document.getElementById(`lm-${key}-mode`)) }))
-            .filter(item => document.getElementById(`lm-${item.key}-mode`));
+            .map((key) => ({ key, mode: getSafeNumber(document.getElementById(`lm-${key}-mode`)) }))
+            .filter((item) => document.getElementById(`lm-${item.key}-mode`));
         if (items.length === 0) return true;
 
         // Mientras el cálculo está en vuelo (o si falla — ej. el backend gratuito de Render
@@ -964,13 +1057,17 @@ export const FairWizard = {
 
         let data;
         try {
-            data = await App.Api.request('/api/autocalc/loss-magnitude', { method: 'POST', body: { items, confidence } });
+            data = await App.Api.request('/api/autocalc/loss-magnitude', {
+                method: 'POST',
+                body: { items, confidence },
+            });
         } catch (err) {
             showToast(err.userMessage || 'No se pudo calcular la Magnitud de Pérdida automáticamente.');
             items.forEach(({ key }) => {
                 const summaryEl = document.getElementById(`lm-${key}-compact-summary`);
                 if (summaryEl && !summaryEl.classList.contains('hidden')) {
-                    summaryEl.innerHTML = '<span class="text-red-600">No se pudo calcular — revisa tu conexión o activa "Ajustar manualmente".</span>';
+                    summaryEl.innerHTML =
+                        '<span class="text-red-600">No se pudo calcular — revisa tu conexión o activa "Ajustar manualmente".</span>';
                 }
             });
             return false;
@@ -1004,11 +1101,15 @@ export const FairWizard = {
     // respuesta, al llegar, pisaría los valores recién restaurados con un 0/0 fantasma.
     setLossMagnitudeManualOverride(isManual, skipAutocalc = false) {
         document.getElementById('lm-manual-override').checked = isManual;
-        document.querySelectorAll('#loss-magnitude-forms input[data-min="true"], #loss-magnitude-forms input[data-max="true"]').forEach(el => {
-            el.readOnly = !isManual;
-            el.classList.toggle('bg-gray-100', !isManual);
-        });
-        LOSS_FORMS_KEYS.forEach(key => {
+        document
+            .querySelectorAll(
+                '#loss-magnitude-forms input[data-min="true"], #loss-magnitude-forms input[data-max="true"]',
+            )
+            .forEach((el) => {
+                el.readOnly = !isManual;
+                el.classList.toggle('bg-gray-100', !isManual);
+            });
+        LOSS_FORMS_KEYS.forEach((key) => {
             const fullBox = document.getElementById(`lm-${key}-minmax-full`);
             const compactSummary = document.getElementById(`lm-${key}-compact-summary`);
             if (fullBox) fullBox.classList.toggle('hidden', !isManual);
@@ -1019,7 +1120,7 @@ export const FairWizard = {
             this._trackPendingAutocalc(this.updateAllLossMagnitudeAuto());
         }
     },
-    
+
     resetForm(confirm = true) {
         const doReset = () => {
             state.fair.sourceRiskId = null;
@@ -1069,11 +1170,11 @@ export const FairWizard = {
             document.getElementById('fair-deliberate-ponderation-value').textContent = 'x0.70';
             document.getElementById('fair-deliberate-ponderation-container').classList.add('hidden');
             this.updateAttackerDefenseSummary();
-            document.querySelectorAll('#loss-magnitude-forms input').forEach(input => input.value = '0');
+            document.querySelectorAll('#loss-magnitude-forms input').forEach((input) => (input.value = '0'));
             this.setLossMagnitudeManualOverride(false);
-            document.querySelectorAll('.range-warning').forEach(el => el.classList.add('hidden'));
-            document.querySelectorAll('.error-message').forEach(el => el.classList.add('hidden'));
-            document.querySelectorAll('.input-error').forEach(el => el.classList.remove('input-error'));
+            document.querySelectorAll('.range-warning').forEach((el) => el.classList.add('hidden'));
+            document.querySelectorAll('.error-message').forEach((el) => el.classList.add('hidden'));
+            document.querySelectorAll('.input-error').forEach((el) => el.classList.remove('input-error'));
             document.getElementById('simulation-results-container').classList.add('hidden');
             document.getElementById('fair-roi-section').classList.add('hidden');
             document.getElementById('fair-costoControlAnual').value = '0';
@@ -1111,7 +1212,10 @@ export const FairWizard = {
         };
 
         if (confirm) {
-            Modal.confirm("¿Está seguro de que desea borrar todos los datos del análisis FAIR y empezar de nuevo?", doReset);
+            Modal.confirm(
+                '¿Está seguro de que desea borrar todos los datos del análisis FAIR y empezar de nuevo?',
+                doReset,
+            );
         } else {
             doReset();
         }
@@ -1122,8 +1226,8 @@ export const FairWizard = {
     // muestreo triangular locales, duplicando el motor de cálculo del backend.
     async runMonteCarloSimulation() {
         const loader = document.getElementById('simulation-loader'),
-              resultsContainer = document.getElementById('simulation-results-container'),
-              runBtn = document.getElementById('run-simulation-btn');
+            resultsContainer = document.getElementById('simulation-results-container'),
+            runBtn = document.getElementById('run-simulation-btn');
 
         // Nota: no se revalida aquí — los pasos 1-3 ya se validaron al avanzar entre ellos
         // (navigateWizard). stepValidations no tiene una entrada "4" porque este es el
@@ -1134,17 +1238,22 @@ export const FairWizard = {
         runBtn.disabled = true;
 
         const iterations = state.config.SIMULATION_ITERATIONS;
-        document.querySelector('#simulation-loader p').textContent = `Ejecutando ${iterations.toLocaleString('es-MX')} simulaciones en el servidor...`;
+        document.querySelector('#simulation-loader p').textContent =
+            `Ejecutando ${iterations.toLocaleString('es-MX')} simulaciones en el servidor...`;
 
         const seed = getSafeNumber(document.getElementById('fair-simulation-seed'));
         const tef = {
-            min: getSafeNumber(document.getElementById('tef-min')), mode: getSafeNumber(document.getElementById('tef-mode')), max: getSafeNumber(document.getElementById('tef-max')),
+            min: getSafeNumber(document.getElementById('tef-min')),
+            mode: getSafeNumber(document.getElementById('tef-mode')),
+            max: getSafeNumber(document.getElementById('tef-max')),
         };
         const vuln = {
-            min: getSafeNumber(document.getElementById('vuln-min')), mode: getSafeNumber(document.getElementById('vuln-mode')), max: getSafeNumber(document.getElementById('vuln-max')),
+            min: getSafeNumber(document.getElementById('vuln-min')),
+            mode: getSafeNumber(document.getElementById('vuln-mode')),
+            max: getSafeNumber(document.getElementById('vuln-max')),
         };
         const lossMagnitudes = {};
-        LOSS_FORMS_KEYS.forEach(key => {
+        LOSS_FORMS_KEYS.forEach((key) => {
             lossMagnitudes[key] = {
                 min: getSafeNumber(document.getElementById(`lm-${key}-min`)),
                 mode: getSafeNumber(document.getElementById(`lm-${key}-mode`)),
@@ -1157,12 +1266,24 @@ export const FairWizard = {
         try {
             const result = await App.Api.request('/api/simulate', {
                 method: 'POST',
-                body: { iterations, seed, tef, vuln, lossMagnitudes, riskType, currency, riskCriteria: state.config.riskCriteria },
+                body: {
+                    iterations,
+                    seed,
+                    tef,
+                    vuln,
+                    lossMagnitudes,
+                    riskType,
+                    currency,
+                    riskCriteria: state.config.riskCriteria,
+                },
             });
             await this.displaySimulationResults(result);
         } catch (error) {
-            console.error("Simulation Error:", error);
-            Modal.alert(error.userMessage || "Error al ejecutar la simulación. Por favor, revise sus entradas.", "Error de Simulación");
+            console.error('Simulation Error:', error);
+            Modal.alert(
+                error.userMessage || 'Error al ejecutar la simulación. Por favor, revise sus entradas.',
+                'Error de Simulación',
+            );
         } finally {
             loader.classList.add('hidden');
             resultsContainer.classList.remove('hidden');
@@ -1177,16 +1298,18 @@ export const FairWizard = {
             return;
         }
         const top = sensitivity.slice(0, 8);
-        const maxAbs = Math.max(...top.map(s => Math.abs(s.correlation)), 0.0001);
-        container.innerHTML = top.map(s => {
-            const pct = Math.max(2, Math.round((Math.abs(s.correlation) / maxAbs) * 100));
-            const color = s.correlation >= 0 ? '#3B82F6' : '#EF4444';
-            return `
+        const maxAbs = Math.max(...top.map((s) => Math.abs(s.correlation)), 0.0001);
+        container.innerHTML = top
+            .map((s) => {
+                const pct = Math.max(2, Math.round((Math.abs(s.correlation) / maxAbs) * 100));
+                const color = s.correlation >= 0 ? '#3B82F6' : '#EF4444';
+                return `
                 <div class="mb-2">
                     <div class="flex justify-between text-sm"><span>${sensitivityLabel(s)}</span><span>${(s.correlation * 100).toFixed(1)}%</span></div>
                     <div class="w-full bg-gray-200 rounded h-2"><div class="h-2 rounded" style="width:${pct}%; background-color:${color};"></div></div>
                 </div>`;
-        }).join('');
+            })
+            .join('');
         document.getElementById('fair-sensitivity-container').classList.remove('hidden');
     },
 
@@ -1198,9 +1321,12 @@ export const FairWizard = {
         const verdictEl = document.getElementById(verdictElementId);
         const { verdict, rosi, message } = verdictData;
 
-        rosiEl.textContent = (rosi === null || rosi === undefined)
-            ? (verdict === 'conviene' ? 'Sin costo capturado' : '—')
-            : `${rosi >= 0 ? '+' : ''}${rosi.toFixed(0)}%`;
+        rosiEl.textContent =
+            rosi === null || rosi === undefined
+                ? verdict === 'conviene'
+                    ? 'Sin costo capturado'
+                    : '—'
+                : `${rosi >= 0 ? '+' : ''}${rosi.toFixed(0)}%`;
 
         const styles = {
             conviene: { cls: 'bg-green-100 text-green-800', prefix: '✅ Esta opción SÍ conviene: ' },
@@ -1232,7 +1358,8 @@ export const FairWizard = {
         opportunityNote.classList.add('hidden');
 
         const currency = 'USD';
-        const formatCurrency = (value) => new Intl.NumberFormat('en-US', { style: 'currency', currency: currency }).format(value);
+        const formatCurrency = (value) =>
+            new Intl.NumberFormat('en-US', { style: 'currency', currency: currency }).format(value);
         const aleActual = state.fair.simulatedALE || 0;
         document.getElementById('fair-treat-ale-base').textContent = formatCurrency(aleActual);
 
@@ -1260,7 +1387,14 @@ export const FairWizard = {
         try {
             result = await App.Api.request('/api/treatment/evaluate', {
                 method: 'POST',
-                body: { currentALE: aleActual, annualLosses: state.fair.lastAnnualLosses || undefined, mitigar, transferir, evitar, currency },
+                body: {
+                    currentALE: aleActual,
+                    annualLosses: state.fair.lastAnnualLosses || undefined,
+                    mitigar,
+                    transferir,
+                    evitar,
+                    currency,
+                },
             });
         } catch (err) {
             showToast(err.userMessage || 'No se pudo calcular el tratamiento del riesgo.');
@@ -1298,7 +1432,8 @@ export const FairWizard = {
 
         // 4. Aceptar / Retener
         const aceptarSuffix = App.UIMode.mode === 'simple' ? '(= lo que perderías si no haces nada)' : '(= ALE actual)';
-        document.getElementById('fair-aceptar-residual').textContent = `${formatCurrency(result.aceptar.residualALE)} ${aceptarSuffix}`;
+        document.getElementById('fair-aceptar-residual').textContent =
+            `${formatCurrency(result.aceptar.residualALE)} ${aceptarSuffix}`;
 
         // Recomendación: la calcula el backend (estrategia activa con mayor beneficio neto,
         // considerando también Fiabilidad y Retraso — Broder, 1984, Cap. 5).
@@ -1330,7 +1465,13 @@ export const FairWizard = {
 
         const currency = 'USD';
         const currencySymbol = '$';
-        const formatCurrency = (value) => new Intl.NumberFormat('en-US', { style: 'currency', currency: currency, minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
+        const formatCurrency = (value) =>
+            new Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency: currency,
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0,
+            }).format(value);
 
         document.getElementById('ale-result').textContent = formatCurrency(summary.average);
         document.getElementById('median-loss-result').textContent = formatCurrency(summary.median);
@@ -1349,7 +1490,8 @@ export const FairWizard = {
         `;
         this.suggestReviewDate();
 
-        document.getElementById('fair-seed-used').textContent = `Semilla usada: ${result.usedSeed} (anótala para reproducir exactamente esta corrida)`;
+        document.getElementById('fair-seed-used').textContent =
+            `Semilla usada: ${result.usedSeed} (anótala para reproducir exactamente esta corrida)`;
 
         // Análisis de Sensibilidad (RIMS RA.1-2015, 6.3.4.3)
         state.fair.lastSensitivity = sensitivity;
@@ -1365,15 +1507,20 @@ export const FairWizard = {
         });
         if (state.fair.reviewHistory.length > 20) state.fair.reviewHistory.shift();
         const historyBody = document.getElementById('fair-review-history-body');
-        historyBody.innerHTML = state.fair.reviewHistory.map(entry =>
-            `<tr class="border-b"><td class="py-1">${entry.date}</td><td>${entry.ale}</td><td>${entry.evaluationLevel}</td></tr>`
-        ).join('');
-        document.getElementById('fair-review-history-container').classList.toggle('hidden', state.fair.reviewHistory.length < 2);
+        historyBody.innerHTML = state.fair.reviewHistory
+            .map(
+                (entry) =>
+                    `<tr class="border-b"><td class="py-1">${entry.date}</td><td>${entry.ale}</td><td>${entry.evaluationLevel}</td></tr>`,
+            )
+            .join('');
+        document
+            .getElementById('fair-review-history-container')
+            .classList.toggle('hidden', state.fair.reviewHistory.length < 2);
 
         // Se guarda en state para que App.UIMode.applyLabels() pueda recalcular este texto
         // si el usuario cambia de Modo Simple/Técnico DESPUÉS de simular — si no, se
         // quedaría con la redacción de cuando corrió la simulación hasta la próxima corrida.
-        state.fair.lastThresholdK = `${currencySymbol}${(summary.exceedanceThreshold / 1000)}k`;
+        state.fair.lastThresholdK = `${currencySymbol}${summary.exceedanceThreshold / 1000}k`;
         App.UIMode.applyProbThresholdLabel();
         document.getElementById('prob-threshold-result').textContent = `${summary.probExceedance.toFixed(1)}%`;
         await App.FairRegister.saveToRiskRegister(summary, evaluation);
@@ -1387,10 +1534,10 @@ export const FairWizard = {
         const binWidth = maxLoss > 0 ? maxLoss / numBins : 1;
         const labels = [];
         for (let i = 0; i < numBins; i++) {
-            labels.push(`${(i * binWidth / 1000).toFixed(0)}k`);
+            labels.push(`${((i * binWidth) / 1000).toFixed(0)}k`);
         }
         const binCounts = new Array(numBins).fill(0);
-        annualLosses.forEach(loss => {
+        annualLosses.forEach((loss) => {
             const binIndex = Math.min(Math.floor(loss / binWidth), numBins - 1);
             binCounts[binIndex]++;
         });
@@ -1401,35 +1548,38 @@ export const FairWizard = {
             type: 'bar',
             data: {
                 labels: labels,
-                datasets: [{
-                    label: 'Frecuencia de Pérdida Anual',
-                    data: binCounts,
-                    backgroundColor: 'rgba(54, 162, 235, 0.6)',
-                    borderColor: 'rgba(54, 162, 235, 1)',
-                    borderWidth: 1
-                }]
+                datasets: [
+                    {
+                        label: 'Frecuencia de Pérdida Anual',
+                        data: binCounts,
+                        backgroundColor: 'rgba(54, 162, 235, 0.6)',
+                        borderColor: 'rgba(54, 162, 235, 1)',
+                        borderWidth: 1,
+                    },
+                ],
             },
             options: {
-                responsive: true, maintainAspectRatio: false,
+                responsive: true,
+                maintainAspectRatio: false,
                 scales: {
                     y: {
                         beginAtZero: true,
-                        title: { display: true, text: 'Nº de Simulaciones' }
+                        title: { display: true, text: 'Nº de Simulaciones' },
                     },
                     x: {
                         title: { display: true, text: `Pérdida Anual Estimada (miles de ${currency})` },
-                        ticks: { autoSkip: true, maxRotation: 45, minRotation: 45 }
-                    }
+                        ticks: { autoSkip: true, maxRotation: 45, minRotation: 45 },
+                    },
                 },
                 plugins: {
                     tooltip: {
                         callbacks: {
                             title: (context) => `Rango de Pérdida: ~${context[0].label}`,
-                            label: (context) => `Simulaciones: ${context.parsed.y}`
-                        }
-                    }
-                }
-            }
+                            label: (context) => `Simulaciones: ${context.parsed.y}`,
+                        },
+                    },
+                },
+            },
         });
 
         this.persistFairAnalysis();
@@ -1441,7 +1591,7 @@ export const FairWizard = {
             if (!chart) return;
             const lossFormsKeys = LOSS_FORMS_KEYS;
             const lossForms = {};
-            lossFormsKeys.forEach(key => {
+            lossFormsKeys.forEach((key) => {
                 lossForms[key] = {
                     min: document.getElementById(`lm-${key}-min`).value,
                     mode: document.getElementById(`lm-${key}-mode`).value,
@@ -1547,7 +1697,10 @@ export const FairWizard = {
         const banner = document.getElementById('fair-resume-banner');
         try {
             const raw = localStorage.getItem('fairLastAnalysis');
-            if (!raw) { banner.classList.add('hidden'); return; }
+            if (!raw) {
+                banner.classList.add('hidden');
+                return;
+            }
             const data = JSON.parse(raw);
             const name = data.riskName || 'Riesgo sin nombre';
             const date = data.timestamp ? new Date(data.timestamp).toLocaleString('es-ES') : '';
@@ -1592,7 +1745,9 @@ export const FairWizard = {
             document.getElementById('fair-attacker-profile').value = data.attackerKey || 'empleado-desleal';
             document.getElementById('fair-defense-profile').value = data.defenseKey || 'estandar';
             document.getElementById('fair-deliberate-threat').checked = !!data.isDeliberate;
-            document.getElementById('fair-deliberate-ponderation-container').classList.toggle('hidden', !data.isDeliberate);
+            document
+                .getElementById('fair-deliberate-ponderation-container')
+                .classList.toggle('hidden', !data.isDeliberate);
             const ponderacion = parseFloat(data.deliberateThreatPonderation) || 0.7;
             document.getElementById('fair-deliberate-ponderation').value = ponderacion;
             document.getElementById('fair-deliberate-ponderation-value').textContent = `x${ponderacion.toFixed(2)}`;
@@ -1629,8 +1784,12 @@ export const FairWizard = {
             document.getElementById('fair-mitigar-defensa-objetivo').value = data.mitigarDefensaObjetivo || 'basica';
             document.getElementById('fair-reduccionALE-manual-override').checked = !!data.reduccionALEManualOverride;
             document.getElementById('fair-reduccionALE').readOnly = !data.reduccionALEManualOverride;
-            document.getElementById('fair-reduccionALE').classList.toggle('bg-gray-100', !data.reduccionALEManualOverride);
-            document.getElementById('fair-reduccionALE-explanation').classList.toggle('hidden', !!data.reduccionALEManualOverride);
+            document
+                .getElementById('fair-reduccionALE')
+                .classList.toggle('bg-gray-100', !data.reduccionALEManualOverride);
+            document
+                .getElementById('fair-reduccionALE-explanation')
+                .classList.toggle('hidden', !!data.reduccionALEManualOverride);
             document.getElementById('fair-seguro-prima').value = data.seguroPrima || '0';
             document.getElementById('fair-seguro-deducible').value = data.seguroDeducible || '0';
             document.getElementById('fair-seguro-limite').value = data.seguroLimite || '0';
@@ -1675,14 +1834,20 @@ export const FairWizard = {
 
                 if (data.lastSeed) {
                     state.fair.lastSeed = data.lastSeed;
-                    document.getElementById('fair-seed-used').textContent = `Semilla usada: ${data.lastSeed} (anótala para reproducir exactamente esta corrida)`;
+                    document.getElementById('fair-seed-used').textContent =
+                        `Semilla usada: ${data.lastSeed} (anótala para reproducir exactamente esta corrida)`;
                 }
                 if (Array.isArray(data.reviewHistory)) {
                     state.fair.reviewHistory = data.reviewHistory;
-                    document.getElementById('fair-review-history-body').innerHTML = data.reviewHistory.map(entry =>
-                        `<tr class="border-b"><td class="py-1">${entry.date}</td><td>${entry.ale}</td><td>${entry.evaluationLevel}</td></tr>`
-                    ).join('');
-                    document.getElementById('fair-review-history-container').classList.toggle('hidden', data.reviewHistory.length < 2);
+                    document.getElementById('fair-review-history-body').innerHTML = data.reviewHistory
+                        .map(
+                            (entry) =>
+                                `<tr class="border-b"><td class="py-1">${entry.date}</td><td>${entry.ale}</td><td>${entry.evaluationLevel}</td></tr>`,
+                        )
+                        .join('');
+                    document
+                        .getElementById('fair-review-history-container')
+                        .classList.toggle('hidden', data.reviewHistory.length < 2);
                 }
 
                 document.getElementById('simulation-results-container').classList.remove('hidden');
@@ -1695,29 +1860,35 @@ export const FairWizard = {
                     type: 'bar',
                     data: {
                         labels: data.results.chartLabels,
-                        datasets: [{
-                            label: 'Frecuencia de Pérdida Anual',
-                            data: data.results.chartData,
-                            backgroundColor: 'rgba(54, 162, 235, 0.6)',
-                            borderColor: 'rgba(54, 162, 235, 1)',
-                            borderWidth: 1
-                        }]
+                        datasets: [
+                            {
+                                label: 'Frecuencia de Pérdida Anual',
+                                data: data.results.chartData,
+                                backgroundColor: 'rgba(54, 162, 235, 0.6)',
+                                borderColor: 'rgba(54, 162, 235, 1)',
+                                borderWidth: 1,
+                            },
+                        ],
                     },
                     options: {
-                        responsive: true, maintainAspectRatio: false,
+                        responsive: true,
+                        maintainAspectRatio: false,
                         scales: {
                             y: { beginAtZero: true, title: { display: true, text: 'Nº de Simulaciones' } },
-                            x: { title: { display: true, text: `Pérdida Anual Estimada (miles de ${currency})` }, ticks: { autoSkip: true, maxRotation: 45, minRotation: 45 } }
+                            x: {
+                                title: { display: true, text: `Pérdida Anual Estimada (miles de ${currency})` },
+                                ticks: { autoSkip: true, maxRotation: 45, minRotation: 45 },
+                            },
                         },
                         plugins: {
                             tooltip: {
                                 callbacks: {
                                     title: (context) => `Rango de Pérdida: ~${context[0].label}`,
-                                    label: (context) => `Simulaciones: ${context.parsed.y}`
-                                }
-                            }
-                        }
-                    }
+                                    label: (context) => `Simulaciones: ${context.parsed.y}`,
+                                },
+                            },
+                        },
+                    },
                 });
 
                 this.updateTreatmentView();
@@ -1730,8 +1901,7 @@ export const FairWizard = {
             console.error('No se pudo restaurar el análisis FAIR guardado:', e);
             return false;
         }
-    }
-
+    },
 };
 
 App.FairWizard = FairWizard;

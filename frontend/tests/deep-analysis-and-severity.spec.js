@@ -9,7 +9,9 @@ test.describe('Análisis Profundo', () => {
         await page.click('#nav-fair');
         await page.waitForTimeout(500);
 
-        const row = page.locator('#quick-concentrated-table-body tr', { hasText: 'E2E — Robo con Violencia en Sucursal' });
+        const row = page.locator('#quick-concentrated-table-body tr', {
+            hasText: 'E2E — Robo con Violencia en Sucursal',
+        });
         await row.locator('.concentrated-checkbox').check();
         await expect(page.locator('#fair-deep-analysis-btn')).toBeEnabled();
 
@@ -34,7 +36,9 @@ test.describe('Criterios de Riesgo aplicados de forma consistente', () => {
         await page.click('#nav-fair');
         await page.waitForTimeout(500);
 
-        const row = page.locator('#quick-concentrated-table-body tr', { hasText: 'E2E — Vandalismo en Fachada Principal' });
+        const row = page.locator('#quick-concentrated-table-body tr', {
+            hasText: 'E2E — Vandalismo en Fachada Principal',
+        });
         const cells = row.locator('td');
         // índices: 0 checkbox, 1 #, 2 riesgo, 3 etapa, 4 inherente, 5 efectividad, 6 residual,
         // 7 activo, 8 impacto, 9 cvar, 10 evaluación.

@@ -116,8 +116,10 @@ export const OrgContext = {
     // onComplete() se llama justo después de guardar exitosamente, para que App.init()
     // pueda continuar el resto de la inicialización que quedó pausada.
     showGate(onComplete) {
-        document.querySelectorAll('.nav-requires-boot').forEach(btn => btn.disabled = true);
-        document.querySelectorAll('#fairAnalysisPage, #registerPage, #assetsPage').forEach(el => el.classList.add('hidden'));
+        document.querySelectorAll('.nav-requires-boot').forEach((btn) => (btn.disabled = true));
+        document
+            .querySelectorAll('#fairAnalysisPage, #registerPage, #assetsPage')
+            .forEach((el) => el.classList.add('hidden'));
         document.getElementById('orgcontext-gate-form').innerHTML = this.buildFormHTML('orgctx-gate');
         document.getElementById('orgcontext-gate').classList.remove('hidden');
 
@@ -127,7 +129,7 @@ export const OrgContext = {
             try {
                 await this.save(this.readFormValues('orgctx-gate'));
                 document.getElementById('orgcontext-gate').classList.add('hidden');
-                document.querySelectorAll('.nav-requires-boot').forEach(btn => btn.disabled = false);
+                document.querySelectorAll('.nav-requires-boot').forEach((btn) => (btn.disabled = false));
                 saveBtn.removeEventListener('click', saveHandler);
                 showToast('Contexto Organizacional guardado.');
                 onComplete();
@@ -138,7 +140,7 @@ export const OrgContext = {
             }
         };
         saveBtn.addEventListener('click', saveHandler);
-    }
+    },
 };
 
 App.OrgContext = OrgContext;

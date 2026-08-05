@@ -102,7 +102,6 @@ export const Criteria = {
             }
         });
     },
-
 };
 
 App.Criteria = Criteria;

@@ -1,6 +1,6 @@
 import { App } from './app-namespace.js';
 import { state } from './state.js';
-import { LOSS_FORMS_KEYS, LOSS_FORM_LABELS, LOSS_FIELD_LABELS, sensitivityLabel, showToast } from './utils.js';
+import { LOSS_FORMS_KEYS, LOSS_FORM_LABELS, LOSS_FIELD_LABELS, showToast } from './utils.js';
 
 // --- Modo Simple / Modo Técnico ---
 // Cambia SOLO el lenguaje que ve el usuario — nunca el cálculo. Los mismos campos, las
@@ -36,7 +36,8 @@ export const UIMode = {
             'fair-evitar-title': '3. Evitar (eliminar la fuente del riesgo)',
             'fair-evitar-costo-label': 'Costo Anualizado de Eliminar la Actividad/Fuente:',
             'fair-aceptar-title': '4. Aceptar / Retener (sin tratamiento)',
-            'fair-aceptar-description': 'ISO 31000 exige que aceptar un riesgo sea una decisión documentada y deliberada, no la ausencia de una decisión. Escribe la justificación.',
+            'fair-aceptar-description':
+                'ISO 31000 exige que aceptar un riesgo sea una decisión documentada y deliberada, no la ausencia de una decisión. Escribe la justificación.',
             'fair-aceptar-justificacion-label': 'Justificación de la aceptación:',
             'governance-section-title': 'Gobernanza y Revisión',
             'fair-owner-label': 'Dueño del Riesgo (responsable):',
@@ -68,7 +69,8 @@ export const UIMode = {
             'fair-evitar-title': '3. Dejar de hacer la actividad que causa el riesgo',
             'fair-evitar-costo-label': '¿Cuánto te costaría al año dejar de hacerlo?',
             'fair-aceptar-title': '4. No hacer nada y asumir el riesgo',
-            'fair-aceptar-description': 'Si decides no hacer nada, igual tienes que dejarlo por escrito y explicar por qué — no es lo mismo decidir aceptar el riesgo que simplemente no decidir nada.',
+            'fair-aceptar-description':
+                'Si decides no hacer nada, igual tienes que dejarlo por escrito y explicar por qué — no es lo mismo decidir aceptar el riesgo que simplemente no decidir nada.',
             'fair-aceptar-justificacion-label': '¿Por qué decides no hacer nada al respecto?',
             'governance-section-title': '¿Quién es responsable, y cuándo se revisa esto?',
             'fair-owner-label': '¿Quién es el responsable de este riesgo?',
@@ -159,16 +161,21 @@ export const UIMode = {
         this.mode = this.mode === 'simple' ? 'tecnico' : 'simple';
         this.save();
         this.apply();
-        showToast(this.mode === 'simple' ? 'Modo Simple activado — mismo cálculo, lenguaje más sencillo.' : 'Modo Técnico activado.');
+        showToast(
+            this.mode === 'simple'
+                ? 'Modo Simple activado — mismo cálculo, lenguaje más sencillo.'
+                : 'Modo Técnico activado.',
+        );
     },
 
     apply() {
         document.body.classList.toggle('modo-simple', this.mode === 'simple');
         document.body.classList.toggle('modo-tecnico', this.mode === 'tecnico');
         const btn = document.getElementById('mode-toggle-btn');
-        btn.innerHTML = this.mode === 'simple'
-            ? '<i class="fas fa-toggle-off mr-2"></i>Modo Simple (clic para Técnico)'
-            : '<i class="fas fa-toggle-on mr-2"></i>Modo Técnico (clic para Simple)';
+        btn.innerHTML =
+            this.mode === 'simple'
+                ? '<i class="fas fa-toggle-off mr-2"></i>Modo Simple (clic para Técnico)'
+                : '<i class="fas fa-toggle-on mr-2"></i>Modo Técnico (clic para Simple)';
         this.applyLabels();
     },
 
@@ -192,10 +199,10 @@ export const UIMode = {
         // que el usuario ya haya escrito al cambiar de Modo Simple/Técnico.
         const lossTitles = isSimple ? LOSS_FORM_LABELS.simple : LOSS_FORM_LABELS.tecnico;
         const lossFields = isSimple ? LOSS_FIELD_LABELS.simple : LOSS_FIELD_LABELS.tecnico;
-        LOSS_FORMS_KEYS.forEach(key => {
+        LOSS_FORMS_KEYS.forEach((key) => {
             const titleEl = document.getElementById(`lm-title-${key}`);
             if (titleEl) titleEl.textContent = lossTitles[key];
-            ['min', 'mode', 'max'].forEach(part => {
+            ['min', 'mode', 'max'].forEach((part) => {
                 const labelEl = document.getElementById(`lm-${key}-${part}-label`);
                 if (labelEl) labelEl.textContent = lossFields[part];
             });
@@ -218,10 +225,11 @@ export const UIMode = {
         const thresholdK = state.fair && state.fair.lastThresholdK;
         const el = document.getElementById('prob-threshold-label');
         if (!el || !thresholdK) return;
-        el.textContent = this.mode === 'simple'
-            ? `¿Qué tan seguido perderías más de ${thresholdK} en un año?`
-            : `Prob. de superar ${thresholdK}/año:`;
-    }
+        el.textContent =
+            this.mode === 'simple'
+                ? `¿Qué tan seguido perderías más de ${thresholdK} en un año?`
+                : `Prob. de superar ${thresholdK}/año:`;
+    },
 };
 
 App.UIMode = UIMode;

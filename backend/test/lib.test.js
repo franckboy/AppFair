@@ -32,7 +32,8 @@ test('pearsonCorrelation detecta una correlación perfecta', () => {
 
 test('runMonteCarloSimulation es reproducible con la misma semilla', () => {
     const params = {
-        iterations: 2000, seed: 999,
+        iterations: 2000,
+        seed: 999,
         tef: { min: 5, mode: 10, max: 20 },
         vuln: { min: 20, mode: 30, max: 40 },
         lossMagnitudes: { productividad: { min: 30000, mode: 50000, max: 70000 } },
@@ -89,13 +90,16 @@ test('evaluateTreatmentStrategies: NO recomienda "Evitar" cuando su costo se dej
     // tocar) y beneficio neto = 100% del ALE gratis, imposible de superar, así que ganaba la
     // recomendación siempre aunque el usuario nunca hubiera entrado a esa sección.
     const fmt = (n) => `$${n}`;
-    const result = evaluateTreatmentStrategies({
-        currentALE: 100000,
-        annualLosses: null,
-        mitigar: { cost: 15000, reductionPercent: 40, reliability: 'media', delayDays: 30 },
-        transferir: { premium: 0, deductible: 0, limit: 0, unlimited: false, reliability: 'media', delayDays: 0 },
-        evitar: { cost: 0, reliability: 'alta', delayDays: 0 }, // nunca tocado por el usuario
-    }, fmt);
+    const result = evaluateTreatmentStrategies(
+        {
+            currentALE: 100000,
+            annualLosses: null,
+            mitigar: { cost: 15000, reductionPercent: 40, reliability: 'media', delayDays: 30 },
+            transferir: { premium: 0, deductible: 0, limit: 0, unlimited: false, reliability: 'media', delayDays: 0 },
+            evitar: { cost: 0, reliability: 'alta', delayDays: 0 }, // nunca tocado por el usuario
+        },
+        fmt,
+    );
     assert.strictEqual(result.recommendation.strategy, 'mitigar');
     // Mismo problema a nivel de veredicto individual: sin este chequeo, la fila de "Evitar"
     // por sí sola mostraba "✅ SÍ conviene, sin costo capturado" — contradiciendo la
@@ -105,13 +109,16 @@ test('evaluateTreatmentStrategies: NO recomienda "Evitar" cuando su costo se dej
 
 test('evaluateTreatmentStrategies: SÍ recomienda "Evitar" cuando tiene un costo real capturado y gana en beneficio neto', () => {
     const fmt = (n) => `$${n}`;
-    const result = evaluateTreatmentStrategies({
-        currentALE: 100000,
-        annualLosses: null,
-        mitigar: { cost: 15000, reductionPercent: 40, reliability: 'media', delayDays: 30 },
-        transferir: { premium: 0, deductible: 0, limit: 0, unlimited: false, reliability: 'media', delayDays: 0 },
-        evitar: { cost: 5000, reliability: 'alta', delayDays: 0 },
-    }, fmt);
+    const result = evaluateTreatmentStrategies(
+        {
+            currentALE: 100000,
+            annualLosses: null,
+            mitigar: { cost: 15000, reductionPercent: 40, reliability: 'media', delayDays: 30 },
+            transferir: { premium: 0, deductible: 0, limit: 0, unlimited: false, reliability: 'media', delayDays: 0 },
+            evitar: { cost: 5000, reliability: 'alta', delayDays: 0 },
+        },
+        fmt,
+    );
     assert.strictEqual(result.recommendation.strategy, 'evitar');
     assert.strictEqual(result.recommendation.netBenefit, 95000);
 });
@@ -152,8 +159,8 @@ test('calculateParetoAnalysis: un riesgo sin riskType (guardado antes de que exi
 test('getTriangularRandom: la media y varianza muestral convergen a las teóricas de la distribución triangular', () => {
     const rng = mulberry32(2026);
     const cases = [
-        { min: 0, mode: 50, max: 100 },   // simétrica
-        { min: 10, mode: 20, max: 100 },  // sesgada a la derecha
+        { min: 0, mode: 50, max: 100 }, // simétrica
+        { min: 10, mode: 20, max: 100 }, // sesgada a la derecha
     ];
     const n = 200000;
 
@@ -169,10 +176,14 @@ test('getTriangularRandom: la media y varianza muestral convergen a las teórica
         const theoreticalVariance = (min ** 2 + mode ** 2 + max ** 2 - min * mode - min * max - mode * max) / 18;
         const varianceRelError = Math.abs(variance - theoreticalVariance) / theoreticalVariance;
 
-        assert.ok(meanRelError < 0.01,
-            `min=${min} moda=${mode} max=${max}: media muestral ${mean.toFixed(2)} vs teórica ${theoreticalMean.toFixed(2)} (error ${(meanRelError * 100).toFixed(2)}%)`);
-        assert.ok(varianceRelError < 0.05,
-            `min=${min} moda=${mode} max=${max}: varianza muestral ${variance.toFixed(2)} vs teórica ${theoreticalVariance.toFixed(2)} (error ${(varianceRelError * 100).toFixed(2)}%)`);
+        assert.ok(
+            meanRelError < 0.01,
+            `min=${min} moda=${mode} max=${max}: media muestral ${mean.toFixed(2)} vs teórica ${theoreticalMean.toFixed(2)} (error ${(meanRelError * 100).toFixed(2)}%)`,
+        );
+        assert.ok(
+            varianceRelError < 0.05,
+            `min=${min} moda=${mode} max=${max}: varianza muestral ${variance.toFixed(2)} vs teórica ${theoreticalVariance.toFixed(2)} (error ${(varianceRelError * 100).toFixed(2)}%)`,
+        );
     }
 });
 

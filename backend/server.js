@@ -21,7 +21,9 @@ const app = express();
 // JSON local (desarrollo, tests). Ver src/store/index.js.
 const store = createStore();
 if (!process.env.DATABASE_URL) {
-    console.warn('⚠️  DATABASE_URL no configurada — usando almacenamiento en archivo local (JsonStore). En plataformas de disco efímero (ej. Render free tier) los datos se pierden en cada redeploy. Ver backend/README.md para configurar una Postgres gratuita.');
+    console.warn(
+        '⚠️  DATABASE_URL no configurada — usando almacenamiento en archivo local (JsonStore). En plataformas de disco efímero (ej. Render free tier) los datos se pierden en cada redeploy. Ver backend/README.md para configurar una Postgres gratuita.',
+    );
 }
 
 // Sin API_KEY configurada, la API queda completamente abierta a cualquier origen
@@ -31,16 +33,23 @@ if (!process.env.DATABASE_URL) {
 let apiKey = process.env.API_KEY;
 if (!apiKey) {
     apiKey = crypto.randomBytes(24).toString('hex');
-    console.warn('⚠️  API_KEY no configurada — se generó una temporal solo para esta sesión (cambia en cada reinicio):');
+    console.warn(
+        '⚠️  API_KEY no configurada — se generó una temporal solo para esta sesión (cambia en cada reinicio):',
+    );
     console.warn(`    ${apiKey}`);
     console.warn('   Define API_KEY en tu .env (ver .env.example) para producción o para que no cambie al reiniciar.');
 }
 
 // Sin ALLOWED_ORIGIN, CORS queda abierto a cualquier origen (igual que antes) — cómodo para
 // desarrollo local, pero hay que restringirlo al dominio real del frontend antes de publicar.
-const allowedOrigins = (process.env.ALLOWED_ORIGIN || '').split(',').map((s) => s.trim()).filter(Boolean);
+const allowedOrigins = (process.env.ALLOWED_ORIGIN || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
 if (allowedOrigins.length === 0) {
-    console.warn('⚠️  ALLOWED_ORIGIN no configurada — CORS está abierto a cualquier origen. Está bien para desarrollo local; antes de publicar el frontend en un dominio real, define ALLOWED_ORIGIN en tu .env (ver .env.example).');
+    console.warn(
+        '⚠️  ALLOWED_ORIGIN no configurada — CORS está abierto a cualquier origen. Está bien para desarrollo local; antes de publicar el frontend en un dominio real, define ALLOWED_ORIGIN en tu .env (ver .env.example).',
+    );
 }
 app.use(cors(allowedOrigins.length > 0 ? { origin: allowedOrigins } : undefined));
 
@@ -52,13 +61,16 @@ app.use(express.json({ limit: '2mb' })); // 2mb por si el cliente reenvía annua
 // (con el mismo default de siempre) porque una suite de pruebas E2E automatizada —o un backend
 // compartido por varios clientes detrás de la misma IP/proxy— puede superar 300 peticiones en
 // 15 minutos sin que sea abuso real; forzar ese límite ahí rompía la suite de Playwright.
-app.use('/api', rateLimit({
-    windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
-    limit: Number(process.env.RATE_LIMIT_MAX) || 300,
-    standardHeaders: true,
-    legacyHeaders: false,
-    message: { error: 'Demasiadas peticiones desde esta IP. Intenta de nuevo en unos minutos.' },
-}));
+app.use(
+    '/api',
+    rateLimit({
+        windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
+        limit: Number(process.env.RATE_LIMIT_MAX) || 300,
+        standardHeaders: true,
+        legacyHeaders: false,
+        message: { error: 'Demasiadas peticiones desde esta IP. Intenta de nuevo en unos minutos.' },
+    }),
+);
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok', service: 'motor-riesgos-fair-backend' }));
 
@@ -84,7 +96,8 @@ const PORT = process.env.PORT || 3000;
 if (require.main === module) {
     // store.init() crea la tabla en Postgres si hace falta (no-op en JsonStore) — se espera
     // antes de aceptar tráfico para no correr con la tabla a medio crear en el primer request.
-    store.init()
+    store
+        .init()
         .then(() => {
             app.listen(PORT, () => {
                 console.log(`Motor de Riesgos FAIR — backend corriendo en http://localhost:${PORT}`);
