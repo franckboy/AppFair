@@ -39,6 +39,10 @@ jobs:
         working-directory: frontend
         run: npm run format:check
 
+      - name: Pruebas unitarias (Vitest — lógica pura)
+        working-directory: frontend
+        run: npm run test:unit
+
       - name: Instalar el Chromium de Playwright
         working-directory: frontend
         run: npx playwright install --with-deps chromium

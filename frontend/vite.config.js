@@ -16,4 +16,12 @@ module.exports = defineConfig({
             input: resolve(__dirname, 'app_fair.html'),
         },
     },
+    // Vitest (pruebas unitarias de lógica pura, co-ubicadas con el código que prueban —
+    // *.test.js dentro de src/modules/, para no chocar con los specs de Playwright en tests/,
+    // que usan la extensión *.spec.js). jsdom porque algunas funciones puras (ej. sanitizeHTML)
+    // usan `document`, aunque no manipulan una página real.
+    test: {
+        environment: 'jsdom',
+        include: ['src/**/*.test.js'],
+    },
 });

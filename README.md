@@ -66,13 +66,27 @@ producción sigue funcionando igual, sin cambios — ver abajo).
 ```bash
 cd backend && npm test        # pruebas unitarias/integración del motor de cálculo (node --test)
 
-cd frontend && npm install && npm run test:e2e   # suite E2E (Playwright) contra un backend real
+cd frontend && npm install && npm run test:unit   # lógica pura (Vitest) — no necesita backend ni navegador real
+cd frontend && npm run test:e2e                   # suite E2E (Playwright) contra un backend real
 ```
 
 La suite E2E arranca su propio backend + servidor estático (ver `frontend/playwright.config.js`)
 y corre los flujos críticos de punta a punta: wizard completo, guardar borrador y reanudarlo,
-Análisis Profundo, exportar el Informe Consolidado, eliminar un riesgo. Corre en cada push/PR
-vía GitHub Actions (`.github/workflows/frontend-e2e.yml`), igual que las pruebas del backend.
+Análisis Profundo, exportar el Informe Consolidado, eliminar un riesgo.
+
+Las pruebas unitarias (Vitest, co-ubicadas junto al código que prueban — `*.test.js` dentro de
+`frontend/src/modules/`) cubren la lógica que ya es pura hoy: formateo/clasificación en
+`utils.js` (`getSafeNumber`, `sanitizeHTML`, `debounce`, `severityToClasses`/`severityToHex`,
+`sensitivityLabel`, y `buildHistogramBins` — el binning del histograma de Monte Carlo, que
+antes estaba duplicado literal en `fair-wizard.js` y `fair-register.js` y se unificó ahí de
+paso) y tres métodos de `FairRegister` (`classifyAleAgainstCriteria`,
+`computeFairRiskEquivalents`, `buildConcentratedList`). Corren en milisegundos, sin necesitar
+backend ni navegador. Otra lógica de cálculo (ej. `suggestTefRange`/`validateAndFixRange` en
+`fair-wizard.js`) sigue mezclada con lectura/escritura directa del DOM — candidata a extraerse
+más adelante, no cubierta todavía.
+
+Ambas suites (unitarias y E2E) corren en cada push/PR vía GitHub Actions
+(`.github/workflows/frontend-e2e.yml`), igual que las pruebas del backend.
 
 ## Estilo de código
 

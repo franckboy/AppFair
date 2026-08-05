@@ -8,6 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "build:css": "node scripts/build-css.js",
+    "test:unit": "vitest run",
+    "test:unit:watch": "vitest",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:headed": "playwright test --headed",
@@ -19,8 +21,10 @@
     "@playwright/test": "^1.56.1",
     "eslint": "^9.39.5",
     "eslint-config-prettier": "^9.1.2",
+    "jsdom": "^25.0.1",
     "prettier": "^3.9.6",
     "tailwindcss": "3.4.14",
-    "vite": "^6.4.3"
+    "vite": "^6.4.3",
+    "vitest": "^3.2.7"
   }
 }
