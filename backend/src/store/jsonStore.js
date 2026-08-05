@@ -11,6 +11,7 @@ const DEFAULTS = {
     orgContext: { mision: '', naturalezaNegocio: '', apetitoRiesgo: 'moderado', partesInteresadas: '', entornoLegal: '', alcanceCadenaSuministro: '' },
     riskRegister: [],
     assets: [],
+    risks: [],
 };
 
 /**
@@ -100,6 +101,30 @@ class JsonStore {
         all.assets = (all.assets || []).filter((a) => a.id !== id);
         this._writeAll(all);
         return all.assets;
+    }
+
+    /**
+     * Agrega o actualiza (por id) un riesgo del historial unificado — nace en Análisis Rápido
+     * (antes solo vivía en localStorage del navegador, no en el backend) y puede seguir
+     * actualizándose conforme avanza a FAIR/simulación. Igual que los activos, se identifica
+     * por id (no por nombre) para poder editar/actualizar sin crear duplicados fantasma.
+     */
+    upsertRisk(entry) {
+        const all = this._readAll();
+        const risks = all.risks || [];
+        const idx = risks.findIndex((r) => r.id === entry.id);
+        if (idx !== -1) risks[idx] = entry;
+        else risks.push(entry);
+        all.risks = risks;
+        this._writeAll(all);
+        return risks;
+    }
+
+    deleteRisk(id) {
+        const all = this._readAll();
+        all.risks = (all.risks || []).filter((r) => r.id !== id);
+        this._writeAll(all);
+        return all.risks;
     }
 }
 
