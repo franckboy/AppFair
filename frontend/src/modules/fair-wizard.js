@@ -852,6 +852,24 @@ export const FairWizard = {
             .forEach((section) => section.classList.add('hidden'));
         document.getElementById(`fair-step-${step}`).classList.remove('hidden');
         updateProgressBar('fair-progress-bar', step, 4);
+        if (step === 2) this.updateThreatReminder();
+    },
+
+    // El Agente de Amenaza (Paso 1, texto libre — ej. "Ex-empleado con llave del almacén") y
+    // el Perfil de Atacante (Paso 2, select cerrado de 5 perfiles calibrados) describen al
+    // mismo actor, pero son cosas distintas: uno es narrativa sin efecto en el cálculo, el
+    // otro sí alimenta calculateVulnerability/suggestTefRange. Sin este recordatorio, elegir
+    // el Perfil de Atacante en Paso 2 se sentía como una pregunta desconectada de lo que ya
+    // se escribió en Paso 1.
+    updateThreatReminder() {
+        const reminderEl = document.getElementById('fair-threat-reminder');
+        const threat = document.getElementById('fair-threat').value.trim();
+        if (threat) {
+            reminderEl.innerHTML = `Agente de Amenaza: <strong>${sanitizeHTML(threat)}</strong> — elige abajo a cuál de estos perfiles se parece más, para calibrar el cálculo.`;
+            reminderEl.classList.remove('hidden');
+        } else {
+            reminderEl.classList.add('hidden');
+        }
     },
 
     displayFairValidationErrors() {
