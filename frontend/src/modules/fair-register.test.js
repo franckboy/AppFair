@@ -48,20 +48,21 @@ describe('FairRegister.computeFairRiskEquivalents', () => {
         expect(FairRegister.computeFairRiskEquivalents({ ale: 'no-numero' })).toBeNull();
     });
 
-    it('calcula el Riesgo Inherente a partir de la MEDIA del rango triangular de Vulnerabilidad, no de la moda', () => {
-        // Rango asimétrico min 10 / moda 20 / max 45 → media = (10+20+45)/3 = 25%, distinta de
-        // la moda (20%) a propósito, para probar que sí se usa la media y no la moda.
-        // ale residual = 10,000 / 0.25 = 40,000
+    it('calcula el Riesgo Inherente a partir de la MEDIA de Beta-PERT de Vulnerabilidad, no de la moda', () => {
+        // Rango asimétrico min 10 / moda 20 / max 45, lambda=4 → media = (10+4·20+45)/6 =
+        // 22.5%, distinta de la moda (20%) a propósito, para probar que sí se usa la media
+        // (la que realmente simula el backend con getPertRandom) y no la moda.
+        // ale residual = 10,000 / 0.225 = 44,444.44...
         const result = FairRegister.computeFairRiskEquivalents({
             ale: 10000,
             severity: 'bajo',
             vuln: { min: 10, mode: 20, max: 45 },
         });
         expect(result.residualMoney).toBe('$10,000');
-        expect(result.inherentMoney).toBe('$40,000');
-        expect(result.controlEffectiveness).toBe('75.0%');
+        expect(result.inherentMoney).toBe('$44,444');
+        expect(result.controlEffectiveness).toBe('77.5%');
         expect(result.residualSeverity).toBe('bajo');
-        // 40,000 <= 50,000 (aleAceptable) → bajo
+        // 44,444 <= 50,000 (aleAceptable) → bajo
         expect(result.inherentSeverity).toBe('bajo');
     });
 
@@ -112,7 +113,7 @@ describe('FairRegister.buildConcentratedList', () => {
         expect(list[0].stage).toBe('fair');
         expect(list[0].rowKey).toBe('reg1');
         expect(list[0].riskName).toBe('Robo en bodega (FAIR)');
-        expect(list[0].riesgoInherente).toBe('$40,000');
+        expect(list[0].riesgoInherente).toBe('$44,444');
     });
 
     it('incluye una entrada de FAIR sin ningún riesgo de triage vinculado', () => {

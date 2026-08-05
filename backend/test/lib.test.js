@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 
-const { mulberry32, getTriangularRandom } = require('../src/lib/random');
+const { mulberry32, getTriangularRandom, getPertRandom, getLognormalRandom } = require('../src/lib/random');
 const { runMonteCarloSimulation, summarizeLosses, pearsonCorrelation } = require('../src/lib/simulation');
 const { calculateVulnerability, calculateReduccionALE } = require('../src/lib/autocalc');
 const { calculateInsuranceRetainedALE, calculateROSI, evaluateTreatmentStrategies } = require('../src/lib/treatment');
@@ -185,6 +185,117 @@ test('getTriangularRandom: la media y varianza muestral convergen a las teórica
             `min=${min} moda=${mode} max=${max}: varianza muestral ${variance.toFixed(2)} vs teórica ${theoreticalVariance.toFixed(2)} (error ${(varianceRelError * 100).toFixed(2)}%)`,
         );
     }
+});
+
+// --- Validación estadística del muestreador Beta-PERT (TEF/Vulnerabilidad) ---
+test('getPertRandom: la media y varianza muestral convergen a las teóricas de Beta-PERT (lambda=4)', () => {
+    const rng = mulberry32(2026);
+    const lambda = 4;
+    const cases = [
+        { min: 0, mode: 50, max: 100 }, // simétrica
+        { min: 10, mode: 20, max: 100 }, // sesgada a la derecha
+    ];
+    const n = 200000;
+
+    for (const { min, mode, max } of cases) {
+        const samples = new Array(n);
+        for (let i = 0; i < n; i++) samples[i] = getPertRandom(min, mode, max, lambda, rng);
+
+        const mean = samples.reduce((a, b) => a + b, 0) / n;
+        const theoreticalMean = (min + lambda * mode + max) / (lambda + 2);
+        const meanRelError = Math.abs(mean - theoreticalMean) / theoreticalMean;
+
+        const alpha = 1 + (lambda * (mode - min)) / (max - min);
+        const beta = 1 + (lambda * (max - mode)) / (max - min);
+        const variance = samples.reduce((sum, x) => sum + (x - mean) ** 2, 0) / n;
+        const theoreticalVariance = ((max - min) ** 2 * (alpha * beta)) / ((alpha + beta) ** 2 * (alpha + beta + 1));
+        const varianceRelError = Math.abs(variance - theoreticalVariance) / theoreticalVariance;
+
+        assert.ok(
+            meanRelError < 0.01,
+            `min=${min} moda=${mode} max=${max}: media muestral ${mean.toFixed(2)} vs teórica ${theoreticalMean.toFixed(2)} (error ${(meanRelError * 100).toFixed(2)}%)`,
+        );
+        assert.ok(
+            varianceRelError < 0.05,
+            `min=${min} moda=${mode} max=${max}: varianza muestral ${variance.toFixed(2)} vs teórica ${theoreticalVariance.toFixed(2)} (error ${(varianceRelError * 100).toFixed(2)}%)`,
+        );
+    }
+});
+
+test('getPertRandom: nunca devuelve valores fuera de [min, max] (a diferencia de lognormal, sí tiene techo duro)', () => {
+    const rng = mulberry32(7);
+    for (let i = 0; i < 50000; i++) {
+        const val = getPertRandom(10, 15, 20, 4, rng);
+        assert.ok(val >= 10 && val <= 20, `valor fuera de rango: ${val}`);
+    }
+});
+
+// --- Validación estadística del muestreador lognormal (Magnitud de Pérdida) ---
+test('getLognormalRandom: la media muestral converge a la teórica, y ln(muestras) converge a Normal(mu, sigma²)', () => {
+    // La varianza de la lognormal en sí (no la de sus logaritmos) explota con sigma grande —
+    // su estimador necesita muchísimas más de 200,000 muestras para converger de forma
+    // estable, por la cola derecha pesada (no es un defecto del muestreador, es una propiedad
+    // conocida de la distribución). La forma correcta y estable de validar la fórmula es en
+    // espacio logarítmico: por construcción, ln(muestra) = mu + sigma·Z con Z ~ Normal(0,1),
+    // así que ln(muestras) debe converger a Normal(mu, sigma²) — eso sí converge rápido.
+    const rng = mulberry32(2026);
+    const Z90 = 1.6448536269514722;
+    const cases = [
+        { min: 10000, mode: 50000, max: 150000 },
+        { min: 1000, mode: 5000, max: 200000 }, // muy sesgada — el caso típico de Magnitud de Pérdida
+    ];
+    const n = 200000;
+
+    for (const { min, mode, max } of cases) {
+        const sigma = (Math.log(max) - Math.log(min)) / (2 * Z90);
+        const mu = Math.log(mode) + sigma * sigma;
+
+        const samples = new Array(n);
+        for (let i = 0; i < n; i++) samples[i] = getLognormalRandom(min, mode, max, rng);
+
+        const mean = samples.reduce((a, b) => a + b, 0) / n;
+        const theoreticalMean = Math.exp(mu + (sigma * sigma) / 2);
+        const meanRelError = Math.abs(mean - theoreticalMean) / theoreticalMean;
+        assert.ok(
+            meanRelError < 0.05,
+            `min=${min} moda=${mode} max=${max}: media muestral ${mean.toFixed(2)} vs teórica ${theoreticalMean.toFixed(2)} (error ${(meanRelError * 100).toFixed(2)}%)`,
+        );
+
+        const logs = samples.map((x) => Math.log(x));
+        const logMean = logs.reduce((a, b) => a + b, 0) / n;
+        const logVariance = logs.reduce((sum, x) => sum + (x - logMean) ** 2, 0) / n;
+        const logMeanAbsError = Math.abs(logMean - mu);
+        const logVarRelError = Math.abs(logVariance - sigma * sigma) / (sigma * sigma);
+
+        assert.ok(
+            logMeanAbsError < 0.02,
+            `min=${min} moda=${mode} max=${max}: media de ln(muestras) ${logMean.toFixed(4)} vs mu teórico ${mu.toFixed(4)} (dif ${logMeanAbsError.toFixed(4)})`,
+        );
+        assert.ok(
+            logVarRelError < 0.05,
+            `min=${min} moda=${mode} max=${max}: varianza de ln(muestras) ${logVariance.toFixed(4)} vs sigma² teórico ${(sigma * sigma).toFixed(4)} (error ${(logVarRelError * 100).toFixed(2)}%)`,
+        );
+    }
+});
+
+test('getLognormalRandom: SÍ puede superar max (percentil 95, no techo duro) — a diferencia de PERT/triangular', () => {
+    const rng = mulberry32(3);
+    let exceedsMax = false;
+    for (let i = 0; i < 50000; i++) {
+        if (getLognormalRandom(10000, 50000, 150000, rng) > 150000) {
+            exceedsMax = true;
+            break;
+        }
+    }
+    assert.ok(exceedsMax, 'con 50,000 muestras, se esperaba que al menos una superara max (percentil 95, no absoluto)');
+});
+
+test('getLognormalRandom: con min o moda en 0 (categoría de pérdida sin costo en ese punto), cae a triangular en vez de reventar', () => {
+    const rngA = mulberry32(55);
+    const rngB = mulberry32(55);
+    const fromLognormal = getLognormalRandom(0, 5000, 20000, rngA);
+    const fromTriangular = getTriangularRandom(0, 5000, 20000, rngB);
+    assert.strictEqual(fromLognormal, fromTriangular);
 });
 
 test('pearsonCorrelation: dos variables independientes dan una correlación cercana a 0', () => {

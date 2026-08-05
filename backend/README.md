@@ -115,7 +115,7 @@ posteriores son instantáneos hasta que se vuelva a dormir).
 server.js                        Arranca Express y monta las rutas
 src/
   lib/
-    random.js                    Generador con semilla (mulberry32) + muestreo triangular
+    random.js                    Generador con semilla (mulberry32) + muestreo PERT/lognormal/triangular
     simulation.js                Motor Monte Carlo + Análisis de Sensibilidad (Pearson)
     evaluation.js                Evalúa un resultado contra los Criterios de Riesgo
     treatment.js                 Las 4 estrategias de tratamiento + ROSI + veredicto

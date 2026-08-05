@@ -10,7 +10,7 @@ import {
     severityToClasses,
     severityToHex,
     showToast,
-    triangularMean,
+    pertMean,
 } from './utils.js';
 
 // ============================================================
@@ -99,15 +99,15 @@ export const FairRegister = {
                 minimumFractionDigits: 0,
                 maximumFractionDigits: 0,
             }).format(v);
-        // La media de la distribución triangular de Vulnerabilidad, NO su moda (ver
-        // triangularMean en utils.js) — el ALE Residual que guarda el motor es un promedio
-        // de todas las iteraciones de Monte Carlo, así que "des-mitigarlo" para estimar el
-        // Riesgo Inherente debe dividir entre ese mismo tipo de promedio, no entre el valor
-        // "más probable" de un solo punto.
+        // La media de la distribución Beta-PERT de Vulnerabilidad (la que realmente simula el
+        // backend, ver getPertRandom en random.js), NO su moda (ver pertMean en utils.js) — el
+        // ALE Residual que guarda el motor es un promedio de todas las iteraciones de Monte
+        // Carlo, así que "des-mitigarlo" para estimar el Riesgo Inherente debe dividir entre
+        // ese mismo tipo de promedio, no entre el valor "más probable" de un solo punto.
         const vuln = entry.vuln;
         const vulnMean =
             vuln && typeof vuln.min === 'number' && typeof vuln.mode === 'number' && typeof vuln.max === 'number'
-                ? triangularMean(vuln.min, vuln.mode, vuln.max)
+                ? pertMean(vuln.min, vuln.mode, vuln.max)
                 : null;
         const inherentAle = vulnMean && vulnMean > 0 ? entry.ale * (100 / vulnMean) : null;
 
