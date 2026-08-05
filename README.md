@@ -73,7 +73,8 @@ cd frontend && npm run test:e2e                   # suite E2E (Playwright) contr
 La suite E2E arranca su propio backend + servidor estático (ver `frontend/playwright.config.js`)
 y corre los flujos críticos de punta a punta: wizard completo, guardar borrador y reanudarlo,
 Análisis Profundo, exportar el Informe Consolidado, eliminar un riesgo, vincular un activo del
-Catálogo de Activos a un riesgo simulado y verlo reflejado en ambos lados.
+Catálogo de Activos a un riesgo simulado y verlo reflejado en ambos lados, y la sugerencia de
+tipo de activo al elegir un riesgo del Catálogo de Riesgos (Paso 1).
 
 Las pruebas unitarias (Vitest, co-ubicadas junto al código que prueban — `*.test.js` dentro de
 `frontend/src/modules/`) cubren la lógica que ya es pura hoy: formateo/clasificación en

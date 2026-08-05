@@ -107,14 +107,19 @@ export const RiskCatalog = {
         document.getElementById('riskcat-use-btn').addEventListener('click', () => {
             const threat = currentThreat();
             if (!threat) return;
-            this.useSelected(threat, nameFieldId, descFieldId);
+            const category = currentCategories()[categorySelect.value];
+            this.useSelected(threat, nameFieldId, descFieldId, category);
             Modal.hide();
         });
     },
 
     // No pisa una Descripción que el usuario ya haya escrito — mismo principio que ya sigue
     // el resto de la app (sugerir, nunca sobrescribir en silencio algo que ya se llenó).
-    useSelected(threat, nameFieldId = 'fair-riskName', descFieldId = 'fair-riskDescription') {
+    // `category` es opcional (solo lo manda openPicker, no cualquier llamador futuro) — trae
+    // suggestedAssetCategories (ver backend/src/data/profiles.js), la sugerencia de qué tipo
+    // de activo suele verse afectado por esta categoría de riesgo. Nunca un filtro ni una
+    // regla impuesta — solo un texto informativo en Paso 1, junto a "Activo Afectado".
+    useSelected(threat, nameFieldId = 'fair-riskName', descFieldId = 'fair-riskDescription', category = null) {
         const nameInput = document.getElementById(nameFieldId);
         const descInput = document.getElementById(descFieldId);
         // catalogStandard/catalogCode (de qué amenaza del catálogo salió este riesgo) — ver
@@ -128,7 +133,23 @@ export const RiskCatalog = {
             descInput.value = threat.description;
             descInput.dispatchEvent(new Event('input'));
         }
+        this.showAssetSuggestion(category);
         showToast('Riesgo cargado desde el catálogo.');
+    },
+
+    // Solo aparece si la categoría trae al menos una sugerencia (ver el comentario junto a
+    // riskCatalog en profiles.js: un arreglo vacío es a propósito, cuando no hay un tipo de
+    // activo único y obvio) — de lo contrario se oculta, en vez de mostrar un texto vacío.
+    showAssetSuggestion(category) {
+        const el = document.getElementById('fair-asset-suggestion');
+        if (!el) return;
+        const suggestions = (category && category.suggestedAssetCategories) || [];
+        if (suggestions.length === 0) {
+            el.classList.add('hidden');
+            return;
+        }
+        el.textContent = `Sugerencia: para este tipo de riesgo, el activo afectado suele ser de categoría "${suggestions.join('" o "')}" — ajústalo si no aplica en tu caso.`;
+        el.classList.remove('hidden');
     },
 };
 
