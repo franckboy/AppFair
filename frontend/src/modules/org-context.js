@@ -9,6 +9,7 @@ import { sanitizeHTML, showToast } from './utils.js';
 export const OrgContext = {
     // Valores de fábrica mientras App.Api.bootstrap() no haya traído los reales del backend.
     context: {
+        nombreEmpresa: '',
         mision: '',
         naturalezaNegocio: '',
         apetitoRiesgo: 'moderado',
@@ -22,7 +23,7 @@ export const OrgContext = {
     },
 
     // Se considera "completado" si al menos misión o naturaleza del negocio tienen algo
-    // escrito — no exige los 6 campos, solo que el usuario haya realmente participado en
+    // escrito — no exige los 7 campos, solo que el usuario haya realmente participado en
     // vez de dejarlo todo en blanco. Usado por el gate obligatorio de primer uso (ver
     // showGate) para decidir si hay que bloquear el resto de la app o no.
     isComplete() {
@@ -36,6 +37,10 @@ export const OrgContext = {
     buildFormHTML(prefix) {
         const c = this.context;
         return `
+            <div class="input-group">
+                <label for="${prefix}-nombre">Nombre de la Empresa:</label>
+                <input type="text" id="${prefix}-nombre" class="form-input" value="${sanitizeHTML(c.nombreEmpresa)}" />
+            </div>
             <div class="input-group">
                 <label for="${prefix}-mision">Misión y Objetivos Estratégicos:</label>
                 <textarea id="${prefix}-mision" class="form-textarea" rows="2">${sanitizeHTML(c.mision)}</textarea>
@@ -72,6 +77,7 @@ export const OrgContext = {
 
     readFormValues(prefix) {
         return {
+            nombreEmpresa: document.getElementById(`${prefix}-nombre`).value,
             mision: document.getElementById(`${prefix}-mision`).value,
             naturalezaNegocio: document.getElementById(`${prefix}-naturaleza`).value,
             apetitoRiesgo: document.getElementById(`${prefix}-apetito`).value,

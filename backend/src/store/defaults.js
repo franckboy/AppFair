@@ -8,6 +8,7 @@ const DEFAULTS = {
     // por defecto que configurar.
     orgDefaults: { defenseKey: 'estandar', owner: '', dataSource: 'experto-sin-calibrar', dataConfidence: 'medio' },
     orgContext: {
+        nombreEmpresa: '',
         mision: '',
         naturalezaNegocio: '',
         apetitoRiesgo: 'moderado',

@@ -299,12 +299,13 @@ export const FairExport = {
 
         const reportHTML = `
             <div class="print-section">
-                <h1>Informe Consolidado de Riesgos (FAIR)</h1>
+                <h1>Informe Consolidado de Riesgos (FAIR)${ctx.nombreEmpresa ? ` — ${sanitizeHTML(ctx.nombreEmpresa)}` : ''}</h1>
                 <p>Generado: ${new Date().toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
             </div>
             <div class="print-section">
                 <h2>Contexto Organizacional</h2>
                 <table>
+                    <tr><td><strong>Nombre de la Empresa</strong></td><td>${sanitizeHTML(ctx.nombreEmpresa) || '—'}</td></tr>
                     <tr><td><strong>Misión y Objetivos</strong></td><td>${sanitizeHTML(ctx.mision) || '—'}</td></tr>
                     <tr><td><strong>Naturaleza del Negocio</strong></td><td>${sanitizeHTML(ctx.naturalezaNegocio) || '—'}</td></tr>
                     <tr><td><strong>Apetito por el Riesgo</strong></td><td>${ctx.apetitoRiesgo}</td></tr>
