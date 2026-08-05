@@ -61,6 +61,12 @@
             <h1 class="text-3xl font-bold text-center">Gestión de Riesgos Empresariales</h1>
             <p class="text-center text-blue-200 mt-1">Modelo Integrado: Análisis Rápido + Cuantitativo (FAIR)</p>
             <nav id="main-nav" class="mt-4 flex justify-center space-x-2 md:space-x-4 flex-wrap gap-y-2">
+                <!-- Primero en el nav a propósito: RIMS RA.1-2015 (5.2) pide entender la organización
+                     ANTES de apreciar sus riesgos — ver también el gate obligatorio de primer uso más
+                     abajo (#orgcontext-gate), que bloquea el resto de la app hasta completarlo una vez. -->
+                <button id="nav-org-context" class="nav-button nav-requires-boot" title="Entendimiento de la organización (RIMS RA.1-2015, 5.2): misión, apetito de riesgo, partes interesadas">
+                    <i class="fas fa-building mr-2"></i><span class="hidden md:inline">Contexto Organizacional</span>
+                </button>
                 <button id="nav-quick" class="nav-button active nav-requires-boot">
                     <i class="fas fa-bolt mr-2"></i><span class="hidden md:inline">Análisis Rápido</span>
                 </button>
@@ -70,20 +76,33 @@
                 <button id="nav-register" class="nav-button nav-requires-boot">
                     <i class="fas fa-th-large mr-2"></i><span class="hidden md:inline">Registro de Riesgos</span>
                 </button>
-                <button id="nav-criteria" class="nav-button nav-requires-boot" style="background-color:#374151;" title="Define qué se considera un riesgo aceptable, alto o crítico para tu organización">
-                    <i class="fas fa-sliders-h mr-2"></i><span class="hidden md:inline">Criterios de Riesgo</span>
-                </button>
-                <button id="nav-org-defaults" class="nav-button nav-requires-boot" style="background-color:#374151;" title="Valores que se auto-rellenan en cada análisis nuevo, para no tener que volver a escribirlos">
-                    <i class="fas fa-user-cog mr-2"></i><span class="hidden md:inline">Valores por Defecto</span>
-                </button>
-                <button id="nav-org-context" class="nav-button nav-requires-boot" style="background-color:#374151;" title="Entendimiento de la organización (RIMS RA.1-2015, 5.2): misión, apetito de riesgo, partes interesadas">
-                    <i class="fas fa-building mr-2"></i><span class="hidden md:inline">Contexto Organizacional</span>
-                </button>
-                <button id="nav-assets" class="nav-button nav-requires-boot" style="background-color:#374151;" title="Registra el valor estimado de tus activos, para no tener que recordarlo cada vez que analizas un riesgo">
-                    <i class="fas fa-boxes mr-2"></i><span class="hidden md:inline">Catálogo de Activos</span>
+                <!-- Criterios de Riesgo / Valores por Defecto / Catálogo de Activos: configúralos una
+                     vez y rara vez se vuelven a tocar — agrupados aquí para no competir visualmente
+                     con las 3 páginas de trabajo diario de arriba. Contexto Organizacional NO va aquí
+                     (ver nota arriba). -->
+                <button id="nav-config" class="nav-button nav-requires-boot" style="background-color:#374151;" title="Criterios de Riesgo, Valores por Defecto y Catálogo de Activos">
+                    <i class="fas fa-cog mr-2"></i><span class="hidden md:inline">Configuración</span>
                 </button>
             </nav>
         </header>
+
+        <!-- Gate obligatorio de primer uso: bloquea el resto de la app hasta que Contexto
+             Organizacional tenga al menos misión o naturaleza del negocio — RIMS RA.1-2015 lo pide
+             como paso previo a cualquier apreciación de riesgos, no como una configuración opcional
+             más. Una vez completado, no se vuelve a mostrar (ver App.OrgContext.isComplete()); para
+             editarlo después, sigue disponible desde el botón "Contexto Organizacional" del nav. -->
+        <div id="orgcontext-gate" class="page-content hidden">
+            <h2 class="text-2xl font-bold text-gray-800 mb-2"><i class="fas fa-building mr-2"></i>Antes de empezar: Contexto Organizacional</h2>
+            <p class="description-text mb-4">
+                RIMS RA.1-2015 (5.2) pide entender la organización antes de apreciar sus riesgos — se captura
+                una sola vez aquí y aparece como referencia en cada reporte. Puedes editarlo después desde el
+                botón "Contexto Organizacional" del menú.
+            </p>
+            <div id="orgcontext-gate-form"></div>
+            <div class="mt-6 flex justify-end">
+                <button id="orgctx-gate-save-btn" class="btn btn-primary">Guardar y Comenzar <i class="fas fa-arrow-right ml-2"></i></button>
+            </div>
+        </div>
 
         <div id="boot-gate" class="page-content hidden text-center py-12">
             <i id="boot-gate-icon" class="fas fa-plug text-4xl text-gray-400 mb-4"></i>
@@ -1144,6 +1163,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
         hide() {
             this.modal.classList.add('hidden');
+        },
+
+        // Menú simple de opciones (ver App.ConfigMenu) — cada botón cierra el modal y ejecuta su
+        // propia acción (abrir otro modal, cambiar de página, etc.).
+        menu(title, options) {
+            this.title.textContent = title;
+            this.body.innerHTML = `<div class="space-y-2">${options.map((opt, i) => `
+                <button type="button" class="btn btn-secondary w-full" style="justify-content:flex-start;text-align:left;" data-menu-option="${i}">
+                    <i class="fas ${opt.icon} mr-2"></i>${opt.label}
+                </button>
+            `).join('')}</div>`;
+            this.footer.innerHTML = `<button id="modal-menu-close-btn" class="btn btn-secondary">Cerrar</button>`;
+            this.modal.classList.remove('hidden');
+
+            this.body.querySelectorAll('[data-menu-option]').forEach((btn, i) => {
+                btn.addEventListener('click', () => {
+                    this.hide();
+                    options[i].onClick();
+                });
+            });
+            document.getElementById('modal-menu-close-btn').addEventListener('click', () => this.hide());
         }
     };
 
@@ -1154,10 +1194,25 @@ document.addEventListener('DOMContentLoaded', () => {
             const booted = await this.Api.bootstrap();
             if (!booted) return; // Api.bootstrap ya mostró la pantalla de error (boot-gate)
 
+            // OrgContext.init() liga el botón de edición de siempre — se llama aquí (antes del
+            // gate) porque el botón del nav debe funcionar incluso si el usuario ya completó el
+            // contexto en una sesión anterior y nunca ve el gate.
+            this.OrgContext.init();
+            if (!this.OrgContext.isComplete()) {
+                // RIMS RA.1-2015 (5.2): entender la organización es un paso previo obligatorio,
+                // no una configuración opcional más — bloquea el resto de la inicialización
+                // hasta que se complete una vez (ver #orgcontext-gate).
+                this.OrgContext.showGate(() => this.continueInit());
+                return;
+            }
+            this.continueInit();
+        },
+
+        continueInit() {
             this.UIMode.init();
             this.Criteria.init();
             this.OrgDefaults.init();
-            this.OrgContext.init();
+            this.ConfigMenu.init();
             this.Autocomplete.init();
             this.Navigation.init();
             this.QuickAnalysis.init();
@@ -1597,14 +1652,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 this.switchPage('register');
                 App.FairAnalysis.loadRiskRegister();
             });
-            document.getElementById('nav-assets').addEventListener('click', () => {
-                this.switchPage('assets');
-                App.AssetCatalog.load();
-            });
+            // El Catálogo de Activos ahora se abre desde el menú "Configuración" (ver
+            // App.ConfigMenu) — el cambio de página en sí sigue siendo switchPage('assets').
         },
         switchPage(pageKey) {
             const pages = { quick: document.getElementById('quickAnalysisPage'), fair: document.getElementById('fairAnalysisPage'), register: document.getElementById('registerPage'), assets: document.getElementById('assetsPage') };
-            const navs = { quick: document.getElementById('nav-quick'), fair: document.getElementById('nav-fair'), register: document.getElementById('nav-register'), assets: document.getElementById('nav-assets') };
+            // "assets" resalta el botón "Configuración" (ya no tiene su propio botón de nav) —
+            // así el usuario ve de dónde vino aunque haya entrado por un menú.
+            const navs = { quick: document.getElementById('nav-quick'), fair: document.getElementById('nav-fair'), register: document.getElementById('nav-register'), assets: document.getElementById('nav-config') };
             Object.keys(pages).forEach(key => {
                 pages[key].classList.toggle('hidden', key !== pageKey);
                 navs[key].classList.toggle('active', key === pageKey);
@@ -1612,14 +1667,35 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
+    // --- Menú "Configuración" ---
+    // Agrupa Criterios de Riesgo, Valores por Defecto y Catálogo de Activos — las 3 pantallas
+    // que se configuran una vez y rara vez se vuelven a tocar, para no competir visualmente en
+    // el nav con las páginas de trabajo diario. Contexto Organizacional NO va aquí a propósito:
+    // tiene su propio botón, primero en el nav (ver App.OrgContext y el gate de primer uso).
+    App.ConfigMenu = {
+        init() {
+            document.getElementById('nav-config').addEventListener('click', () => this.open());
+        },
+        open() {
+            Modal.menu('Configuración', [
+                { label: 'Criterios de Riesgo', icon: 'fa-sliders-h', onClick: () => App.Criteria.openEditor() },
+                { label: 'Valores por Defecto', icon: 'fa-user-cog', onClick: () => App.OrgDefaults.openEditor() },
+                {
+                    label: 'Catálogo de Activos', icon: 'fa-boxes', onClick: () => {
+                        App.Navigation.switchPage('assets');
+                        App.AssetCatalog.load();
+                    },
+                },
+            ]);
+        }
+    };
+
     // --- Criterios de Riesgo (Contexto — ISO 31000 cláusula 6.3.4) ---
     // Única fuente de verdad para los umbrales de aceptabilidad del riesgo.
-    // Se editan desde el botón "Criterios de Riesgo" y se guardan en este navegador,
+    // Se editan desde el menú "Configuración" (ver App.ConfigMenu) y se guardan en el backend,
     // en vez de vivir como números fijos repartidos por el código.
     App.Criteria = {
-        init() {
-            document.getElementById('nav-criteria').addEventListener('click', () => this.openEditor());
-        },
+        init() {},
 
         async save(newCriteria) {
             const updated = await App.Api.request('/api/config/criteria', { method: 'PUT', body: newCriteria });
@@ -1791,9 +1867,7 @@ document.addEventListener('DOMContentLoaded', () => {
             dataConfidence: 'medio',
         },
 
-        init() {
-            document.getElementById('nav-org-defaults').addEventListener('click', () => this.openEditor());
-        },
+        init() {},
 
         async save(newDefaults) {
             this.defaults = await App.Api.request('/api/config/org-defaults', { method: 'PUT', body: newDefaults });
@@ -1953,47 +2027,75 @@ document.addEventListener('DOMContentLoaded', () => {
             this.context = await App.Api.request('/api/config/org-context', { method: 'PUT', body: newContext });
         },
 
-        openEditor() {
+        // Se considera "completado" si al menos misión o naturaleza del negocio tienen algo
+        // escrito — no exige los 6 campos, solo que el usuario haya realmente participado en
+        // vez de dejarlo todo en blanco. Usado por el gate obligatorio de primer uso (ver
+        // showGate) para decidir si hay que bloquear el resto de la app o no.
+        isComplete() {
             const c = this.context;
-            const formHTML = `
-                <p class="description-text mb-4">
-                    RIMS RA.1-2015 (5.2) pide entender la organización antes de apreciar sus riesgos.
-                    Esto se captura una sola vez y aparece como referencia en cada reporte de riesgo.
-                </p>
+            return !!(c.mision && c.mision.trim()) || !!(c.naturalezaNegocio && c.naturalezaNegocio.trim());
+        },
+
+        // Parametrizado por prefijo de id porque este mismo formulario se usa en dos lugares a
+        // la vez potencialmente presentes en el DOM (el modal de edición y el gate de primer
+        // uso) — ids duplicados romperían getElementById en el que no sea el primero en el DOM.
+        buildFormHTML(prefix) {
+            const c = this.context;
+            return `
                 <div class="input-group">
-                    <label for="orgctx-mision">Misión y Objetivos Estratégicos:</label>
-                    <textarea id="orgctx-mision" class="form-textarea" rows="2">${sanitizeHTML(c.mision)}</textarea>
+                    <label for="${prefix}-mision">Misión y Objetivos Estratégicos:</label>
+                    <textarea id="${prefix}-mision" class="form-textarea" rows="2">${sanitizeHTML(c.mision)}</textarea>
                 </div>
                 <div class="input-group">
-                    <label for="orgctx-naturaleza">Naturaleza del Negocio / Actividad:</label>
-                    <textarea id="orgctx-naturaleza" class="form-textarea" rows="2">${sanitizeHTML(c.naturalezaNegocio)}</textarea>
+                    <label for="${prefix}-naturaleza">Naturaleza del Negocio / Actividad:</label>
+                    <textarea id="${prefix}-naturaleza" class="form-textarea" rows="2">${sanitizeHTML(c.naturalezaNegocio)}</textarea>
                 </div>
                 <div class="input-group">
-                    <label for="orgctx-apetito">Apetito por el Riesgo Declarado:</label>
-                    <select id="orgctx-apetito" class="form-select">
+                    <label for="${prefix}-apetito">Apetito por el Riesgo Declarado:</label>
+                    <select id="${prefix}-apetito" class="form-select">
                         <option value="conservador" ${c.apetitoRiesgo === 'conservador' ? 'selected' : ''}>Conservador (evitar riesgo activamente)</option>
                         <option value="moderado" ${c.apetitoRiesgo === 'moderado' ? 'selected' : ''}>Moderado (aceptar riesgo calculado por beneficio)</option>
                         <option value="agresivo" ${c.apetitoRiesgo === 'agresivo' ? 'selected' : ''}>Agresivo (buscar oportunidad aun con riesgo alto)</option>
                     </select>
                 </div>
                 <div class="input-group">
-                    <label for="orgctx-partes">Partes Interesadas Clave:</label>
-                    <textarea id="orgctx-partes" class="form-textarea" rows="2" placeholder="Ej. Clientes BASC/CTPAT, accionistas, personal operativo, autoridades locales">${sanitizeHTML(c.partesInteresadas)}</textarea>
+                    <label for="${prefix}-partes">Partes Interesadas Clave:</label>
+                    <textarea id="${prefix}-partes" class="form-textarea" rows="2" placeholder="Ej. Clientes BASC/CTPAT, accionistas, personal operativo, autoridades locales">${sanitizeHTML(c.partesInteresadas)}</textarea>
                 </div>
                 <div class="input-group">
-                    <label for="orgctx-legal">Entorno Legal y Regulatorio Relevante:</label>
-                    <textarea id="orgctx-legal" class="form-textarea" rows="2" placeholder="Ej. Certificación BASC, CTPAT, normativa local de seguridad privada">${sanitizeHTML(c.entornoLegal)}</textarea>
+                    <label for="${prefix}-legal">Entorno Legal y Regulatorio Relevante:</label>
+                    <textarea id="${prefix}-legal" class="form-textarea" rows="2" placeholder="Ej. Certificación BASC, CTPAT, normativa local de seguridad privada">${sanitizeHTML(c.entornoLegal)}</textarea>
                 </div>
                 <div class="input-group">
-                    <label for="orgctx-cadena">
+                    <label for="${prefix}-cadena">
                         Alcance de la Cadena de Suministro Cubierta
                         <i class="fas fa-info-circle text-blue-500 cursor-pointer ml-1" title="ISO 28001: define qué tramo de la cadena de suministro internacional cubre tu sistema de seguridad — ej. desde la planta hasta el puerto de embarque, o desde el proveedor hasta el almacén."></i>
                     </label>
-                    <textarea id="orgctx-cadena" class="form-textarea" rows="2" placeholder="Ej. Desde la recepción de materia prima en planta hasta la entrega en el puerto de embarque de Manzanillo">${sanitizeHTML(c.alcanceCadenaSuministro)}</textarea>
+                    <textarea id="${prefix}-cadena" class="form-textarea" rows="2" placeholder="Ej. Desde la recepción de materia prima en planta hasta la entrega en el puerto de embarque de Manzanillo">${sanitizeHTML(c.alcanceCadenaSuministro)}</textarea>
                 </div>
             `;
+        },
+
+        readFormValues(prefix) {
+            return {
+                mision: document.getElementById(`${prefix}-mision`).value,
+                naturalezaNegocio: document.getElementById(`${prefix}-naturaleza`).value,
+                apetitoRiesgo: document.getElementById(`${prefix}-apetito`).value,
+                partesInteresadas: document.getElementById(`${prefix}-partes`).value,
+                entornoLegal: document.getElementById(`${prefix}-legal`).value,
+                alcanceCadenaSuministro: document.getElementById(`${prefix}-cadena`).value,
+            };
+        },
+
+        openEditor() {
             Modal.title.textContent = 'Contexto Organizacional';
-            Modal.body.innerHTML = formHTML;
+            Modal.body.innerHTML = `
+                <p class="description-text mb-4">
+                    RIMS RA.1-2015 (5.2) pide entender la organización antes de apreciar sus riesgos.
+                    Esto se captura una sola vez y aparece como referencia en cada reporte de riesgo.
+                </p>
+                ${this.buildFormHTML('orgctx')}
+            `;
             Modal.footer.innerHTML = `
                 <button id="orgctx-cancel-btn" class="btn btn-secondary">Cancelar</button>
                 <button id="orgctx-save-btn" class="btn btn-primary">Guardar</button>
@@ -2005,14 +2107,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const saveBtn = e.target;
                 saveBtn.disabled = true;
                 try {
-                    await this.save({
-                        mision: document.getElementById('orgctx-mision').value,
-                        naturalezaNegocio: document.getElementById('orgctx-naturaleza').value,
-                        apetitoRiesgo: document.getElementById('orgctx-apetito').value,
-                        partesInteresadas: document.getElementById('orgctx-partes').value,
-                        entornoLegal: document.getElementById('orgctx-legal').value,
-                        alcanceCadenaSuministro: document.getElementById('orgctx-cadena').value,
-                    });
+                    await this.save(this.readFormValues('orgctx'));
                     Modal.hide();
                     showToast('Contexto Organizacional actualizado.');
                 } catch (err) {
@@ -2021,6 +2116,34 @@ document.addEventListener('DOMContentLoaded', () => {
                     saveBtn.disabled = false;
                 }
             });
+        },
+
+        // Gate obligatorio de primer uso — ver #orgcontext-gate en el HTML y el comentario ahí.
+        // onComplete() se llama justo después de guardar exitosamente, para que App.init()
+        // pueda continuar el resto de la inicialización que quedó pausada.
+        showGate(onComplete) {
+            document.querySelectorAll('.nav-requires-boot').forEach(btn => btn.disabled = true);
+            document.querySelectorAll('#quickAnalysisPage, #fairAnalysisPage, #registerPage, #assetsPage').forEach(el => el.classList.add('hidden'));
+            document.getElementById('orgcontext-gate-form').innerHTML = this.buildFormHTML('orgctx-gate');
+            document.getElementById('orgcontext-gate').classList.remove('hidden');
+
+            const saveBtn = document.getElementById('orgctx-gate-save-btn');
+            const saveHandler = async () => {
+                saveBtn.disabled = true;
+                try {
+                    await this.save(this.readFormValues('orgctx-gate'));
+                    document.getElementById('orgcontext-gate').classList.add('hidden');
+                    document.querySelectorAll('.nav-requires-boot').forEach(btn => btn.disabled = false);
+                    saveBtn.removeEventListener('click', saveHandler);
+                    showToast('Contexto Organizacional guardado.');
+                    onComplete();
+                } catch (err) {
+                    showToast(err.userMessage || 'No se pudo guardar. Intenta de nuevo.');
+                } finally {
+                    saveBtn.disabled = false;
+                }
+            };
+            saveBtn.addEventListener('click', saveHandler);
         }
     };
 
