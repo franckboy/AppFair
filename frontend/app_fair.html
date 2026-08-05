@@ -59,7 +59,7 @@
                 <button id="mode-toggle-btn" class="text-sm bg-blue-800 hover:bg-blue-900 px-3 py-1 rounded-full" title="Cambia el lenguaje de la app entre sencillo y técnico. Los cálculos son exactamente los mismos en ambos modos."></button>
             </div>
             <h1 class="text-3xl font-bold text-center">Gestión de Riesgos Empresariales</h1>
-            <p class="text-center text-blue-200 mt-1">Modelo Integrado: Análisis Rápido + Cuantitativo (FAIR)</p>
+            <p class="text-center text-blue-200 mt-1">Modelo Cuantitativo de Riesgos (FAIR)</p>
             <nav id="main-nav" class="mt-4 flex justify-center space-x-2 md:space-x-4 flex-wrap gap-y-2">
                 <!-- Primero en el nav a propósito: RIMS RA.1-2015 (5.2) pide entender la organización
                      ANTES de apreciar sus riesgos — ver también el gate obligatorio de primer uso más
@@ -70,10 +70,13 @@
                 <!-- Análisis Rápido (Triaje) y Análisis FAIR eran dos páginas separadas — en la
                      práctica casi todo riesgo triageado terminaba promovido a FAIR de todas formas,
                      así que duplicar la captura (nombre/descripción/activo) en dos formularios solo
-                     agregaba fricción sin filtrar nada. Ahora es un solo flujo: Paso 1 sirve como
-                     captura rápida (con una Vista Rápida opcional para una señal instantánea y
-                     "Guardar" sin completar el resto), y "Siguiente" continúa al refinamiento
-                     completo con FAIR + Monte Carlo + Tratamiento. -->
+                     agregaba fricción sin filtrar nada. Ahora es un solo flujo: Paso 1 captura el
+                     escenario y "Siguiente" continúa directo al refinamiento completo con FAIR +
+                     Monte Carlo + Tratamiento — la "Vista Rápida" (estimado de un solo punto que
+                     vivía aquí) se eliminó: duplicaba, con menos rigor, lo que FAIR ya hace (el
+                     mismo descuento "capacidad del atacante menos tu defensa" que da Vulnerabilidad
+                     en FAIR, y un desglose de Magnitud de Pérdida en 9 categorías en vez de un solo
+                     Costo Mín/Máx). -->
                 <button id="nav-fair" class="nav-button active nav-requires-boot">
                     <i class="fas fa-balance-scale mr-2"></i><span class="hidden md:inline">Análisis de Riesgo</span>
                 </button>
@@ -156,11 +159,7 @@
                                     <span id="fair-riskName-error" class="error-message hidden" aria-live="polite"></span>
                                     <button type="button" id="open-risk-catalog-btn-fair" class="btn btn-secondary text-sm mt-2">📋 Elegir del Catálogo de Riesgos</button>
                                 </div>
-                                <!-- Mismo campo que "Descripción" en Análisis Rápido — antes no existía aquí, así que
-                                     lo que se escribía en la captura rápida se volvía invisible en cuanto se promovía
-                                     el riesgo a FAIR (quedaba guardado en fullData, pero sin ningún lugar donde
-                                     mostrarlo/editarlo). Se transfiere automáticamente al promover (ver
-                                     loadRiskIntoForm/receiveData) y se guarda en el Registro (ver saveToRiskRegister). -->
+                                <!-- Se guarda en el Registro junto con el resto del análisis (ver saveToRiskRegister). -->
                                 <div class="input-group md:col-span-2">
                                     <label for="fair-riskDescription">Descripción (opcional):</label>
                                     <textarea id="fair-riskDescription" class="form-textarea" rows="2" placeholder="Describe el riesgo con tus palabras — contexto adicional que no cabe en el nombre."></textarea>
@@ -213,176 +212,6 @@
                                         <option value="operativo">Interrupción Operativa</option>
                                         <option value="reputacional">Daño Reputacional</option>
                                     </select>
-                                </div>
-                            </div>
-
-                            <!-- Vista Rápida — antes vivía en su propia página ("Análisis Rápido de Riesgos",
-                                 Triaje). Se fusionó aquí porque en la práctica casi todo riesgo triageado
-                                 terminaba promovido a FAIR de todas formas — tener dos páginas/formularios
-                                 para el mismo riesgo solo duplicaba la captura (nombre/descripción/activo ya
-                                 se unificaron arriba). Esta sección da una señal instantánea (un solo punto,
-                                 sin simulación) antes de refinar con TEF/Vulnerabilidad/Magnitud de Pérdida +
-                                 Monte Carlo en los pasos siguientes — "Guardar" aquí persiste el riesgo sin
-                                 tener que completar el resto del wizard. -->
-                            <div class="fair-section bg-blue-50 mt-6">
-                                <h4>
-                                    Vista Rápida (opcional)
-                                    <i class="fas fa-info-circle text-blue-500 cursor-pointer ml-1" title="Un estimado instantáneo de un solo punto (sin simulación) — útil para una primera señal o para guardar el riesgo y refinarlo después. No sustituye la simulación Monte Carlo de los pasos siguientes."></i>
-                                </h4>
-                                <p class="description-text mb-4">
-                                    Llena esto para una estimación rápida y guarda el riesgo sin completar el resto —
-                                    o sáltalo y ve directo a "Siguiente" para analizarlo a fondo con FAIR.
-                                </p>
-                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    <div class="input-group">
-                                        <label for="profileSelect">Perfil de Riesgo:</label>
-                                        <select id="profileSelect" class="form-select"></select>
-                                        <p class="description-text">Define el contexto para adaptar ponderaciones y factores.</p>
-                                    </div>
-                                    <div class="input-group">
-                                        <label for="aro">Frecuencia Anual Estimada:</label>
-                                        <select id="aro" class="form-select">
-                                            <option value="0.2">Rara (1 vez c/5 años)</option>
-                                            <option value="1">Ocasional (1 vez/año)</option>
-                                            <option value="12" selected>Frecuente (1 vez/mes)</option>
-                                            <option value="52">Muy Frecuente (1 vez/semana)</option>
-                                            <option value="365">Casi Segura (Diaria)</option>
-                                        </select>
-                                    </div>
-                                    <div class="input-group col-span-1 md:col-span-2">
-                                        <div class="flex items-center justify-between mb-2">
-                                            <label for="vulnerabilidad">Vulnerabilidad Inherente: <span id="vulnerabilidadValue" class="slider-value ml-2">50%</span></label>
-                                            <button type="button" id="toggleVulnerability" class="toggle-breakdown-btn">Desglosar <span class="arrow">▼</span></button>
-                                        </div>
-                                        <input type="range" id="vulnerabilidad" min="0" max="100" value="50" step="5" class="w-full">
-                                        <div id="vulnerabilityBreakdown" class="hidden mt-4 p-4 border rounded-md bg-gray-50">
-                                            <h4 class="font-semibold mb-3">Factores de Vulnerabilidad (Promedio Simple):</h4>
-                                            <div id="vulnerabilityContainer" class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4"></div>
-                                        </div>
-                                    </div>
-                                    <div class="input-group col-span-1 md:col-span-2">
-                                        <div class="flex items-center justify-between mb-2">
-                                            <label for="impacto">Impacto Inherente (Estimación % de Pérdida): <span id="impactoValue" class="slider-value ml-2">50%</span></label>
-                                            <button type="button" id="toggleImpactBtn" class="toggle-breakdown-btn">Desglosar <span class="arrow">▼</span></button>
-                                        </div>
-                                        <input type="range" id="impacto" min="0" max="100" value="50" step="5" class="w-full">
-                                        <div id="impactBreakdown" class="hidden mt-4 p-4 border rounded-md bg-gray-50">
-                                            <h4 class="font-semibold mb-3">Factores de Impacto (Promedio Ponderado):</h4>
-                                            <div id="dynamicImpactInputContainer" class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4"></div>
-                                            <p id="impactPonderationWarning" class="text-red-500 text-sm mt-2 hidden"></p>
-                                        </div>
-                                    </div>
-                                    <div class="input-group">
-                                        <label for="costoMinImpacto">Costo Mínimo Impacto:</label>
-                                        <input type="number" id="costoMinImpacto" class="form-input quick-cost-input" data-min="true" value="1000" min="0" oninput="validity.valid||(value='');">
-                                        <span id="costoMinImpacto-error" class="error-message hidden" aria-live="polite"></span>
-                                    </div>
-                                    <div class="input-group">
-                                        <label for="costoMaxImpacto">Costo Máximo Impacto:</label>
-                                        <input type="number" id="costoMaxImpacto" class="form-input quick-cost-input" data-max="true" value="100000" min="0" oninput="validity.valid||(value='');">
-                                        <span id="costoMaxImpacto-error" class="error-message hidden" aria-live="polite"></span>
-                                    </div>
-                                    <div class="input-group">
-                                        <label for="rrMax">
-                                            Apetito de Riesgo Máximo (%)
-                                            <i class="fas fa-info-circle text-blue-500 cursor-pointer ml-1" title="Se prellena con el umbral 'Alto' de tus Criterios de Riesgo (menú superior), para no declarar tu apetito de riesgo dos veces. Puedes ajustarlo aquí si este riesgo en particular necesita un criterio distinto."></i>
-                                        </label>
-                                        <input type="number" id="rrMax" class="form-input" value="25" min="0" max="100" step="1" oninput="validity.valid||(value='');">
-                                    </div>
-                                    <div class="input-group col-span-1 md:col-span-2">
-                                        <div class="flex items-center mb-2">
-                                            <input type="checkbox" id="toggleDeliberateThreat" class="form-checkbox mr-2">
-                                            <label for="toggleDeliberateThreat">Considerar Amenaza Deliberada y Controles</label>
-                                        </div>
-                                        <div id="deliberateThreatContainer" class="hidden mt-4 p-4 border rounded-md bg-gray-50">
-                                            <h4 class="font-semibold mb-3">Análisis de Amenaza y Defensa</h4>
-                                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                <div>
-                                                    <label for="attackerProfileSelect">Perfil de Atacante:</label>
-                                                    <select id="attackerProfileSelect" class="form-select"></select>
-                                                    <div id="attackerProfileContainer" class="mt-2 space-y-1 text-xs text-gray-600"></div>
-                                                </div>
-                                                <div>
-                                                    <label for="defenseProfileSelect">Perfil de Defensa:</label>
-                                                    <select id="defenseProfileSelect" class="form-select"></select>
-                                                    <div id="defenseProfileContainer" class="mt-2 space-y-1 text-xs text-gray-600"></div>
-                                                </div>
-                                            </div>
-                                            <div class="input-group mt-4">
-                                                <label for="deliberateThreatPonderation" class="flex justify-between items-center">
-                                                    Factor de Ponderación de Amenaza: <span id="deliberateThreatPonderationValue" class="slider-value">x0.70</span>
-                                                </label>
-                                                <input type="range" id="deliberateThreatPonderation" min="0" max="2" value="0.7" step="0.05" class="w-full">
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="col-span-1 md:col-span-2 p-4 bg-white border border-blue-200 rounded-md">
-                                        <h3 class="text-xl font-semibold text-blue-800 mb-4">Resultados Preliminares</h3>
-                                        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 text-center">
-                                            <div>
-                                                <p class="text-gray-600">Riesgo Inherente</p>
-                                                <p id="preliminaryRIValue" class="text-2xl font-bold text-blue-700">0.00%</p>
-                                                <span id="preliminaryRICategory" class="inline-block px-2 py-1 text-xs font-semibold rounded-full"></span>
-                                            </div>
-                                            <div>
-                                                <div class="flex justify-center items-baseline space-x-2">
-                                                    <p class="text-gray-600">Riesgo Residual</p>
-                                                    <p id="preliminaryRRtAppetite" class="text-xs text-gray-500"></p>
-                                                </div>
-                                                <p id="preliminaryRRtValue" class="text-2xl font-bold text-blue-700">0.00%</p>
-                                                <p id="preliminaryRRtBreakdown" class="text-xs text-gray-500 mt-1 hidden"></p>
-                                                <span id="preliminaryRRtCategory" class="inline-block px-2 py-1 text-xs font-semibold rounded-full"></span>
-                                            </div>
-                                            <div class="sm:col-span-2 md:col-span-1">
-                                                <p class="text-gray-600">Pérdida Anual Estimada</p>
-                                                <p id="preliminaryALEValue" class="text-2xl font-bold text-blue-700">$0.00</p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="col-span-1 md:col-span-2 bg-white p-4 rounded-md shadow-sm">
-                                        <h4 class="font-semibold mb-2">Desglose Completo</h4>
-                                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                            <div class="bg-gray-50 p-4 rounded-md">
-                                                <h5 class="font-semibold mb-2 text-sm">Cálculos Clave</h5>
-                                                <ul class="space-y-1 text-sm">
-                                                    <li>Riesgo Inherente: <span id="resultadoRI" class="font-bold text-blue-700">0%</span></li>
-                                                    <li>Factor de Amenaza Deliberada: <span id="resultadoADFactor" class="font-bold text-blue-700">0%</span></li>
-                                                    <li>Efectividad de Controles: <span id="resultadoENC" class="font-bold text-blue-700">0%</span></li>
-                                                    <li>Riesgo Residual Total: <span id="resultadoRRt" class="font-bold text-blue-700">0%</span></li>
-                                                    <li>Índice de Criticidad: <span id="resultadoIC" class="font-bold text-blue-700">0%</span></li>
-                                                    <li>Categoría de Riesgo: <span id="categoriaRiesgo" class="font-bold text-blue-700">N/A</span></li>
-                                                </ul>
-                                                <p id="categoriaRiesgo-justificacion" class="text-xs text-gray-500 mt-2 italic"></p>
-                                            </div>
-                                            <div class="bg-gray-50 p-4 rounded-md">
-                                                <h5 class="font-semibold mb-2 text-sm">Valoración Económica</h5>
-                                                <ul class="space-y-1 text-sm">
-                                                    <li>Pérdida Única Esperada: <span id="resultadoSLE" class="font-bold text-blue-700">N/A</span></li>
-                                                    <li>Pérdida Anual Estimada: <span id="resultadoALE" class="font-bold text-blue-700">N/A</span></li>
-                                                </ul>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="col-span-1 md:col-span-2 bg-white p-4 rounded-md shadow-sm">
-                                        <h4 class="font-semibold mb-2">Mapa de Riesgo (Inherente vs. Residual)</h4>
-                                        <div class="flex justify-center mb-4 space-x-2">
-                                            <button id="showInheritBtn" class="btn btn-secondary active">Mostrar Inherente</button>
-                                            <button id="showResidualBtn" class="btn btn-secondary">Mostrar Residual</button>
-                                            <button id="downloadMatrixBtn" class="btn btn-secondary"><i class="fas fa-download mr-2"></i>Descargar</button>
-                                        </div>
-                                        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4" id="riskMatrixContainer">
-                                            <div class="lg:col-span-1">
-                                                <h5 class="font-semibold mb-2">Leyenda de Riesgos</h5>
-                                                <div id="risk-list-container" class="text-sm p-2 border rounded-md bg-white max-h-80 overflow-y-auto"></div>
-                                            </div>
-                                            <div class="lg:col-span-2 relative h-80 lg:h-auto">
-                                                <canvas id="riskMatrixCanvas"></canvas>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="mt-6 flex justify-end">
-                                    <button id="saveBtn" class="btn btn-secondary"><i class="fas fa-save mr-2"></i>Guardar</button>
                                 </div>
                             </div>
 
@@ -1019,35 +848,6 @@
 <script>
 // --- MAIN APPLICATION LOGIC ---
 document.addEventListener('DOMContentLoaded', () => {
-    // This plugin is used to display the numbers on the scatter plot
-    (function() {
-      if (typeof Chart === 'undefined') return;
-      Chart.register({
-        id: 'datalabels',
-        beforeDatasetsDraw: function(chart, args, options) {
-          const { ctx, chartArea: { top, right, bottom, left, width, height }, scales: { x, y } } = chart;
-          const datasets = chart.data.datasets;
-          ctx.save();
-          datasets.forEach((dataset, datasetIndex) => {
-            if (!dataset.hidden) {
-              const meta = chart.getDatasetMeta(datasetIndex);
-              meta.data.forEach((point, index) => {
-                if (!state.quick.displayedRisks[index]) return;
-                const riskName = state.quick.displayedRisks[index].name;
-                const text = (index + 1).toString();
-                ctx.fillStyle = '#fff';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-                ctx.font = 'bold 12px Arial';
-                ctx.fillText(text, point.x, point.y);
-              });
-            }
-          });
-          ctx.restore();
-        }
-      });
-    })();
-    
     // --- APPLICATION CONFIGURATION ---
     // Los perfiles de Atacante/Defensa/Riesgo ya NO viven hardcodeados aquí — antes había una
     // copia de esto también en backend/src/data/profiles.js, y las dos copias se desincronizaron
@@ -1130,18 +930,15 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         },
         quick: {
-            riskProfiles: {},
+            // attackerProfiles/defenseProfiles los sigue usando FAIR (Paso 2, resumen de
+            // Perfil de Atacante/Defensa y la explicación de Reducción de ALE al Mitigar).
             attackerProfiles: {},
             defenseProfiles: {},
             history: [],
-            currentRiskData: {},
-            riskMatrixChart: null,
-            displayedRisks: [],
             // La norma/estándar del Catálogo de Riesgos elegida más recientemente para el
             // riesgo que se está llenando ahora mismo (ver App.RiskCatalog.useSelected()). Se
             // limpia si el usuario escribe encima de "Nombre del Riesgo" a mano, para no
-            // asociar por error la norma de un riesgo distinto (ver el listener 'input' de
-            // riskName en App.QuickAnalysis.bindEvents()).
+            // asociar por error la norma de un riesgo distinto.
             selectedCatalogRef: null,
             // Catálogo de Activos (backend, CRUD real — a diferencia de riskCatalog, que es
             // curado en código y de solo lectura). Se carga en App.Api.bootstrap() y se
@@ -1204,10 +1001,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
         },
-        quickUI: {
-            currentStep: 1,
-            domElements: {}
-        }
     };
 
     // --- Helper Functions ---
@@ -1493,7 +1286,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     this.request('/api/assets'),
                 ]);
 
-                state.quick.riskProfiles = profiles.riskProfiles;
                 state.quick.attackerProfiles = profiles.attackerProfiles;
                 state.quick.defenseProfiles = profiles.defenseProfiles;
                 state.quick.riskCatalog = profiles.riskCatalog;
@@ -1885,9 +1677,6 @@ document.addEventListener('DOMContentLoaded', () => {
         async save(newCriteria) {
             const updated = await App.Api.request('/api/config/criteria', { method: 'PUT', body: newCriteria });
             state.config.riskCriteria = updated;
-            // Recalcular todo lo que depende de los criterios (bandas, mapa de calor)
-            if (App.QuickAnalysis.calculateAll) App.QuickAnalysis.calculateAll();
-            if (state.quick.riskMatrixChart && App.QuickAnalysis.generateRiskMatrix) App.QuickAnalysis.generateRiskMatrix();
         },
 
         openEditor() {
@@ -1895,11 +1684,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const formHTML = `
                 <p class="description-text mb-4">
                     Estos criterios definen qué se considera un riesgo Aceptable, Alto o Crítico para tu organización
-                    (Contexto, ISO 31000). Se guardan en este navegador y aplican a todos tus análisis, tanto en
-                    Análisis Rápido como en FAIR.
+                    (Contexto, ISO 31000). Se guardan en este navegador y aplican a todos tus análisis.
                 </p>
                 <p id="criteria-form-error" class="text-red-600 text-sm mb-3 hidden"></p>
-                <h4 class="font-semibold text-gray-700 mb-2">Riesgo Residual (%) — Análisis Rápido</h4>
+                <h4 class="font-semibold text-gray-700 mb-2">Bandas de Riesgo Residual (%) — Mapa de Calor</h4>
                 <div class="grid grid-cols-3 gap-3 mb-4">
                     <div class="input-group">
                         <label for="crit-rrt-medio">Medio, desde:</label>
@@ -2064,8 +1852,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const formHTML = `
                 <p class="description-text mb-4">
-                    Estos valores se auto-rellenan cada vez que empiezas un análisis nuevo (FAIR o Análisis Rápido),
-                    para que no tengas que volver a escribirlos ni seleccionarlos cada vez. Se guardan en este navegador.
+                    Estos valores se auto-rellenan cada vez que empiezas un análisis nuevo, para que no tengas que
+                    volver a escribirlos ni seleccionarlos cada vez. Se guardan en este navegador.
                 </p>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div class="input-group">
@@ -2465,11 +2253,8 @@ document.addEventListener('DOMContentLoaded', () => {
         init() {
             document.getElementById('asset-form').addEventListener('submit', (e) => { e.preventDefault(); this.handleSubmit(); });
             document.getElementById('asset-form-cancel-btn').addEventListener('click', () => this.cancelEdit());
-            // Antes había dos botones (uno en Análisis Rápido, otro en FAIR) — ahora es uno
-            // solo (fair-asset, ya unificado) y aplica el mismo prellenado de Costo Mínimo/Máximo
-            // que antes solo pasaba en Análisis Rápido (ver applyToQuickAnalysis).
             const assetBtn = document.getElementById('open-asset-catalog-btn-fair');
-            if (assetBtn) assetBtn.addEventListener('click', () => this.openPicker((asset) => this.applyToQuickAnalysis(asset)));
+            if (assetBtn) assetBtn.addEventListener('click', () => this.openPicker((asset) => this.applyAssetToFair(asset)));
         },
 
         async load() {
@@ -2576,8 +2361,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }, 'Eliminar Activo');
         },
 
-        // Selector reutilizable: Análisis Rápido y FAIR pasan su propio callback para decidir
-        // qué hacer con el activo elegido (ver applyToQuickAnalysis y el botón de #fair-asset).
+        // Selector reutilizable (ver applyAssetToFair y el botón de #fair-asset).
         openPicker(onSelect) {
             const assets = state.quick.assets || [];
             if (assets.length === 0) {
@@ -2626,416 +2410,56 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         },
 
-        // Al elegir un activo en Análisis Rápido, se sugiere (no se fuerza) su valor registrado
-        // como Costo Mínimo Y Máximo — el usuario sigue pudiendo ajustar el rango a mano para
-        // reflejar incertidumbre; esto solo evita partir de $1,000/$100,000 por defecto sin
-        // ninguna relación con el activo real.
-        applyToQuickAnalysis(asset) {
-            const dom = state.quickUI.domElements;
+        // Al elegir un activo, se sugiere (no se fuerza) su valor registrado como el "Modo" de
+        // Costos de Reemplazo — la categoría de Magnitud de Pérdida de FAIR (Paso 3) más cercana
+        // al valor de un activo físico. El usuario sigue pudiendo ajustarlo o repartirlo en otras
+        // categorías si el impacto real no es 100% costo de reemplazo. Antes esto prellenaba el
+        // Costo Mín/Máx de Vista Rápida (un solo número sin categorizar, ya eliminada) — el
+        // desglose de 9 categorías de FAIR es el reemplazo correcto, no una versión reducida.
+        applyAssetToFair(asset) {
             state.quick.selectedAssetRef = { id: asset.id };
             const assetInput = document.getElementById('fair-asset');
             assetInput.value = asset.nombre;
             assetInput.dispatchEvent(new Event('input'));
-            dom.inputs.costoMinImpacto.value = asset.valorEstimado;
-            dom.inputs.costoMaxImpacto.value = asset.valorEstimado;
-            dom.inputs.costoMinImpacto.dispatchEvent(new Event('input'));
+            const reemplazoInput = document.getElementById('lm-reemplazo-mode');
+            reemplazoInput.value = asset.valorEstimado;
+            reemplazoInput.dispatchEvent(new Event('change'));
             const fmtAsset = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(asset.valorEstimado);
-            showToast(`Activo cargado — Costo Mínimo/Máximo de la Vista Rápida se prellenaron con su valor registrado (${fmtAsset}). Ajústalos si tu impacto real no es el 100% del activo.`);
+            showToast(`Activo cargado — "Costos de Reemplazo" (Paso 3, Magnitud de Pérdida) se prellenó con su valor registrado (${fmtAsset}). Ajústalo si tu impacto real no es 100% costo de reemplazo.`);
         },
     };
 
-    // --- Quick Analysis Module ---
+    // --- Historial de riesgos (/api/risks) ---
+    // La "Vista Rápida" (estimado instantáneo de un solo punto: ARO/Vulnerabilidad/Impacto →
+    // Riesgo Inherente/Residual/ALE, con su propio Mapa de Riesgo) se eliminó por completo —
+    // duplicaba, con menos rigor, lo que FAIR ya calcula: el mismo descuento "capacidad del
+    // atacante menos tu defensa" que da Vulnerabilidad en FAIR (ver
+    // backend/src/lib/autocalc.js:calculateVulnerability), y un desglose de Magnitud de Pérdida
+    // en 9 categorías (Paso 3 de FAIR) en vez de un solo Costo Mín/Máx sin categorizar. Este
+    // módulo solo conserva lo que sigue siendo necesario: la lista de riesgos que ya existen en
+    // /api/risks (creados antes de este cambio, o vía la API directamente) — para que sigan
+    // siendo visibles en la tabla concentrada y se puedan cargar en FAIR, en vez de quedar
+    // huérfanos o inaccesibles.
     App.QuickAnalysis = {
         init() {
-            
-            this.cacheDOMElements();
-            this.bindEvents();
             this.loadHistory();
-            this.populateDropdown(state.quickUI.domElements.inputs.profileSelect, state.quick.riskProfiles);
-            this.populateDropdown(state.quickUI.domElements.inputs.attackerProfileSelect, state.quick.attackerProfiles);
-            this.populateDropdown(state.quickUI.domElements.inputs.defenseProfileSelect, state.quick.defenseProfiles);
-
-            // Valores por Defecto de la organización, para no tener que re-seleccionarlos cada vez
-            state.quickUI.domElements.inputs.defenseProfileSelect.value = App.OrgDefaults.defaults.defenseKey;
-            // El Apetito de Riesgo Máximo ya no es un 25% fijo sin relación con nada — toma su
-            // valor inicial del umbral "Alto" de tus Criterios de Riesgo (Contexto ISO 31000),
-            // para que ambos hablen del mismo apetito de riesgo en vez de dos números sueltos.
-            state.quickUI.domElements.inputs.rrMax.value = state.config.riskCriteria.rrtBands.alto;
-
-            this.updateBreakdowns();
-            this.calculateAll();
         },
 
-        cacheDOMElements() {
-            state.quickUI.domElements = {
-                inputs: {
-                    profileSelect: document.getElementById('profileSelect'),  aro: document.getElementById('aro'),
-                    vulnerabilidad: document.getElementById('vulnerabilidad'), impacto: document.getElementById('impacto'),
-                    costoMinImpacto: document.getElementById('costoMinImpacto'), costoMaxImpacto: document.getElementById('costoMaxImpacto'),
-                    rrMax: document.getElementById('rrMax'),
-                    toggleDeliberateThreat: document.getElementById('toggleDeliberateThreat'),
-                    attackerProfileSelect: document.getElementById('attackerProfileSelect'), defenseProfileSelect: document.getElementById('defenseProfileSelect'),
-                    deliberateThreatPonderation: document.getElementById('deliberateThreatPonderation'),
-                },
-                buttons: {
-                    toggleVulnerability: document.getElementById('toggleVulnerability'), toggleImpactBtn: document.getElementById('toggleImpactBtn'),
-                    saveBtn: document.getElementById('saveBtn'), showInheritBtn: document.getElementById('showInheritBtn'),
-                    showResidualBtn: document.getElementById('showResidualBtn'), downloadMatrixBtn: document.getElementById('downloadMatrixBtn'),
-                    promoteSelectedBtn: document.getElementById('promoteSelectedBtn'), selectAllHistory: document.getElementById('selectAllHistory'),
-                },
-                containers: {
-                    vulnerabilityBreakdown: document.getElementById('vulnerabilityBreakdown'), vulnerabilityContainer: document.getElementById('vulnerabilityContainer'),
-                    impactBreakdown: document.getElementById('impactBreakdown'), dynamicImpactInputContainer: document.getElementById('dynamicImpactInputContainer'),
-                    deliberateThreatContainer: document.getElementById('deliberateThreatContainer'), attackerProfileContainer: document.getElementById('attackerProfileContainer'),
-                    defenseProfileContainer: document.getElementById('defenseProfileContainer'), riskMatrixContainer: document.getElementById('riskMatrixContainer'),
-                },
-                outputs: {
-                    vulnerabilidadValue: document.getElementById('vulnerabilidadValue'), impactoValue: document.getElementById('impactoValue'),
-                    deliberateThreatPonderationValue: document.getElementById('deliberateThreatPonderationValue'), impactPonderationWarning: document.getElementById('impactPonderationWarning'),
-                    preliminaryRIValue: document.getElementById('preliminaryRIValue'), preliminaryRICategory: document.getElementById('preliminaryRICategory'),
-                    preliminaryRRtValue: document.getElementById('preliminaryRRtValue'),  preliminaryRRtBreakdown: document.getElementById('preliminaryRRtBreakdown'),
-                    preliminaryRRtAppetite: document.getElementById('preliminaryRRtAppetite'), preliminaryRRtCategory: document.getElementById('preliminaryRRtCategory'),
-                    preliminaryALEValue: document.getElementById('preliminaryALEValue'), resultadoRI: document.getElementById('resultadoRI'),
-                    resultadoADFactor: document.getElementById('resultadoADFactor'), resultadoENC: document.getElementById('resultadoENC'),
-                    resultadoRRt: document.getElementById('resultadoRRt'), resultadoIC: document.getElementById('resultadoIC'),
-                    categoriaRiesgo: document.getElementById('categoriaRiesgo'), resultadoSLE: document.getElementById('resultadoSLE'),
-                    categoriaRiesgoJustificacion: document.getElementById('categoriaRiesgo-justificacion'),
-                    resultadoALE: document.getElementById('resultadoALE'),
-                    riskListContainer: document.getElementById('risk-list-container')
-                },
-            };
-        },
-
-        bindEvents() {
-            const dom = state.quickUI.domElements;
-            // Bug real (histórico, ver la nota original en git blame): estos listeners de
-            // "limpiar referencia" deben registrarse ANTES del Object.values(dom.inputs).forEach
-            // de abajo — los listeners de un mismo evento se disparan en el orden en que se
-            // registraron, así que si calculateAll() corriera primero, vería el
-            // currentRiskId/selectedCatalogRef todavía viejo. Ahora escuchan directo en los
-            // campos de FAIR (fair-riskName/fair-asset), que son los mismos que usa el Paso 1 —
-            // ya no hay un riskName/quickAsset aparte.
-            document.getElementById('fair-riskName').addEventListener('input', (e) => {
-                if (e.isTrusted) {
-                    state.quick.selectedCatalogRef = null;
-                    // Igual que selectedCatalogRef: si escribes encima del nombre a mano, este
-                    // ya no es (necesariamente) el mismo riesgo que se había cargado/guardado.
-                    state.quick.currentRiskId = null;
-                }
-                this.calculateAll();
-            });
-            document.getElementById('fair-riskDescription').addEventListener('input', () => this.calculateAll());
-            document.getElementById('fair-asset').addEventListener('input', (e) => {
-                if (e.isTrusted) {
-                    state.quick.selectedAssetRef = null;
-                    const hint = document.getElementById('quickAsset-value-hint');
-                    if (hint) hint.classList.add('hidden');
-                }
-                this.calculateAll();
-            });
-            Object.values(dom.inputs).forEach(input => {
-                if(input) input.addEventListener('input', () => this.calculateAll());
-            });
-            document.querySelectorAll('.quick-cost-input').forEach(input => {
-                 input.addEventListener('change', () => this.validateAndFixRange('costoMinImpacto', 'costoMaxImpacto'));
-            });
-            dom.buttons.toggleVulnerability.addEventListener('click', () => this.toggleBreakdown('vulnerability'));
-            dom.buttons.toggleImpactBtn.addEventListener('click', () => this.toggleBreakdown('impact'));
-            dom.buttons.saveBtn.addEventListener('click', () => this.saveRisk());
-            dom.buttons.showInheritBtn.addEventListener('click', () => this.updateRiskMatrixView('inherit'));
-            dom.buttons.showResidualBtn.addEventListener('click', () => this.updateRiskMatrixView('residual'));
-            dom.buttons.downloadMatrixBtn.addEventListener('click', () => this.downloadMatrix());
-            dom.buttons.promoteSelectedBtn.addEventListener('click', () => App.FairRegister.promoteSelectedFromTable('quick-concentrated-table-body'));
-            dom.buttons.selectAllHistory.addEventListener('change', (e) => App.FairRegister.toggleSelectAll('quick-concentrated-table-body', e.target.checked));
-            dom.inputs.profileSelect.addEventListener('change', () => this.updateBreakdowns());
-            dom.inputs.attackerProfileSelect.addEventListener('change', () => this.updateAttackerDefenseInfo('attacker'));
-            dom.inputs.defenseProfileSelect.addEventListener('change', () => this.updateAttackerDefenseInfo('defense'));
-            dom.inputs.toggleDeliberateThreat.addEventListener('change', () => this.toggleDeliberateThreatSection());
-            
-            // Event delegation for risk list highlighting
-            dom.outputs.riskListContainer.addEventListener('mouseover', (e) => {
-                const targetLi = e.target.closest('li');
-                if (targetLi && targetLi.dataset.riskIndex) {
-                    this.highlightRisk(parseInt(targetLi.dataset.riskIndex), true);
-                }
-            });
-            dom.outputs.riskListContainer.addEventListener('mouseout', (e) => {
-                const targetLi = e.target.closest('li');
-                 if (targetLi && targetLi.dataset.riskIndex) {
-                    this.highlightRisk(parseInt(targetLi.dataset.riskIndex), false);
-                }
-            });
-        },
-        
-        validateAndFixRange(minId, maxId) {
-            let minInput = document.getElementById(minId);
-            let maxInput = document.getElementById(maxId);
-            let minVal = getSafeNumber(minInput);
-            let maxVal = getSafeNumber(maxInput);
-            const minErrorEl = document.getElementById(`${minId}-error`);
-            const maxErrorEl = document.getElementById(`${maxId}-error`);
-            
-            minInput.classList.remove('input-error');
-            maxInput.classList.remove('input-error');
-            minErrorEl.classList.add('hidden');
-            maxErrorEl.classList.add('hidden');
-
-            if (minVal > maxVal) {
-                [minInput.value, maxInput.value] = [maxVal, minVal];
+        async loadHistory() {
+            try {
+                const res = await App.Api.request('/api/risks');
+                state.quick.history = res.risks;
+            } catch (e) {
+                showToast(e.userMessage || 'No se pudo cargar el historial de riesgos.');
             }
-            this.calculateAll();
+            // La tabla en sí vive en App.FairRegister (ver #quick-concentrated-table-body),
+            // para que Análisis de Riesgo y Registro de Riesgos siempre muestren exactamente lo
+            // mismo en vez de dos versiones distintas de la misma información.
+            await App.FairRegister.loadRiskRegister();
         },
 
-        calculateAll() {
-            const dom = state.quickUI.domElements;
-            // Nombre/Descripción/Activo ya no tienen campos propios aquí — Análisis Rápido y
-            // FAIR son un solo formulario ahora, así que se leen directo de los campos de FAIR
-            // Paso 1 (fair-riskName/fair-riskDescription/fair-asset), ya unificados.
-            const values = {
-                riskName: sanitizeHTML(document.getElementById('fair-riskName').value) || "Riesgo Actual (sin guardar)",
-                riskDescription: sanitizeHTML(document.getElementById('fair-riskDescription').value),
-                // Bug real encontrado: al elegir un riesgo del Catálogo (App.RiskCatalog), la
-                // norma/estándar que lo sustenta no se guardaba en ningún lado — ni en el
-                // historial ni al promover a FAIR, dando la sensación de que ambos módulos no
-                // tenían ninguna conexión de datos. Ver App.RiskCatalog.useSelected() y el
-                // listener 'input' de riskName que limpia esto si el usuario escribe encima.
-                catalogStandard: (state.quick.selectedCatalogRef || {}).standard || null,
-                catalogCode: (state.quick.selectedCatalogRef || {}).code || null,
-                // Igual que catalogStandard/catalogCode arriba: guarda de qué activo (si alguno)
-                // salió este riesgo, para poder transferirlo a "Activo Afectado" en FAIR al
-                // promover (ver App.AssetCatalog y App.FairWizard.loadRiskIntoForm).
-                asset: sanitizeHTML(document.getElementById('fair-asset').value) || null,
-                assetId: (state.quick.selectedAssetRef || {}).id || null,
-                // El id del riesgo guardado (/api/risks) del que sale este análisis, si lo hay —
-                // ver state.quick.currentRiskId y App.FairWizard.loadRiskIntoForm/sourceRiskId.
-                quickRiskId: state.quick.currentRiskId || null,
-                ARO_raw: getSafeNumber(dom.inputs.aro),
-                costoMinImpacto: getSafeNumber(dom.inputs.costoMinImpacto),
-                costoMaxImpacto: getSafeNumber(dom.inputs.costoMaxImpacto),
-                currency: 'USD',
-                rrMax: getSafeNumber(dom.inputs.rrMax),
-                isDeliberate: dom.inputs.toggleDeliberateThreat.checked,
-                deliberateThreatPonderation: getSafeNumber(dom.inputs.deliberateThreatPonderation),
-            };
-            const isVulnBreakdown = !dom.containers.vulnerabilityBreakdown.classList.contains('hidden');
-            const isImpactBreakdown = !dom.containers.impactBreakdown.classList.contains('hidden');
-            values.VI_raw = isVulnBreakdown ? this.calculateAverageVulnerability() : getSafeNumber(dom.inputs.vulnerabilidad);
-            values.II_raw = isImpactBreakdown ? this.calculateWeightedImpact() : getSafeNumber(dom.inputs.impacto);
-
-            values.PI = 1 - Math.exp(-values.ARO_raw);
-            values.VI = values.VI_raw / 100;
-            values.II = values.II_raw / 100;
-
-            const attackerKey = dom.inputs.attackerProfileSelect.value;
-            const defenseKey = dom.inputs.defenseProfileSelect.value;
-            values.attackerKey = attackerKey;
-            values.defenseKey = defenseKey;
-            const attackerScore = this.calculateProfileAverage(state.quick.attackerProfiles[attackerKey]);
-            const defenseScore = this.calculateProfileAverage(state.quick.defenseProfiles[defenseKey]);
-            values.FAD_raw = (attackerScore - defenseScore) / 100; // Diferencial Atacante-Defensa, solo informativo (ver resultadoADFactor)
-            // El multiplicador de amenaza deliberada escala según qué tan capaz/motivado es el
-            // ATACANTE por sí solo, NO según el diferencial contra tu defensa — usar el
-            // diferencial aquí era el bug: con una defensa fuerte (defenseScore > attackerScore)
-            // ese diferencial es negativo, así que subir el ponderador de "qué tan deliberada es
-            // la amenaza" bajaba el Riesgo Inherente en vez de subirlo. Que la amenaza sea
-            // deliberada (alguien te la está planteando a propósito) nunca debería REDUCIR el
-            // riesgo respecto al caso no-deliberado — tu defensa ya se descuenta aparte, en
-            // Riesgo Residual (RRt/ENC), no debe cancelar la intencionalidad de la amenaza aquí.
-            const attackerThreatFactor = attackerScore / 100;
-            const FAD_Multiplier = values.isDeliberate ? (1 + (attackerThreatFactor * values.deliberateThreatPonderation)) : 1;
-            const PI_ajustada = Math.max(0, Math.min(1, values.PI * FAD_Multiplier));
-            values.PI_ajustada = PI_ajustada;
-            
-            values.RI = PI_ajustada * ((values.VI + values.II) / 2);
-            values.ENC = defenseScore / 100;
-            values.RRt = values.RI * (1 - values.ENC);
-            values.SLE = ((values.costoMinImpacto + values.costoMaxImpacto) / 2) * values.II;
-            values.ALE = values.SLE * values.ARO_raw;
-            values.IC = (values.RRt * 100 > values.rrMax) ? (values.RRt * 100 - values.rrMax) / (100 - values.rrMax) : 0;
-            values.IC = Math.max(0, Math.min(1, values.IC));
-            const RI_sin_FAD = values.PI * ((values.VI + values.II) / 2);
-            values.RRt_sin_FAD = RI_sin_FAD * (1 - values.ENC);
-            if (values.RRt_sin_FAD > 0) {
-                values.RRt_incremento_porc = ((values.RRt - values.RRt_sin_FAD) / values.RRt_sin_FAD) * 100;
-            } else {
-                values.RRt_incremento_porc = 0;
-            }
-            state.quick.currentRiskData = values;
-            this.updateUI(values);
-        },
-
-        updateUI(data) {
-            const dom = state.quickUI.domElements;
-            const formatCurrency = (value) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
-            const formatPercent = (value) => `${value.toFixed(2)}%`;
-
-            dom.outputs.vulnerabilidadValue.textContent = formatPercent(data.VI_raw);
-            dom.outputs.impactoValue.textContent = formatPercent(data.II_raw);
-            dom.outputs.deliberateThreatPonderationValue.textContent = `x${data.deliberateThreatPonderation.toFixed(2)}`;
-            dom.outputs.preliminaryRIValue.textContent = formatPercent(data.RI * 100);
-            dom.outputs.preliminaryRRtValue.textContent = formatPercent(data.RRt * 100);
-            dom.outputs.preliminaryALEValue.textContent = formatCurrency(data.ALE);
-            this.updateCategoryBadge(dom.outputs.preliminaryRICategory, data.RI * 100);
-            this.updateCategoryBadge(dom.outputs.preliminaryRRtCategory, data.RRt * 100, data.rrMax);
-
-            dom.outputs.preliminaryRRtAppetite.textContent = `(Apetito: ${data.rrMax}%)`;
-            const breakdownEl = dom.outputs.preliminaryRRtBreakdown;
-            if (data.isDeliberate && data.RRt_incremento_porc > 0.01) {
-                breakdownEl.textContent = `(Incremento por Amenaza: +${formatPercent(data.RRt_incremento_porc)})`;
-                breakdownEl.classList.remove('hidden');
-            } else {
-                breakdownEl.classList.add('hidden');
-            }
-
-            dom.outputs.resultadoRI.textContent = formatPercent(data.RI * 100);
-            dom.outputs.resultadoADFactor.textContent = formatPercent(data.FAD_raw * 100);
-            dom.outputs.resultadoENC.textContent = formatPercent(data.ENC * 100);
-            dom.outputs.resultadoRRt.textContent = formatPercent(data.RRt * 100);
-            dom.outputs.resultadoIC.textContent = formatPercent(data.IC * 100);
-            dom.outputs.categoriaRiesgo.textContent = this.getRiskCategory(data.RRt * 100, data.rrMax).name;
-            dom.outputs.categoriaRiesgoJustificacion.textContent = App.Criteria.evaluateResidualRisk(data.RRt * 100, data.rrMax).justification;
-            dom.outputs.resultadoSLE.textContent = formatCurrency(data.SLE);
-            dom.outputs.resultadoALE.textContent = formatCurrency(data.ALE);
-
-            // Antes solo se dibujaba al llegar al "Paso 2" del mini-wizard propio de Análisis
-            // Rápido — ese paso ya no existe (todo quedó en una sola sección, "Vista Rápida",
-            // dentro del Paso 1 de FAIR), así que el mapa se mantiene siempre al día.
-            this.generateRiskMatrix();
-        },
-
-        populateDropdown(select, data) {
-            if (!select) return;
-            select.innerHTML = '';
-            const dataArray = Array.isArray(data) ? data : Object.keys(data).map(key => ({ value: key, name: data[key].name }));
-            dataArray.forEach(({ name, value }) => {
-                const opt = document.createElement('option');
-                opt.value = value;
-                opt.textContent = name;
-                select.appendChild(opt);
-            });
-        },
-
-        toggleBreakdown(type) {
-            const dom = state.quickUI.domElements;
-            const container = type === 'vulnerability' ? dom.containers.vulnerabilityBreakdown : dom.containers.impactBreakdown;
-            const button = type === 'vulnerability' ? dom.buttons.toggleVulnerability : dom.buttons.toggleImpactBtn;
-            const arrow = button.querySelector('.arrow');
-            container.classList.toggle('hidden');
-            button.classList.toggle('open');
-            arrow.classList.toggle('rotate-180', button.classList.contains('open'));
-            this.calculateAll();
-        },
-
-        updateBreakdowns() {
-            const dom = state.quickUI.domElements;
-            const selectedProfileKey = dom.inputs.profileSelect.value;
-            const profile = state.quick.riskProfiles[selectedProfileKey];
-            dom.containers.vulnerabilityContainer.innerHTML = '';
-            if (profile && profile.vulnerabilityFactors) {
-                profile.vulnerabilityFactors.forEach(factor => {
-                    const div = document.createElement('div');
-                    div.className = 'input-group';
-                    const safeFactorName = factor.replace(/\s/g, '-');
-                    div.innerHTML = `
-                        <label for="vuln-factor-${safeFactorName}" class="flex justify-between items-center text-sm font-medium text-gray-700">
-                            ${factor}: <span id="vuln-factor-${safeFactorName}-value" class="slider-value ml-2">50%</span>
-                        </label>
-                        <input type="range" id="vuln-factor-${safeFactorName}" min="0" max="100" value="50" step="5" class="w-full vuln-factor-input">
-                    `;
-                    dom.containers.vulnerabilityContainer.appendChild(div);
-                    div.querySelector('input').addEventListener('input', (e) => {
-                        div.querySelector('span').textContent = `${e.target.value}%`;
-                        this.calculateAll();
-                    });
-                });
-            }
-            dom.containers.dynamicImpactInputContainer.innerHTML = '';
-            let totalPonderation = 0;
-            if (profile && profile.impactFactors) {
-                for (const factor in profile.impactFactors) {
-                    const initialPonderation = profile.impactFactors[factor];
-                    totalPonderation += initialPonderation;
-                    const div = document.createElement('div');
-                    div.className = 'input-group';
-                    const safeFactorName = factor.replace(/\s/g, '-').replace(/[()]/g, '');
-                    div.innerHTML = `
-                        <label for="impact-factor-${safeFactorName}" class="flex justify-between items-center text-sm font-medium text-gray-700">
-                            ${factor} (<span class="ponderation-value">${initialPonderation}%</span>): <span id="impact-factor-${safeFactorName}-value" class="slider-value ml-2">50%</span>
-                        </label>
-                        <input type="range" id="impact-factor-${safeFactorName}" data-ponderation="${initialPonderation}" min="0" max="100" value="50" step="5" class="w-full impact-factor-input">
-                    `;
-                    dom.containers.dynamicImpactInputContainer.appendChild(div);
-                    div.querySelector('input').addEventListener('input', (e) => {
-                        div.querySelector('span:last-child').textContent = `${e.target.value}%`;
-                        this.calculateAll();
-                    });
-                }
-            }
-            if (Math.round(totalPonderation) !== 100 && totalPonderation > 0) {
-                dom.outputs.impactPonderationWarning.textContent = `Advertencia: Las ponderaciones de impacto suman ${totalPonderation}%. Deben sumar 100% para un cálculo preciso.`;
-                dom.outputs.impactPonderationWarning.classList.remove('hidden');
-            } else {
-                dom.outputs.impactPonderationWarning.classList.add('hidden');
-            }
-            this.calculateAll();
-        },
-        
-        calculateAverageVulnerability() {
-            const dom = state.quickUI.domElements;
-            const vulnerabilityInputs = dom.containers.vulnerabilityContainer.querySelectorAll('.vuln-factor-input');
-            if (vulnerabilityInputs.length === 0) return getSafeNumber(dom.inputs.vulnerabilidad);
-            let total = 0;
-            vulnerabilityInputs.forEach(input => {
-                total += getSafeNumber(input);
-            });
-            return total / vulnerabilityInputs.length;
-        },
-
-        calculateWeightedImpact() {
-            const dom = state.quickUI.domElements;
-            const impactInputs = dom.containers.dynamicImpactInputContainer.querySelectorAll('.impact-factor-input');
-            if (impactInputs.length === 0) return getSafeNumber(dom.inputs.impacto);
-            let weightedSum = 0;
-            let totalPonderation = 0;
-            impactInputs.forEach(input => {
-                const ponderation = parseFloat(input.dataset.ponderation) / 100;
-                weightedSum += (getSafeNumber(input) * ponderation);
-                totalPonderation += ponderation;
-            });
-            if (totalPonderation === 0) return 0;
-            return (weightedSum / totalPonderation);
-        },
-        
-        calculateProfileAverage(profile) {
-            if (!profile) return 0;
-            const values = Object.values(profile).filter(i => typeof i === 'number');
-            if (values.length === 0) return 0;
-            return values.reduce((sum, current) => sum + current, 0) / values.length;
-        },
-
-        updateAttackerDefenseInfo(type) {
-            const dom = state.quickUI.domElements;
-            const select = type === 'attacker' ? dom.inputs.attackerProfileSelect : dom.inputs.defenseProfileSelect;
-            const container = type === 'attacker' ? dom.containers.attackerProfileContainer : dom.containers.defenseProfileContainer;
-            const profiles = type === 'attacker' ? state.quick.attackerProfiles : state.quick.defenseProfiles;
-            const selectedProfile = profiles[select.value];
-            container.innerHTML = '';
-            if (selectedProfile) {
-                for (const key in selectedProfile) {
-                    if (key !== 'name') {
-                        container.innerHTML += `<p class="capitalize">${key}: ${selectedProfile[key]}%</p>`;
-                    }
-                }
-            }
-            this.calculateAll();
-        },
-
-        toggleDeliberateThreatSection() {
-            const dom = state.quickUI.domElements;
-            dom.containers.deliberateThreatContainer.classList.toggle('hidden', !dom.inputs.toggleDeliberateThreat.checked);
-            this.calculateAll();
-        },
-
+        // Sigue en uso desde buildConcentratedList() para clasificar riesgos de /api/risks
+        // (creados antes de este cambio) por su Riesgo Residual (RRt%) guardado.
         getRiskCategory(value, threshold = null) {
             if (threshold !== null && value > threshold) return { name: 'Inaceptable', color: 'text-white', bgColor: 'bg-black' };
             const { medio, alto, critico } = state.config.riskCriteria.rrtBands;
@@ -3044,286 +2468,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (value > medio) return { name: 'Medio', color: 'text-yellow-800', bgColor: 'bg-yellow-100' };
             return { name: 'Bajo', color: 'text-green-800', bgColor: 'bg-green-100' };
         },
-
-        updateCategoryBadge(element, value, threshold = null) {
-            const { name, color, bgColor } = this.getRiskCategory(value, threshold);
-            element.textContent = name;
-            element.className = `inline-block px-2 py-1 text-xs font-semibold rounded-full ${color} ${bgColor}`;
-        },
-        
-        // Antes validaba antes de pasar del "Paso 1" al "Paso 2" propios de Análisis Rápido —
-        // esa navegación interna ya no existe (todo es una sola sección, "Vista Rápida", dentro
-        // del Paso 1 de FAIR). Se conserva solo como el chequeo mínimo antes de "Guardar", ya
-        // que fair-riskName es obligatorio para persistir cualquier riesgo.
-        validateQuickForm() {
-            const riskName = document.getElementById('fair-riskName');
-            if (!riskName.value.trim()) {
-                toggleErrorState('fair-riskName', 'El nombre del riesgo es obligatorio.');
-                return false;
-            }
-            toggleErrorState('fair-riskName', '');
-            return true;
-        },
-
-        generateRiskMatrix() {
-            const dom = state.quickUI.domElements;
-            const canvas = document.getElementById('riskMatrixCanvas');
-            
-            // Combine history and current risk for display
-            state.quick.displayedRisks = [
-                ...state.quick.history.map(h => ({ name: h.name, ...h.fullData })),
-                { ...state.quick.currentRiskData }
-            ];
-
-            const riskListHTML = state.quick.displayedRisks.map((risk, index) => {
-                const isCurrent = index === state.quick.displayedRisks.length - 1;
-                const riskName = isCurrent && !document.getElementById('fair-riskName').value.trim() ? "Riesgo Actual (sin guardar)" : risk.name;
-                return `
-                <li class="flex items-center text-gray-700 hover:bg-gray-100 transition-colors duration-200 cursor-pointer p-1 rounded-md" data-risk-index="${index}">
-                    <span class="inline-flex items-center justify-center w-6 h-6 mr-2 font-bold text-white ${isCurrent ? 'bg-gray-500' : 'bg-blue-500'} rounded-full">${index + 1}</span>
-                    <span class="truncate">${sanitizeHTML(riskName)}</span>
-                </li>`;
-            }).join('');
-
-            dom.outputs.riskListContainer.innerHTML = `<ul class="space-y-1">${riskListHTML}</ul>`;
-            
-            const matrixBackgroundPlugin = {
-                id: 'matrixBackground',
-                beforeDatasetsDraw(chart) {
-                    const { ctx, chartArea: { left, top, right, bottom }, scales: { x, y } } = chart;
-                    ctx.save();
-                    const zones = getRiskMatrixZones();
-
-                    // Dibuja las zonas de color
-                    zones.forEach(zone => {
-                        ctx.fillStyle = zone.color;
-                        ctx.fillRect(x.getPixelForValue(zone.x[0]), y.getPixelForValue(zone.y[1]), x.getPixelForValue(zone.x[1]) - x.getPixelForValue(zone.x[0]), y.getPixelForValue(zone.y[0]) - y.getPixelForValue(zone.y[1]));
-                    });
-
-                    // Dibuja las etiquetas de texto
-                    ctx.font = 'bold 14px Arial';
-                    ctx.textAlign = 'center';
-                    ctx.textBaseline = 'middle';
-                    zones.forEach(zone => {
-                        const midX = x.getPixelForValue((zone.x[0] + zone.x[1]) / 2);
-                        const midY = y.getPixelForValue((zone.y[0] + zone.y[1]) / 2);
-                        ctx.fillStyle = zone.textColor;
-                        ctx.fillText(zone.level, midX, midY);
-                    });
-                    ctx.restore();
-                }
-            };
-
-            const data = {
-                datasets: [{
-                    label: 'Riesgo Inherente',
-                    data: state.quick.displayedRisks.map(r => ({ x: r.II_raw, y: r.PI_ajustada * 100 })),
-                    pointBackgroundColor: '#B22222',
-                    pointBorderColor: 'white',
-                    pointRadius: 10,
-                    pointHoverRadius: 13,
-                }, {
-                    label: 'Riesgo Residual',
-                    data: state.quick.displayedRisks.map(r => ({ x: r.II_raw, y: (r.PI_ajustada * (1 - r.ENC)) * 100 })),
-                    pointBackgroundColor: '#1E90FF',
-                    pointBorderColor: 'white',
-                    pointRadius: 10,
-                    pointHoverRadius: 13,
-                }]
-            };
-
-            const options = {
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: {
-                    x: {
-                        title: { display: true, text: 'Impacto Inherente (%)' },
-                        min: 0, max: 100, ticks: { stepSize: 25 }
-                    },
-                    y: {
-                        title: { display: true, text: 'Probabilidad Anual (%)' },
-                        min: 0, max: 100, ticks: { stepSize: 25 }
-                    }
-                },
-                plugins: {
-                    legend: { position: 'bottom' },
-                    tooltip: {
-                        callbacks: {
-                            label: function(context) {
-                                const riskIndex = context.dataIndex;
-                                const risk = state.quick.displayedRisks[riskIndex];
-                                const label = context.dataset.label || '';
-                                const prob = context.parsed.y.toFixed(2);
-                                const impact = context.parsed.x.toFixed(2);
-                                return [`${riskIndex + 1}. ${risk.name}`, `${label}: (Impacto: ${impact}%, Prob: ${prob}%)`];
-                            }
-                        }
-                    }
-                }
-            };
-            
-            if (state.quick.riskMatrixChart) {
-                state.quick.riskMatrixChart.data = data;
-                state.quick.riskMatrixChart.options = options;
-                state.quick.riskMatrixChart.plugins = [matrixBackgroundPlugin];
-                state.quick.riskMatrixChart.update();
-            } else {
-                state.quick.riskMatrixChart = new Chart(canvas, {
-                    type: 'scatter',
-                    data: data,
-                    options: options,
-                    plugins: [matrixBackgroundPlugin]
-                });
-            }
-            dom.buttons.showInheritBtn.click();
-        },
-
-        highlightRisk(index, isHover) {
-            if (!state.quick.riskMatrixChart) return;
-
-            const pointInherente = state.quick.riskMatrixChart.getDatasetMeta(0).data[index];
-            const pointResidual = state.quick.riskMatrixChart.getDatasetMeta(1).data[index];
-            const pointRadius = isHover ? 13 : 10;
-
-            if (pointInherente) pointInherente.options.pointRadius = pointRadius;
-            if (pointResidual) pointResidual.options.pointRadius = pointRadius;
-            
-            state.quick.riskMatrixChart.update();
-        },
-
-        updateRiskMatrixView(view) {
-            if (!state.quick.riskMatrixChart) return;
-            const dom = state.quickUI.domElements;
-            dom.buttons.showInheritBtn.classList.toggle('active', view === 'inherit');
-            dom.buttons.showResidualBtn.classList.toggle('active', view === 'residual');
-            
-            state.quick.riskMatrixChart.data.datasets[0].hidden = (view === 'residual');
-            state.quick.riskMatrixChart.data.datasets[1].hidden = (view === 'inherit');
-            
-            state.quick.riskMatrixChart.update();
-        },
-
-        downloadMatrix() {
-            const dom = state.quickUI.domElements;
-            const container = dom.containers.riskMatrixContainer;
-            const originalStyle = container.style.border;
-            container.style.border = 'none';
-
-            html2canvas(container, { scale: 2, backgroundColor: '#fff' }).then(canvas => {
-                const link = document.createElement('a');
-                link.download = 'matriz_de_riesgos.png';
-                link.href = canvas.toDataURL('image/png');
-                link.click();
-                container.style.border = originalStyle;
-            });
-        },
-
-        // Antes esto vivía solo en localStorage del navegador — un riesgo triageado en Análisis
-        // Rápido pero nunca promovido a FAIR no existía para el backend, no sobrevivía a
-        // limpiar el navegador, y no se veía desde otro dispositivo. Ahora se persiste desde
-        // que se crea (ver App.QuickAnalysis.saveRisk()), identificado por un id estable — no
-        // por nombre, para no crear duplicados fantasma si dos riesgos comparten nombre.
-        async loadHistory() {
-            try {
-                const res = await App.Api.request('/api/risks');
-                state.quick.history = res.risks;
-            } catch (e) {
-                showToast(e.userMessage || 'No se pudo cargar el historial de riesgos.');
-            }
-            // La tabla en sí ya no se dibuja aquí — vive en App.FairRegister (la misma tabla
-            // concentrada que Registro de Riesgos, ver #quick-concentrated-table-body arriba en
-            // el HTML), para que Análisis Rápido y Registro de Riesgos siempre muestren
-            // exactamente lo mismo en vez de dos versiones distintas de la misma información.
-            await App.FairRegister.loadRiskRegister();
-        },
-
-        async saveRisk() {
-            if(!this.validateQuickForm()) return;
-            const data = state.quick.currentRiskData;
-            const newRisk = {
-                name: data.riskName,
-                ri: `${(data.RI * 100).toFixed(2)}%`,
-                rrt: `${(data.RRt * 100).toFixed(2)}%`,
-                ale: new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(data.ALE),
-                date: new Date().toLocaleDateString('es-MX'),
-                fullData: { ...data }
-            };
-            try {
-                const res = await App.Api.request('/api/risks', { method: 'POST', body: newRisk });
-                // Para que "Analizar con FAIR" justo después de guardar ya sepa de qué riesgo
-                // viene (ver quickRiskId en calculateAll() y sourceRiskId en el Registro). Bug
-                // real: fijar currentRiskId aquí no bastaba — state.quick.currentRiskData ya se
-                // había calculado ANTES de conocer este id (con quickRiskId todavía null), y
-                // promoteToFair() usa currentRiskData tal cual, no currentRiskId directamente.
-                // Sin recalcular, "Guardar" seguido de "Analizar con FAIR" promovía el riesgo
-                // sin ningún sourceRiskId, dejándolo sin vincular en la tabla concentrada.
-                state.quick.currentRiskId = res.entry.id;
-                // Vincula el análisis en curso con este mismo riesgo — necesario tanto para
-                // continuar EN ESTA MISMA página hacia FAIR (Siguiente: Analizar Frecuencia)
-                // como para "Analizar con FAIR" desde la tabla (ver loadRiskIntoForm). Sin esto,
-                // solo el segundo camino quedaba vinculado por sourceRiskId.
-                state.fair.sourceRiskId = res.entry.id;
-                this.calculateAll();
-                await this.loadHistory();
-                showToast("Riesgo guardado exitosamente.");
-            } catch (e) {
-                showToast(e.userMessage || 'No se pudo guardar el riesgo.');
-            }
-        },
-        
-        loadRisk(id) {
-            const riskToLoad = state.quick.history.find(risk => risk.id == id);
-            if (!riskToLoad) return;
-            const data = riskToLoad.fullData;
-            const dom = state.quickUI.domElements;
-
-            // Nombre/Descripción/Activo ya viven en los campos de FAIR (Paso 1, unificados) —
-            // ya no hay un "riskName"/"riskDescription"/"quickAsset" aparte.
-            App.FairWizard.navigateWizard(1, true);
-            document.getElementById('fair-riskName').value = data.riskName || '';
-            document.getElementById('fair-riskDescription').value = data.riskDescription || '';
-            if (data.asset) document.getElementById('fair-asset').value = data.asset;
-
-            dom.inputs.aro.value = data.ARO_raw;
-            dom.inputs.vulnerabilidad.value = data.VI_raw;
-            dom.inputs.impacto.value = data.II_raw;
-            dom.inputs.costoMinImpacto.value = data.costoMinImpacto;
-            dom.inputs.costoMaxImpacto.value = data.costoMaxImpacto;
-            dom.inputs.rrMax.value = data.rrMax;
-            dom.inputs.toggleDeliberateThreat.checked = data.isDeliberate;
-            dom.inputs.deliberateThreatPonderation.value = data.deliberateThreatPonderation;
-            // Sin esto, volver a guardar un riesgo cargado desde el historial perdía en
-            // silencio la norma del catálogo que ya tenía (calculateAll() la vuelve a leer de
-            // state.quick.selectedCatalogRef, no del campo riskName).
-            state.quick.selectedCatalogRef = data.catalogStandard ? { standard: data.catalogStandard, code: data.catalogCode } : null;
-            state.quick.selectedAssetRef = data.assetId ? { id: data.assetId } : null;
-            // Vincula el formulario a este riesgo guardado — si se promueve a FAIR desde aquí,
-            // el Registro sabrá que es la continuación de ESTE riesgo (ver sourceRiskId).
-            state.quick.currentRiskId = riskToLoad.id;
-
-            this.toggleDeliberateThreatSection();
-            this.calculateAll();
-            Modal.alert(`Análisis para <strong>${sanitizeHTML(data.riskName)}</strong> cargado desde el historial.`, "Carga Exitosa");
-        },
-        
-        // La tabla del Historial (selección, columnas, checkboxes) vive ahora en
-        // App.FairRegister.renderConcentratedTable() — es la misma tabla que Registro de
-        // Riesgos, dibujada en los dos lugares. Ver toggleSelectAll/promoteSelectedFromTable
-        // ahí, y buildConcentratedList() para de dónde salen Riesgo Inherente/Residual.
-
-        deleteRisk(id) {
-            Modal.confirm('¿Estás seguro de que quieres eliminar este riesgo del historial?', async () => {
-                try {
-                    await App.Api.request(`/api/risks/${id}`, { method: 'DELETE' });
-                    await this.loadHistory();
-                } catch (e) {
-                    showToast(e.userMessage || 'No se pudo eliminar el riesgo.');
-                }
-            });
-        },
-        // "promoteToFair" (saltar de Análisis Rápido a FAIR) ya no existe — no hace falta:
-        // ambos son el mismo formulario ahora, así que "continuar a FAIR" es simplemente seguir
-        // con el botón "Siguiente" del wizard, sin transferir nada entre páginas.
     };
 
     // --- FAIR Analysis Module ---
@@ -4030,23 +3174,6 @@ document.addEventListener('DOMContentLoaded', () => {
             document.querySelectorAll('#fairAnalysisPage .wizard-step').forEach(section => section.classList.add('hidden'));
             document.getElementById(`fair-step-${step}`).classList.remove('hidden');
             updateProgressBar('fair-progress-bar', step, 4);
-            if (step === 3) this.maybeOfferLossRedistribution();
-        },
-
-        // Al continuar el mismo formulario desde la Vista Rápida (Paso 1) hacia Magnitud de
-        // Pérdida (Paso 3) sin pasar por loadRiskIntoForm (que ya hace este mismo reparto para
-        // riesgos cargados desde la tabla), el Costo Mín/Máx estimado ahí arriba se perdía en
-        // silencio — las 9 categorías se quedaban en $0 y había que volver a estimarlo todo de
-        // cero. Se ofrece el mismo modal de reparto (ver openLossRedistributionModal) solo si
-        // ninguna categoría fue tocada todavía, para no pisar datos ya cargados/editados.
-        maybeOfferLossRedistribution() {
-            const totalLM = LOSS_FORMS_KEYS.reduce((sum, key) => sum + getSafeNumber(document.getElementById(`lm-${key}-mode`)), 0);
-            if (totalLM > 0) return;
-            const costoMinImpacto = getSafeNumber(document.getElementById('costoMinImpacto'));
-            const costoMaxImpacto = getSafeNumber(document.getElementById('costoMaxImpacto'));
-            if (costoMinImpacto <= 0 && costoMaxImpacto <= 0) return;
-            const avgCost = (costoMinImpacto + costoMaxImpacto) / 2;
-            this.openLossRedistributionModal({ costoMinImpacto, costoMaxImpacto }, avgCost);
         },
 
         displayFairValidationErrors() {
@@ -4294,20 +3421,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.getElementById('fair-riskName').value = '';
                 document.getElementById('fair-riskDescription').value = '';
                 document.getElementById('fair-asset').value = '';
-                // Vista Rápida (antes Análisis Rápido, ahora en esta misma página) — se resetea
-                // junto con el resto para que "Nuevo Análisis" no deje datos del riesgo anterior
-                // en el estimado instantáneo/Mapa de Riesgo.
                 state.quick.currentRiskId = null;
                 state.quick.selectedCatalogRef = null;
                 state.quick.selectedAssetRef = null;
-                document.getElementById('aro').value = '12';
-                document.getElementById('vulnerabilidad').value = '50';
-                document.getElementById('impacto').value = '50';
-                document.getElementById('costoMinImpacto').value = '1000';
-                document.getElementById('costoMaxImpacto').value = '100000';
-                document.getElementById('rrMax').value = state.config.riskCriteria.rrtBands.alto;
-                document.getElementById('toggleDeliberateThreat').checked = false;
-                document.getElementById('deliberateThreatContainer').classList.add('hidden');
                 document.getElementById('fair-threat').value = '';
                 document.getElementById('fair-effect').value = 'material';
                 document.getElementById('fair-risk-type').value = 'amenaza';
@@ -4386,7 +3502,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     state.fair.fairResultsChart = null;
                 }
                 this.navigateWizard(1, true);
-                App.QuickAnalysis.calculateAll();
             };
 
             if (confirm) {
@@ -5043,25 +4158,18 @@ document.addEventListener('DOMContentLoaded', () => {
                         ? App.QuickAnalysis.getRiskCategory(risk.fullData.RRt * 100, risk.fullData.rrMax)
                         : null,
                     quickAle: risk.ale || null,
-                    // Riesgo Inherente/Residual (% de Análisis Rápido) — ya vienen formateados
-                    // ("31.00%") desde App.QuickAnalysis.saveRisk(), se guardan en el riesgo
-                    // directamente (no dentro de fullData). Solo existen para riesgos que
-                    // pasaron por Análisis Rápido — un riesgo armado solo en FAIR (sin
-                    // sourceRiskId) no tiene equivalente en esta escala y queda como '—'.
+                    // Riesgo Inherente/Residual (%) — solo existen en riesgos guardados con la
+                    // vieja Vista Rápida (ya eliminada, ver App.QuickAnalysis). Un riesgo nuevo
+                    // (o armado solo en FAIR) no tiene equivalente en esta escala y queda como '—'.
                     riesgoInherente: risk.ri || null,
                     riesgoResidual: risk.rrt || null,
                     asset: (fairEntry && fairEntry.asset) || (risk.fullData && risk.fullData.asset) || '—',
                     fairEntry,
                     // Para el botón "Analizar con FAIR" en filas de triage — mismo objeto que
-                    // App.FairAnalysis.receiveData() ya espera (ver App.QuickAnalysis.promoteToFair).
-                    // Bug real: risk.fullData.quickRiskId queda guardado en el backend con el
-                    // valor que tenía AL MOMENTO de guardar (normalmente null — el id todavía no
-                    // existía en ese instante, ver App.QuickAnalysis.saveRisk()). Promover desde
-                    // aquí con ese valor viejo dejaba el riesgo sin sourceRiskId al simular, y
-                    // terminaba duplicado en el Registro (una fila de triage suelta + una fila
-                    // FAIR sin vínculo). Se corrige aquí, en la única fuente de este objeto, con
-                    // el id real de este mismo riesgo (risk.id) — siempre correcto, sin depender
-                    // de lo que haya quedado persistido.
+                    // App.FairAnalysis.receiveData() ya espera. Bug real (histórico):
+                    // risk.fullData.quickRiskId quedaba guardado con el valor que tenía AL
+                    // MOMENTO de guardar (normalmente null). Se corrige aquí, en la única fuente
+                    // de este objeto, con el id real de este mismo riesgo (risk.id).
                     fullData: risk.fullData ? { ...risk.fullData, quickRiskId: risk.id } : null,
                 };
             });
@@ -5370,10 +4478,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     ? `<input type="checkbox" class="concentrated-checkbox" data-id="${item.id}" />`
                     : '';
 
-                // "Analizar" abre el wizard completo de FAIR (pasos 1-4, incluyendo
-                // Tratamiento) para ESTE riesgo — a diferencia de "Simular" (un vistazo rápido
-                // de solo lectura sin salir del Registro) o "Análisis Rápido" (vuelve al
-                // triage). Es la vista de detalle por riesgo.
+                // "Analizar" abre el wizard completo de FAIR (pasos 1-4, incluyendo Tratamiento)
+                // para ESTE riesgo — a diferencia de "Simular" (un vistazo rápido de solo lectura
+                // sin salir del Registro). Es la vista de detalle por riesgo.
                 const actionsCell = item.stage === 'fair'
                     ? `<button class="btn btn-primary text-xs" data-analyze-fair="${sanitizeHTML(item.fairEntry.riskName)}"><i class="fas fa-balance-scale mr-1"></i>Analizar</button>
                         <button class="btn btn-secondary text-xs ml-1" data-simulate-risk="${sanitizeHTML(item.fairEntry.riskName)}" ${item.fairEntry.tef && item.fairEntry.vuln && item.fairEntry.lossMagnitudes ? '' : 'disabled title="Este riesgo se guardó antes de esta función — vuelve a correr su simulación desde Análisis FAIR para poder verla aquí."'}>
@@ -5381,7 +4488,6 @@ document.addEventListener('DOMContentLoaded', () => {
                         </button>
                         <button class="text-red-600 hover:text-red-800 text-sm ml-2" data-delete-risk="${sanitizeHTML(item.fairEntry.riskName)}" data-delete-source-id="${item.id || ''}"><i class="fas fa-trash"></i></button>`
                     : `<button class="btn btn-primary text-xs" data-analyze-quick="${item.id}" ${item.fullData ? '' : 'disabled title="No se encontró la información completa de este riesgo."'}><i class="fas fa-balance-scale mr-1"></i>Analizar con FAIR</button>
-                        <button class="btn btn-secondary text-xs ml-1" data-load-quick="${item.id}"><i class="fas fa-bolt mr-1"></i>Análisis Rápido</button>
                         <button class="text-red-600 hover:text-red-800 text-sm ml-2" data-delete-quick="${item.id}"><i class="fas fa-trash"></i></button>`;
 
                 return `
@@ -5409,12 +4515,6 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             document.querySelectorAll('[data-simulate-risk]').forEach(btn => {
                 btn.addEventListener('click', () => this.simulateRegisteredRisk(btn.dataset.simulateRisk));
-            });
-            document.querySelectorAll('[data-load-quick]').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    App.Navigation.switchPage('fair');
-                    App.QuickAnalysis.loadRisk(btn.dataset.loadQuick);
-                });
             });
             document.querySelectorAll('[data-delete-quick]').forEach(btn => {
                 btn.addEventListener('click', () => this.deleteConcentratedRisk({ riskName: null, sourceId: btn.dataset.deleteQuick }));
