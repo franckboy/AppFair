@@ -10,6 +10,7 @@ const DEFAULTS = {
     orgDefaults: { currency: 'USD', defenseKey: 'estandar', owner: '', dataSource: 'experto-sin-calibrar', dataConfidence: 'medio' },
     orgContext: { mision: '', naturalezaNegocio: '', apetitoRiesgo: 'moderado', partesInteresadas: '', entornoLegal: '', alcanceCadenaSuministro: '' },
     riskRegister: [],
+    assets: [],
 };
 
 /**
@@ -80,6 +81,25 @@ class JsonStore {
         all.riskRegister = (all.riskRegister || []).filter((r) => r.riskName !== riskName);
         this._writeAll(all);
         return all.riskRegister;
+    }
+
+    /** Agrega o actualiza (por id) una entrada del Catálogo de Activos. */
+    upsertAsset(entry) {
+        const all = this._readAll();
+        const assets = all.assets || [];
+        const idx = assets.findIndex((a) => a.id === entry.id);
+        if (idx !== -1) assets[idx] = entry;
+        else assets.push(entry);
+        all.assets = assets;
+        this._writeAll(all);
+        return assets;
+    }
+
+    deleteAsset(id) {
+        const all = this._readAll();
+        all.assets = (all.assets || []).filter((a) => a.id !== id);
+        this._writeAll(all);
+        return all.assets;
     }
 }
 

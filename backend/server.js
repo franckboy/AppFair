@@ -13,6 +13,7 @@ const createAutocalcRouter = require('./src/routes/autocalc');
 const createSimulateRouter = require('./src/routes/simulate');
 const createTreatmentRouter = require('./src/routes/treatment');
 const createRegisterRouter = require('./src/routes/register');
+const createAssetsRouter = require('./src/routes/assets');
 
 const app = express();
 const store = new JsonStore();
@@ -61,6 +62,7 @@ app.use('/api/autocalc', createAutocalcRouter());
 app.use('/api/simulate', createSimulateRouter(store));
 app.use('/api/treatment', createTreatmentRouter());
 app.use('/api/register', createRegisterRouter(store));
+app.use('/api/assets', createAssetsRouter(store));
 
 // Manejador de errores genérico — evita que una excepción no controlada tumbe el proceso
 app.use((err, req, res, next) => {
