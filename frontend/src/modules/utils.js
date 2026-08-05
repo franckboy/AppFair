@@ -152,6 +152,24 @@ export const showToast = (message) => {
     }, 3000);
 };
 
+// Agrupa las pérdidas anuales simuladas (Monte Carlo) en `numBins` cubetas de igual ancho, para
+// dibujar el histograma de resultados — usado tanto en Análisis FAIR (gráfico en vivo tras
+// simular) como en Registro de Riesgos (al re-simular un riesgo ya guardado). Antes esta misma
+// lógica estaba copiada literal en los dos módulos; un solo lugar evita que se desincronicen.
+export const buildHistogramBins = (losses, maxLoss, numBins = 20) => {
+    const binWidth = maxLoss > 0 ? maxLoss / numBins : 1;
+    const labels = [];
+    for (let i = 0; i < numBins; i++) {
+        labels.push(`${((i * binWidth) / 1000).toFixed(0)}k`);
+    }
+    const binCounts = new Array(numBins).fill(0);
+    losses.forEach((loss) => {
+        const binIndex = Math.min(Math.floor(loss / binWidth), numBins - 1);
+        binCounts[binIndex]++;
+    });
+    return { labels, binCounts };
+};
+
 // La evaluación de resultados FAIR (Crítico/Alto/Medio/Bajo + justificación) ahora la
 // calcula el backend en /api/simulate — este mapa solo traduce su `severity` a las
 // clases Tailwind que ya usaba la UI, porque el backend correctamente no sabe nada de CSS.

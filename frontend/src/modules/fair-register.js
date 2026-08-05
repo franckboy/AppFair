@@ -3,6 +3,7 @@ import { state } from './state.js';
 import {
     LOSS_FORMS_KEYS,
     LOSS_FORM_LABELS,
+    buildHistogramBins,
     getSafeNumber,
     sanitizeHTML,
     sensitivityLabel,
@@ -951,18 +952,9 @@ export const FairRegister = {
             })
             .join('');
 
-        // Histograma — mismo binning que el de Análisis FAIR (ver runMonteCarloSimulation).
+        // Histograma — mismo binning que el de Análisis FAIR (ver buildHistogramBins en utils.js).
         const ctx = document.getElementById('fair-register-sim-chart').getContext('2d');
-        const numBins = 20;
-        const maxLoss = result.summary.max;
-        const binWidth = maxLoss > 0 ? maxLoss / numBins : 1;
-        const labels = [];
-        for (let i = 0; i < numBins; i++) labels.push(`${((i * binWidth) / 1000).toFixed(0)}k`);
-        const binCounts = new Array(numBins).fill(0);
-        result.annualLosses.forEach((loss) => {
-            const binIndex = Math.min(Math.floor(loss / binWidth), numBins - 1);
-            binCounts[binIndex]++;
-        });
+        const { labels, binCounts } = buildHistogramBins(result.annualLosses, result.summary.max);
         if (state.fair.registerSimChart) state.fair.registerSimChart.destroy();
         state.fair.registerSimChart = new Chart(ctx, {
             type: 'bar',

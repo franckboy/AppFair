@@ -5,6 +5,7 @@ import {
     LOSS_FORMS_KEYS,
     LOSS_FORM_LABELS,
     LOSS_FIELD_LABELS,
+    buildHistogramBins,
     debounce,
     getSafeNumber,
     sanitizeHTML,
@@ -1529,18 +1530,7 @@ export const FairWizard = {
         this.updateTreatmentView();
 
         const ctx = document.getElementById('fair-results-chart').getContext('2d');
-        const numBins = 20;
-        const maxLoss = summary.max;
-        const binWidth = maxLoss > 0 ? maxLoss / numBins : 1;
-        const labels = [];
-        for (let i = 0; i < numBins; i++) {
-            labels.push(`${((i * binWidth) / 1000).toFixed(0)}k`);
-        }
-        const binCounts = new Array(numBins).fill(0);
-        annualLosses.forEach((loss) => {
-            const binIndex = Math.min(Math.floor(loss / binWidth), numBins - 1);
-            binCounts[binIndex]++;
-        });
+        const { labels, binCounts } = buildHistogramBins(annualLosses, summary.max);
         if (state.fair.fairResultsChart) {
             state.fair.fairResultsChart.destroy();
         }
