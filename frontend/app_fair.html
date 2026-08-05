@@ -215,7 +215,8 @@
                                 </div>
                             </div>
 
-                            <div class="mt-8 flex justify-end">
+                            <div class="mt-8 flex justify-end gap-2">
+                                <button id="fair-save-draft-btn" class="btn btn-secondary">Guardar <i class="fas fa-floppy-disk ml-2"></i></button>
                                 <button id="fair-step1-next" class="btn btn-primary">Siguiente: Analizar Frecuencia <i class="fas fa-arrow-right ml-2"></i></button>
                             </div>
                         </section>
@@ -2552,8 +2553,58 @@ document.addEventListener('DOMContentLoaded', () => {
             showToast('Plantilla aplicada. Revisa el Nombre del Escenario, Activo y Agente de Amenaza — son lo único que casi siempre cambia entre un riesgo y otro.');
         },
 
+        // Guarda lo que ya se llenó en el Paso 1 en /api/risks, SIN pasar por TEF/Vulnerabilidad/
+        // Magnitud/Simulación — permite dejar un riesgo anotado y volver después a completarlo,
+        // en vez de obligar a terminar los 4 pasos en una sola sesión (antes esto lo cubría
+        // Vista Rápida, ya eliminada). Aparece en "Riesgos Guardados" como "Triage" hasta que se
+        // corre la simulación (ver App.FairRegister.buildConcentratedList).
+        async saveDraftToRisksList() {
+            const riskName = document.getElementById('fair-riskName').value.trim();
+            if (!riskName) {
+                toggleErrorState('fair-riskName', 'El nombre del escenario es obligatorio.');
+                return;
+            }
+
+            const fullData = {
+                riskName,
+                riskDescription: document.getElementById('fair-riskDescription').value.trim(),
+                asset: document.getElementById('fair-asset').value.trim(),
+                threat: document.getElementById('fair-threat').value.trim(),
+                effect: document.getElementById('fair-effect').value,
+                riskType: document.getElementById('fair-risk-type').value,
+                timeHorizon: document.getElementById('fair-time-horizon').value,
+                triggeredByRiskName: document.getElementById('fair-triggered-by').value || null,
+            };
+
+            const btn = document.getElementById('fair-save-draft-btn');
+            btn.disabled = true;
+            try {
+                if (state.fair.sourceRiskId) {
+                    // Ya se había guardado antes en esta misma sesión de edición — actualiza esa
+                    // misma entrada en vez de crear una fila duplicada en la tabla.
+                    await App.Api.request(`/api/risks/${encodeURIComponent(state.fair.sourceRiskId)}`, {
+                        method: 'PUT',
+                        body: { name: riskName, fullData },
+                    });
+                } else {
+                    const res = await App.Api.request('/api/risks', {
+                        method: 'POST',
+                        body: { name: riskName, fullData },
+                    });
+                    state.fair.sourceRiskId = res.entry.id;
+                }
+                await App.FairRegister.loadRiskRegister();
+                showToast('Riesgo guardado. Puedes completarlo cuando quieras desde "Riesgos Guardados".');
+            } catch (e) {
+                showToast(e.userMessage || 'No se pudo guardar el riesgo.');
+            } finally {
+                btn.disabled = false;
+            }
+        },
+
         bindEvents() {
             document.getElementById('fair-step1-next').addEventListener('click', () => this.navigateWizard(2));
+            document.getElementById('fair-save-draft-btn').addEventListener('click', () => this.saveDraftToRisksList());
             document.getElementById('fair-step2-back').addEventListener('click', () => this.navigateWizard(1));
             document.getElementById('fair-step2-next').addEventListener('click', () => this.navigateWizard(3));
             document.getElementById('fair-step3-back').addEventListener('click', () => this.navigateWizard(2));
@@ -2914,6 +2965,15 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('fair-data-notes').value = data.catalogStandard
                 ? `[Catálogo de Riesgos: ${data.catalogCode ? data.catalogCode + ' — ' : ''}${data.catalogStandard}]`
                 : '';
+            // Campos propios del Paso 1 de FAIR — un riesgo guardado con "Guardar" (sin pasar
+            // por el resto del wizard, ver saveDraftToRisksList) ya los trae; uno de la vieja
+            // Vista Rápida nunca los tuvo, así que quedan en su valor por defecto.
+            if (data.threat) document.getElementById('fair-threat').value = data.threat;
+            document.getElementById('fair-effect').value = data.effect || 'material';
+            document.getElementById('fair-risk-type').value = data.riskType || 'amenaza';
+            document.getElementById('fair-time-horizon').value = data.timeHorizon || '1';
+            this.toggleRiskTypeLabels();
+            if (data.triggeredByRiskName) document.getElementById('fair-triggered-by').value = data.triggeredByRiskName;
 
             if (data.attackerKey) document.getElementById('fair-attacker-profile').value = data.attackerKey;
             if (data.defenseKey) document.getElementById('fair-defense-profile').value = data.defenseKey;
@@ -2925,24 +2985,31 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             this.updateAttackerDefenseSummary();
 
-            // El total de Análisis Rápido nunca llega desglosado por categoría (solo pregunta
-            // un costo mínimo/máximo global) — antes esto se metía completo y en silencio en
-            // "Costos de Respuesta", una categoría específica que no necesariamente es la
-            // correcta. Ahora se le pide al usuario, justo al promover, que decida cómo repartir
-            // ese mismo total entre las 9 categorías (ver openLossRedistributionModal). El
-            // reparto es un porcentaje del mismo total, así que la suma de las 9 categorías es
-            // siempre idéntica al total original: repartir no cambia ningún resultado de la
-            // simulación, solo dónde queda registrado.
-            const avgCost = (data.costoMinImpacto + data.costoMaxImpacto) / 2;
-            this.openLossRedistributionModal(data, avgCost);
+            // Costo Mín/Máx y ARO solo existen en riesgos de la vieja Vista Rápida (ya
+            // eliminada) — un riesgo guardado con "Guardar" desde el Paso 1 de FAIR no tiene
+            // ninguno de los dos, así que no hay nada que repartir ni ninguna frecuencia previa
+            // que sugerir: TEF/Vulnerabilidad quedan en su sugerencia automática normal (ver
+            // updateAttackerDefenseSummary, ya llamado arriba).
+            if (data.costoMinImpacto != null && data.costoMaxImpacto != null) {
+                // El total de Análisis Rápido nunca llega desglosado por categoría (solo pregunta
+                // un costo mínimo/máximo global) — antes esto se metía completo y en silencio en
+                // "Costos de Respuesta", una categoría específica que no necesariamente es la
+                // correcta. Ahora se le pide al usuario, justo al promover, que decida cómo repartir
+                // ese mismo total entre las 9 categorías (ver openLossRedistributionModal). El
+                // reparto es un porcentaje del mismo total, así que la suma de las 9 categorías es
+                // siempre idéntica al total original: repartir no cambia ningún resultado de la
+                // simulación, solo dónde queda registrado.
+                const avgCost = (data.costoMinImpacto + data.costoMaxImpacto) / 2;
+                this.openLossRedistributionModal(data, avgCost);
 
-            const tefMode = data.ARO_raw > 1 ? Math.round(data.ARO_raw * 5) : 10;
-            document.getElementById('tef-min').value = Math.max(1, Math.round(tefMode * 0.2));
-            document.getElementById('tef-mode').value = tefMode;
-            document.getElementById('tef-max').value = Math.round(tefMode * 2);
-            // Ya viene de un dato real (Análisis Rápido) — que la sugerencia automática (todavía
-            // en vuelo desde el updateAttackerDefenseSummary() de arriba) no lo pise.
-            state.fair.tefManuallyEdited = true;
+                const tefMode = data.ARO_raw > 1 ? Math.round(data.ARO_raw * 5) : 10;
+                document.getElementById('tef-min').value = Math.max(1, Math.round(tefMode * 0.2));
+                document.getElementById('tef-mode').value = tefMode;
+                document.getElementById('tef-max').value = Math.round(tefMode * 2);
+                // Ya viene de un dato real (Análisis Rápido) — que la sugerencia automática (todavía
+                // en vuelo desde el updateAttackerDefenseSummary() de arriba) no lo pise.
+                state.fair.tefManuallyEdited = true;
+            }
 
             // La Vulnerabilidad NO se transfiere de Análisis Rápido: ya quedó calculada arriba
             // (updateAttackerDefenseSummary, línea previa) a partir del Perfil de Atacante/Defensa
