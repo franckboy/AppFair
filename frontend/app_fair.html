@@ -3786,6 +3786,75 @@ document.addEventListener('DOMContentLoaded', () => {
             this.navigateWizard(1, true);
         },
 
+        // Abre el wizard completo (incluyendo Tratamiento) para un riesgo YA analizado con
+        // FAIR, cargando sus datos guardados en el Registro — a diferencia de "Simular" (un
+        // vistazo rápido de solo lectura dentro de la misma página del Registro), esto lleva al
+        // usuario al wizard de verdad para poder revisar/ajustar y decidir Mitigar/Transferir/
+        // Evitar/Aceptar. Mismo patrón que duplicateFromTemplate(), pero la fuente son los datos
+        // reales guardados de ESTE riesgo (no una plantilla genérica del último análisis).
+        loadRegisteredRiskIntoForm(riskName) {
+            const entry = (state.fair.riskRegister || []).find(r => r.riskName === riskName);
+            if (!entry) {
+                showToast('No se encontró este riesgo en el Registro.');
+                return;
+            }
+
+            // Por si se venía de la pantalla "elige cuál riesgo" (promoción múltiple desde
+            // Análisis Rápido) — sin esto, el wizard podía quedar oculto detrás de esa lista.
+            document.getElementById('fair-selection-container').classList.add('hidden');
+            document.getElementById('fair-wizard-wrapper').classList.remove('hidden');
+            this.resetForm(false);
+            // Conserva el vínculo con Análisis Rápido (si lo tiene) — si se vuelve a guardar,
+            // sigue siendo la MISMA entrada del Registro, no una nueva sin relación (ver
+            // App.FairRegister.buildConcentratedList).
+            state.fair.sourceRiskId = entry.sourceRiskId || null;
+
+            document.getElementById('fair-riskName').value = entry.riskName || '';
+            if (entry.asset && entry.asset !== '—') document.getElementById('fair-asset').value = entry.asset;
+            if (entry.owner && entry.owner !== '—') document.getElementById('fair-owner').value = entry.owner;
+            if (entry.securityPlan && entry.securityPlan !== '—') document.getElementById('fair-security-plan').value = entry.securityPlan;
+            document.getElementById('fair-risk-type').value = entry.riskType || 'amenaza';
+            this.toggleRiskTypeLabels();
+            // La moneda es un solo selector global (vive en Análisis Rápido, no hay uno propio
+            // en FAIR) — se ajusta a la de este riesgo para que los montos se interpreten bien.
+            if (entry.currency) state.quickUI.domElements.inputs.currencySelect.value = entry.currency;
+
+            // El Registro no guarda todavía qué Perfil de Atacante/Defensa se usó (solo el
+            // resultado: los rangos de TEF/Vulnerabilidad) — el selector se queda en su valor
+            // por defecto y su resumen de texto no reflejará el perfil original, pero los
+            // números reales (lo que de verdad alimenta la simulación) sí son los guardados.
+            this.updateAttackerDefenseSummary();
+
+            if (entry.tef) {
+                document.getElementById('tef-min').value = entry.tef.min;
+                document.getElementById('tef-mode').value = entry.tef.mode;
+                document.getElementById('tef-max').value = entry.tef.max;
+                state.fair.tefManuallyEdited = true;
+            }
+            if (entry.vuln) {
+                document.getElementById('vuln-min').value = entry.vuln.min;
+                document.getElementById('vuln-mode').value = entry.vuln.mode;
+                document.getElementById('vuln-max').value = entry.vuln.max;
+                this.setVulnManualOverride(true);
+            }
+            if (entry.lossMagnitudes) {
+                this.setLossMagnitudeManualOverride(true, true);
+                Object.entries(entry.lossMagnitudes).forEach(([key, vals]) => {
+                    const minEl = document.getElementById(`lm-${key}-min`);
+                    const modeEl = document.getElementById(`lm-${key}-mode`);
+                    const maxEl = document.getElementById(`lm-${key}-max`);
+                    if (minEl) minEl.value = vals.min;
+                    if (modeEl) modeEl.value = vals.mode;
+                    if (maxEl) maxEl.value = vals.max;
+                    this.refreshLossMagnitudeCompactDisplay(key);
+                });
+            }
+            if (entry.seed) document.getElementById('fair-simulation-seed').value = entry.seed;
+
+            this.navigateWizard(1, true);
+            showToast(`"${sanitizeHTML(entry.riskName)}" cargado desde el Registro — corre la simulación (Paso 4) para ver resultados y tratamiento actualizados.`);
+        },
+
         // Al promover desde Análisis Rápido, el total estimado (Costo Mín/Máx) no viene
         // desglosado por categoría de pérdida — Análisis Rápido es una herramienta de triage
         // rápido para muchos riesgos (la mayoría nunca se promueve), así que pedir ese desglose
@@ -4107,6 +4176,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
                 return false;
             }
+            // Bug real: si mientras esta petición estaba en vuelo se activó "Ajustar
+            // manualmente" (ej. al restaurar un riesgo guardado — ver
+            // App.FairWizard.loadRegisteredRiskIntoForm/loadRiskIntoForm, que llaman a
+            // resetForm() y ESO dispara un autocálculo con los modos todavía en 0 antes de
+            // escribir los valores reales), este resultado ya no aplica. Sin este guardián, el
+            // cálculo automático pisaba en silencio valores reales recién restaurados apenas
+            // llegaba la respuesta — a diferencia de Vulnerabilidad/TEF, que sí revisan su
+            // propio override antes de escribir (ver updateVulnerabilityAuto/suggestTefRange).
+            if (document.getElementById('lm-manual-override').checked) return true;
             Object.entries(data).forEach(([key, range]) => {
                 const minEl = document.getElementById(`lm-${key}-min`);
                 const maxEl = document.getElementById(`lm-${key}-max`);
@@ -4876,6 +4954,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     quickAle: risk.ale || null,
                     asset: (fairEntry && fairEntry.asset) || (risk.fullData && risk.fullData.asset) || '—',
                     fairEntry,
+                    // Para el botón "Analizar con FAIR" en filas de triage — mismo objeto que
+                    // App.FairAnalysis.receiveData() ya espera (ver App.QuickAnalysis.promoteToFair).
+                    fullData: risk.fullData || null,
                 };
             });
 
@@ -5127,12 +5208,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 const cvarCell = item.fairEntry ? fmt(item.fairEntry.cvar95, item.fairEntry.currency) : '—';
                 const dateCell = formatDate(item.fairEntry ? item.fairEntry.date : item.createdAt);
 
+                // "Analizar" abre el wizard completo de FAIR (pasos 1-4, incluyendo
+                // Tratamiento) para ESTE riesgo — a diferencia de "Simular" (un vistazo rápido
+                // de solo lectura sin salir del Registro) o "Análisis Rápido" (vuelve al
+                // triage). Es la vista de detalle por riesgo.
                 const actionsCell = item.stage === 'fair'
-                    ? `<button class="btn btn-secondary text-xs" data-simulate-risk="${sanitizeHTML(item.fairEntry.riskName)}" ${item.fairEntry.tef && item.fairEntry.vuln && item.fairEntry.lossMagnitudes ? '' : 'disabled title="Este riesgo se guardó antes de esta función — vuelve a correr su simulación desde Análisis FAIR para poder verla aquí."'}>
+                    ? `<button class="btn btn-primary text-xs" data-analyze-fair="${sanitizeHTML(item.fairEntry.riskName)}"><i class="fas fa-balance-scale mr-1"></i>Analizar</button>
+                        <button class="btn btn-secondary text-xs ml-1" data-simulate-risk="${sanitizeHTML(item.fairEntry.riskName)}" ${item.fairEntry.tef && item.fairEntry.vuln && item.fairEntry.lossMagnitudes ? '' : 'disabled title="Este riesgo se guardó antes de esta función — vuelve a correr su simulación desde Análisis FAIR para poder verla aquí."'}>
                             <i class="fas fa-chart-bar mr-1"></i>Simular
                         </button>
                         <button class="text-red-600 hover:text-red-800 text-sm ml-2" data-delete-risk="${sanitizeHTML(item.fairEntry.riskName)}" data-delete-source-id="${item.id || ''}"><i class="fas fa-trash"></i></button>`
-                    : `<button class="btn btn-secondary text-xs" data-load-quick="${item.id}"><i class="fas fa-bolt mr-1"></i>Análisis Rápido</button>
+                    : `<button class="btn btn-primary text-xs" data-analyze-quick="${item.id}" ${item.fullData ? '' : 'disabled title="No se encontró la información completa de este riesgo."'}><i class="fas fa-balance-scale mr-1"></i>Analizar con FAIR</button>
+                        <button class="btn btn-secondary text-xs ml-1" data-load-quick="${item.id}"><i class="fas fa-bolt mr-1"></i>Análisis Rápido</button>
                         <button class="text-red-600 hover:text-red-800 text-sm ml-2" data-delete-quick="${item.id}"><i class="fas fa-trash"></i></button>`;
 
                 return `
@@ -5163,6 +5250,23 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             document.querySelectorAll('[data-delete-quick]').forEach(btn => {
                 btn.addEventListener('click', () => this.deleteConcentratedRisk({ riskName: null, sourceId: btn.dataset.deleteQuick }));
+            });
+            document.querySelectorAll('[data-analyze-fair]').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    App.Navigation.switchPage('fair');
+                    App.FairWizard.loadRegisteredRiskIntoForm(btn.dataset.analyzeFair);
+                });
+            });
+            document.querySelectorAll('[data-analyze-quick]').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const item = (state.fair.concentratedRisks || []).find(x => x.id === btn.dataset.analyzeQuick);
+                    if (!item || !item.fullData) {
+                        showToast('No se encontró la información de este riesgo.');
+                        return;
+                    }
+                    App.Navigation.switchPage('fair');
+                    App.FairAnalysis.receiveData([item.fullData]);
+                });
             });
         },
 
