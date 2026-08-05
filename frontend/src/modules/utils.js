@@ -170,6 +170,44 @@ export const buildHistogramBins = (losses, maxLoss, numBins = 20) => {
     return { labels, binCounts };
 };
 
+// Punto de partida automático para TEF (Paso 2 del wizard FAIR — ver App.FairWizard.suggestTefRange()
+// para cómo se usa). No hay forma de calcular "cuántas veces al año" con certeza solo a partir
+// de un perfil de atacante — depende del contexto real de la organización, que el software no
+// conoce. Por eso esto es una SUGERENCIA editable, no un cálculo "verdadero" como Vulnerabilidad
+// o Magnitud de Pérdida, que sí son derivables con la info disponible.
+//
+// La Frecuencia depende de qué tan motivado y persistente es el atacante — NO de tu nivel de
+// Defensa. La Defensa ya se aplica en Vulnerabilidad (si el ataque tiene éxito); usarla también
+// aquí contaría el mismo efecto dos veces.
+//
+// El multiplicador escala según la motivación+persistencia del atacante en bruto (0-100), no
+// centrada en 50 — antes, un atacante "por debajo del promedio" (ej. Intruso Oportunista, o el
+// Grupo Organizado que da justo 50) hacía que subir el ponderador de "qué tan deliberada es la
+// amenaza" bajara o no moviera la frecuencia sugerida, mismo problema que el de Riesgo Inherente
+// en Análisis Rápido: marcar una amenaza como deliberada y pesarla más nunca debería sugerir
+// MENOS frecuencia que el punto de partida neutral (BASE_MODE, ponderación=0) — solo puede
+// sugerir igual o más.
+export const computeSuggestedTef = (attackerProfile, attackerKey, ponderacion, isDeliberate) => {
+    const frequencyFactor = (attackerProfile.motivation + attackerProfile.persistence) / 2;
+    const attackerThreatFactor = frequencyFactor / 100;
+    const multiplier = isDeliberate ? 1 + attackerThreatFactor * ponderacion : 1;
+
+    const BASE_MODE = 10; // punto de partida neutral (amenaza no deliberada, o ponderación=0)
+    const mode = Math.max(1, Math.round(BASE_MODE * multiplier));
+
+    return {
+        min: Math.max(1, Math.round(mode * 0.5)),
+        mode,
+        max: Math.round(mode * 1.8),
+        explanation: `Sugerido según el Perfil "${attackerProfile.name || attackerKey}"${isDeliberate ? ' y la sensibilidad de ajuste elegida' : ''} — es un punto de partida, no un cálculo exacto. Edítalo si tienes un dato mejor (histórico, benchmark del sector, etc.).`,
+    };
+};
+
+// Un rango triangular (min/más probable/max) exige min <= mode <= max — se usa tanto para TEF/
+// Vulnerabilidad (Paso 2) como para cada categoría de Magnitud de Pérdida (Paso 3), cuando el
+// usuario edita a mano y puede dejar los tres valores desordenados.
+export const sortTriangularRange = (values) => [...values].sort((a, b) => a - b);
+
 // La evaluación de resultados FAIR (Crítico/Alto/Medio/Bajo + justificación) ahora la
 // calcula el backend en /api/simulate — este mapa solo traduce su `severity` a las
 // clases Tailwind que ya usaba la UI, porque el backend correctamente no sabe nada de CSS.

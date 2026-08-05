@@ -6,12 +6,14 @@ import {
     LOSS_FORM_LABELS,
     LOSS_FIELD_LABELS,
     buildHistogramBins,
+    computeSuggestedTef,
     debounce,
     getSafeNumber,
     sanitizeHTML,
     sensitivityLabel,
     severityToClasses,
     showToast,
+    sortTriangularRange,
     toggleErrorState,
     updateProgressBar,
 } from './utils.js';
@@ -447,44 +449,30 @@ export const FairWizard = {
         state.fair.isDeliberate = checked;
     },
 
-    // Punto de partida automático para TEF (Paso 2): no hay forma de calcular "cuántas veces
-    // al año" con certeza solo a partir de un perfil de atacante — eso depende del contexto
-    // real de la organización, que el software no conoce. Por eso esto es una SUGERENCIA que
-    // se recalcula sola mientras el usuario no haya tecleado su propio número (ver el listener
-    // 'input' en bindEvents que fija tefManuallyEdited), no un cálculo "verdadero" como
-    // Vulnerabilidad o Magnitud de Pérdida, que sí son derivables con la info disponible.
-    //
-    // La Frecuencia depende de qué tan motivado y persistente es el atacante — NO de tu nivel
-    // de Defensa. La Defensa ya se aplica en Vulnerabilidad (si el ataque tiene éxito); usarla
-    // también aquí contaría el mismo efecto dos veces.
-    //
-    // El multiplicador escala según la motivación+persistencia del atacante en bruto (0-100),
-    // no centrada en 50 — antes, un atacante "por debajo del promedio" (ej. Intruso
-    // Oportunista, o el Grupo Organizado que da justo 50) hacía que subir el ponderador de
-    // "qué tan deliberada es la amenaza" bajara o no moviera la frecuencia sugerida, mismo
-    // problema que el de Riesgo Inherente en Análisis Rápido: marcar una amenaza como
-    // deliberada y pesarla más nunca debería sugerir MENOS frecuencia que el punto de partida
-    // neutral (BASE_MODE, ponderación=0) — solo puede sugerir igual o más.
+    // Punto de partida automático para TEF (Paso 2) — se recalcula sola mientras el usuario no
+    // haya tecleado su propio número (ver el listener 'input' en bindEvents que fija
+    // tefManuallyEdited). La fórmula en sí (y por qué está armada así) vive en
+    // computeSuggestedTef(), utils.js — acá solo se lee el perfil elegido del DOM y se
+    // escribe el resultado en los 3 campos.
     suggestTefRange() {
         if (state.fair.tefManuallyEdited) return;
         const attackerKey = document.getElementById('fair-attacker-profile').value;
         const attackerProfile = state.quick.attackerProfiles[attackerKey];
-        const explanationEl = document.getElementById('tef-auto-explanation');
         if (!attackerProfile) return;
 
         const ponderacion = getSafeNumber(document.getElementById('fair-deliberate-ponderation'));
         const isDeliberate = document.getElementById('fair-deliberate-threat').checked;
-        const frequencyFactor = (attackerProfile.motivation + attackerProfile.persistence) / 2;
-        const attackerThreatFactor = frequencyFactor / 100;
-        const multiplier = isDeliberate ? 1 + attackerThreatFactor * ponderacion : 1;
+        const { min, mode, max, explanation } = computeSuggestedTef(
+            attackerProfile,
+            attackerKey,
+            ponderacion,
+            isDeliberate,
+        );
 
-        const BASE_MODE = 10; // punto de partida neutral (amenaza no deliberada, o ponderación=0)
-        const suggestedMode = Math.max(1, Math.round(BASE_MODE * multiplier));
-
-        document.getElementById('tef-min').value = Math.max(1, Math.round(suggestedMode * 0.5));
-        document.getElementById('tef-mode').value = suggestedMode;
-        document.getElementById('tef-max').value = Math.round(suggestedMode * 1.8);
-        explanationEl.textContent = `Sugerido según el Perfil "${attackerProfile.name || attackerKey}"${isDeliberate ? ' y la sensibilidad de ajuste elegida' : ''} — es un punto de partida, no un cálculo exacto. Edítalo si tienes un dato mejor (histórico, benchmark del sector, etc.).`;
+        document.getElementById('tef-min').value = min;
+        document.getElementById('tef-mode').value = mode;
+        document.getElementById('tef-max').value = max;
+        document.getElementById('tef-auto-explanation').textContent = explanation;
     },
 
     validateAndFixRange(prefix) {
@@ -492,16 +480,14 @@ export const FairWizard = {
         const modeInput = document.getElementById(`${prefix}-mode`);
         const maxInput = document.getElementById(`${prefix}-max`);
 
-        let minVal = getSafeNumber(minInput);
-        let modeVal = getSafeNumber(modeInput);
-        let maxVal = getSafeNumber(maxInput);
-
-        let values = [minVal, modeVal, maxVal];
-        values.sort((a, b) => a - b);
-
-        minInput.value = values[0];
-        modeInput.value = values[1];
-        maxInput.value = values[2];
+        const [min, mode, max] = sortTriangularRange([
+            getSafeNumber(minInput),
+            getSafeNumber(modeInput),
+            getSafeNumber(maxInput),
+        ]);
+        minInput.value = min;
+        modeInput.value = mode;
+        maxInput.value = max;
 
         if (prefix.startsWith('lm-')) this.refreshLossMagnitudeCompactDisplay(prefix.slice(3));
     },

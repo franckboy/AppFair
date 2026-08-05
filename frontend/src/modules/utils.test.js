@@ -10,6 +10,8 @@ import {
     severityToClasses,
     severityToHex,
     buildHistogramBins,
+    computeSuggestedTef,
+    sortTriangularRange,
 } from './utils.js';
 
 describe('LOSS_FORMS_KEYS / LOSS_FORM_LABELS consistency', () => {
@@ -128,5 +130,58 @@ describe('buildHistogramBins', () => {
         const { labels, binCounts } = buildHistogramBins([], 1000, 10);
         expect(labels).toHaveLength(10);
         expect(binCounts).toEqual(new Array(10).fill(0));
+    });
+});
+
+describe('computeSuggestedTef', () => {
+    // Riesgo ficticio: "Robo de mercancía en la bodega", perfil "Empleado Desleal"
+    // (motivación 80, persistencia 70) — mismo ejemplo usado para explicar esta función.
+    const empleadoDesleal = { name: 'Empleado Desleal', motivation: 80, persistence: 70 };
+
+    it('con amenaza deliberada y ponderación 1, sugiere min 9 / más probable 18 / max 32', () => {
+        const result = computeSuggestedTef(empleadoDesleal, 'empleado-desleal', 1, true);
+        expect(result.min).toBe(9);
+        expect(result.mode).toBe(18);
+        expect(result.max).toBe(32);
+        expect(result.explanation).toContain('Empleado Desleal');
+    });
+
+    it('sin marcar "amenaza deliberada", ignora la ponderación (multiplicador queda en 1)', () => {
+        const result = computeSuggestedTef(empleadoDesleal, 'empleado-desleal', 1, false);
+        expect(result).toMatchObject({ min: 5, mode: 10, max: 18 });
+    });
+
+    it('con ponderación 0, deliberada o no da el mismo resultado (el punto de partida neutral)', () => {
+        const deliberada = computeSuggestedTef(empleadoDesleal, 'empleado-desleal', 0, true);
+        const noDeliberada = computeSuggestedTef(empleadoDesleal, 'empleado-desleal', 0, false);
+        expect(deliberada).toMatchObject({ min: 5, mode: 10, max: 18 });
+        expect(noDeliberada).toMatchObject({ min: 5, mode: 10, max: 18 });
+    });
+
+    it('un atacante más motivado/persistente nunca sugiere MENOS frecuencia que uno más débil', () => {
+        const debil = computeSuggestedTef({ name: 'Débil', motivation: 20, persistence: 20 }, 'debil', 1, true);
+        const fuerte = computeSuggestedTef({ name: 'Fuerte', motivation: 90, persistence: 90 }, 'fuerte', 1, true);
+        expect(fuerte.mode).toBeGreaterThan(debil.mode);
+    });
+
+    it('usa la key del atacante en la explicación si el perfil no tiene name', () => {
+        const result = computeSuggestedTef({ motivation: 50, persistence: 50 }, 'perfil-sin-nombre', 1, true);
+        expect(result.explanation).toContain('perfil-sin-nombre');
+    });
+});
+
+describe('sortTriangularRange', () => {
+    it('ordena min/más probable/max de menor a mayor', () => {
+        expect(sortTriangularRange([50, 10, 30])).toEqual([10, 30, 50]);
+    });
+
+    it('no altera un rango que ya está bien ordenado', () => {
+        expect(sortTriangularRange([1, 2, 3])).toEqual([1, 2, 3]);
+    });
+
+    it('no modifica el arreglo original (no tiene efectos secundarios)', () => {
+        const original = [30, 10, 20];
+        sortTriangularRange(original);
+        expect(original).toEqual([30, 10, 20]);
     });
 });
