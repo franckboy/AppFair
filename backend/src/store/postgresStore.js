@@ -1,7 +1,9 @@
 'use strict';
 
 const { Pool } = require('pg');
+const crypto = require('crypto');
 const { DEFAULTS } = require('./defaults');
+const { findRegisterEntryIndex } = require('../lib/registerIdentity');
 
 /**
  * Mismo modelo que JsonStore (un solo documento con todas las colecciones),
@@ -65,7 +67,8 @@ class PostgresStore {
     async upsertRiskInRegister(entry) {
         const all = await this._readAll();
         const register = all.riskRegister || [];
-        const idx = register.findIndex((r) => r.riskName === entry.riskName);
+        const idx = findRegisterEntryIndex(register, entry);
+        entry.id = (idx !== -1 && register[idx].id) || entry.id || crypto.randomUUID();
         if (idx !== -1) register[idx] = entry;
         else register.push(entry);
         all.riskRegister = register;
@@ -73,9 +76,11 @@ class PostgresStore {
         return register;
     }
 
-    async deleteRiskFromRegister(riskName) {
+    async deleteRiskFromRegister(riskName, { id = null, sourceRiskId = null } = {}) {
         const all = await this._readAll();
-        all.riskRegister = (all.riskRegister || []).filter((r) => r.riskName !== riskName);
+        const register = all.riskRegister || [];
+        const idx = findRegisterEntryIndex(register, { riskName, id, sourceRiskId });
+        all.riskRegister = idx !== -1 ? register.filter((_, i) => i !== idx) : register;
         await this._writeAll(all);
         return all.riskRegister;
     }

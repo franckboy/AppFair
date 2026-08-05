@@ -328,6 +328,66 @@ test('PUT /api/register/:riskName guarda description', async () => {
     await request(app).delete(`/api/register/${encodeURIComponent(riskName)}`).set('X-API-Key', TEST_API_KEY);
 });
 
+test('PUT /api/register/:riskName: dos riesgos DISTINTOS con el mismo nombre no se pisan entre sí (identificados por sourceRiskId, no por nombre)', async () => {
+    const sharedName = 'Incendio en instalación';
+    const putA = await request(app)
+        .put(`/api/register/${encodeURIComponent(sharedName)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ale: 10000, cvar95: 15000, evaluationLevel: 'Riesgo Bajo', sourceRiskId: 'risk-a' });
+    const putB = await request(app)
+        .put(`/api/register/${encodeURIComponent(sharedName)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ale: 90000, cvar95: 150000, evaluationLevel: 'Riesgo Alto', sourceRiskId: 'risk-b' });
+
+    assert.notStrictEqual(putA.body.entry.id, putB.body.entry.id,
+        'cada riesgo de origen distinto debe generar su propia entrada del Registro, aunque compartan nombre');
+
+    const getRes = await request(app).get('/api/register').set('X-API-Key', TEST_API_KEY);
+    const entries = getRes.body.risks.filter((r) => r.riskName === sharedName);
+    assert.strictEqual(entries.length, 2, 'ambas entradas deben coexistir, no pisarse');
+    assert.ok(entries.some((r) => r.sourceRiskId === 'risk-a' && r.ale === 10000));
+    assert.ok(entries.some((r) => r.sourceRiskId === 'risk-b' && r.ale === 90000));
+
+    // Borrar una por sourceRiskId debe dejar intacta la otra.
+    await request(app)
+        .delete(`/api/register/${encodeURIComponent(sharedName)}?sourceRiskId=risk-a`)
+        .set('X-API-Key', TEST_API_KEY);
+    const afterDelete = await request(app).get('/api/register').set('X-API-Key', TEST_API_KEY);
+    const remaining = afterDelete.body.risks.filter((r) => r.riskName === sharedName);
+    assert.strictEqual(remaining.length, 1);
+    assert.strictEqual(remaining[0].sourceRiskId, 'risk-b');
+
+    await request(app)
+        .delete(`/api/register/${encodeURIComponent(sharedName)}?sourceRiskId=risk-b`)
+        .set('X-API-Key', TEST_API_KEY);
+});
+
+test('PUT /api/register/:riskName: re-simular con el mismo sourceRiskId actualiza la misma entrada aunque cambie el nombre', async () => {
+    const putFirst = await request(app)
+        .put('/api/register/Robo%20Bodega%20A')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ale: 20000, cvar95: 30000, evaluationLevel: 'Riesgo Medio', sourceRiskId: 'risk-c' });
+    const entryId = putFirst.body.entry.id;
+
+    // El usuario renombra el riesgo y vuelve a simular — mismo sourceRiskId, nombre distinto.
+    const putRenamed = await request(app)
+        .put('/api/register/Robo%20Bodega%20A%20(renombrado)')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ale: 25000, cvar95: 35000, evaluationLevel: 'Riesgo Medio', sourceRiskId: 'risk-c', id: entryId });
+
+    assert.strictEqual(putRenamed.body.entry.id, entryId, 'debe conservar el mismo id, no generar uno nuevo');
+
+    const getRes = await request(app).get('/api/register').set('X-API-Key', TEST_API_KEY);
+    const matches = getRes.body.risks.filter((r) => r.sourceRiskId === 'risk-c');
+    assert.strictEqual(matches.length, 1, 'no debe quedar una entrada huérfana con el nombre viejo');
+    assert.strictEqual(matches[0].riskName, 'Robo Bodega A (renombrado)');
+    assert.strictEqual(matches[0].ale, 25000);
+
+    await request(app)
+        .delete(`/api/register/${encodeURIComponent('Robo Bodega A (renombrado)')}?sourceRiskId=risk-c`)
+        .set('X-API-Key', TEST_API_KEY);
+});
+
 // --- Catálogo de Activos ---
 
 test('GET /api/assets sin header X-API-Key responde 401', async () => {
