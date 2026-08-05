@@ -4188,6 +4188,19 @@ document.addEventListener('DOMContentLoaded', () => {
         //     cuánto perderías sin las mitigaciones actuales.
         //   Efectividad de Controles (%) = 100% − Vulnerabilidad (Más Probable) — qué porcentaje
         //     de los intentos de amenaza bloquean tus controles actuales.
+        // Cada monto en dinero se clasifica contra el MISMO Criterio ALE que ya usa "Evaluación"
+        // (evaluateFairThreat, en el backend) — mismo umbral, sin re-inventar una escala aparte.
+        // Residual usa directamente entry.severity (ya viene calculado sobre ese mismo ALE);
+        // Inherente es un monto DISTINTO (mayor, sin controles), así que se clasifica aparte
+        // contra el mismo Criterio ALE Aceptable/Crítico.
+        classifyAleAgainstCriteria(ale) {
+            const criteria = state.config.riskCriteria;
+            if (!criteria || typeof ale !== 'number') return null;
+            if (ale > criteria.aleCritico) return 'critico';
+            if (ale > criteria.aleAceptable) return 'alto';
+            return 'bajo';
+        },
+
         // La clasificación (Bajo/Medio/Alto/Crítico) no se repite aquí — ya la muestra la
         // columna "Evaluación" (evaluateFairThreat, en el backend); tener una "Categoría" aparte
         // solo duplicaba esa misma severidad con otro formato.
@@ -4201,7 +4214,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
             return {
                 residualMoney: fmt(entry.ale),
+                residualSeverity: entry.severity || null,
                 inherentMoney: inherentAle != null ? fmt(inherentAle) : null,
+                inherentSeverity: inherentAle != null ? this.classifyAleAgainstCriteria(inherentAle) : null,
                 controlEffectiveness: vulnMode != null ? `${(100 - vulnMode).toFixed(1)}%` : null,
             };
         },
@@ -4225,7 +4240,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     createdAt: risk.createdAt || risk.date,
                     quickAle: risk.ale || null,
                     riesgoInherente: fairEquiv ? fairEquiv.inherentMoney : (risk.ri || null),
+                    riesgoInherenteSeverity: fairEquiv ? fairEquiv.inherentSeverity : null,
                     riesgoResidual: fairEquiv ? fairEquiv.residualMoney : (risk.rrt || null),
+                    riesgoResidualSeverity: fairEquiv ? fairEquiv.residualSeverity : null,
                     controlEffectiveness: fairEquiv ? fairEquiv.controlEffectiveness : null,
                     asset: (fairEntry && fairEntry.asset) || (risk.fullData && risk.fullData.asset) || '—',
                     fairEntry,
@@ -4250,7 +4267,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         createdAt: reg.date,
                         quickAle: null,
                         riesgoInherente: fairEquiv ? fairEquiv.inherentMoney : null,
+                        riesgoInherenteSeverity: fairEquiv ? fairEquiv.inherentSeverity : null,
                         riesgoResidual: fairEquiv ? fairEquiv.residualMoney : null,
+                        riesgoResidualSeverity: fairEquiv ? fairEquiv.residualSeverity : null,
                         controlEffectiveness: fairEquiv ? fairEquiv.controlEffectiveness : null,
                         asset: reg.asset,
                         fairEntry: reg,
@@ -4547,7 +4566,18 @@ document.addEventListener('DOMContentLoaded', () => {
                     ? `<span class="px-2 py-1 rounded text-xs border-l-4 ${item.fairEntry.evaluationClasses}">${item.fairEntry.evaluationLevel}</span>`
                     : '—';
 
-                const impactCell = item.fairEntry ? fmt(item.fairEntry.ale) : (item.quickAle || '—');
+                // Mismo Criterio ALE que ya usa "Evaluación" — cada monto se colorea según ESE
+                // mismo umbral (ver computeFairRiskEquivalents), para que un riesgo "Crítico" se
+                // vea igual de rojo en Inherente/Residual/Impacto que en Evaluación, no distinto.
+                const moneyBadge = (text, severity) => (text && severity)
+                    ? `<span class="px-2 py-1 rounded text-xs border-l-4 ${severityToClasses(severity)}">${text}</span>`
+                    : (text || '—');
+
+                const inherenteCell = moneyBadge(item.riesgoInherente, item.riesgoInherenteSeverity);
+                const residualCell = moneyBadge(item.riesgoResidual, item.riesgoResidualSeverity);
+                const impactCell = item.fairEntry
+                    ? moneyBadge(fmt(item.fairEntry.ale), item.fairEntry.severity)
+                    : (item.quickAle || '—');
                 const cvarCell = item.fairEntry ? fmt(item.fairEntry.cvar95) : '—';
                 const dateCell = formatDate(item.fairEntry ? item.fairEntry.date : item.createdAt);
 
@@ -4576,9 +4606,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         <td class="text-center text-gray-500">${item.number}</td>
                         <td>${sanitizeHTML(item.riskName)}</td>
                         <td>${stageBadge}</td>
-                        <td>${item.riesgoInherente || '—'}</td>
+                        <td>${inherenteCell}</td>
                         <td>${item.controlEffectiveness || '—'}</td>
-                        <td>${item.riesgoResidual || '—'}</td>
+                        <td>${residualCell}</td>
                         <td>${sanitizeHTML(item.asset)}</td>
                         <td>${impactCell}</td>
                         <td>${cvarCell}</td>
