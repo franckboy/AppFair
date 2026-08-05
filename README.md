@@ -78,7 +78,7 @@ Las pruebas unitarias (Vitest, co-ubicadas junto al código que prueban — `*.t
 `frontend/src/modules/`) cubren la lógica que ya es pura hoy: formateo/clasificación en
 `utils.js` (`getSafeNumber`, `sanitizeHTML`, `debounce`, `severityToClasses`/`severityToHex`,
 `sensitivityLabel`, `buildHistogramBins`, `computeSuggestedTef`, `sortTriangularRange`,
-`triangularMean`) y tres métodos de `FairRegister` (`classifyAleAgainstCriteria`,
+`pertMean`) y tres métodos de `FairRegister` (`classifyAleAgainstCriteria`,
 `computeFairRiskEquivalents`, `buildConcentratedList`). Corren en milisegundos, sin necesitar
 backend ni navegador.
 
@@ -92,6 +92,37 @@ después de mover el código).
 
 Ambas suites (unitarias y E2E) corren en cada push/PR vía GitHub Actions
 (`.github/workflows/frontend-e2e.yml`), igual que las pruebas del backend.
+
+## Distribuciones de la simulación Monte Carlo
+
+`backend/src/lib/random.js` — cada variable de entrada (TEF, Vulnerabilidad, cada categoría de
+Magnitud de Pérdida) se estima con 3 puntos (mínimo/más probable/máximo) y se muestrea miles de
+veces por simulación. Qué forma de curva se usa para eso no es cosmético — cambia el resultado:
+
+- **TEF y Vulnerabilidad → Beta-PERT** (`getPertRandom`, lambda=4, el default estándar), no
+  triangular. PERT le da 4x más peso al valor "más probable" que a los extremos — con
+  triangular, cualquier punto entre mín y máx tenía una probabilidad "en línea recta" hacia los
+  extremos, lo que sobre-representa esos extremos frente a lo que un experto normalmente quiere
+  decir al dar sus 3 números.
+- **Magnitud de Pérdida → lognormal calibrada** (`getLognormalRandom`), no triangular ni PERT.
+  Las pérdidas financieras son "la mayoría chicas, pocas grandes" (asimetría a la derecha) —
+  estándar en modelado financiero/actuarial, y coherente con que la app ya reporta CVaR95/P90
+  además del promedio. `mínimo`/`máximo` se calibran como percentil 5/95 (IC 90%, la
+  construcción estándar de estimados calibrados) en vez de un techo/piso absoluto — a
+  diferencia de triangular/PERT, una pérdida simulada SÍ puede superar el "peor caso" que se
+  estimó, que es justamente el motivo de trackear CVaR95 en vez de solo el máximo. Si una
+  categoría tiene mínimo o "más probable" en $0 (un caso real y válido — no toda categoría de
+  pérdida aplica a todo riesgo), cae a triangular para esa muestra, porque la lognormal no está
+  definida en 0.
+- **Riesgo Inherente** (`App.FairRegister.computeFairRiskEquivalents`, frontend) usa
+  `pertMean` (`(min + 4·moda + max) / 6`) para "des-mitigar" el ALE Residual y estimar cuánto
+  costaría el riesgo sin controles — la misma distribución (PERT) que de verdad simula el
+  backend para Vulnerabilidad, no un promedio genérico.
+
+Ambos muestreadores (`getPertRandom`, `getLognormalRandom`) tienen pruebas de convergencia
+estadística en `backend/test/lib.test.js` — no solo casos puntuales, sino que verifican a gran
+escala (200,000 muestras) que la media/varianza muestral converge a la fórmula teórica de cada
+distribución, igual que ya se hacía para la triangular.
 
 ## Estilo de código
 

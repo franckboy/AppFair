@@ -208,16 +208,20 @@ export const computeSuggestedTef = (attackerProfile, attackerKey, ponderacion, i
 // usuario edita a mano y puede dejar los tres valores desordenados.
 export const sortTriangularRange = (values) => [...values].sort((a, b) => a - b);
 
-// Media de una distribución triangular(min, mode, max) — fórmula estándar (min+mode+max)/3,
-// NO el promedio de min y max, y NO la moda. Se usa para "Riesgo Inherente" en el Registro
-// (ver App.FairRegister.computeFairRiskEquivalents): antes se dividía el ALE Residual entre
-// la MODA de Vulnerabilidad, que no es lo mismo que su media — la moda es solo el valor "más
-// probable" de la distribución, mientras que la media es el centro de masa de toda la
-// distribución (incluyendo la cola hacia min y hacia max), que es lo que corresponde usar para
-// "des-mitigar" un promedio (el ALE Residual que reporta el motor SÍ es un promedio de todas
-// las iteraciones de Monte Carlo). Con un rango simétrico (max-mode == mode-min) ambos
-// coinciden; con uno asimétrico (lo más común en la práctica) no.
-export const triangularMean = (min, mode, max) => (min + mode + max) / 3;
+// Media de una distribución Beta-PERT(min, mode, max, lambda=4) — fórmula estándar
+// (min + lambda·mode + max) / (lambda + 2). El backend simula Vulnerabilidad con PERT (ver
+// backend/src/lib/random.js:getPertRandom), no con una triangular ni con la moda sola — así
+// que para "des-mitigar" el ALE Residual y estimar el Riesgo Inherente (ver
+// App.FairRegister.computeFairRiskEquivalents) hay que usar la media de ESA distribución, no
+// la de otra. Antes se dividía entre la MODA de Vulnerabilidad directamente, que no es lo
+// mismo que su media — la moda es solo el valor "más probable" de la distribución, mientras
+// que la media es el centro de masa de toda la distribución (incluyendo la cola hacia min y
+// hacia max), que es lo que corresponde usar para "des-mitigar" un promedio (el ALE Residual
+// que reporta el motor SÍ es un promedio de todas las iteraciones de Monte Carlo). Con
+// lambda=4, PERT le da 4x más peso a la moda que a min/max juntos — por diseño, para que un
+// experto que da un solo valor "más probable" no vea ese valor diluido por los extremos, que
+// es justo lo que le pasaba a la triangular (ver README, sección de distribuciones).
+export const pertMean = (min, mode, max, lambda = 4) => (min + lambda * mode + max) / (lambda + 2);
 
 // La evaluación de resultados FAIR (Crítico/Alto/Medio/Bajo + justificación) ahora la
 // calcula el backend en /api/simulate — este mapa solo traduce su `severity` a las

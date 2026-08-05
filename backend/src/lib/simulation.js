@@ -1,10 +1,16 @@
 'use strict';
 
-const { mulberry32, getTriangularRandom } = require('./random');
+const { mulberry32, getPertRandom, getLognormalRandom } = require('./random');
 const { lossFormsKeys, lossFormsLabels } = require('../data/profiles');
 
 /**
- * Corre la simulación Monte Carlo completa de un riesgo FAIR.
+ * Corre la simulación Monte Carlo completa de un riesgo FAIR. TEF y Vulnerabilidad se
+ * muestrean con Beta-PERT (concentra la probabilidad alrededor de la moda, ver
+ * getPertRandom en random.js); Magnitud de Pérdida se muestrea lognormal (permite que la
+ * pérdida real supere el "peor caso" estimado, ver getLognormalRandom) — ambas son las
+ * distribuciones recomendadas en la práctica de FAIR/Monte Carlo para estimados de 3 puntos
+ * de expertos, en vez de la triangular (que sí se sigue usando como respaldo cuando una
+ * categoría de pérdida tiene min o moda en 0, donde lognormal no está definida).
  *
  * @param {Object} params
  * @param {number} params.iterations Número de escenarios a simular (ej. 10000)
@@ -30,13 +36,13 @@ function runMonteCarloSimulation({ iterations, seed, tef, vuln, lossMagnitudes }
     const lmSamples = activeKeys.map(() => new Array(iterations));
 
     for (let i = 0; i < iterations; i++) {
-        const tef_i = getTriangularRandom(tef.min, tef.mode, tef.max, rng);
-        const vuln_i = getTriangularRandom(vulnDecimal.min, vulnDecimal.mode, vulnDecimal.max, rng);
+        const tef_i = getPertRandom(tef.min, tef.mode, tef.max, 4, rng);
+        const vuln_i = getPertRandom(vulnDecimal.min, vulnDecimal.mode, vulnDecimal.max, 4, rng);
         const lef_i = tef_i * vuln_i;
 
         let lm_i = 0;
         lmInputs.forEach((input, idx) => {
-            const val = getTriangularRandom(input.min, input.mode, input.max, rng);
+            const val = getLognormalRandom(input.min, input.mode, input.max, rng);
             lmSamples[idx][i] = val;
             lm_i += val;
         });

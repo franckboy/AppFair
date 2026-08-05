@@ -12,7 +12,7 @@ import {
     buildHistogramBins,
     computeSuggestedTef,
     sortTriangularRange,
-    triangularMean,
+    pertMean,
 } from './utils.js';
 
 describe('LOSS_FORMS_KEYS / LOSS_FORM_LABELS consistency', () => {
@@ -187,17 +187,23 @@ describe('sortTriangularRange', () => {
     });
 });
 
-describe('triangularMean', () => {
+describe('pertMean', () => {
     it('con un rango simétrico, la media coincide con la moda', () => {
-        expect(triangularMean(10, 20, 30)).toBe(20);
+        expect(pertMean(10, 20, 30)).toBe(20);
     });
 
     it('con un rango asimétrico, la media NO coincide con la moda', () => {
-        // min 10 / moda 20 / max 45 → media = 25, distinta de la moda (20)
-        expect(triangularMean(10, 20, 45)).toBeCloseTo(25);
+        // min 10 / moda 20 / max 45, lambda=4 → media = (10+80+45)/6 = 22.5
+        expect(pertMean(10, 20, 45)).toBeCloseTo(22.5);
     });
 
-    it('es la fórmula estándar (min+mode+max)/3, no el promedio de min y max', () => {
-        expect(triangularMean(0, 90, 100)).toBeCloseTo(190 / 3);
+    it('es la fórmula estándar (min+lambda·mode+max)/(lambda+2), no la de la triangular', () => {
+        expect(pertMean(0, 90, 100)).toBeCloseTo((0 + 4 * 90 + 100) / 6);
+    });
+
+    it('con lambda mayor, la media se acerca más a la moda (más peso al valor "más probable")', () => {
+        const meanLambda4 = pertMean(0, 90, 100, 4);
+        const meanLambda8 = pertMean(0, 90, 100, 8);
+        expect(Math.abs(meanLambda8 - 90)).toBeLessThan(Math.abs(meanLambda4 - 90));
     });
 });
