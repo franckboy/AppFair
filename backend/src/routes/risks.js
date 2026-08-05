@@ -61,7 +61,8 @@ function createRisksRouter(store) {
         res.json({ entry, totalRisks: updated.length });
     }));
 
-    // DELETE /api/risks/:id
+    // DELETE /api/risks/:id — también borra en cascada cualquier entrada del Registro
+    // vinculada a este riesgo (sourceRiskId === id), ver store.deleteRisk.
     router.delete('/:id', asyncHandler(async (req, res) => {
         const risks = await store.deleteRisk(req.params.id);
         res.json({ totalRisks: risks.length });
