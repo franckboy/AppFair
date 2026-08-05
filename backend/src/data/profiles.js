@@ -962,6 +962,93 @@ const riskCatalog = {
             },
         },
     },
+    // Dominio "Legal": no es parte de las 4 Entregas del plan del Catálogo Maestro (esas ya
+    // están completas) — se agrega aparte, a petición del usuario, mismo trato que Cadena de
+    // Suministro/OEA. Ni ASIS ni ISO 31000 enumeran "Legal" como dominio propio (ASIS solo
+    // separa crimen vs. no-crimen/natural vs. "human-made"; ISO 31000 es de proceso, no de
+    // contenido) — el contenido sigue en su lugar la categoría de riesgo de "Cumplimiento"
+    // ("Compliance") de COSO ERM, más ISO 37301 (Sistemas de Gestión de Cumplimiento,
+    // sucesora de ISO 19600) donde aplica un estándar específico. Se excluye deliberadamente
+    // Geopolítico (sanciones comerciales, embargos, inestabilidad política de un país en la
+    // cadena de suministro) — es un dominio aparte, todavía no construido. También se excluye
+    // Corrupción/Soborno: ya vive en Humano → Corrupción (ISO 37001), no se duplica aquí.
+    'legal': {
+        label: 'Legal',
+        code: 'LEG',
+        categories: {
+            'cumplimiento-regulatorio': {
+                label: 'Cumplimiento Regulatorio',
+                code: 'LEG-01',
+                threats: [
+                    { key: 'incumplimiento-normativa-vigente', name: 'Incumplimiento de Normativa Vigente', standard: 'ISO 37301, ISO 31000', code: 'LEG-REG-001', description: 'Operación fuera de los requisitos legales aplicables a la actividad de la organización.' },
+                    { key: 'cambio-regulatorio-sobreviniente', name: 'Cambio Regulatorio Sobreviniente', standard: 'ISO 37301', code: 'LEG-REG-002', description: 'Una nueva ley o reglamento modifica los requisitos bajo los que opera la organización, sin tiempo suficiente para adaptarse.' },
+                    { key: 'revocacion-licencia-permiso', name: 'Revocación de Licencia o Permiso Operativo', standard: 'ISO 37301', code: 'LEG-REG-003', description: 'Una autoridad competente retira una licencia o permiso necesario para operar.' },
+                    { key: 'sancion-multa-regulatoria', name: 'Sanción o Multa Regulatoria', standard: 'ISO 37301', code: 'LEG-REG-004', description: 'Penalización económica impuesta por una autoridad tras detectar un incumplimiento.' },
+                    { key: 'hallazgo-adverso-auditoria-gubernamental', name: 'Hallazgo Adverso en Auditoría o Inspección Gubernamental', standard: 'ISO 37301', code: 'LEG-REG-005', description: 'Una autoridad detecta un incumplimiento durante una visita de verificación o auditoría.' },
+                    { key: 'incumplimiento-normativa-ambiental', name: 'Incumplimiento de Normativa Ambiental', standard: 'ISO 14001, ISO 31000', code: 'LEG-REG-006', description: 'La organización no cumple con los requisitos ambientales aplicables a su operación.' },
+                    { key: 'incumplimiento-normativa-seguridad-salud', name: 'Incumplimiento de Normativa de Seguridad y Salud Ocupacional', standard: 'ISO 45001', code: 'LEG-REG-007', description: 'La organización no cumple con los requisitos legales de seguridad y salud en el trabajo.' },
+                    { key: 'incumplimiento-normativa-seguridad-privada', name: 'Incumplimiento de Normativa de Seguridad Privada', standard: 'ASIS, ISO 31000', code: 'LEG-REG-008', description: 'La organización o su proveedor de seguridad no cumple con los requisitos legales para operar personal o servicios de seguridad privada.' },
+                ],
+            },
+            'litigios-responsabilidad-civil': {
+                label: 'Litigios y Responsabilidad Civil',
+                code: 'LEG-02',
+                threats: [
+                    { key: 'demanda-terceros-danos', name: 'Demanda de Terceros por Daños', standard: 'ISO 31000', code: 'LEG-LIT-001', description: 'Un tercero inicia una acción legal alegando un daño causado por la organización.' },
+                    { key: 'demanda-laboral', name: 'Demanda Laboral', standard: 'ISO 45001, ISO 31000', code: 'LEG-LIT-002', description: 'Un empleado actual o anterior inicia una acción legal contra la organización.' },
+                    { key: 'reclamo-responsabilidad-instalaciones', name: 'Reclamo por Responsabilidad de Instalaciones (Premises Liability)', standard: 'ASIS, ISO 31000', code: 'LEG-LIT-003', description: 'Una persona resulta lesionada dentro de las instalaciones y responsabiliza a la organización.' },
+                    { key: 'demanda-responsabilidad-producto', name: 'Demanda por Responsabilidad de Producto', standard: 'ISO 9001, ISO 31000', code: 'LEG-LIT-004', description: 'Un cliente o consumidor alega un daño causado por un producto de la organización.' },
+                    { key: 'demanda-difamacion-reputacional', name: 'Demanda por Difamación o Daño Reputacional', standard: 'ISO 31000', code: 'LEG-LIT-005', description: 'Acción legal derivada de una declaración o publicación atribuida a la organización.' },
+                    { key: 'accion-colectiva', name: 'Acción Colectiva (Class Action)', standard: 'ISO 31000', code: 'LEG-LIT-006', description: 'Un grupo de afectados inicia una demanda conjunta contra la organización.' },
+                    { key: 'costos-legales-defensa-no-presupuestados', name: 'Costos Legales de Defensa No Presupuestados', standard: 'ISO 31000', code: 'LEG-LIT-007', description: 'Gasto legal imprevisto para defenderse de una acción legal en curso.' },
+                ],
+            },
+            'contratos-obligaciones-comerciales': {
+                label: 'Contratos y Obligaciones Comerciales',
+                code: 'LEG-03',
+                threats: [
+                    { key: 'incumplimiento-contrato-contraparte', name: 'Incumplimiento de Contrato por Contraparte', standard: 'ISO 31000', code: 'LEG-CON-001', description: 'Un proveedor, cliente o socio comercial no cumple con lo pactado contractualmente.' },
+                    { key: 'incumplimiento-contrato-organizacion', name: 'Incumplimiento de Contrato por la Organización', standard: 'ISO 31000', code: 'LEG-CON-002', description: 'La organización no cumple con una obligación contractual que había asumido.' },
+                    { key: 'terminacion-anticipada-contrato-critico', name: 'Terminación Anticipada de Contrato Crítico', standard: 'ISO 22301, ISO 31000', code: 'LEG-CON-003', description: 'Un contrato relevante para la operación se cancela antes de lo previsto.' },
+                    { key: 'clausula-indemnizacion-activada', name: 'Cláusula de Indemnización Activada', standard: 'ISO 31000', code: 'LEG-CON-004', description: 'Se materializa una obligación de indemnizar a una contraparte según lo pactado en un contrato.' },
+                    { key: 'reclamo-garantia', name: 'Reclamo de Garantía', standard: 'ISO 9001', code: 'LEG-CON-005', description: 'Un cliente exige el cumplimiento de una garantía ofrecida por la organización.' },
+                    { key: 'no-renovacion-contrato-critico', name: 'No Renovación de Contrato Crítico', standard: 'ISO 22301', code: 'LEG-CON-006', description: 'Un contrato esencial para la operación no se renueva al llegar su vencimiento.' },
+                    { key: 'ambiguedad-contractual-disputa', name: 'Ambigüedad Contractual que Genera Disputa', standard: 'ISO 31000', code: 'LEG-CON-007', description: 'Una cláusula mal redactada da lugar a interpretaciones distintas entre las partes.' },
+                ],
+            },
+            'licencias-permisos-operativos': {
+                label: 'Licencias y Permisos Operativos',
+                code: 'LEG-04',
+                threats: [
+                    { key: 'vencimiento-licencia-sin-renovacion', name: 'Vencimiento de Licencia sin Renovación', standard: 'ISO 37301', code: 'LEG-LIC-001', description: 'Una licencia o permiso operativo expira sin haberse renovado a tiempo.' },
+                    { key: 'permiso-insuficiente-alcance-real', name: 'Permiso de Operación Insuficiente para el Alcance Real', standard: 'ISO 37301', code: 'LEG-LIC-002', description: 'La operación real de la organización excede lo autorizado en el permiso vigente.' },
+                    { key: 'falta-permiso-uso-suelo', name: 'Falta de Permiso de Uso de Suelo', standard: 'ISO 37301', code: 'LEG-LIC-003', description: 'La instalación opera sin el permiso de uso de suelo correspondiente.' },
+                    { key: 'perdida-certificacion-exigida-cliente', name: 'Pérdida de Certificación Exigida por Cliente o Autoridad', standard: 'C-TPAT, OEA', code: 'LEG-LIC-004', description: 'La organización pierde una certificación exigida para operar con ciertos clientes o autoridades (ej. C-TPAT, OEA).' },
+                    { key: 'permiso-armamento-seguridad-vencido', name: 'Permiso para Portación o Resguardo de Armamento de Seguridad Vencido o Faltante', standard: 'ASIS, ISO 31000', code: 'LEG-LIC-005', description: 'El personal o la organización carece del permiso vigente para el uso de armamento en funciones de seguridad.' },
+                ],
+            },
+            'propiedad-intelectual': {
+                label: 'Propiedad Intelectual',
+                code: 'LEG-05',
+                threats: [
+                    { key: 'infraccion-marca-patente-por-organizacion', name: 'Infracción de Marca o Patente por la Organización', standard: 'ISO 31000', code: 'LEG-PIN-001', description: 'La organización usa, sin autorización, una marca o patente propiedad de un tercero.' },
+                    { key: 'infraccion-marca-patente-contra-organizacion', name: 'Infracción de Marca o Patente contra la Organización', standard: 'ISO 31000', code: 'LEG-PIN-002', description: 'Un tercero usa sin autorización una marca o patente propiedad de la organización.' },
+                    { key: 'producto-falsificado-cadena-suministro', name: 'Producto Falsificado Detectado en la Cadena de Suministro', standard: 'C-TPAT, ISO 31000', code: 'LEG-PIN-003', description: 'Se identifica mercancía falsificada dentro del inventario o la cadena logística de la organización.' },
+                    { key: 'uso-no-autorizado-marca-terceros', name: 'Uso No Autorizado de la Marca de la Organización por Terceros', standard: 'ISO 31000', code: 'LEG-PIN-004', description: 'Un tercero utiliza indebidamente la imagen, marca o uniformes de la organización.' },
+                ],
+            },
+            'responsabilidad-custodia-terceros': {
+                label: 'Responsabilidad por Custodia de Bienes de Terceros',
+                code: 'LEG-06',
+                threats: [
+                    { key: 'reclamo-perdida-mercancia-custodia', name: 'Reclamo por Pérdida de Mercancía Bajo Custodia', standard: 'ISO 28000', code: 'LEG-CUS-001', description: 'Un cliente reclama la pérdida de bienes que estaban bajo resguardo de la organización.' },
+                    { key: 'reclamo-dano-mercancia-custodia', name: 'Reclamo por Daño a Mercancía Bajo Custodia', standard: 'ISO 28000', code: 'LEG-CUS-002', description: 'Un cliente reclama daño a bienes que estaban bajo resguardo de la organización.' },
+                    { key: 'disputa-alcance-responsabilidad-custodia', name: 'Disputa sobre Alcance de Responsabilidad de Custodia (Bailment)', standard: 'ISO 31000', code: 'LEG-CUS-003', description: 'Desacuerdo con un cliente sobre qué tan responsable es la organización por los bienes de terceros en su poder.' },
+                    { key: 'seguro-custodia-insuficiente', name: 'Insuficiencia de Cobertura de Seguro de Responsabilidad de Custodia', standard: 'ISO 31000', code: 'LEG-CUS-004', description: 'El seguro contratado no cubre el valor real de los bienes de terceros bajo custodia de la organización.' },
+                ],
+            },
+        },
+    },
 };
 
 // Criterios de Riesgo por defecto (Contexto — ISO 31000, cláusula 6.3.4).
