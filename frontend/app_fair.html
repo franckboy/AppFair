@@ -2512,7 +2512,8 @@ document.addEventListener('DOMContentLoaded', () => {
                                 <tr>
                                     <th scope="col" class="px-2 py-3"><input type="checkbox" id="selectAllHistory" /></th>
                                     <th scope="col" class="px-6 py-3">Nombre</th><th scope="col" class="px-6 py-3">Riesgo Inherente</th>
-                                    <th scope="col" class="px-6 py-3">Riesgo Residual</th><th scope="col" class="px-6 py-3">Pérdida Anual</th>
+                                    <th scope="col" class="px-6 py-3">Riesgo Residual</th><th scope="col" class="px-6 py-3">Categoría</th>
+                                    <th scope="col" class="px-6 py-3">Pérdida Anual</th>
                                     <th scope="col" class="px-6 py-3">Fecha</th><th scope="col" class="px-6 py-3">Acciones</th>
                                 </tr>
                             </thead>
@@ -3180,7 +3181,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const tbody = dom.outputs.historyTableBody;
             tbody.innerHTML = '';
             if (state.quick.history.length === 0) {
-                tbody.innerHTML = '<tr id="no-history-row"><td colspan="7" class="text-center py-4">No hay riesgos guardados.</td></tr>';
+                tbody.innerHTML = '<tr id="no-history-row"><td colspan="8" class="text-center py-4">No hay riesgos guardados.</td></tr>';
                 return;
             }
             state.quick.history.forEach(risk => {
@@ -3192,6 +3193,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 // una nota chica bajo el nombre, sin agregar columnas nuevas a la tabla.
                 const desc = (risk.fullData && risk.fullData.riskDescription) || '';
                 const standard = (risk.fullData && risk.fullData.catalogStandard) || '';
+                // Bug real: la tabla mostraba el % de Riesgo Residual en texto plano, sin pasar
+                // por getRiskCategory() (ya usada en los badges en vivo del Paso 1/2) — así que
+                // nunca se veía si ese % era Bajo/Medio/Alto/Crítico, ni si superaba el apetito
+                // de riesgo (rrMax) que tenía este riesgo en particular al guardarse.
+                const rrtRaw = risk.fullData && typeof risk.fullData.RRt === 'number' ? risk.fullData.RRt * 100 : null;
+                const rrMax = risk.fullData && typeof risk.fullData.rrMax === 'number' ? risk.fullData.rrMax : null;
+                const category = rrtRaw !== null ? this.getRiskCategory(rrtRaw, rrMax) : null;
+                const categoryHTML = category
+                    ? `<span class="inline-block px-2 py-1 text-xs font-semibold rounded-full ${category.color} ${category.bgColor}">${category.name}</span>`
+                    : '—';
                 row.innerHTML = `
                     <td class="px-2 py-4"><input type="checkbox" class="history-checkbox" data-id="${risk.id}" /></td>
                     <td class="px-6 py-4 font-medium text-gray-900 whitespace-nowrap" ${desc ? `title="${sanitizeHTML(desc)}"` : ''}>
@@ -3200,6 +3211,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     </td>
                     <td class="px-6 py-4">${risk.ri}</td>
                     <td class="px-6 py-4">${risk.rrt}</td>
+                    <td class="px-6 py-4">${categoryHTML}</td>
                     <td class="px-6 py-4">${risk.ale}</td>
                     <td class="px-6 py-4">${risk.date}</td>
                     <td class="px-6 py-4 text-right">
