@@ -3358,11 +3358,16 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             this.updateAttackerDefenseSummary();
 
+            // El total de Análisis Rápido nunca llega desglosado por categoría (solo pregunta
+            // un costo mínimo/máximo global) — antes esto se metía completo y en silencio en
+            // "Costos de Respuesta", una categoría específica que no necesariamente es la
+            // correcta. Ahora se le pide al usuario, justo al promover, que decida cómo repartir
+            // ese mismo total entre las 9 categorías (ver openLossRedistributionModal). El
+            // reparto es un porcentaje del mismo total, así que la suma de las 9 categorías es
+            // siempre idéntica al total original: repartir no cambia ningún resultado de la
+            // simulación, solo dónde queda registrado.
             const avgCost = (data.costoMinImpacto + data.costoMaxImpacto) / 2;
-            document.getElementById('lm-respuesta-mode').value = avgCost.toFixed(0);
-            document.getElementById('lm-respuesta-min').value = data.costoMinImpacto.toFixed(0);
-            document.getElementById('lm-respuesta-max').value = data.costoMaxImpacto.toFixed(0);
-            this.refreshLossMagnitudeCompactDisplay('respuesta');
+            this.openLossRedistributionModal(data, avgCost);
 
             const tefMode = data.ARO_raw > 1 ? Math.round(data.ARO_raw * 5) : 10;
             document.getElementById('tef-min').value = Math.max(1, Math.round(tefMode * 0.2));
@@ -3378,6 +3383,91 @@ document.addEventListener('DOMContentLoaded', () => {
             // sería descartar en silencio ese cálculo y mostrar una explicación que ya no
             // correspondería al número mostrado.
             this.navigateWizard(1, true);
+        },
+
+        // Al promover desde Análisis Rápido, el total estimado (Costo Mín/Máx) no viene
+        // desglosado por categoría de pérdida — Análisis Rápido es una herramienta de triage
+        // rápido para muchos riesgos (la mayoría nunca se promueve), así que pedir ese desglose
+        // ahí arriba sería innecesario para la mayoría de los casos. En vez de eso se pide aquí,
+        // justo en el momento en que empieza a importar. El reparto es un porcentaje del mismo
+        // total (min/modo/max), así que la suma de las 9 categorías siempre es idéntica al
+        // total original — repartir no altera ningún resultado de la simulación, solo dónde
+        // queda registrado. "Dejar todo en Costos de Respuesta" conserva el comportamiento
+        // anterior para quien no quiera detenerse a repartir.
+        openLossRedistributionModal(data, avgCost) {
+            const currency = state.quickUI.domElements.inputs.currencySelect.value;
+            const fmt = (v) => new Intl.NumberFormat('en-US', { style: 'currency', currency, minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v);
+            const total = { min: data.costoMinImpacto, mode: avgCost, max: data.costoMaxImpacto };
+            const keys = LOSS_FORMS_KEYS;
+            const defaultPct = {};
+            keys.forEach(k => { defaultPct[k] = k === 'respuesta' ? 100 : 0; });
+
+            Modal.title.textContent = 'Distribuir el Impacto Estimado';
+            Modal.body.innerHTML = `
+                <p class="description-text mb-3">
+                    Análisis Rápido estimó un impacto total de <strong>${fmt(total.min)} — ${fmt(total.max)}</strong>
+                    (más probable: ${fmt(total.mode)}) sin desglosarlo por tipo de pérdida. Reparte ese mismo
+                    total entre las categorías de Magnitud de Pérdida de FAIR (debe sumar 100%) — la suma total
+                    no cambia, solo dónde queda registrada.
+                </p>
+                <div id="lm-redistribute-rows" class="space-y-2"></div>
+                <p class="text-sm mt-3">Suma actual: <span id="lm-redistribute-sum">100</span>%
+                    <span id="lm-redistribute-sum-warning" class="text-red-600 hidden ml-2">(debe sumar 100%)</span>
+                </p>
+            `;
+            const rowsEl = Modal.body.querySelector('#lm-redistribute-rows');
+            keys.forEach(k => {
+                const row = document.createElement('div');
+                row.className = 'flex items-center gap-2';
+                row.innerHTML = `
+                    <label for="lm-redistribute-${k}" class="text-sm" style="flex:1">${sanitizeHTML(LOSS_FORM_LABELS.tecnico[k])}</label>
+                    <input type="number" id="lm-redistribute-${k}" class="form-input" style="width:70px" min="0" max="100" value="${defaultPct[k]}">
+                    <span class="text-sm">%</span>
+                `;
+                rowsEl.appendChild(row);
+            });
+            Modal.footer.innerHTML = `
+                <button id="lm-redistribute-skip-btn" class="btn btn-secondary">Dejar todo en "Costos de Respuesta"</button>
+                <button id="lm-redistribute-confirm-btn" class="btn btn-primary">Confirmar Distribución</button>
+            `;
+            Modal.modal.classList.remove('hidden');
+
+            const inputs = keys.map(k => document.getElementById(`lm-redistribute-${k}`));
+            const sumEl = document.getElementById('lm-redistribute-sum');
+            const warnEl = document.getElementById('lm-redistribute-sum-warning');
+            const confirmBtn = document.getElementById('lm-redistribute-confirm-btn');
+
+            const recomputeSum = () => {
+                const sum = inputs.reduce((acc, inp) => acc + getSafeNumber(inp), 0);
+                sumEl.textContent = sum;
+                const ok = Math.abs(sum - 100) < 0.001;
+                warnEl.classList.toggle('hidden', ok);
+                confirmBtn.disabled = !ok;
+            };
+            inputs.forEach(inp => inp.addEventListener('input', recomputeSum));
+            recomputeSum();
+
+            const applyDistribution = (pctByKey) => {
+                keys.forEach(k => {
+                    const pct = (pctByKey[k] || 0) / 100;
+                    document.getElementById(`lm-${k}-min`).value = (total.min * pct).toFixed(0);
+                    document.getElementById(`lm-${k}-mode`).value = (total.mode * pct).toFixed(0);
+                    document.getElementById(`lm-${k}-max`).value = (total.max * pct).toFixed(0);
+                    this.refreshLossMagnitudeCompactDisplay(k);
+                });
+            };
+
+            document.getElementById('lm-redistribute-skip-btn').addEventListener('click', () => {
+                applyDistribution(defaultPct);
+                Modal.hide();
+            });
+            confirmBtn.addEventListener('click', () => {
+                if (confirmBtn.disabled) return;
+                const pctByKey = {};
+                keys.forEach((k, i) => { pctByKey[k] = getSafeNumber(inputs[i]); });
+                applyDistribution(pctByKey);
+                Modal.hide();
+            });
         },
 
         // Registra la promesa de un autocálculo disparado por un listener "fire and forget"
