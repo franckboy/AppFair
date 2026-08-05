@@ -1717,6 +1717,16 @@ document.addEventListener('DOMContentLoaded', () => {
         bajo: 'bg-green-50 border-green-500 text-green-800',
     }[severity] || 'bg-gray-50 border-gray-400 text-gray-700');
 
+    // Mismo mapeo que severityToClasses, pero en hex — para el mapa de calor consolidado, que
+    // se dibuja en un <canvas> (Chart.js) y no puede usar clases de Tailwind. Mismos tonos que
+    // los bordes de los badges de arriba, para que el color signifique lo mismo en toda la app.
+    const severityToHex = (severity) => ({
+        critico: '#DC2626', // red-600
+        alto: '#F97316',    // orange-500
+        medio: '#EAB308',   // yellow-500
+        bajo: '#22C55E',    // green-500
+    }[severity] || '#7C3AED'); // severidad desconocida/faltante: el morado que ya se usaba antes
+
     // --- Valores por Defecto de la Organización ---
     // Datos que casi no cambian entre un análisis y otro (moneda, nivel de defensa típico,
     // dueño del riesgo, criterio de calidad de datos). Se capturan una sola vez aquí y se
@@ -4938,7 +4948,7 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('fair-register-legend').innerHTML = `
                 <p class="font-semibold text-gray-700 mb-2">Riesgos en el mapa</p>
                 <ol class="space-y-1">
-                    ${threatRegister.map((r, i) => `<li><strong>${i + 1}.</strong> ${sanitizeHTML(r.riskName)}</li>`).join('')}
+                    ${threatRegister.map((r, i) => `<li><span style="display:inline-block;width:8px;height:8px;border-radius:9999px;margin-right:4px;background-color:${severityToHex(r.severity)}"></span><strong>${i + 1}.</strong> ${sanitizeHTML(r.riskName)}</li>`).join('')}
                 </ol>
                 ${opportunityCount > 0 ? `<p class="text-xs text-gray-500 mt-2">${opportunityCount} oportunidad${opportunityCount === 1 ? '' : 'es'} no se muestra${opportunityCount === 1 ? '' : 'n'} aquí — un beneficio esperado no es un riesgo a tratar. Están en la tabla de abajo.</p>` : ''}`;
 
@@ -4948,8 +4958,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 data: {
                     datasets: [{
                         label: 'Riesgos FAIR',
-                        data: threatRegister.map(r => ({ x: r.impactPercent, y: r.probabilityPercent, name: r.riskName })),
-                        pointBackgroundColor: '#7C3AED',
+                        // Antes cada punto era del mismo morado fijo sin importar qué tan grave
+                        // fuera el riesgo — el color solo venía del fondo por cuadrante (zona),
+                        // no del punto en sí. Ahora cada punto usa el mismo color que ya tiene su
+                        // badge de Evaluación en la tabla/PDF (severity: crítico/alto/medio/bajo).
+                        data: threatRegister.map(r => ({ x: r.impactPercent, y: r.probabilityPercent, name: r.riskName, level: r.evaluationLevel })),
+                        pointBackgroundColor: threatRegister.map(r => severityToHex(r.severity)),
                         pointBorderColor: 'white',
                         pointRadius: 10,
                         pointHoverRadius: 13,
@@ -4965,7 +4979,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         legend: { display: false },
                         tooltip: {
                             callbacks: {
-                                label: (context) => `${context.dataIndex + 1}. ${context.raw.name}: Impacto ${context.raw.x.toFixed(0)}%, Probabilidad ${context.raw.y.toFixed(0)}%`
+                                label: (context) => `${context.dataIndex + 1}. ${context.raw.name}: Impacto ${context.raw.x.toFixed(0)}%, Probabilidad ${context.raw.y.toFixed(0)}% — ${context.raw.level}`
                             }
                         }
                     }
