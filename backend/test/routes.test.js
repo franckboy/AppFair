@@ -361,3 +361,64 @@ test('dos activos pueden compartir el mismo nombre sin pisarse (identificados po
     await request(app).delete(`/api/assets/${a.body.entry.id}`).set('X-API-Key', TEST_API_KEY);
     await request(app).delete(`/api/assets/${b.body.entry.id}`).set('X-API-Key', TEST_API_KEY);
 });
+
+// --- Historial unificado de riesgos (nace en Análisis Rápido) ---
+
+test('GET /api/risks sin header X-API-Key responde 401', async () => {
+    const res = await request(app).get('/api/risks');
+    assert.strictEqual(res.status, 401);
+});
+
+test('POST /api/risks sin name responde 400', async () => {
+    const res = await request(app).post('/api/risks').set('X-API-Key', TEST_API_KEY).send({ ri: '10%' });
+    assert.strictEqual(res.status, 400);
+});
+
+test('flujo completo del Historial unificado: POST crea, GET lo lista, PUT lo actualiza, DELETE lo quita', async () => {
+    const postRes = await request(app)
+        .post('/api/risks')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ name: 'Robo armado en bodega', ri: '42.75%', rrt: '10.20%', ale: '$505.00', date: '5/8/2026', fullData: { riskName: 'Robo armado en bodega', RRt: 0.102, rrMax: 25 } });
+    assert.strictEqual(postRes.status, 201);
+    assert.ok(postRes.body.entry.id, 'debe generar un id único, no depender del nombre');
+    const id = postRes.body.entry.id;
+
+    const getRes = await request(app).get('/api/risks').set('X-API-Key', TEST_API_KEY);
+    assert.strictEqual(getRes.status, 200);
+    assert.ok(getRes.body.risks.some((r) => r.id === id && r.name === 'Robo armado en bodega'));
+    assert.strictEqual(getRes.body.risks.find((r) => r.id === id).fullData.RRt, 0.102, 'el body flexible (fullData) debe pasar tal cual');
+
+    const putRes = await request(app)
+        .put(`/api/risks/${id}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ name: 'Robo armado en bodega (actualizado)', ri: '50.00%', rrt: '15.00%', ale: '$700.00', date: '5/8/2026', fullData: { riskName: 'Robo armado en bodega (actualizado)', RRt: 0.15, rrMax: 25 } });
+    assert.strictEqual(putRes.status, 200);
+    assert.strictEqual(putRes.body.entry.name, 'Robo armado en bodega (actualizado)');
+    assert.strictEqual(putRes.body.entry.id, id, 'actualizar no debe cambiar el id (misma identidad)');
+
+    const delRes = await request(app).delete(`/api/risks/${id}`).set('X-API-Key', TEST_API_KEY);
+    assert.strictEqual(delRes.status, 200);
+
+    const getRes2 = await request(app).get('/api/risks').set('X-API-Key', TEST_API_KEY);
+    assert.ok(!getRes2.body.risks.some((r) => r.id === id));
+});
+
+test('PUT /api/risks/:id con id inexistente responde 404', async () => {
+    const res = await request(app)
+        .put('/api/risks/id-que-no-existe')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ name: 'X' });
+    assert.strictEqual(res.status, 404);
+});
+
+test('dos riesgos pueden compartir el mismo nombre sin pisarse (identificados por id, no por nombre)', async () => {
+    const a = await request(app).post('/api/risks').set('X-API-Key', TEST_API_KEY).send({ name: 'Robo en bodega' });
+    const b = await request(app).post('/api/risks').set('X-API-Key', TEST_API_KEY).send({ name: 'Robo en bodega' });
+    assert.notStrictEqual(a.body.entry.id, b.body.entry.id);
+
+    const getRes = await request(app).get('/api/risks').set('X-API-Key', TEST_API_KEY);
+    assert.strictEqual(getRes.body.risks.filter((x) => x.name === 'Robo en bodega').length, 2);
+
+    await request(app).delete(`/api/risks/${a.body.entry.id}`).set('X-API-Key', TEST_API_KEY);
+    await request(app).delete(`/api/risks/${b.body.entry.id}`).set('X-API-Key', TEST_API_KEY);
+});

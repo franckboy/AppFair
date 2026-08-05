@@ -14,6 +14,7 @@ const createSimulateRouter = require('./src/routes/simulate');
 const createTreatmentRouter = require('./src/routes/treatment');
 const createRegisterRouter = require('./src/routes/register');
 const createAssetsRouter = require('./src/routes/assets');
+const createRisksRouter = require('./src/routes/risks');
 
 const app = express();
 const store = new JsonStore();
@@ -63,6 +64,7 @@ app.use('/api/simulate', createSimulateRouter(store));
 app.use('/api/treatment', createTreatmentRouter());
 app.use('/api/register', createRegisterRouter(store));
 app.use('/api/assets', createAssetsRouter(store));
+app.use('/api/risks', createRisksRouter(store));
 
 // Manejador de errores genérico — evita que una excepción no controlada tumbe el proceso
 app.use((err, req, res, next) => {

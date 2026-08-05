@@ -3118,18 +3118,25 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         },
 
-        loadHistory() {
-            const savedHistory = localStorage.getItem('riskHistory');
-            if (savedHistory) {
-                state.quick.history = JSON.parse(savedHistory);
+        // Antes esto vivía solo en localStorage del navegador — un riesgo triageado en Análisis
+        // Rápido pero nunca promovido a FAIR no existía para el backend, no sobrevivía a
+        // limpiar el navegador, y no se veía desde otro dispositivo. Ahora se persiste desde
+        // que se crea (ver App.QuickAnalysis.saveRisk()), identificado por un id estable — no
+        // por nombre, para no crear duplicados fantasma si dos riesgos comparten nombre.
+        async loadHistory() {
+            try {
+                const res = await App.Api.request('/api/risks');
+                state.quick.history = res.risks;
+            } catch (e) {
+                showToast(e.userMessage || 'No se pudo cargar el historial de riesgos.');
             }
+            this.renderHistory();
         },
 
-        saveRisk() {
+        async saveRisk() {
             if(!this.validateQuickForm()) return;
             const data = state.quick.currentRiskData;
             const newRisk = {
-                id: Date.now(),
                 name: data.riskName,
                 ri: `${(data.RI * 100).toFixed(2)}%`,
                 rrt: `${(data.RRt * 100).toFixed(2)}%`,
@@ -3137,10 +3144,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 date: new Date().toLocaleDateString('es-MX'),
                 fullData: { ...data }
             };
-            state.quick.history.push(newRisk);
-            localStorage.setItem('riskHistory', JSON.stringify(state.quick.history));
-            this.renderHistory();
-            showToast("Riesgo guardado exitosamente.");
+            try {
+                await App.Api.request('/api/risks', { method: 'POST', body: newRisk });
+                await this.loadHistory();
+                showToast("Riesgo guardado exitosamente.");
+            } catch (e) {
+                showToast(e.userMessage || 'No se pudo guardar el riesgo.');
+            }
         },
         
         loadRisk(id) {
@@ -3236,10 +3246,13 @@ document.addEventListener('DOMContentLoaded', () => {
         },
 
         deleteRisk(id) {
-            Modal.confirm('¿Estás seguro de que quieres eliminar este riesgo del historial?', () => {
-                state.quick.history = state.quick.history.filter(risk => risk.id != id);
-                localStorage.setItem('riskHistory', JSON.stringify(state.quick.history));
-                this.renderHistory();
+            Modal.confirm('¿Estás seguro de que quieres eliminar este riesgo del historial?', async () => {
+                try {
+                    await App.Api.request(`/api/risks/${id}`, { method: 'DELETE' });
+                    await this.loadHistory();
+                } catch (e) {
+                    showToast(e.userMessage || 'No se pudo eliminar el riesgo.');
+                }
             });
         },
 
@@ -3249,9 +3262,12 @@ document.addEventListener('DOMContentLoaded', () => {
         },
 
         promoteSelectedToFair() {
-            const selectedIds = Array.from(document.querySelectorAll('.history-checkbox:checked')).map(cb => parseInt(cb.dataset.id));
+            // Bug real: parseInt() asumía que risk.id siempre era un número (Date.now()). Ahora
+            // que el id es un UUID del backend, parseInt('a3f...') da NaN y ninguna selección
+            // coincidía nunca — se compara el string tal cual, sin convertir.
+            const selectedIds = Array.from(document.querySelectorAll('.history-checkbox:checked')).map(cb => cb.dataset.id);
             const selectedRisks = state.quick.history
-                .filter(risk => selectedIds.includes(risk.id))
+                .filter(risk => selectedIds.includes(String(risk.id)))
                 .map(risk => risk.fullData);
             
             if (selectedRisks.length > 0) {
