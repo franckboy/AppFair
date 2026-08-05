@@ -1077,21 +1077,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 3000);
     };
 
-    // Genera las zonas del mapa de calor 2D (Impacto x Probabilidad) a partir de las bandas
-    // "Alto" y "Crítico" configuradas en los Criterios de Riesgo, en vez de usar números fijos.
-    const getRiskMatrixZones = () => {
-        const { alto, critico } = state.config.riskCriteria.rrtBands;
-        return [
-            { level: 'Bajo', color: '#90EE90', textColor: '#000', x: [0, alto], y: [0, alto] },
-            { level: 'Medio', color: '#FFD700', textColor: '#000', x: [alto, 100], y: [0, alto] },
-            { level: 'Medio', color: '#FFD700', textColor: '#000', x: [0, alto], y: [alto, 100] },
-            { level: 'Alto', color: '#FF8C00', textColor: '#fff', x: [alto, 100], y: [alto, 100] },
-            { level: 'Crítico', color: '#B22222', textColor: '#fff', x: [critico, 100], y: [critico, 100] },
-            { level: 'Alto', color: '#FF8C00', textColor: '#fff', x: [critico, 100], y: [alto, critico] },
-            { level: 'Alto', color: '#FF8C00', textColor: '#fff', x: [alto, critico], y: [critico, 100] },
-        ];
-    };
-
     // --- Custom Modal Logic ---
     const Modal = {
         modal: document.getElementById('customModal'),
@@ -1774,43 +1759,6 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         },
 
-        // --- Evaluación del Riesgo (ISO 31000, cláusula 6.4.4) ---
-        // Compara un resultado de análisis contra los Criterios de Riesgo definidos
-        // y devuelve una clasificación con su justificación explícita — no solo un
-        // color, sino la razón concreta de por qué se clasificó así.
-
-        evaluateResidualRisk(value, hardCap = null) {
-            const { medio, alto, critico } = state.config.riskCriteria.rrtBands;
-
-            if (hardCap !== null && hardCap > 0 && value > hardCap) {
-                return {
-                    level: 'Inaceptable', classes: 'bg-black text-white border-black',
-                    justification: `Supera el límite máximo aceptable definido para este riesgo específico (${hardCap.toFixed(1)}%).`
-                };
-            }
-            if (value > critico) {
-                return {
-                    level: 'Crítico', classes: 'bg-red-100 text-red-800 border-red-600',
-                    justification: `Supera el umbral Crítico (${critico}%) por ${(value - critico).toFixed(1)} puntos porcentuales.`
-                };
-            }
-            if (value > alto) {
-                return {
-                    level: 'Alto', classes: 'bg-orange-100 text-orange-800 border-orange-500',
-                    justification: `Está en la banda Alta (entre ${alto}% y ${critico}%). Requiere tratamiento.`
-                };
-            }
-            if (value > medio) {
-                return {
-                    level: 'Medio', classes: 'bg-yellow-100 text-yellow-800 border-yellow-500',
-                    justification: `Está en la banda Media (entre ${medio}% y ${alto}%).`
-                };
-            }
-            return {
-                level: 'Bajo', classes: 'bg-green-100 text-green-800 border-green-500',
-                justification: `Está por debajo del umbral Medio (${medio}%). No requiere tratamiento prioritario.`
-            };
-        },
     };
 
     // La evaluación de resultados FAIR (Crítico/Alto/Medio/Bajo + justificación) ahora la
