@@ -84,7 +84,18 @@ framework nuevo por ahora.
   Awesome) siguen cargándose igual que antes. Cambiar el despliegue para servir la build de
   Vite queda para más adelante, cuando la Fase 3 (módulos ES) le dé más contenido real que
   optimizar.
-- **Fases 2-3 (pendientes)**: build formal de Tailwind, y dividir el script en módulos ES.
+- **Fase 2 (hecha)**: build formal de Tailwind CSS. Antes, el bloque `<style>` pegado en
+  `app_fair.html` se regeneraba a mano con un proceso de 4 pasos que ni siquiera garantizaba
+  tener guardado el `input.css` original. Ahora la fuente vive versionada en
+  `frontend/src/tailwind-input.css` + `frontend/tailwind.config.js`, y
+  `cd frontend && npm run build:css` (script en `frontend/scripts/build-css.js`) la recompila
+  e inserta en `app_fair.html` en un solo paso. De paso corrigió una desincronización real: 7
+  clases usadas en el HTML/JS actual (`border-blue-400`, `flex-shrink-0`, `items-start`,
+  `list-disc`, `list-inside`, `pr-3`, `text-blue-900` — el banner de "reanudar análisis", la
+  nota de ROI, el padding de la tabla de magnitud de pérdida y la lista de sensibilidad) no
+  tenían estilo porque el bloque pegado nunca se había regenerado desde que se agregaron. El
+  CSS sigue sirviéndose igual que antes (bloque estático en el HTML, sin build en producción).
+- **Fase 3 (pendiente)**: dividir el script en módulos ES.
 
 ## Licencia
 
