@@ -632,8 +632,34 @@
                         no tienes que hacer nada extra. El mapa de calor de abajo posiciona cada riesgo según su Pérdida
                         Anual Esperada (eje X) y la probabilidad de superar tu umbral de excedencia (eje Y).
                     </p>
+
+                    <!-- Misma tabla concentrada que en Análisis Rápido (ver #quick-concentrated-table-body) — se
+                         mantiene sincronizada en ambos lugares por App.FairRegister.renderConcentratedTable(),
+                         a propósito para no tener dos versiones distintas de la misma información. -->
+                    <div class="flex justify-between items-center mb-2 flex-wrap gap-2">
+                        <h3 class="text-lg font-semibold text-gray-800">Riesgos en el Registro</h3>
+                        <button id="fair-register-promote-selected-btn" class="btn btn-success" disabled><i class="fas fa-level-up-alt mr-2"></i>Analizar Selección con FAIR</button>
+                    </div>
+                    <p class="description-text mb-2">
+                        Todos tus riesgos, desde que se crean en Análisis Rápido hasta que se analizan por completo con FAIR — el
+                        número (#) es su posición actual en la lista, no un id fijo: si eliminas uno, el siguiente toma su lugar.
+                        Clic en "Simular" para ver el detalle de cualquiera ya analizado con FAIR (hasta 10,000 simulaciones Monte Carlo por corrida).
+                    </p>
+                    <div class="overflow-x-auto mb-8">
+                        <table class="w-full text-sm">
+                            <thead>
+                                <tr class="text-left border-b">
+                                    <th class="py-2"><input type="checkbox" id="fair-register-select-all" /></th>
+                                    <th>#</th><th>Riesgo</th><th>Etapa</th><th>Riesgo Inherente</th><th>Riesgo Residual</th><th>Categoría</th>
+                                    <th>Activo</th><th>Impacto</th><th>CVaR 95%</th><th>Evaluación</th><th>Fecha</th><th>Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="fair-register-table-body"></tbody>
+                        </table>
+                    </div>
+
                     <div id="fair-register-empty" class="text-center text-gray-500 py-8">
-                        Aún no has corrido ninguna simulación FAIR. En cuanto ejecutes una, aparecerá aquí.
+                        Aún no has corrido ninguna simulación FAIR. En cuanto ejecutes una, el mapa de calor, Pareto y sensibilidad consolidada aparecen aquí.
                     </div>
                     <div id="fair-register-content" class="hidden">
                         <div class="flex justify-end mb-4">
@@ -659,23 +685,6 @@
                         <h3 class="text-lg font-semibold text-gray-800 mb-2">Sensibilidad Consolidada</h3>
                         <p class="description-text mb-2">Promedio de qué tanto influye cada variable en el resultado, considerando todos los riesgos guardados.</p>
                         <div id="fair-consolidated-sensitivity-list" class="mb-8"></div>
-
-                        <h3 class="text-lg font-semibold text-gray-800 mb-2">Riesgos en el Registro</h3>
-                        <p class="description-text mb-2">
-                            Todos tus riesgos, desde que se crean en Análisis Rápido hasta que se analizan por completo con FAIR — el
-                            número (#) es su posición actual en la lista, no un id fijo: si eliminas uno, el siguiente toma su lugar.
-                            Clic en "Simular" para ver el detalle de cualquiera ya analizado con FAIR (hasta 10,000 simulaciones Monte Carlo por corrida).
-                        </p>
-                        <div class="overflow-x-auto mb-8">
-                            <table class="w-full text-sm">
-                                <thead>
-                                    <tr class="text-left border-b">
-                                        <th class="py-2">#</th><th>Riesgo</th><th>Etapa</th><th>Activo</th><th>Impacto</th><th>CVaR 95%</th><th>Evaluación</th><th>Fecha</th><th>Acciones</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="fair-register-table-body"></tbody>
-                            </table>
-                        </div>
 
                         <div id="fair-register-simulation" class="hidden fair-section bg-blue-50 mb-8">
                             <div class="flex justify-between items-center mb-3">
@@ -1565,7 +1574,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     App.Navigation = {
         init() {
-            document.getElementById('nav-quick').addEventListener('click', () => this.switchPage('quick'));
+            document.getElementById('nav-quick').addEventListener('click', () => {
+                this.switchPage('quick');
+                // La tabla concentrada de Análisis Rápido es la misma que la de Registro de
+                // Riesgos (ver App.FairRegister.renderConcentratedTable) — sin esto, un riesgo
+                // analizado/simulado en FAIR mientras se estaba en otra página no se reflejaba
+                // aquí (etapa/CVaR/Evaluación) hasta la próxima vez que se guardara/borrara algo
+                // desde Análisis Rápido.
+                App.QuickAnalysis.loadHistory();
+            });
             document.getElementById('nav-fair').addEventListener('click', () => this.switchPage('fair'));
             document.getElementById('nav-register').addEventListener('click', () => {
                 this.switchPage('register');
@@ -2536,8 +2553,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     </section>
                 </div>
                 <section id="historySection" class="mt-10">
-                    <div class="flex justify-between items-center mb-4">
-                        <h2 class="text-2xl font-semibold text-gray-800">Historial de Riesgos Guardados</h2>
+                    <!-- Misma tabla concentrada que en Registro de Riesgos (ver #fair-register-table-body) —
+                         una sola fuente de verdad, dibujada en los dos lugares por
+                         App.FairRegister.renderConcentratedTable(). -->
+                    <div class="flex justify-between items-center mb-4 flex-wrap gap-2">
+                        <h2 class="text-2xl font-semibold text-gray-800">Riesgos Guardados</h2>
                         <button id="promoteSelectedBtn" class="btn btn-success" disabled><i class="fas fa-level-up-alt mr-2"></i>Analizar Selección con FAIR</button>
                     </div>
                     <div class="bg-white p-4 rounded-lg shadow-md overflow-x-auto">
@@ -2545,14 +2565,17 @@ document.addEventListener('DOMContentLoaded', () => {
                             <thead class="text-xs text-gray-700 uppercase bg-gray-50">
                                 <tr>
                                     <th scope="col" class="px-2 py-3"><input type="checkbox" id="selectAllHistory" /></th>
-                                    <th scope="col" class="px-6 py-3">Nombre</th><th scope="col" class="px-6 py-3">Riesgo Inherente</th>
-                                    <th scope="col" class="px-6 py-3">Riesgo Residual</th><th scope="col" class="px-6 py-3">Categoría</th>
-                                    <th scope="col" class="px-6 py-3">Pérdida Anual</th>
-                                    <th scope="col" class="px-6 py-3">Fecha</th><th scope="col" class="px-6 py-3">Acciones</th>
+                                    <th scope="col" class="px-6 py-3">#</th>
+                                    <th scope="col" class="px-6 py-3">Riesgo</th><th scope="col" class="px-6 py-3">Etapa</th>
+                                    <th scope="col" class="px-6 py-3">Riesgo Inherente</th><th scope="col" class="px-6 py-3">Riesgo Residual</th>
+                                    <th scope="col" class="px-6 py-3">Categoría</th><th scope="col" class="px-6 py-3">Activo</th>
+                                    <th scope="col" class="px-6 py-3">Impacto</th><th scope="col" class="px-6 py-3">CVaR 95%</th>
+                                    <th scope="col" class="px-6 py-3">Evaluación</th><th scope="col" class="px-6 py-3">Fecha</th>
+                                    <th scope="col" class="px-6 py-3">Acciones</th>
                                 </tr>
                             </thead>
-                            <tbody id="historyTableBody">
-                                <tr id="no-history-row"><td colspan="7" class="text-center py-4">No hay riesgos guardados.</td></tr>
+                            <tbody id="quick-concentrated-table-body">
+                                <tr><td colspan="13" class="text-center py-4">No hay riesgos guardados.</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -2578,7 +2601,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
             this.updateBreakdowns();
             this.calculateAll();
-            this.renderHistory();
         },
 
         cacheDOMElements() {
@@ -2619,7 +2641,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     resultadoRRt: document.getElementById('resultadoRRt'), resultadoIC: document.getElementById('resultadoIC'),
                     categoriaRiesgo: document.getElementById('categoriaRiesgo'), resultadoSLE: document.getElementById('resultadoSLE'),
                     categoriaRiesgoJustificacion: document.getElementById('categoriaRiesgo-justificacion'),
-                    resultadoALE: document.getElementById('resultadoALE'), historyTableBody: document.getElementById('historyTableBody'),
+                    resultadoALE: document.getElementById('resultadoALE'),
                     riskListContainer: document.getElementById('risk-list-container')
                 },
                 wizard: { step1: document.querySelector('#quickAnalysisPage #step-1'), step2: document.querySelector('#quickAnalysisPage #step-2') }
@@ -2665,8 +2687,8 @@ document.addEventListener('DOMContentLoaded', () => {
             dom.buttons.showResidualBtn.addEventListener('click', () => this.updateRiskMatrixView('residual'));
             dom.buttons.downloadMatrixBtn.addEventListener('click', () => this.downloadMatrix());
             dom.buttons.promoteToFairBtn.addEventListener('click', () => this.promoteToFair());
-            dom.buttons.promoteSelectedBtn.addEventListener('click', () => this.promoteSelectedToFair());
-            dom.buttons.selectAllHistory.addEventListener('change', (e) => this.toggleSelectAll(e.target.checked));
+            dom.buttons.promoteSelectedBtn.addEventListener('click', () => App.FairRegister.promoteSelectedFromTable('quick-concentrated-table-body'));
+            dom.buttons.selectAllHistory.addEventListener('change', (e) => App.FairRegister.toggleSelectAll('quick-concentrated-table-body', e.target.checked));
             dom.inputs.profileSelect.addEventListener('change', () => this.updateBreakdowns());
             dom.inputs.attackerProfileSelect.addEventListener('change', () => this.updateAttackerDefenseInfo('attacker'));
             dom.inputs.defenseProfileSelect.addEventListener('change', () => this.updateAttackerDefenseInfo('defense'));
@@ -3164,7 +3186,11 @@ document.addEventListener('DOMContentLoaded', () => {
             } catch (e) {
                 showToast(e.userMessage || 'No se pudo cargar el historial de riesgos.');
             }
-            this.renderHistory();
+            // La tabla en sí ya no se dibuja aquí — vive en App.FairRegister (la misma tabla
+            // concentrada que Registro de Riesgos, ver #quick-concentrated-table-body arriba en
+            // el HTML), para que Análisis Rápido y Registro de Riesgos siempre muestren
+            // exactamente lo mismo en vez de dos versiones distintas de la misma información.
+            await App.FairRegister.loadRiskRegister();
         },
 
         async saveRisk() {
@@ -3230,66 +3256,10 @@ document.addEventListener('DOMContentLoaded', () => {
             Modal.alert(`Análisis para <strong>${sanitizeHTML(data.riskName)}</strong> cargado desde el historial.`, "Carga Exitosa");
         },
         
-        toggleSelectAll(checked) {
-            const checkboxes = document.querySelectorAll('.history-checkbox');
-            checkboxes.forEach(cb => cb.checked = checked);
-            this.updatePromoteSelectedBtnState();
-        },
-
-        updatePromoteSelectedBtnState() {
-            const dom = state.quickUI.domElements;
-            const anyChecked = document.querySelectorAll('.history-checkbox:checked').length > 0;
-            dom.buttons.promoteSelectedBtn.disabled = !anyChecked;
-        },
-
-        renderHistory() {
-            const dom = state.quickUI.domElements;
-            const tbody = dom.outputs.historyTableBody;
-            tbody.innerHTML = '';
-            if (state.quick.history.length === 0) {
-                tbody.innerHTML = '<tr id="no-history-row"><td colspan="8" class="text-center py-4">No hay riesgos guardados.</td></tr>';
-                return;
-            }
-            state.quick.history.forEach(risk => {
-                const row = tbody.insertRow();
-                row.className = 'bg-white border-b hover:bg-gray-50';
-                // La Descripción y la norma del Catálogo (si el riesgo vino de ahí) no tenían
-                // dónde verse en el Historial — antes solo existían dentro de fullData, sin
-                // ninguna forma de consultarlas desde aquí. Se muestran como tooltip (title) y
-                // una nota chica bajo el nombre, sin agregar columnas nuevas a la tabla.
-                const desc = (risk.fullData && risk.fullData.riskDescription) || '';
-                const standard = (risk.fullData && risk.fullData.catalogStandard) || '';
-                // Bug real: la tabla mostraba el % de Riesgo Residual en texto plano, sin pasar
-                // por getRiskCategory() (ya usada en los badges en vivo del Paso 1/2) — así que
-                // nunca se veía si ese % era Bajo/Medio/Alto/Crítico, ni si superaba el apetito
-                // de riesgo (rrMax) que tenía este riesgo en particular al guardarse.
-                const rrtRaw = risk.fullData && typeof risk.fullData.RRt === 'number' ? risk.fullData.RRt * 100 : null;
-                const rrMax = risk.fullData && typeof risk.fullData.rrMax === 'number' ? risk.fullData.rrMax : null;
-                const category = rrtRaw !== null ? this.getRiskCategory(rrtRaw, rrMax) : null;
-                const categoryHTML = category
-                    ? `<span class="inline-block px-2 py-1 text-xs font-semibold rounded-full ${category.color} ${category.bgColor}">${category.name}</span>`
-                    : '—';
-                row.innerHTML = `
-                    <td class="px-2 py-4"><input type="checkbox" class="history-checkbox" data-id="${risk.id}" /></td>
-                    <td class="px-6 py-4 font-medium text-gray-900 whitespace-nowrap" ${desc ? `title="${sanitizeHTML(desc)}"` : ''}>
-                        ${sanitizeHTML(risk.name)}
-                        ${standard ? `<br><span class="text-xs font-normal text-gray-500">📋 ${sanitizeHTML(standard)}</span>` : ''}
-                    </td>
-                    <td class="px-6 py-4">${risk.ri}</td>
-                    <td class="px-6 py-4">${risk.rrt}</td>
-                    <td class="px-6 py-4">${categoryHTML}</td>
-                    <td class="px-6 py-4">${risk.ale}</td>
-                    <td class="px-6 py-4">${risk.date}</td>
-                    <td class="px-6 py-4 text-right">
-                        <button class="font-medium text-blue-600 hover:underline" data-action="load" data-id="${risk.id}">Cargar</button>
-                        <button class="font-medium text-red-600 hover:underline ml-2" data-action="delete" data-id="${risk.id}">Eliminar</button>
-                    </td>
-                `;
-                row.querySelector('.history-checkbox').addEventListener('change', () => this.updatePromoteSelectedBtnState());
-                row.querySelector(`button[data-action="delete"]`).addEventListener('click', (e) => this.deleteRisk(e.target.dataset.id));
-                row.querySelector(`button[data-action="load"]`).addEventListener('click', (e) => this.loadRisk(e.target.dataset.id));
-            });
-        },
+        // La tabla del Historial (selección, columnas, checkboxes) vive ahora en
+        // App.FairRegister.renderConcentratedTable() — es la misma tabla que Registro de
+        // Riesgos, dibujada en los dos lugares. Ver toggleSelectAll/promoteSelectedFromTable
+        // ahí, y buildConcentratedList() para de dónde salen Riesgo Inherente/Residual.
 
         deleteRisk(id) {
             Modal.confirm('¿Estás seguro de que quieres eliminar este riesgo del historial?', async () => {
@@ -3306,21 +3276,6 @@ document.addEventListener('DOMContentLoaded', () => {
             App.Navigation.switchPage('fair');
             App.FairAnalysis.receiveData([state.quick.currentRiskData]);
         },
-
-        promoteSelectedToFair() {
-            // Bug real: parseInt() asumía que risk.id siempre era un número (Date.now()). Ahora
-            // que el id es un UUID del backend, parseInt('a3f...') da NaN y ninguna selección
-            // coincidía nunca — se compara el string tal cual, sin convertir.
-            const selectedIds = Array.from(document.querySelectorAll('.history-checkbox:checked')).map(cb => cb.dataset.id);
-            const selectedRisks = state.quick.history
-                .filter(risk => selectedIds.includes(String(risk.id)))
-                .map(risk => risk.fullData);
-            
-            if (selectedRisks.length > 0) {
-                App.Navigation.switchPage('fair');
-                App.FairAnalysis.receiveData(selectedRisks);
-            }
-        }
     };
 
     // --- FAIR Analysis Module ---
@@ -3477,6 +3432,8 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             document.getElementById('fair-export-report-btn').addEventListener('click', () => App.FairExport.exportFairReport());
             document.getElementById('fair-export-consolidated-btn').addEventListener('click', () => App.FairExport.exportConsolidatedReport());
+            document.getElementById('fair-register-promote-selected-btn').addEventListener('click', () => App.FairRegister.promoteSelectedFromTable('fair-register-table-body'));
+            document.getElementById('fair-register-select-all').addEventListener('change', (e) => App.FairRegister.toggleSelectAll('fair-register-table-body', e.target.checked));
             document.getElementById('fair-register-simulation-close').addEventListener('click', () => {
                 document.getElementById('fair-register-simulation').classList.add('hidden');
             });
@@ -5002,11 +4959,26 @@ document.addEventListener('DOMContentLoaded', () => {
                         ? App.QuickAnalysis.getRiskCategory(risk.fullData.RRt * 100, risk.fullData.rrMax)
                         : null,
                     quickAle: risk.ale || null,
+                    // Riesgo Inherente/Residual (% de Análisis Rápido) — ya vienen formateados
+                    // ("31.00%") desde App.QuickAnalysis.saveRisk(), se guardan en el riesgo
+                    // directamente (no dentro de fullData). Solo existen para riesgos que
+                    // pasaron por Análisis Rápido — un riesgo armado solo en FAIR (sin
+                    // sourceRiskId) no tiene equivalente en esta escala y queda como '—'.
+                    riesgoInherente: risk.ri || null,
+                    riesgoResidual: risk.rrt || null,
                     asset: (fairEntry && fairEntry.asset) || (risk.fullData && risk.fullData.asset) || '—',
                     fairEntry,
                     // Para el botón "Analizar con FAIR" en filas de triage — mismo objeto que
                     // App.FairAnalysis.receiveData() ya espera (ver App.QuickAnalysis.promoteToFair).
-                    fullData: risk.fullData || null,
+                    // Bug real: risk.fullData.quickRiskId queda guardado en el backend con el
+                    // valor que tenía AL MOMENTO de guardar (normalmente null — el id todavía no
+                    // existía en ese instante, ver App.QuickAnalysis.saveRisk()). Promover desde
+                    // aquí con ese valor viejo dejaba el riesgo sin sourceRiskId al simular, y
+                    // terminaba duplicado en el Registro (una fila de triage suelta + una fila
+                    // FAIR sin vínculo). Se corrige aquí, en la única fuente de este objeto, con
+                    // el id real de este mismo riesgo (risk.id) — siempre correcto, sin depender
+                    // de lo que haya quedado persistido.
+                    fullData: risk.fullData ? { ...risk.fullData, quickRiskId: risk.id } : null,
                 };
             });
 
@@ -5020,6 +4992,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         createdAt: reg.date,
                         quickCategory: null,
                         quickAle: null,
+                        riesgoInherente: null,
+                        riesgoResidual: null,
                         asset: reg.asset,
                         fairEntry: reg,
                     });
@@ -5123,24 +5097,21 @@ document.addEventListener('DOMContentLoaded', () => {
             const register = state.fair.riskRegister;
             const concentrated = state.fair.concentratedRisks || [];
 
-            // Vacío solo si no hay NADA — ni triage ni simulado. Un riesgo que solo pasó por
-            // Análisis Rápido (register vacío, concentrated con datos) igual debe mostrar la
-            // tabla; el mapa de calor/Pareto de abajo, que sí dependen de `register`, simplemente
-            // se ven sin puntos hasta que algo se analice con FAIR (sus zonas de fondo salen
-            // igual, calculadas contra los Criterios de Riesgo, no contra los riesgos guardados).
-            if (concentrated.length === 0) {
+            // La tabla (Análisis Rápido + Registro de Riesgos, ver renderConcentratedTable) se
+            // dibuja siempre, tenga o no filas — su propio "No hay riesgos guardados" cubre el
+            // caso vacío. Lo que sí sigue condicionado a tener datos es la analítica de abajo
+            // (mapa de calor/Pareto/sensibilidad/interpretación), que solo tiene sentido con al
+            // menos un riesgo YA analizado con FAIR (`register`, no `concentrated` — un riesgo
+            // que solo pasó por Análisis Rápido no aporta nada a esas gráficas).
+            this.renderConcentratedTable(concentrated);
+
+            if (register.length === 0) {
                 empty.classList.remove('hidden');
                 content.classList.add('hidden');
                 return;
             }
             empty.classList.add('hidden');
             content.classList.remove('hidden');
-
-            this.renderConcentratedTable(concentrated);
-
-            // De aquí en adelante, todo (interpretación de cartera, mapa de calor, Pareto,
-            // sensibilidad consolidada) sigue usando `register` (solo riesgos ya simulados con
-            // FAIR) exactamente como antes de este cambio — sin modificaciones.
 
             this.renderPortfolioInterpretation(register);
 
@@ -5247,27 +5218,49 @@ document.addEventListener('DOMContentLoaded', () => {
             this.renderConsolidatedSensitivity();
         },
 
-        // Dibuja la tabla concentrada (arriba del mapa de calor): une lo que ya pasó por FAIR
-        // con lo que todavía está solo en Análisis Rápido (ver buildConcentratedList). Cada fila
-        // muestra las métricas de la etapa en la que está — FAIR (ALE/CVaR/Evaluación) si ya se
-        // simuló, o el estimado de Análisis Rápido (Categoría por RRt%) si no.
+        // Dibuja la tabla concentrada — la MISMA tabla en dos lugares del DOM (Análisis Rápido
+        // y Registro de Riesgos, ver #quick-concentrated-table-body / #fair-register-table-body
+        // en el HTML), para que ambas páginas muestren siempre exactamente la misma información
+        // en vez de dos vistas distintas que se desincronizan. Une lo que ya pasó por FAIR con
+        // lo que todavía está solo en Análisis Rápido (ver buildConcentratedList), e incluye
+        // tanto las columnas del viejo Historial (Riesgo Inherente/Residual/Categoría, por RRt%)
+        // como las del Registro (Etapa/Impacto/CVaR/Evaluación, por FAIR) — ningún dato se pierde
+        // al fusionar las dos tablas que existían antes por separado.
         renderConcentratedTable(list) {
             const currencyDefault = state.quickUI.domElements.inputs.currencySelect.value || 'USD';
             const fmt = (v, currency) => new Intl.NumberFormat('en-US', { style: 'currency', currency: currency || currencyDefault, minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v);
             const formatDate = (d) => d ? new Date(d).toLocaleDateString('es-MX', { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
+            const bodies = ['fair-register-table-body', 'quick-concentrated-table-body']
+                .map(id => document.getElementById(id))
+                .filter(Boolean);
 
-            document.getElementById('fair-register-table-body').innerHTML = list.map(item => {
+            if (list.length === 0) {
+                bodies.forEach(tb => { tb.innerHTML = '<tr><td colspan="13" class="text-center py-4 text-gray-500">No hay riesgos guardados.</td></tr>'; });
+                return;
+            }
+
+            const rowsHTML = list.map(item => {
                 const stageBadge = item.stage === 'fair'
                     ? `<span class="px-2 py-1 rounded text-xs bg-blue-50 text-blue-700 border-l-4 border-blue-500">Analizado (FAIR)</span>`
                     : `<span class="px-2 py-1 rounded text-xs bg-gray-100 text-gray-700 border-l-4 border-gray-400">Triage</span>`;
 
                 const evalCell = item.fairEntry
                     ? `<span class="px-2 py-1 rounded text-xs border-l-4 ${item.fairEntry.evaluationClasses}">${item.fairEntry.evaluationLevel}</span>`
-                    : (item.quickCategory ? `<span class="inline-block px-2 py-1 text-xs font-semibold rounded-full ${item.quickCategory.color} ${item.quickCategory.bgColor}">${item.quickCategory.name}</span>` : '—');
+                    : '—';
+                const categoriaCell = item.quickCategory
+                    ? `<span class="inline-block px-2 py-1 text-xs font-semibold rounded-full ${item.quickCategory.color} ${item.quickCategory.bgColor}">${item.quickCategory.name}</span>`
+                    : '—';
 
                 const impactCell = item.fairEntry ? fmt(item.fairEntry.ale, item.fairEntry.currency) : (item.quickAle || '—');
                 const cvarCell = item.fairEntry ? fmt(item.fairEntry.cvar95, item.fairEntry.currency) : '—';
                 const dateCell = formatDate(item.fairEntry ? item.fairEntry.date : item.createdAt);
+
+                // Solo tiene sentido seleccionar (para "Analizar Selección con FAIR") un riesgo
+                // que TODAVÍA no se analizó con FAIR y que tiene su fullData completo — uno ya
+                // promovido no necesita volver a promoverse.
+                const checkboxCell = (item.stage !== 'fair' && item.fullData)
+                    ? `<input type="checkbox" class="concentrated-checkbox" data-id="${item.id}" />`
+                    : '';
 
                 // "Analizar" abre el wizard completo de FAIR (pasos 1-4, incluyendo
                 // Tratamiento) para ESTE riesgo — a diferencia de "Simular" (un vistazo rápido
@@ -5285,9 +5278,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 return `
                     <tr class="border-b">
-                        <td class="py-2 text-center text-gray-500">${item.number}</td>
+                        <td class="py-2 text-center">${checkboxCell}</td>
+                        <td class="text-center text-gray-500">${item.number}</td>
                         <td>${sanitizeHTML(item.riskName)}</td>
                         <td>${stageBadge}</td>
+                        <td>${item.riesgoInherente || '—'}</td>
+                        <td>${item.riesgoResidual || '—'}</td>
+                        <td>${categoriaCell}</td>
                         <td>${sanitizeHTML(item.asset)}</td>
                         <td>${impactCell}</td>
                         <td>${cvarCell}</td>
@@ -5296,6 +5293,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         <td class="whitespace-nowrap">${actionsCell}</td>
                     </tr>`;
             }).join('');
+
+            bodies.forEach(tb => { tb.innerHTML = rowsHTML; });
 
             document.querySelectorAll('[data-delete-risk]').forEach(btn => {
                 btn.addEventListener('click', () => this.deleteConcentratedRisk({ riskName: btn.dataset.deleteRisk, sourceId: btn.dataset.deleteSourceId || null }));
@@ -5329,6 +5328,38 @@ document.addEventListener('DOMContentLoaded', () => {
                     App.FairAnalysis.receiveData([item.fullData]);
                 });
             });
+            document.querySelectorAll('.concentrated-checkbox').forEach(cb => {
+                cb.addEventListener('change', () => this.updatePromoteBtnStates());
+            });
+            this.updatePromoteBtnStates();
+        },
+
+        // Cada instancia de la tabla (Análisis Rápido y Registro de Riesgos) tiene su propio
+        // checkbox "seleccionar todo" y su propio botón "Analizar Selección con FAIR" — la
+        // selección NO se sincroniza entre las dos (cada una lee solo sus propios checkboxes),
+        // para no complicar el estado con estar reflejando clics de una tabla en la otra.
+        toggleSelectAll(tbodyId, checked) {
+            document.querySelectorAll(`#${tbodyId} .concentrated-checkbox`).forEach(cb => { cb.checked = checked; });
+            this.updatePromoteBtnStates();
+        },
+
+        updatePromoteBtnStates() {
+            [['quick-concentrated-table-body', 'promoteSelectedBtn'], ['fair-register-table-body', 'fair-register-promote-selected-btn']].forEach(([tbodyId, btnId]) => {
+                const btn = document.getElementById(btnId);
+                if (!btn) return;
+                const anyChecked = document.querySelectorAll(`#${tbodyId} .concentrated-checkbox:checked`).length > 0;
+                btn.disabled = !anyChecked;
+            });
+        },
+
+        promoteSelectedFromTable(tbodyId) {
+            const selectedIds = Array.from(document.querySelectorAll(`#${tbodyId} .concentrated-checkbox:checked`)).map(cb => cb.dataset.id);
+            const selectedRisks = (state.fair.concentratedRisks || [])
+                .filter(item => selectedIds.includes(String(item.id)) && item.fullData)
+                .map(item => item.fullData);
+            if (selectedRisks.length === 0) return;
+            App.Navigation.switchPage('fair');
+            App.FairAnalysis.receiveData(selectedRisks);
         },
 
         // El Pareto 80-20 (ordenado, con % acumulado) ya viene calculado del backend
