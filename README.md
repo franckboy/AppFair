@@ -72,15 +72,17 @@ cd frontend && npm run test:e2e                   # suite E2E (Playwright) contr
 
 La suite E2E arranca su propio backend + servidor estático (ver `frontend/playwright.config.js`)
 y corre los flujos críticos de punta a punta: wizard completo, guardar borrador y reanudarlo,
-Análisis Profundo, exportar el Informe Consolidado, eliminar un riesgo.
+Análisis Profundo, exportar el Informe Consolidado, eliminar un riesgo, vincular un activo del
+Catálogo de Activos a un riesgo simulado y verlo reflejado en ambos lados.
 
 Las pruebas unitarias (Vitest, co-ubicadas junto al código que prueban — `*.test.js` dentro de
 `frontend/src/modules/`) cubren la lógica que ya es pura hoy: formateo/clasificación en
 `utils.js` (`getSafeNumber`, `sanitizeHTML`, `debounce`, `severityToClasses`/`severityToHex`,
 `sensitivityLabel`, `buildHistogramBins`, `computeSuggestedTef`, `sortTriangularRange`,
-`pertMean`) y tres métodos de `FairRegister` (`classifyAleAgainstCriteria`,
-`computeFairRiskEquivalents`, `buildConcentratedList`). Corren en milisegundos, sin necesitar
-backend ni navegador.
+`pertMean`), tres métodos de `FairRegister` (`classifyAleAgainstCriteria`,
+`computeFairRiskEquivalents`, `buildConcentratedList`), y `AssetCatalog.linkedRisksFor` (qué
+riesgos guardados o en borrador referencian a un activo del catálogo, por `assetId`). Corren en
+milisegundos, sin necesitar backend ni navegador.
 
 `buildHistogramBins` (el binning del histograma de Monte Carlo) estaba duplicado literal en
 `fair-wizard.js` y `fair-register.js`; `computeSuggestedTef` (la fórmula de sugerencia de TEF,

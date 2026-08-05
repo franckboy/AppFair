@@ -257,6 +257,11 @@ export const FairRegister = {
                     // nombre (ver findRegisterEntryIndex).
                     id: state.fair.registerEntryId,
                     asset: document.getElementById('fair-asset').value.trim() || '—',
+                    // Vínculo real hacia el Catálogo de Activos (id, no solo el nombre copiado
+                    // arriba) — permite a App.AssetCatalog mostrar qué riesgos ya guardados
+                    // referencian a cada activo (ver linkedRisksFor). null si el riesgo no se
+                    // armó eligiendo un activo del catálogo (ej. "Activo Afectado" escrito a mano).
+                    assetId: state.quick.selectedAssetRef ? state.quick.selectedAssetRef.id : null,
                     owner: document.getElementById('fair-owner').value.trim() || '—',
                     ale: summary.average,
                     cvar95: summary.cvar95,

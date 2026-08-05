@@ -25,12 +25,33 @@ export const AssetCatalog = {
 
     async load() {
         try {
-            const res = await App.Api.request('/api/assets');
-            state.quick.assets = res.assets;
+            // Se cargan junto con los activos (no solo /api/assets) para poder mostrar, por
+            // cada activo, a qué riesgos ya guardados está vinculado (ver linkedRisksFor) —
+            // sin esto, el vínculo assetId quedaría guardado pero invisible en esta pantalla.
+            const [assetsRes] = await Promise.all([
+                App.Api.request('/api/assets'),
+                App.FairRegister.loadRiskRegister(false),
+                App.QuickAnalysis.loadHistory(),
+            ]);
+            state.quick.assets = assetsRes.assets;
         } catch (e) {
             showToast(e.userMessage || 'No se pudieron cargar los activos.');
         }
         this.render();
+    },
+
+    // Un activo puede estar referenciado por una entrada ya simulada del Registro (assetId,
+    // ver App.FairRegister.saveToRiskRegister) o por un borrador de Análisis Rápido/Paso 1
+    // todavía sin simular (fullData.assetId, ver saveDraftToRisksList) — se juntan ambas
+    // fuentes para no perder el vínculo de un riesgo que aún no llegó a FAIR.
+    linkedRisksFor(assetId) {
+        const fromRegister = (state.fair.riskRegister || [])
+            .filter((r) => r.assetId === assetId)
+            .map((r) => r.riskName);
+        const fromDrafts = (state.quick.history || [])
+            .filter((r) => r.fullData && r.fullData.assetId === assetId && !fromRegister.includes(r.name))
+            .map((r) => r.name);
+        return [...fromRegister, ...fromDrafts];
     },
 
     render() {
@@ -45,19 +66,25 @@ export const AssetCatalog = {
             }).format(v);
         const tbody = document.getElementById('assets-table-body');
         tbody.innerHTML = assets
-            .map(
-                (a) => `
+            .map((a) => {
+                const linkedRisks = this.linkedRisksFor(a.id);
+                const linkedCell =
+                    linkedRisks.length > 0
+                        ? `<button type="button" class="text-blue-600 hover:underline" data-linked-id="${a.id}">${linkedRisks.length} riesgo${linkedRisks.length === 1 ? '' : 's'}</button>`
+                        : '<span class="text-gray-400">Ninguno</span>';
+                return `
             <tr class="border-b">
                 <td class="py-2">${sanitizeHTML(a.nombre)}</td>
                 <td>${fmt(a.valorEstimado)}</td>
                 <td>${sanitizeHTML(a.categoria || '—')}</td>
                 <td>${sanitizeHTML(a.ubicacion || '—')}</td>
+                <td>${linkedCell}</td>
                 <td class="text-right whitespace-nowrap">
                     <button type="button" class="text-blue-600 hover:underline text-sm mr-3" data-edit-id="${a.id}">Editar</button>
                     <button type="button" class="text-red-600 hover:underline text-sm" data-delete-id="${a.id}">Eliminar</button>
                 </td>
-            </tr>`,
-            )
+            </tr>`;
+            })
             .join('');
         tbody
             .querySelectorAll('[data-edit-id]')
@@ -65,6 +92,16 @@ export const AssetCatalog = {
         tbody
             .querySelectorAll('[data-delete-id]')
             .forEach((btn) => btn.addEventListener('click', () => this.remove(btn.dataset.deleteId)));
+        tbody.querySelectorAll('[data-linked-id]').forEach((btn) =>
+            btn.addEventListener('click', () => {
+                const asset = assets.find((a) => a.id === btn.dataset.linkedId);
+                const risks = this.linkedRisksFor(btn.dataset.linkedId);
+                Modal.alert(
+                    `<ul class="list-disc list-inside">${risks.map((name) => `<li>${sanitizeHTML(name)}</li>`).join('')}</ul>`,
+                    `Riesgos vinculados a "${sanitizeHTML(asset ? asset.nombre : '')}"`,
+                );
+            }),
+        );
     },
 
     readForm() {
