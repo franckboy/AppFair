@@ -32,6 +32,13 @@ test('GET /api/health responde 200 sin necesitar API key', async () => {
     assert.strictEqual(res.body.status, 'ok');
 });
 
+test('GET /api/health expone el tipo de almacenamiento, nunca la cadena de conexión', async () => {
+    const res = await request(app).get('/api/health');
+    // Las pruebas nunca configuran DATABASE_URL a propósito (ver src/store/index.js) — JsonStore.
+    assert.strictEqual(res.body.store, 'json');
+    assert.strictEqual(JSON.stringify(res.body).includes('postgresql://'), false);
+});
+
 test('GET /api/config/criteria sin header X-API-Key responde 401', async () => {
     const res = await request(app).get('/api/config/criteria');
     assert.strictEqual(res.status, 401);

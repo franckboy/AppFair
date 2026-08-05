@@ -100,7 +100,10 @@ usa `npm install` / `npm start`, y expone `/api/health` como health check.
      abierto, igual que en local) — puedes volver a **Settings → Environment** y ponerla
      después, sin necesidad de otro deploy de código.
 3. Deploy. Cada push a la rama que conectaste redespliega solo — no hay que repetir estos pasos.
-4. Prueba con `curl https://tu-servicio.onrender.com/api/health`.
+4. Prueba con `curl https://tu-servicio.onrender.com/api/health` — revisa el campo `store`:
+   si dice `"json"` en vez de `"postgres"`, todavía no configuraste `DATABASE_URL` (ver "Base
+   de datos persistente" arriba) y cualquier dato guardado se va a perder en el próximo
+   redeploy o reinicio por inactividad.
 
 **Nivel gratis de Render**: el servicio se duerme tras ~15 min sin tráfico; la primera
 petición después de eso tarda ~30-50s en responder mientras arranca de nuevo (arranques
@@ -144,7 +147,10 @@ test/
 Todos los endpoints devuelven JSON. Todos aceptan `Content-Type: application/json`.
 
 ### `GET /api/health`
-Chequeo de vida del servicio.
+Chequeo de vida del servicio. Incluye `store: "postgres" | "json"` — permite confirmar desde
+afuera, con un simple `curl` y sin credenciales, si un despliegue quedó con persistencia real
+(`DATABASE_URL` configurada) o cayó de vuelta al disco efímero por defecto (ver "Base de datos
+persistente" arriba). Nunca expone la cadena de conexión en sí, solo el tipo.
 
 ### `GET /api/config/profiles`
 Devuelve los perfiles de Atacante, Defensa y Riesgo, y las etiquetas de las 9 categorías

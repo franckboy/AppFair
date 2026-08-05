@@ -72,7 +72,17 @@ app.use(
     }),
 );
 
-app.get('/api/health', (req, res) => res.json({ status: 'ok', service: 'motor-riesgos-fair-backend' }));
+// `store` en la respuesta es solo el TIPO de almacenamiento ('postgres'/'json'), nunca
+// DATABASE_URL en sí — permite confirmar desde afuera (curl, sin credenciales ni acceso al
+// panel de Render) si un despliegue quedó con persistencia real o con el disco efímero por
+// defecto, sin exponer ningún secreto.
+app.get('/api/health', (req, res) =>
+    res.json({
+        status: 'ok',
+        service: 'motor-riesgos-fair-backend',
+        store: process.env.DATABASE_URL ? 'postgres' : 'json',
+    }),
+);
 
 // Todo lo demás bajo /api requiere la API key — el health check queda afuera
 // a propósito, para que un monitor de uptime lo pueda seguir consultando.
