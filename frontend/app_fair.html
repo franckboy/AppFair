@@ -654,7 +654,6 @@
                             <div class="mt-8 flex justify-between flex-wrap gap-3">
                                 <button id="fair-step4-back" class="btn btn-secondary"><i class="fas fa-arrow-left mr-2"></i>Anterior</button>
                                 <div class="flex gap-3 flex-wrap">
-                                    <button id="fair-export-report-btn" class="btn btn-primary hidden"><i class="fas fa-file-pdf mr-2"></i>Exportar Reporte (PDF)</button>
                                     <button id="fair-duplicate-btn" class="btn btn-secondary" title="Empieza un riesgo nuevo copiando perfil de atacante/defensa, rangos y categorías de pérdida del último análisis completado"><i class="fas fa-copy mr-2"></i>Duplicar como Plantilla</button>
                                     <button id="fair-reset-btn" class="btn btn-danger"><i class="fas fa-redo mr-2"></i>Nuevo Análisis (en blanco)</button>
                                 </div>
@@ -838,7 +837,7 @@
         <datalist id="datalist-threats"></datalist>
         <datalist id="datalist-owners"></datalist>
 
-        <!-- Reporte imprimible: se llena dinámicamente antes de exportar (ver App.FairExport.exportFairReport) -->
+        <!-- Reporte imprimible: se llena dinámicamente antes de exportar (ver App.FairExport.exportConsolidatedReport) -->
         <div id="fair-print-report"></div>
     </div>
 
@@ -2615,7 +2614,6 @@ document.addEventListener('DOMContentLoaded', () => {
             ['tef-min', 'tef-mode', 'tef-max'].forEach(id => {
                 document.getElementById(id).addEventListener('input', () => { state.fair.tefManuallyEdited = true; });
             });
-            document.getElementById('fair-export-report-btn').addEventListener('click', () => App.FairExport.exportFairReport());
             document.getElementById('fair-export-consolidated-btn').addEventListener('click', () => App.FairExport.exportConsolidatedReport());
             document.getElementById('selectAllHistory').addEventListener('change', (e) => App.FairRegister.toggleSelectAll('quick-concentrated-table-body', e.target.checked));
             document.getElementById('fair-deep-analysis-btn').addEventListener('click', () => App.FairRegister.showDeepAnalysis('quick-concentrated-table-body'));
@@ -3484,7 +3482,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.querySelectorAll('.input-error').forEach(el => el.classList.remove('input-error'));
                 document.getElementById('simulation-results-container').classList.add('hidden');
                 document.getElementById('fair-roi-section').classList.add('hidden');
-                document.getElementById('fair-export-report-btn').classList.add('hidden');
                 document.getElementById('fair-costoControlAnual').value = '0';
                 document.getElementById('fair-reduccionALE').value = '0';
                 document.getElementById('fair-mitigar-defensa-objetivo').value = 'basica';
@@ -3788,7 +3785,6 @@ document.addEventListener('DOMContentLoaded', () => {
             await App.FairRegister.saveToRiskRegister(summary, evaluation);
 
             document.getElementById('fair-roi-section').classList.remove('hidden');
-            document.getElementById('fair-export-report-btn').classList.remove('hidden');
             this.updateTreatmentView();
 
             const ctx = document.getElementById('fair-results-chart').getContext('2d');
@@ -4080,7 +4076,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
                     document.getElementById('simulation-results-container').classList.remove('hidden');
                     document.getElementById('fair-roi-section').classList.remove('hidden');
-                    document.getElementById('fair-export-report-btn').classList.remove('hidden');
 
                     const ctx = document.getElementById('fair-results-chart').getContext('2d');
                     if (state.fair.fairResultsChart) state.fair.fairResultsChart.destroy();
@@ -4316,6 +4311,33 @@ document.addEventListener('DOMContentLoaded', () => {
             // Rápida ya no existe, así que ningún riesgo nuevo llega con sourceRiskId).
             if (!state.fair.registerEntryId) state.fair.registerEntryId = crypto.randomUUID();
 
+            // Igual que en updateTreatmentView() — se leen tal cual, sin importar si esa función
+            // ya corrió o no (los campos existen en el DOM de todas formas). Se guardan aquí
+            // para que el Informe Consolidado pueda reconstruir la Sección 9 (Tratamiento) de
+            // CUALQUIER riesgo guardado, no solo el que esté abierto en este momento.
+            const mitigar = {
+                cost: getSafeNumber(document.getElementById('fair-costoControlAnual')),
+                reductionPercent: getSafeNumber(document.getElementById('fair-reduccionALE')),
+                reliability: document.getElementById('fair-mitigar-fiabilidad').value,
+                delayDays: getSafeNumber(document.getElementById('fair-mitigar-retraso')),
+            };
+            const transferir = {
+                premium: getSafeNumber(document.getElementById('fair-seguro-prima')),
+                deductible: getSafeNumber(document.getElementById('fair-seguro-deducible')),
+                limit: getSafeNumber(document.getElementById('fair-seguro-limite')),
+                unlimited: document.getElementById('fair-seguro-sin-limite').checked,
+                reliability: document.getElementById('fair-seguro-fiabilidad').value,
+                delayDays: getSafeNumber(document.getElementById('fair-seguro-retraso')),
+            };
+            const evitar = {
+                cost: getSafeNumber(document.getElementById('fair-evitar-costo')),
+                reliability: document.getElementById('fair-evitar-fiabilidad').value,
+                delayDays: getSafeNumber(document.getElementById('fair-evitar-retraso')),
+            };
+            const attackerProfile = state.quick.attackerProfiles[state.fair.attackerKey] || {};
+            const defenseProfile = state.quick.defenseProfiles[state.fair.defenseKey] || {};
+            const chart = state.fair.fairResultsChart;
+
             let res;
             try {
                 res = await App.Api.request(`/api/register/${encodeURIComponent(riskName)}`, {
@@ -4330,6 +4352,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         owner: document.getElementById('fair-owner').value.trim() || '—',
                         ale: summary.average,
                         cvar95: summary.cvar95,
+                        median: summary.median,
+                        min: summary.min,
+                        max: summary.max,
+                        p90: summary.p90,
                         evaluationLevel: evaluation.level,
                         evaluationClasses: severityToClasses(evaluation.severity),
                         // El texto de evaluationLevel no siempre contiene literalmente la
@@ -4356,6 +4382,28 @@ document.addEventListener('DOMContentLoaded', () => {
                         // por ahora, ver el campo en el HTML para el detalle.
                         triggeredByRiskName: document.getElementById('fair-triggered-by').value || null,
                         description: document.getElementById('fair-riskDescription').value.trim() || null,
+                        // A partir de aquí: campos que antes solo vivían en este formulario (o en
+                        // el Reporte individual, leídos directo del DOM) — se guardan para que el
+                        // Informe Consolidado pueda reconstruir el reporte completo de CUALQUIER
+                        // riesgo del Registro, no solo el que esté abierto ahora mismo.
+                        threat: document.getElementById('fair-threat').value.trim() || '—',
+                        effect: document.getElementById('fair-effect').value,
+                        timeHorizon: document.getElementById('fair-time-horizon').value,
+                        reviewDate: document.getElementById('fair-review-date').value || null,
+                        dataSource: document.getElementById('fair-data-source').value,
+                        dataConfidence: document.getElementById('fair-data-confidence').value,
+                        dataNotes: document.getElementById('fair-data-notes').value.trim() || null,
+                        assessor: document.getElementById('fair-assessor').value.trim() || null,
+                        assessmentDate: document.getElementById('fair-assessment-date').value || null,
+                        assessmentLocation: document.getElementById('fair-assessment-location').value.trim() || null,
+                        attackerProfileName: attackerProfile.name || null,
+                        attackerScore: state.fair.attackerScore || null,
+                        defenseProfileName: defenseProfile.name || null,
+                        defenseScore: state.fair.defenseScore || null,
+                        mitigar, transferir, evitar,
+                        aceptarJustificacion: document.getElementById('fair-aceptar-justificacion').value.trim() || null,
+                        chartLabels: chart ? chart.data.labels : null,
+                        chartData: chart ? chart.data.datasets[0].data : null,
                     },
                 });
             } catch (e) {
@@ -4963,188 +5011,188 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // ============================================================
-    // App.FairExport — arma el HTML imprimible y dispara window.print() para
-    // el reporte de un solo riesgo y el informe consolidado del Registro. Solo
-    // lee del DOM/state ya renderizado por FairWizard/FairRegister, no calcula
-    // nada. Si el bug está en el PDF exportado, está aquí.
+    // App.FairExport — arma el HTML imprimible y dispara window.print() para el Informe
+    // Consolidado (único PDF de la app: portafolio + detalle completo de cada riesgo). Antes
+    // había dos reportes separados (uno de un solo riesgo, leído del formulario en pantalla, y
+    // uno consolidado con solo una tarjeta resumida por riesgo) — se fusionaron en uno solo
+    // porque el Registro ya guarda todo lo necesario (ver App.FairRegister.saveToRiskRegister)
+    // para reconstruir el detalle completo de CUALQUIER riesgo guardado, no solo el que esté
+    // abierto en el wizard. Si el bug está en el PDF exportado, está aquí.
     // ============================================================
     App.FairExport = {
-        
-        exportFairReport() {
-            const currency = 'USD';
-            const formatCurrency = (value) => new Intl.NumberFormat('en-US', { style: 'currency', currency: currency, minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
 
-            const riskName = sanitizeHTML(document.getElementById('fair-riskName').value) || 'Riesgo sin nombre';
-            const asset = sanitizeHTML(document.getElementById('fair-asset').value) || '—';
-            const threat = sanitizeHTML(document.getElementById('fair-threat').value) || '—';
-            const effectSelect = document.getElementById('fair-effect');
-            const effectLabel = effectSelect.options[effectSelect.selectedIndex].text;
-            const owner = sanitizeHTML(document.getElementById('fair-owner').value) || '—';
-            const reviewDate = document.getElementById('fair-review-date').value || '—';
-            const dataSourceSelect = document.getElementById('fair-data-source');
-            const dataSourceLabel = dataSourceSelect.options[dataSourceSelect.selectedIndex].text;
-            const dataConfidenceSelect = document.getElementById('fair-data-confidence');
-            const dataConfidenceLabel = dataConfidenceSelect.options[dataConfidenceSelect.selectedIndex].text;
-            const dataNotes = sanitizeHTML(document.getElementById('fair-data-notes').value) || '—';
-            const securityPlan = sanitizeHTML(document.getElementById('fair-security-plan').value) || '—';
-            const assessor = sanitizeHTML(document.getElementById('fair-assessor').value) || '—';
-            const assessmentDate = document.getElementById('fair-assessment-date').value || '—';
-            const assessmentLocation = sanitizeHTML(document.getElementById('fair-assessment-location').value) || '—';
-            const riskType = document.getElementById('fair-risk-type').value;
-            const riskTypeLabel = riskType === 'oportunidad' ? 'Oportunidad (riesgo positivo)' : 'Amenaza (riesgo negativo)';
-            const timeHorizon = document.getElementById('fair-time-horizon').value;
-            const ctx = App.OrgContext.context;
+        // Mismos labels que los <select> del Paso 1/2 — se necesitan aquí porque el riesgo del
+        // que se arma cada sección del reporte puede NO ser el que está abierto en el wizard
+        // (viene del Registro guardado), así que no hay <select> del que leer el texto visible.
+        EFFECT_LABELS: {
+            material: 'Pérdida o Daño Material',
+            personas: 'Impacto a la Integridad de las Personas',
+            operativo: 'Interrupción Operativa',
+            reputacional: 'Daño Reputacional',
+        },
+        DATA_SOURCE_LABELS: {
+            historico: 'Histórico interno de incidentes',
+            benchmark: 'Benchmark / referencia externa del sector',
+            'experto-calibrado': 'Juicio experto calibrado (rangos de 3 puntos)',
+            'experto-sin-calibrar': 'Juicio experto sin calibrar',
+        },
+        DATA_CONFIDENCE_LABELS: { alto: 'Alto', medio: 'Medio', bajo: 'Bajo' },
+        RELIABILITY_LABELS: { alta: 'Alta', media: 'Media', baja: 'Baja' },
 
-            const attackerProfile = state.quick.attackerProfiles[state.fair.attackerKey] || {};
-            const defenseProfile = state.quick.defenseProfiles[state.fair.defenseKey] || {};
+        // Redibuja, fuera de pantalla, el histograma de un riesgo YA guardado (a partir de
+        // chartLabels/chartData del Registro — ver saveToRiskRegister) para poder incluirlo en
+        // el reporte de CUALQUIER riesgo, no solo el que tiene el <canvas> real visible ahora
+        // mismo. animation:false porque toDataURL() se llama en el siguiente frame — con
+        // animación encendida capturaría un fotograma a medio dibujar (barras incompletas).
+        renderOffscreenHistogram(labels, data) {
+            return new Promise((resolve) => {
+                const canvas = document.createElement('canvas');
+                canvas.width = 700;
+                canvas.height = 350;
+                canvas.style.position = 'fixed';
+                canvas.style.left = '-9999px';
+                document.body.appendChild(canvas);
+                const chart = new Chart(canvas, {
+                    type: 'bar',
+                    data: {
+                        labels,
+                        datasets: [{ label: 'Frecuencia de Pérdida Anual', data, backgroundColor: 'rgba(54, 162, 235, 0.6)', borderColor: 'rgba(54, 162, 235, 1)', borderWidth: 1 }],
+                    },
+                    options: {
+                        responsive: false, animation: false,
+                        scales: {
+                            y: { beginAtZero: true, title: { display: true, text: 'Nº de Simulaciones' } },
+                            x: { title: { display: true, text: 'Pérdida Anual Estimada' }, ticks: { autoSkip: true, maxRotation: 45, minRotation: 45 } },
+                        },
+                    },
+                });
+                requestAnimationFrame(() => {
+                    const img = canvas.toDataURL('image/png');
+                    chart.destroy();
+                    canvas.remove();
+                    resolve(img);
+                });
+            });
+        },
 
-            const tef = {
-                min: getSafeNumber(document.getElementById('tef-min')), mode: getSafeNumber(document.getElementById('tef-mode')), max: getSafeNumber(document.getElementById('tef-max'))
-            };
-            const vuln = {
-                min: getSafeNumber(document.getElementById('vuln-min')), mode: getSafeNumber(document.getElementById('vuln-mode')), max: getSafeNumber(document.getElementById('vuln-max'))
-            };
+        // El detalle técnico completo de UN riesgo del Registro (Alcance, Gobernanza, Perfil de
+        // Atacante/Defensa, Frecuencia/Vulnerabilidad, Magnitud de Pérdida, Simulación,
+        // Evaluación, Sensibilidad, Tratamiento) — antes esto era el reporte de un solo riesgo,
+        // aparte del Informe Consolidado; ahora es una sección más dentro de ese mismo informe,
+        // una por cada riesgo guardado (ver exportConsolidatedReport). Async porque recalcula el
+        // Tratamiento (POST /api/treatment/evaluate) y puede regenerar el histograma.
+        async buildFullRiskReportSection(r, index) {
+            const fmt = (v) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v);
+            const riskTypeLabel = r.riskType === 'oportunidad' ? 'Oportunidad (riesgo positivo)' : 'Amenaza (riesgo negativo)';
+            const evalBadge = `<span class="px-2 py-1 rounded text-xs border-l-4 ${r.evaluationClasses}">${r.evaluationLevel}</span>`;
 
-            const lossFormsLabels = {
-                'productividad': 'Pérdida de Productividad', 'respuesta': 'Costos de Respuesta', 'reemplazo': 'Costos de Reemplazo',
-                'multas': 'Multas y Sanciones', 'reputacion': 'Daño Reputacional', 'investigacion': 'Costos de Investigación',
-                'oportunidad': 'Negocio No Capturado (Ventaja Competitiva)', 'comunitario': 'Impacto Comunitario/Societario', 'ambiental': 'Impacto Ambiental'
-            };
-            const lossRowsHTML = Object.entries(lossFormsLabels).map(([key, label]) => {
-                const min = getSafeNumber(document.getElementById(`lm-${key}-min`));
-                const mode = getSafeNumber(document.getElementById(`lm-${key}-mode`));
-                const max = getSafeNumber(document.getElementById(`lm-${key}-max`));
-                return `<tr><td>${label}</td><td>${formatCurrency(min)}</td><td>${formatCurrency(mode)}</td><td>${formatCurrency(max)}</td></tr>`;
-            }).join('');
+            const chartImg = (r.chartLabels && r.chartData) ? await this.renderOffscreenHistogram(r.chartLabels, r.chartData) : '';
 
-            const chartCanvas = document.getElementById('fair-results-chart');
-            const chartImg = chartCanvas ? chartCanvas.toDataURL('image/png') : '';
+            const lossRowsHTML = r.lossMagnitudes
+                ? LOSS_FORMS_KEYS.map((key) => {
+                    const f = r.lossMagnitudes[key];
+                    if (!f) return '';
+                    return `<tr><td>${LOSS_FORM_LABELS.tecnico[key]}</td><td>${fmt(f.min)}</td><td>${fmt(f.mode)}</td><td>${fmt(f.max)}</td></tr>`;
+                }).join('')
+                : '<tr><td colspan="4">Este riesgo se guardó antes de que se registrara este desglose.</td></tr>';
 
-            const fiabilidadLabelReport = { alta: 'Alta', media: 'Media', baja: 'Baja' };
-            // Igual que en pantalla (ver App.FairWizard.updateTreatmentView): Mitigar/Transferir/
-            // Evitar/Aceptar asumen que la base es una pérdida a reducir — para una Oportunidad
-            // esos números salen invertidos (ej. "Evitar" mostraría como "beneficio" el beneficio
-            // que en realidad se pierde al no perseguirla), así que se omite la tabla.
-            const treatmentHTML = riskType === 'oportunidad' ? `
-                <div class="print-section">
-                    <h2>9. Tratamiento del Riesgo</h2>
-                    <p>El análisis de Mitigar/Transferir/Evitar/Aceptar (ISO 31000, cláusula 6.5) está diseñado para reducir una pérdida y no aplica a una Oportunidad. La evaluación de la Sección 6 (Beneficio Anual Esperado contra los Criterios de Riesgo) ya responde si vale la pena invertir para capturarla.</p>
-                </div>` : `
-                <div class="print-section">
-                    <h2>9. Comparación de Estrategias de Tratamiento (ISO 31000 / Broder, 1984)</h2>
+            // Tratamiento: no se guardó ya calculado (para no duplicar la lógica de negocio del
+            // backend) — se guardaron los INSUMOS (mitigar/transferir/evitar, ver
+            // saveToRiskRegister) y se recalcula aquí contra el ALE actual de este riesgo. Sin
+            // los 10,000 resultados crudos de la simulación (no se guardan, ver chartLabels más
+            // arriba), "Transferir" se evalúa de forma conservadora — ver evaluateTreatmentStrategies.
+            let treatmentHTML = '';
+            if (r.riskType === 'oportunidad') {
+                treatmentHTML = `<p>El análisis de Mitigar/Transferir/Evitar/Aceptar (ISO 31000, cláusula 6.5) está diseñado para reducir una pérdida y no aplica a una Oportunidad.</p>`;
+            } else if (r.mitigar && r.transferir && r.evitar) {
+                let result = null;
+                try {
+                    result = await App.Api.request('/api/treatment/evaluate', {
+                        method: 'POST',
+                        body: { currentALE: r.ale, mitigar: r.mitigar, transferir: r.transferir, evitar: r.evitar, currency: 'USD' },
+                    });
+                } catch (e) { /* se muestra el mensaje de "sin datos" de abajo */ }
+                treatmentHTML = result ? `
                     <table>
                         <tr><th>Estrategia</th><th>Costo Anual</th><th>Pérdida Residual</th><th>Beneficio Neto</th><th>Fiabilidad</th><th>Implementación</th></tr>
-                        <tr><td>Mitigar</td><td>${document.getElementById('fair-roi-costo').textContent}</td><td>${document.getElementById('fair-roi-ale-despues').textContent}</td><td>${document.getElementById('fair-roi-resultado').textContent}</td><td>${fiabilidadLabelReport[document.getElementById('fair-mitigar-fiabilidad').value]}</td><td>${document.getElementById('fair-mitigar-retraso').value} días</td></tr>
-                        <tr><td>Transferir (Seguro)</td><td>${document.getElementById('fair-seguro-costo').textContent}</td><td>${document.getElementById('fair-seguro-residual').textContent}</td><td>${document.getElementById('fair-seguro-beneficio').textContent}</td><td>${fiabilidadLabelReport[document.getElementById('fair-seguro-fiabilidad').value]}</td><td>${document.getElementById('fair-seguro-retraso').value} días</td></tr>
-                        <tr><td>Evitar</td><td>${document.getElementById('fair-evitar-costo-display').textContent}</td><td>${formatCurrency(0)}</td><td>${document.getElementById('fair-evitar-beneficio').textContent}</td><td>${fiabilidadLabelReport[document.getElementById('fair-evitar-fiabilidad').value]}</td><td>${document.getElementById('fair-evitar-retraso').value} días</td></tr>
-                        <tr><td>Aceptar / Retener</td><td>${formatCurrency(0)}</td><td>${document.getElementById('fair-aceptar-residual').textContent}</td><td>—</td><td>—</td><td>—</td></tr>
+                        <tr><td>Mitigar</td><td>${fmt(result.mitigar.cost)}</td><td>${fmt(result.mitigar.residualALE)}</td><td>${fmt(result.mitigar.netBenefit)}</td><td>${this.RELIABILITY_LABELS[result.mitigar.reliability] || '—'}</td><td>${result.mitigar.delayDays} días</td></tr>
+                        <tr><td>Transferir (Seguro)</td><td>${fmt(result.transferir.cost)}</td><td>${fmt(result.transferir.residualALE)}</td><td>${fmt(result.transferir.netBenefit)}</td><td>${this.RELIABILITY_LABELS[result.transferir.reliability] || '—'}</td><td>${result.transferir.delayDays} días</td></tr>
+                        <tr><td>Evitar</td><td>${fmt(result.evitar.cost)}</td><td>${fmt(0)}</td><td>${fmt(result.evitar.netBenefit)}</td><td>${this.RELIABILITY_LABELS[result.evitar.reliability] || '—'}</td><td>${result.evitar.delayDays} días</td></tr>
+                        <tr><td>Aceptar / Retener</td><td>${fmt(0)}</td><td>${fmt(r.ale)}</td><td>—</td><td>—</td><td>—</td></tr>
                     </table>
-                    <p style="margin-top:8px; font-size:12px;"><strong>Justificación de aceptación (si aplica):</strong> ${sanitizeHTML(document.getElementById('fair-aceptar-justificacion').value) || '—'}</p>
-                </div>`;
+                    <p style="margin-top:8px; font-size:12px;"><strong>Justificación de aceptación (si aplica):</strong> ${sanitizeHTML(r.aceptarJustificacion) || '—'}</p>`
+                    : '<p>No se pudo calcular el tratamiento de este riesgo.</p>';
+            } else {
+                treatmentHTML = '<p>Este riesgo se guardó antes de que existiera esta sección — vuelve a correr su simulación desde Análisis FAIR para completarla.</p>';
+            }
 
-            const reportHTML = `
+            return `
                 <div class="print-section">
-                    <h1>Reporte de Análisis de Riesgo (FAIR)</h1>
-                    <p>Generado: ${new Date().toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
-                </div>
-                <div class="print-section">
-                    <h2>0. Contexto Organizacional y Datos de la Apreciación</h2>
+                    <h2>${index}. ${sanitizeHTML(r.riskName)}</h2>
+                    <h3>Alcance del Riesgo</h3>
                     <table>
-                        <tr><td><strong>Misión y Objetivos</strong></td><td>${sanitizeHTML(ctx.mision) || '—'}</td></tr>
-                        <tr><td><strong>Naturaleza del Negocio</strong></td><td>${sanitizeHTML(ctx.naturalezaNegocio) || '—'}</td></tr>
-                        <tr><td><strong>Apetito por el Riesgo</strong></td><td>${ctx.apetitoRiesgo}</td></tr>
-                        <tr><td><strong>Partes Interesadas Clave</strong></td><td>${sanitizeHTML(ctx.partesInteresadas) || '—'}</td></tr>
-                        <tr><td><strong>Entorno Legal/Regulatorio</strong></td><td>${sanitizeHTML(ctx.entornoLegal) || '—'}</td></tr>
-                        <tr><td><strong>Alcance de la Cadena de Suministro Cubierta</strong></td><td>${sanitizeHTML(ctx.alcanceCadenaSuministro) || '—'}</td></tr>
-                        <tr><td><strong>Apreciador / Analista Responsable</strong></td><td>${assessor}</td></tr>
-                        <tr><td><strong>Fecha de esta Apreciación</strong></td><td>${assessmentDate}</td></tr>
-                        <tr><td><strong>Lugar / Ubicación Apreciada</strong></td><td>${assessmentLocation}</td></tr>
-                    </table>
-                </div>
-                <div class="print-section">
-                    <h2>1. Alcance del Riesgo</h2>
-                    <table>
-                        <tr><td><strong>Escenario</strong></td><td>${riskName}</td></tr>
-                        <tr><td><strong>Activo Afectado</strong></td><td>${asset}</td></tr>
-                        <tr><td><strong>Agente de Amenaza</strong></td><td>${threat}</td></tr>
-                        <tr><td><strong>Efecto / Pérdida</strong></td><td>${effectLabel}</td></tr>
+                        <tr><td><strong>Activo Afectado</strong></td><td>${sanitizeHTML(r.asset) || '—'}</td></tr>
+                        <tr><td><strong>Agente de Amenaza</strong></td><td>${sanitizeHTML(r.threat) || '—'}</td></tr>
+                        <tr><td><strong>Efecto / Pérdida</strong></td><td>${this.EFFECT_LABELS[r.effect] || r.effect || '—'}</td></tr>
                         <tr><td><strong>Tipo de Riesgo</strong></td><td>${riskTypeLabel}</td></tr>
-                        <tr><td><strong>Horizonte Temporal</strong></td><td>${timeHorizon} año(s)</td></tr>
+                        <tr><td><strong>Horizonte Temporal</strong></td><td>${r.timeHorizon || '1'} año(s)</td></tr>
                     </table>
-                </div>
-                <div class="print-section">
-                    <h2>2. Gobernanza y Calidad de la Información</h2>
+                    <h3>Gobernanza y Calidad de la Información</h3>
                     <table>
-                        <tr><td><strong>Dueño del Riesgo</strong></td><td>${owner}</td></tr>
-                        <tr><td><strong>Próxima Fecha de Revisión</strong></td><td>${reviewDate}</td></tr>
-                        <tr><td><strong>Fuente de los Datos</strong></td><td>${dataSourceLabel}</td></tr>
-                        <tr><td><strong>Nivel de Confianza</strong></td><td>${dataConfidenceLabel}</td></tr>
-                        <tr><td><strong>Notas / Justificación</strong></td><td>${dataNotes}</td></tr>
-                        <tr><td><strong>Plan de Seguridad / Medidas Vigentes</strong></td><td>${securityPlan}</td></tr>
+                        <tr><td><strong>Dueño del Riesgo</strong></td><td>${sanitizeHTML(r.owner) || '—'}</td></tr>
+                        <tr><td><strong>Próxima Fecha de Revisión</strong></td><td>${r.reviewDate || '—'}</td></tr>
+                        <tr><td><strong>Fuente de los Datos</strong></td><td>${this.DATA_SOURCE_LABELS[r.dataSource] || '—'}</td></tr>
+                        <tr><td><strong>Nivel de Confianza</strong></td><td>${this.DATA_CONFIDENCE_LABELS[r.dataConfidence] || '—'}</td></tr>
+                        <tr><td><strong>Notas / Justificación</strong></td><td>${sanitizeHTML(r.dataNotes) || '—'}</td></tr>
+                        <tr><td><strong>Plan de Seguridad / Medidas Vigentes</strong></td><td>${sanitizeHTML(r.securityPlan) || '—'}</td></tr>
+                        <tr><td><strong>Apreciador / Analista Responsable</strong></td><td>${sanitizeHTML(r.assessor) || '—'}</td></tr>
+                        <tr><td><strong>Fecha de esta Apreciación</strong></td><td>${r.assessmentDate || '—'}</td></tr>
+                        <tr><td><strong>Lugar / Ubicación Apreciada</strong></td><td>${sanitizeHTML(r.assessmentLocation) || '—'}</td></tr>
                     </table>
-                </div>
-                <div class="print-section">
-                    <h2>3. Perfil de Atacante y Defensa</h2>
+                    ${(r.attackerProfileName || r.defenseProfileName) ? `
+                    <h3>Perfil de Atacante y Defensa</h3>
                     <table>
-                        <tr><td>Perfil de Atacante</td><td>${attackerProfile.name || '—'} (Factor de Amenaza: ${(state.fair.attackerScore || 0).toFixed(1)}%)</td></tr>
-                        <tr><td>Nivel de Defensa</td><td>${defenseProfile.name || '—'} (${(state.fair.defenseScore || 0).toFixed(1)}%)</td></tr>
-                    </table>
-                </div>
-                <div class="print-section">
-                    <h2>4. Frecuencia y Vulnerabilidad</h2>
+                        <tr><td>Perfil de Atacante</td><td>${sanitizeHTML(r.attackerProfileName) || '—'}${r.attackerScore != null ? ` (Factor de Amenaza: ${r.attackerScore.toFixed(1)}%)` : ''}</td></tr>
+                        <tr><td>Nivel de Defensa</td><td>${sanitizeHTML(r.defenseProfileName) || '—'}${r.defenseScore != null ? ` (${r.defenseScore.toFixed(1)}%)` : ''}</td></tr>
+                    </table>` : ''}
+                    ${(r.tef || r.vuln) ? `
+                    <h3>Frecuencia y Vulnerabilidad</h3>
                     <table>
                         <tr><th></th><th>Mín</th><th>Más Probable</th><th>Máx</th></tr>
-                        <tr><td>Frecuencia de Evento de Amenaza (contactos/año)</td><td>${tef.min}</td><td>${tef.mode}</td><td>${tef.max}</td></tr>
-                        <tr><td>Vulnerabilidad (%)</td><td>${vuln.min}%</td><td>${vuln.mode}%</td><td>${vuln.max}%</td></tr>
-                    </table>
-                </div>
-                <div class="print-section">
-                    <h2>5. Magnitud de Pérdida por Categoría</h2>
+                        ${r.tef ? `<tr><td>Frecuencia de Evento de Amenaza (contactos/año)</td><td>${r.tef.min}</td><td>${r.tef.mode}</td><td>${r.tef.max}</td></tr>` : ''}
+                        ${r.vuln ? `<tr><td>Vulnerabilidad (%)</td><td>${r.vuln.min}%</td><td>${r.vuln.mode}%</td><td>${r.vuln.max}%</td></tr>` : ''}
+                    </table>` : ''}
+                    <h3>Magnitud de Pérdida por Categoría</h3>
                     <table>
                         <tr><th>Categoría</th><th>Mín</th><th>Más Probable</th><th>Máx</th></tr>
                         ${lossRowsHTML}
                     </table>
-                </div>
-                <div class="print-section">
-                    <h2>6. Resultados de la Simulación Monte Carlo (${state.config.SIMULATION_ITERATIONS.toLocaleString('es-MX')} iteraciones, semilla: ${state.fair.lastSeed || '—'})</h2>
+                    <h3>Resultados de la Simulación Monte Carlo${r.seed ? ` (semilla: ${r.seed})` : ''}</h3>
                     <table>
-                        <tr><td>Pérdida Anual Promedio (ALE)</td><td>${document.getElementById('ale-result').textContent}</td></tr>
-                        <tr><td>Pérdida Anual Mediana (P50)</td><td>${document.getElementById('median-loss-result').textContent}</td></tr>
-                        <tr><td>Pérdida Mínima Simulada</td><td>${document.getElementById('min-loss-result').textContent}</td></tr>
-                        <tr><td>Pérdida Máxima Simulada</td><td>${document.getElementById('max-loss-result').textContent}</td></tr>
-                        <tr><td>Peor 10% de los casos (P90)</td><td>${document.getElementById('percentile-90-result').textContent}</td></tr>
-                        <tr><td>CVaR 95% (Expected Shortfall)</td><td>${document.getElementById('cvar-95-result').textContent}</td></tr>
-                        <tr><td>${document.getElementById('prob-threshold-label').textContent}</td><td>${document.getElementById('prob-threshold-result').textContent}</td></tr>
+                        <tr><td>Pérdida Anual Promedio (ALE)</td><td>${fmt(r.ale)}</td></tr>
+                        ${r.median != null ? `<tr><td>Pérdida Anual Mediana (P50)</td><td>${fmt(r.median)}</td></tr>` : ''}
+                        ${r.min != null ? `<tr><td>Pérdida Mínima Simulada</td><td>${fmt(r.min)}</td></tr>` : ''}
+                        ${r.max != null ? `<tr><td>Pérdida Máxima Simulada</td><td>${fmt(r.max)}</td></tr>` : ''}
+                        ${r.p90 != null ? `<tr><td>Peor 10% de los casos (P90)</td><td>> ${fmt(r.p90)}</td></tr>` : ''}
+                        <tr><td>CVaR 95% (Expected Shortfall)</td><td>${fmt(r.cvar95)}</td></tr>
                     </table>
-                    ${chartImg ? `<img src="${chartImg}" alt="Distribución de Pérdida Anual">` : ''}
-                </div>
-                <div class="print-section">
-                    <h2>7. Evaluación del Riesgo (contra Criterios de Riesgo definidos)</h2>
+                    ${chartImg ? `<img src="${chartImg}" alt="Distribución de Pérdida Anual" style="max-width:100%;">` : ''}
+                    <h3>Evaluación del Riesgo (contra Criterios de Riesgo definidos)</h3>
                     <table>
-                        <tr><td><strong>Clasificación</strong></td><td>${state.fair.lastEvaluation ? `<span class="px-2 py-1 rounded text-xs border-l-4 ${severityToClasses(state.fair.lastEvaluation.severity)}">${state.fair.lastEvaluation.level}</span>` : 'No evaluado'}</td></tr>
-                        <tr><td><strong>Justificación</strong></td><td>${state.fair.lastEvaluation ? state.fair.lastEvaluation.justification : ''}</td></tr>
+                        <tr><td><strong>Clasificación</strong></td><td>${evalBadge}</td></tr>
+                        <tr><td><strong>Justificación</strong></td><td>${sanitizeHTML(r.evaluationJustification) || ''}</td></tr>
                     </table>
-                </div>
-                <div class="print-section">
-                    <h2>8. Análisis de Sensibilidad</h2>
+                    <h3>Análisis de Sensibilidad</h3>
                     <table>
                         <tr><th>Variable</th><th>Correlación con el resultado</th></tr>
-                        ${(state.fair.lastSensitivity || []).slice(0, 8).map(s =>
-                            `<tr><td>${s.name}</td><td>${(s.correlation * 100).toFixed(1)}%</td></tr>`
-                        ).join('')}
+                        ${(r.sensitivity || []).slice(0, 8).map((s) => `<tr><td>${sanitizeHTML(s.name)}</td><td>${(s.correlation * 100).toFixed(1)}%</td></tr>`).join('')}
                     </table>
-                </div>
-                ${treatmentHTML}
-                <div class="print-section" style="margin-top:24px; border-top:1px solid #999; padding-top:8px;">
-                    <p style="font-size:11px; color:#555;">Este documento contiene información confidencial de análisis de riesgo. Su distribución debe limitarse a las personas autorizadas por la organización apreciada.</p>
-                </div>
-            `;
-
-            document.getElementById('fair-print-report').innerHTML = reportHTML;
-            window.print();
+                    <h3>Comparación de Estrategias de Tratamiento (ISO 31000 / Broder, 1984)</h3>
+                    ${treatmentHTML}
+                </div>`;
         },
 
-        exportConsolidatedReport() {
+        async exportConsolidatedReport() {
             const register = state.fair.riskRegister;
             if (!register || register.length === 0) {
                 Modal.alert('Aún no tienes ningún riesgo guardado en el Registro.', 'Nada que exportar');
@@ -5169,27 +5217,6 @@ document.addEventListener('DOMContentLoaded', () => {
             // solo amenazas, para que el número en el mapa corresponda al mismo riesgo aquí.
             const heatmapLegendHTML = threatRegister.map((r, i) => `<li>${i + 1}. ${sanitizeHTML(r.riskName)}</li>`).join('');
 
-            // Si hay una Simulación Detallada abierta (botón "Simular" de la tabla), se incluye
-            // en el PDF tal cual se ve en pantalla — así el histograma de un riesgo específico
-            // sale en el mismo documento que el resto, sin tener que exportar dos reportes.
-            const simSection = document.getElementById('fair-register-simulation');
-            let simulationDetailHTML = '';
-            if (!simSection.classList.contains('hidden') && !document.getElementById('fair-register-simulation-body').classList.contains('hidden')) {
-                const simChartImg = document.getElementById('fair-register-sim-chart').toDataURL('image/png');
-                simulationDetailHTML = `
-                <div class="print-section">
-                    <h2>${sanitizeHTML(document.getElementById('fair-register-simulation-title').textContent)}</h2>
-                    <img src="${simChartImg}" alt="Histograma de simulación" style="max-width:100%;">
-                    <table>
-                        <tr><td><strong>Pérdida Anual Promedio</strong></td><td>${document.getElementById('fair-register-sim-ale').textContent}</td></tr>
-                        <tr><td><strong>Pérdida Anual Mediana</strong></td><td>${document.getElementById('fair-register-sim-median').textContent}</td></tr>
-                        <tr><td><strong>Peor 10% de los casos (P90)</strong></td><td>${document.getElementById('fair-register-sim-p90').textContent}</td></tr>
-                        <tr><td><strong>CVaR 95%</strong></td><td>${document.getElementById('fair-register-sim-cvar').textContent}</td></tr>
-                    </table>
-                    ${document.getElementById('fair-register-sim-sensitivity').innerHTML}
-                </div>`;
-            }
-
             // El backend guarda ale/cvar95 como números crudos (no strings ya formateados) — el
             // formateo es presentación, se hace aquí por entrada.
             const formatEntryCurrency = (value) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
@@ -5203,21 +5230,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 `<tr><td>${sanitizeHTML(r.riskName)}</td><td>${sanitizeHTML(r.asset)}</td><td>${sanitizeHTML(r.owner)}</td><td>${formatEntryCurrency(r.ale)}</td><td>${formatEntryCurrency(r.cvar95)}</td><td>${evalBadgeHTML(r)}</td><td>${formatEntryDate(r)}</td></tr>`
             ).join('');
 
-            const riskCardsHTML = register.map((r, i) => `
-                <div class="print-section">
-                    <h2>${i + 1}. ${sanitizeHTML(r.riskName)}</h2>
-                    <table>
-                        <tr><td><strong>Activo</strong></td><td>${sanitizeHTML(r.asset)}</td></tr>
-                        <tr><td><strong>Dueño del Riesgo</strong></td><td>${sanitizeHTML(r.owner)}</td></tr>
-                        <tr><td><strong>Pérdida Anual Esperada (ALE)</strong></td><td>${formatEntryCurrency(r.ale)}</td></tr>
-                        <tr><td><strong>CVaR 95%</strong></td><td>${formatEntryCurrency(r.cvar95)}</td></tr>
-                        <tr><td><strong>Evaluación</strong></td><td>${evalBadgeHTML(r)}</td></tr>
-                        <tr><td><strong>Justificación</strong></td><td>${sanitizeHTML(r.evaluationJustification || '')}</td></tr>
-                        <tr><td><strong>Variable más influyente</strong></td><td>${r.sensitivity && r.sensitivity[0] ? sanitizeHTML(r.sensitivity[0].name) : '—'}</td></tr>
-                        <tr><td><strong>Plan de Seguridad / Medidas Vigentes</strong></td><td>${sanitizeHTML(r.securityPlan) || '—'}</td></tr>
-                    </table>
-                </div>`
-            ).join('');
+            // Detalle técnico completo de cada riesgo (Alcance, Gobernanza, Perfil de Atacante/
+            // Defensa, Frecuencia/Vulnerabilidad, Magnitud de Pérdida, Simulación, Evaluación,
+            // Sensibilidad, Tratamiento) — antes esto era un reporte aparte por cada riesgo
+            // (App.FairExport.exportFairReport, ya eliminado); ahora es una sección de este mismo
+            // informe, una por riesgo (ver buildFullRiskReportSection). Secuencial (no
+            // Promise.all) para no disparar N peticiones simultáneas a /api/treatment/evaluate.
+            const riskDetailSections = [];
+            for (let i = 0; i < register.length; i++) {
+                riskDetailSections.push(await this.buildFullRiskReportSection(register[i], i + 1));
+            }
+            const riskDetailHTML = riskDetailSections.join('');
 
             const reportHTML = `
                 <div class="print-section">
@@ -5228,8 +5251,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     <h2>Contexto Organizacional</h2>
                     <table>
                         <tr><td><strong>Misión y Objetivos</strong></td><td>${sanitizeHTML(ctx.mision) || '—'}</td></tr>
+                        <tr><td><strong>Naturaleza del Negocio</strong></td><td>${sanitizeHTML(ctx.naturalezaNegocio) || '—'}</td></tr>
                         <tr><td><strong>Apetito por el Riesgo</strong></td><td>${ctx.apetitoRiesgo}</td></tr>
                         <tr><td><strong>Partes Interesadas Clave</strong></td><td>${sanitizeHTML(ctx.partesInteresadas) || '—'}</td></tr>
+                        <tr><td><strong>Entorno Legal/Regulatorio</strong></td><td>${sanitizeHTML(ctx.entornoLegal) || '—'}</td></tr>
                         <tr><td><strong>Alcance de la Cadena de Suministro Cubierta</strong></td><td>${sanitizeHTML(ctx.alcanceCadenaSuministro) || '—'}</td></tr>
                     </table>
                 </div>
@@ -5269,8 +5294,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <h2>Sensibilidad Consolidada</h2>
                     ${sensitivityHTML}
                 </div>
-                ${riskCardsHTML}
-                ${simulationDetailHTML}
+                ${riskDetailHTML}
                 <div class="print-section">
                     <h2>Interpretación General</h2>
                     ${document.getElementById('fair-register-interpretation').innerHTML}

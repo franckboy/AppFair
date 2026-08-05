@@ -41,6 +41,10 @@ function createRegisterRouter(store) {
         const {
             asset = '—', owner = '—', ale, cvar95, evaluationLevel, evaluationClasses, severity = null,
             evaluationJustification, probExceedance = 0, sensitivity = [],
+            // Resto del resumen de la simulación (antes solo se leía del DOM en el momento del
+            // reporte individual) — necesarios para reconstruir la tabla de resultados completa
+            // de cualquier riesgo del Registro, no solo ale/cvar95.
+            median = null, min = null, max = null, p90 = null,
             securityPlan = '—',
             // tef/vuln/lossMagnitudes/seed son opcionales (un riesgo guardado antes de que
             // existiera esto no los trae) — se guardan tal cual para poder re-simular este
@@ -73,6 +77,25 @@ function createRegisterRouter(store) {
             // reconocer que esto es una ACTUALIZACIÓN de la misma entrada y no una nueva, sin
             // depender de que el nombre no haya cambiado ni de que sea único.
             id = null,
+            // Todo lo de aquí abajo antes solo vivía en el formulario en pantalla (o en
+            // localStorage) — el Reporte individual (PDF de un solo riesgo) lo leía directo del
+            // DOM, así que un riesgo YA guardado en el Registro no tenía forma de reconstruir su
+            // reporte completo después (por ejemplo, para el Informe Consolidado). Se guarda
+            // aquí tal cual, sin validar cada campo uno por uno (mismo criterio que el resto de
+            // este archivo) porque es información descriptiva, no un cálculo.
+            threat = '—', effect = 'material', timeHorizon = '1',
+            reviewDate = null, dataSource = null, dataConfidence = null, dataNotes = null,
+            assessor = null, assessmentDate = null, assessmentLocation = null,
+            attackerProfileName = null, attackerScore = null,
+            defenseProfileName = null, defenseScore = null,
+            // Snapshot de las 4 estrategias de tratamiento (ISO 31000, 6.5) tal como estaban
+            // configuradas al guardar — permite reconstruir la Sección 9 del reporte para
+            // CUALQUIER riesgo del Registro, no solo el que esté abierto en el wizard.
+            mitigar = null, transferir = null, evitar = null, aceptarJustificacion = null,
+            // El histograma ya viene agrupado en barras (~20 valores) desde el frontend — no se
+            // guardan los 10,000 resultados crudos de la simulación, solo lo necesario para
+            // volver a dibujar el mismo gráfico en un reporte futuro.
+            chartLabels = null, chartData = null,
         } = req.body;
 
         if (typeof ale !== 'number') {
@@ -85,7 +108,7 @@ function createRegisterRouter(store) {
             // La app solo calcula en USD — no es un default, es fijo (ver la nota equivalente
             // en assets.js). Eliminar la variable de moneda evita por construcción que el
             // Pareto/mapa de calor terminen sumando/comparando riesgos en monedas distintas.
-            id, riskName, asset, owner, currency: 'USD', ale, cvar95, riskType,
+            id, riskName, asset, owner, currency: 'USD', ale, cvar95, median, min, max, p90, riskType,
             evaluationLevel, evaluationClasses, severity, evaluationJustification,
             impactPercent, probabilityPercent: probExceedance,
             sensitivity: sensitivity.slice(0, 5),
@@ -94,6 +117,12 @@ function createRegisterRouter(store) {
             sourceRiskId,
             triggeredByRiskName,
             description,
+            threat, effect, timeHorizon,
+            reviewDate, dataSource, dataConfidence, dataNotes,
+            assessor, assessmentDate, assessmentLocation,
+            attackerProfileName, attackerScore, defenseProfileName, defenseScore,
+            mitigar, transferir, evitar, aceptarJustificacion,
+            chartLabels, chartData,
             date: new Date().toISOString(),
         };
 
