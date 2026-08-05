@@ -3,14 +3,15 @@
 const express = require('express');
 const { getRiskMatrixZones, calculateParetoAnalysis, calculateConsolidatedSensitivity } = require('../lib/register');
 const { defaultRiskCriteria } = require('../data/profiles');
+const { asyncHandler } = require('../middleware/asyncHandler');
 
 function createRegisterRouter(store) {
     const router = express.Router();
 
     // GET /api/register — lista todos los riesgos guardados + análisis consolidado
-    router.get('/', (req, res) => {
-        const risks = store.get('riskRegister') || [];
-        const criteria = store.get('riskCriteria') || defaultRiskCriteria;
+    router.get('/', asyncHandler(async (req, res) => {
+        const risks = (await store.get('riskRegister')) || [];
+        const criteria = (await store.get('riskCriteria')) || defaultRiskCriteria;
 
         if (risks.length === 0) {
             return res.json({ risks: [], pareto: null, consolidatedSensitivity: [], heatmapZones: getRiskMatrixZones(criteria.rrtBands) });
@@ -25,7 +26,7 @@ function createRegisterRouter(store) {
             consolidatedSensitivity,
             heatmapZones: getRiskMatrixZones(criteria.rrtBands),
         });
-    });
+    }));
 
     /**
      * PUT /api/register/:riskName — guarda o actualiza un riesgo en el registro.
@@ -34,9 +35,9 @@ function createRegisterRouter(store) {
      * evaluationJustification, probExceedance, sensitivity, currency, securityPlan,
      * tef, vuln, lossMagnitudes, seed, riskType }
      */
-    router.put('/:riskName', (req, res) => {
+    router.put('/:riskName', asyncHandler(async (req, res) => {
         const riskName = req.params.riskName;
-        const criteria = store.get('riskCriteria') || defaultRiskCriteria;
+        const criteria = (await store.get('riskCriteria')) || defaultRiskCriteria;
         const {
             asset = '—', owner = '—', ale, cvar95, evaluationLevel, evaluationClasses, severity = null,
             evaluationJustification, probExceedance = 0, sensitivity = [], currency = 'USD',
@@ -85,15 +86,15 @@ function createRegisterRouter(store) {
             date: new Date().toISOString(),
         };
 
-        const register = store.upsertRiskInRegister(entry);
+        const register = await store.upsertRiskInRegister(entry);
         res.json({ entry, totalRisks: register.length });
-    });
+    }));
 
     // DELETE /api/register/:riskName
-    router.delete('/:riskName', (req, res) => {
-        const register = store.deleteRiskFromRegister(req.params.riskName);
+    router.delete('/:riskName', asyncHandler(async (req, res) => {
+        const register = await store.deleteRiskFromRegister(req.params.riskName);
         res.json({ totalRisks: register.length });
-    });
+    }));
 
     return router;
 }

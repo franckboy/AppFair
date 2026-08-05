@@ -12,8 +12,9 @@ un cliente de su API REST.
   demás (Criterios de Riesgo, Valores por Defecto, Contexto Organizacional, simulación FAIR,
   tratamiento y Registro de Riesgos) se guarda y calcula en el backend.
 - `backend/` — API REST en Express con el motor de cálculo como módulos puros de Node,
-  persistencia en archivo JSON y protegida por API key. Ver `backend/README.md` para
-  instalación, endpoints y notas de diseño.
+  protegida por API key. Persistencia en archivo JSON local por defecto, o en Postgres
+  (gratis, sin vencimiento — recomendado en producción) si se configura `DATABASE_URL`. Ver
+  `backend/README.md` para instalación, endpoints y notas de diseño.
 
 ## En producción
 

@@ -2,6 +2,7 @@
 
 const express = require('express');
 const crypto = require('crypto');
+const { asyncHandler } = require('../middleware/asyncHandler');
 
 /**
  * Historial unificado de riesgos — antes esto solo vivía en localStorage del navegador (el
@@ -20,12 +21,12 @@ function createRisksRouter(store) {
     const router = express.Router();
 
     // GET /api/risks — lista el historial completo
-    router.get('/', (req, res) => {
-        res.json({ risks: store.get('risks') || [] });
-    });
+    router.get('/', asyncHandler(async (req, res) => {
+        res.json({ risks: (await store.get('risks')) || [] });
+    }));
 
     // POST /api/risks — crea un riesgo nuevo. Body mínimo: { name }, el resto pasa tal cual.
-    router.post('/', (req, res) => {
+    router.post('/', asyncHandler(async (req, res) => {
         const { name, ...rest } = req.body;
         if (typeof name !== 'string' || !name.trim()) {
             return res.status(400).json({ error: 'name es requerido.' });
@@ -38,13 +39,13 @@ function createRisksRouter(store) {
             createdAt: new Date().toISOString(),
         };
 
-        const risks = store.upsertRisk(entry);
+        const risks = await store.upsertRisk(entry);
         res.status(201).json({ entry, totalRisks: risks.length });
-    });
+    }));
 
     // PUT /api/risks/:id — actualiza un riesgo existente (mismo body flexible que POST).
-    router.put('/:id', (req, res) => {
-        const risks = store.get('risks') || [];
+    router.put('/:id', asyncHandler(async (req, res) => {
+        const risks = (await store.get('risks')) || [];
         const existing = risks.find((r) => r.id === req.params.id);
         if (!existing) {
             return res.status(404).json({ error: 'Riesgo no encontrado.' });
@@ -56,15 +57,15 @@ function createRisksRouter(store) {
         }
 
         const entry = { ...existing, ...rest, name: name.trim(), updatedAt: new Date().toISOString() };
-        const updated = store.upsertRisk(entry);
+        const updated = await store.upsertRisk(entry);
         res.json({ entry, totalRisks: updated.length });
-    });
+    }));
 
     // DELETE /api/risks/:id
-    router.delete('/:id', (req, res) => {
-        const risks = store.deleteRisk(req.params.id);
+    router.delete('/:id', asyncHandler(async (req, res) => {
+        const risks = await store.deleteRisk(req.params.id);
         res.json({ totalRisks: risks.length });
-    });
+    }));
 
     return router;
 }

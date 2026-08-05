@@ -5,6 +5,7 @@ const { runMonteCarloSimulation, summarizeLosses } = require('../lib/simulation'
 const { evaluateFairThreat, evaluateFairOpportunity } = require('../lib/evaluation');
 const { defaultRiskCriteria, lossFormsKeys } = require('../data/profiles');
 const { validateTriangularRange, validateIterations, validateSeed } = require('../lib/validate');
+const { asyncHandler } = require('../middleware/asyncHandler');
 
 function makeCurrencyFormatter(currency = 'USD') {
     const fmt = new Intl.NumberFormat('en-US', { style: 'currency', currency, minimumFractionDigits: 0, maximumFractionDigits: 0 });
@@ -26,7 +27,7 @@ function createSimulateRouter(store) {
      *  - currency: 'USD' | 'EUR' | 'MXN' | ...
      *  - riskCriteria: (opcional) sobreescribe los criterios guardados para esta corrida
      */
-    router.post('/', (req, res) => {
+    router.post('/', asyncHandler(async (req, res) => {
         const {
             iterations = 10000,
             seed = 0,
@@ -59,7 +60,7 @@ function createSimulateRouter(store) {
             if (lmError) return res.status(400).json({ error: lmError });
         }
 
-        const criteria = riskCriteria || store.get('riskCriteria') || defaultRiskCriteria;
+        const criteria = riskCriteria || (await store.get('riskCriteria')) || defaultRiskCriteria;
         const formatCurrency = makeCurrencyFormatter(currency);
 
         const { annualLosses, usedSeed, sensitivity } = runMonteCarloSimulation({
@@ -93,7 +94,7 @@ function createSimulateRouter(store) {
             // cliente decida si lo necesita, ej. para la estrategia de Transferir/Seguro.
             annualLosses,
         });
-    });
+    }));
 
     return router;
 }
