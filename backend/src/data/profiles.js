@@ -79,6 +79,16 @@ const lossFormsLabels = {
 // excluye todo lo específico de ciberseguridad — coherente con el alcance de la app (ver
 // riskProfiles arriba) — salvo, puntualmente, el dominio de "Seguridad Física y Ambiental" de
 // ISO 27001 Anexo A (perímetro/acceso físico), que es física, no cyber.
+//
+// Cada CATEGORÍA (nivel intermedio) trae además `suggestedAssetCategories`: 0-2 de las 6
+// categorías del Catálogo de Activos (ver ASSET_CATEGORIES en frontend/src/modules/
+// asset-catalog.js) que típicamente aplican a esa categoría de riesgo — ej. Natural→Geológico
+// sugiere "Instalaciones y Sitio"+"Personas". Es una SUGERENCIA editable, mostrada en Paso 1
+// junto a "Activo Afectado" cuando se elige una amenaza del catálogo (ver
+// App.RiskCatalog.useSelected) — nunca un filtro que oculte opciones ni una regla que se
+// imponga. Un arreglo vacío es intencional (no forzado): algunas categorías (ej. Litigios,
+// Cumplimiento Regulatorio) no tienen un tipo de activo único y obvio, y sugerir uno ahí sería
+// la falsa precisión que Broder (1984) advierte evitar — mejor no sugerir nada que sugerir mal.
 const riskCatalog = {
     // Dominio "Natural": el usuario compartió el plan de entregas del Catálogo Maestro
     // AppFair (Entrega 3 — Dominio Natural, ~80 amenazas) sin un documento de contenido
@@ -97,6 +107,7 @@ const riskCatalog = {
             'geologico': {
                 label: 'Geológico',
                 code: 'NAT-01',
+                suggestedAssetCategories: ["Instalaciones y Sitio","Personas"],
                 threats: [
                     { key: 'sismo', name: 'Sismo / Terremoto', standard: 'ISO 22301, NFPA 1600', code: 'NAT-GEO-001', description: 'Movimiento telúrico que puede causar daño estructural, interrupción operativa y riesgo a la vida humana.' },
                     { key: 'tsunami', name: 'Tsunami', standard: 'ISO 22301, NFPA 1600', code: 'NAT-GEO-002', description: 'Ola de gran tamaño generada por un sismo submarino u otra actividad geológica.' },
@@ -113,6 +124,7 @@ const riskCatalog = {
             'hidrometeorologico': {
                 label: 'Hidrometeorológico',
                 code: 'NAT-02',
+                suggestedAssetCategories: ["Instalaciones y Sitio","Personas"],
                 threats: [
                     { key: 'inundacion-pluvial', name: 'Inundación Pluvial', standard: 'ISO 22301, NFPA 1600', code: 'NAT-HID-001', description: 'Acumulación de agua por lluvia intensa que supera la capacidad de drenaje del terreno o de las instalaciones.' },
                     { key: 'inundacion-fluvial', name: 'Inundación Fluvial', standard: 'ISO 22301, NFPA 1600', code: 'NAT-HID-002', description: 'Desbordamiento de un río o cuerpo de agua que inunda instalaciones cercanas.' },
@@ -133,6 +145,7 @@ const riskCatalog = {
             'incendio-natural': {
                 label: 'Incendio Natural',
                 code: 'NAT-03',
+                suggestedAssetCategories: ["Instalaciones y Sitio","Personas"],
                 threats: [
                     { key: 'incendio-forestal', name: 'Incendio Forestal', standard: 'NFPA 1144', code: 'NAT-INC-001', description: 'Fuego de origen natural que se propaga en zonas boscosas hacia instalaciones o terrenos de la organización.' },
                     { key: 'incendio-pastizal', name: 'Incendio de Pastizal', standard: 'NFPA 1144', code: 'NAT-INC-002', description: 'Fuego de propagación rápida en vegetación baja o pastizales cercanos a las instalaciones.' },
@@ -145,6 +158,7 @@ const riskCatalog = {
             'biologico-sanitario': {
                 label: 'Biológico / Sanitario',
                 code: 'NAT-04',
+                suggestedAssetCategories: ["Personas"],
                 threats: [
                     { key: 'pandemia', name: 'Pandemia', standard: 'ISO 22301, NFPA 1600', code: 'NAT-BIO-001', description: 'Brote de enfermedad a escala global que reduce disponibilidad de personal y puede forzar cierre de operaciones.' },
                     { key: 'epidemia-local', name: 'Epidemia Local', standard: 'ISO 22301, NFPA 1600', code: 'NAT-BIO-002', description: 'Brote de enfermedad concentrado en una región o comunidad que afecta al personal.' },
@@ -163,6 +177,7 @@ const riskCatalog = {
             'oceanico-costero': {
                 label: 'Oceánico / Costero',
                 code: 'NAT-05',
+                suggestedAssetCategories: ["Instalaciones y Sitio"],
                 threats: [
                     { key: 'marea-tormenta', name: 'Marea de Tormenta (Storm Surge)', standard: 'ISO 22301, NFPA 1600', code: 'NAT-OCE-001', description: 'Elevación anormal del nivel del mar asociada a un ciclón, que inunda zonas costeras.' },
                     { key: 'erosion-costera', name: 'Erosión Costera', standard: 'ISO 22301', code: 'NAT-OCE-002', description: 'Pérdida gradual de terreno costero por acción del oleaje y las corrientes.' },
@@ -177,6 +192,7 @@ const riskCatalog = {
             'atmosferico-severo': {
                 label: 'Atmosférico Severo',
                 code: 'NAT-06',
+                suggestedAssetCategories: ["Instalaciones y Sitio","Personas"],
                 threats: [
                     { key: 'ola-calor', name: 'Ola de Calor', standard: 'ISO 22301, NFPA 1600', code: 'NAT-ATM-001', description: 'Periodo prolongado de temperatura extrema alta que afecta al personal y a equipos sensibles.' },
                     { key: 'ola-frio', name: 'Ola de Frío', standard: 'ISO 22301, NFPA 1600', code: 'NAT-ATM-002', description: 'Periodo prolongado de temperatura extrema baja que afecta al personal, tuberías y equipos.' },
@@ -193,6 +209,7 @@ const riskCatalog = {
             'espacial': {
                 label: 'Espacial',
                 code: 'NAT-07',
+                suggestedAssetCategories: ["Equipo y Maquinaria"],
                 threats: [
                     { key: 'tormenta-geomagnetica', name: 'Tormenta Geomagnética / Solar', standard: 'ISO 31000', code: 'NAT-ESP-001', description: 'Perturbación del campo magnético terrestre por actividad solar, con riesgo de falla eléctrica y de telecomunicaciones.' },
                     { key: 'eyeccion-masa-coronal', name: 'Eyección de Masa Coronal', standard: 'ISO 31000', code: 'NAT-ESP-002', description: 'Liberación masiva de plasma solar que puede afectar redes eléctricas y sistemas satelitales.' },
@@ -205,6 +222,7 @@ const riskCatalog = {
             'geomorfologico': {
                 label: 'Geomorfológico',
                 code: 'NAT-08',
+                suggestedAssetCategories: ["Instalaciones y Sitio"],
                 threats: [
                     { key: 'erosion-suelo', name: 'Erosión de Suelo', standard: 'ISO 22301', code: 'NAT-GEM-001', description: 'Pérdida gradual de la capa superficial del suelo por agua o viento, que compromete cimientos o accesos.' },
                     { key: 'desertificacion', name: 'Desertificación', standard: 'ISO 31000', code: 'NAT-GEM-002', description: 'Degradación progresiva del suelo hacia condiciones áridas, con impacto de largo plazo en la operación.' },
@@ -248,6 +266,7 @@ const riskCatalog = {
             'robo': {
                 label: 'Robo',
                 code: 'HUM-01',
+                suggestedAssetCategories: ["Inventario / Mercancía"],
                 threats: [
                     { key: 'robo-interno', name: 'Robo Interno', standard: 'ASIS, ISO 31000', code: 'HUM-ROB-001', description: 'Sustracción de bienes por parte de personal con acceso legítimo a las instalaciones.' },
                     { key: 'robo-externo', name: 'Robo Externo', standard: 'ASIS', code: 'HUM-ROB-002', description: 'Sustracción de bienes mediante ingreso no autorizado de terceros ajenos a la organización.' },
@@ -266,6 +285,7 @@ const riskCatalog = {
             'fraude': {
                 label: 'Fraude',
                 code: 'HUM-02',
+                suggestedAssetCategories: ["Información y Procesos"],
                 threats: [
                     { key: 'fraude-financiero', name: 'Fraude Financiero', standard: 'ISO 31000', code: 'HUM-FRA-001', description: 'Manipulación deliberada de recursos financieros para beneficio propio o de terceros.' },
                     { key: 'fraude-contable', name: 'Fraude Contable', standard: 'COSO', code: 'HUM-FRA-002', description: 'Alteración deliberada de registros contables para ocultar pérdidas o inflar resultados.' },
@@ -280,6 +300,7 @@ const riskCatalog = {
             'violencia': {
                 label: 'Violencia',
                 code: 'HUM-03',
+                suggestedAssetCategories: ["Personas"],
                 threats: [
                     { key: 'agresion-fisica', name: 'Agresión Física', standard: 'ASIS', code: 'HUM-VIO-001', description: 'Uso de fuerza física contra una persona dentro o en relación con las instalaciones.' },
                     { key: 'homicidio', name: 'Homicidio', standard: 'ASIS', code: 'HUM-VIO-002', description: 'Privación de la vida de una persona dentro o en relación con las instalaciones.' },
@@ -298,6 +319,7 @@ const riskCatalog = {
             'terrorismo': {
                 label: 'Terrorismo',
                 code: 'HUM-04',
+                suggestedAssetCategories: ["Personas","Instalaciones y Sitio"],
                 threats: [
                     { key: 'atentado-explosivo', name: 'Atentado Explosivo', standard: 'ASIS, NFPA 730', code: 'HUM-TER-001', description: 'Uso de un artefacto explosivo con fines ideológicos o políticos.' },
                     { key: 'ataque-quimico', name: 'Ataque Químico', standard: 'ASIS', code: 'HUM-TER-002', description: 'Uso deliberado de una sustancia química peligrosa contra personas o instalaciones.' },
@@ -312,6 +334,7 @@ const riskCatalog = {
             'sabotaje': {
                 label: 'Sabotaje',
                 code: 'HUM-05',
+                suggestedAssetCategories: ["Equipo y Maquinaria","Instalaciones y Sitio"],
                 threats: [
                     { key: 'sabotaje-infraestructura', name: 'Sabotaje a Infraestructura', standard: 'ASIS, ISO 31000', code: 'HUM-SAB-001', description: 'Daño intencional a instalaciones o infraestructura crítica para interrumpir operaciones.' },
                     { key: 'sabotaje-maquinaria', name: 'Sabotaje a Maquinaria o Equipo', standard: 'ASIS', code: 'HUM-SAB-002', description: 'Daño intencional a maquinaria o equipo para interrumpir la operación.' },
@@ -328,6 +351,7 @@ const riskCatalog = {
             'espionaje': {
                 label: 'Espionaje',
                 code: 'HUM-06',
+                suggestedAssetCategories: ["Información y Procesos"],
                 threats: [
                     { key: 'espionaje-industrial', name: 'Espionaje Industrial', standard: 'ASIS', code: 'HUM-ESP-001', description: 'Obtención no autorizada de información o ventaja competitiva mediante acceso físico indebido.' },
                     { key: 'espionaje-competitivo', name: 'Espionaje Competitivo', standard: 'ASIS', code: 'HUM-ESP-002', description: 'Recolección encubierta de información estratégica por parte de un competidor.' },
@@ -342,6 +366,7 @@ const riskCatalog = {
             'delincuencia-organizada': {
                 label: 'Delincuencia Organizada',
                 code: 'HUM-07',
+                suggestedAssetCategories: ["Inventario / Mercancía"],
                 threats: [
                     { key: 'secuestro', name: 'Secuestro', standard: 'ASIS', code: 'HUM-ORG-001', description: 'Privación de la libertad de una persona por parte de un grupo criminal organizado.' },
                     { key: 'extorsion', name: 'Extorsión', standard: 'ASIS', code: 'HUM-ORG-002', description: 'Exigencia de pago bajo amenaza por parte de un grupo criminal organizado.' },
@@ -356,6 +381,7 @@ const riskCatalog = {
             'intrusion': {
                 label: 'Intrusión',
                 code: 'HUM-08',
+                suggestedAssetCategories: ["Instalaciones y Sitio"],
                 threats: [
                     { key: 'acceso-no-autorizado', name: 'Acceso No Autorizado a Instalaciones', standard: 'ASIS, ISO 27001 Anexo A (Seguridad Física)', code: 'HUM-INT-001', description: 'Ingreso de personas no autorizadas a áreas restringidas o críticas de la organización.' },
                     { key: 'allanamiento', name: 'Allanamiento', standard: 'ASIS', code: 'HUM-INT-002', description: 'Ingreso forzado a instalaciones fuera de horario o sin autorización.' },
@@ -369,6 +395,7 @@ const riskCatalog = {
             'corrupcion': {
                 label: 'Corrupción',
                 code: 'HUM-09',
+                suggestedAssetCategories: ["Imagen y Reputación"],
                 threats: [
                     { key: 'soborno', name: 'Soborno', standard: 'ISO 37001', code: 'HUM-COR-001', description: 'Ofrecimiento o aceptación de un beneficio indebido a cambio de una acción u omisión.' },
                     { key: 'cohecho-personal-seguridad', name: 'Cohecho a Personal de Seguridad', standard: 'ISO 37001, ASIS', code: 'HUM-COR-002', description: 'Pago indebido a personal de seguridad para facilitar un acto ilícito.' },
@@ -381,6 +408,7 @@ const riskCatalog = {
             'error-humano': {
                 label: 'Error Humano',
                 code: 'HUM-10',
+                suggestedAssetCategories: [],
                 threats: [
                     { key: 'error-procedimientos', name: 'Error en Procedimientos Operativos', standard: 'ISO 31000', code: 'HUM-ERR-001', description: 'Equivocación no deliberada de personal al ejecutar un proceso, con consecuencia de pérdida o daño.' },
                     { key: 'incumplimiento-procedimientos', name: 'Incumplimiento de Procedimientos de Seguridad', standard: 'ASIS', code: 'HUM-ERR-002', description: 'Personal que no sigue protocolos establecidos, sin intención maliciosa.' },
@@ -420,6 +448,7 @@ const riskCatalog = {
             'energia-respaldo': {
                 label: 'Energía y Respaldo Eléctrico para Seguridad',
                 code: 'TEC-01',
+                suggestedAssetCategories: ["Equipo y Maquinaria"],
                 threats: [
                     { key: 'falla-suministro-electrico-principal', name: 'Falla de Suministro Eléctrico Principal', standard: 'NFPA 70, ISO 31000', code: 'TEC-ENE-001', description: 'Interrupción del suministro eléctrico comercial que deja sin alimentación a los sistemas de seguridad física.' },
                     { key: 'falla-generador-respaldo', name: 'Falla de Generador de Respaldo', standard: 'NFPA 110', code: 'TEC-ENE-002', description: 'El generador de emergencia no arranca o no sostiene la carga cuando falla la energía principal.' },
@@ -435,6 +464,7 @@ const riskCatalog = {
             'videovigilancia': {
                 label: 'Videovigilancia (CCTV)',
                 code: 'TEC-02',
+                suggestedAssetCategories: ["Equipo y Maquinaria"],
                 threats: [
                     { key: 'falla-camara-cctv', name: 'Falla de Cámara de Videovigilancia', standard: 'IEC 62676', code: 'TEC-CCT-001', description: 'Descompostura de una o más cámaras que genera un punto ciego en la cobertura.' },
                     { key: 'falla-grabador-video', name: 'Falla de Grabador de Video (DVR/NVR)', standard: 'IEC 62676', code: 'TEC-CCT-002', description: 'Mal funcionamiento del equipo que graba y almacena el video de las cámaras.' },
@@ -451,6 +481,7 @@ const riskCatalog = {
             'control-acceso-tec': {
                 label: 'Control de Acceso',
                 code: 'TEC-03',
+                suggestedAssetCategories: ["Equipo y Maquinaria"],
                 threats: [
                     { key: 'falla-lector-credencial', name: 'Falla de Lector de Tarjeta o Credencial', standard: 'UL 294', code: 'TEC-ACC-001', description: 'El lector de control de acceso deja de reconocer credenciales válidas o falla intermitentemente.' },
                     { key: 'falla-lector-biometrico', name: 'Falla de Lector Biométrico', standard: 'UL 294', code: 'TEC-ACC-002', description: 'El equipo de reconocimiento de huella, rostro u otro rasgo biométrico deja de identificar correctamente al personal autorizado.' },
@@ -466,6 +497,7 @@ const riskCatalog = {
             'deteccion-intrusion': {
                 label: 'Detección de Intrusión y Alarmas',
                 code: 'TEC-04',
+                suggestedAssetCategories: ["Equipo y Maquinaria"],
                 threats: [
                     { key: 'falla-sensor-movimiento', name: 'Falla de Sensor de Movimiento', standard: 'IEC 60839', code: 'TEC-ALA-001', description: 'El detector de movimiento no activa la alarma ante presencia no autorizada, o genera falsas alarmas recurrentes.' },
                     { key: 'falla-sensor-perimetral', name: 'Falla de Sensor Perimetral (Cerca Sensorizada / Fibra Óptica)', standard: 'IEC 60839', code: 'TEC-ALA-002', description: 'El sistema de detección instalado en el perímetro no identifica un intento de cruce o escalamiento.' },
@@ -481,6 +513,7 @@ const riskCatalog = {
             'incendio-tecnico': {
                 label: 'Incendio Accidental de Origen Técnico',
                 code: 'TEC-05',
+                suggestedAssetCategories: ["Instalaciones y Sitio"],
                 threats: [
                     { key: 'incendio-electrico', name: 'Incendio por Falla Eléctrica', standard: 'NFPA 70, ASIS', code: 'TEC-INC-001', description: 'Fuego originado por corto circuito, sobrecarga o mal estado de instalaciones eléctricas.' },
                     { key: 'incendio-sobrecalentamiento-equipo', name: 'Incendio por Sobrecalentamiento de Equipo', standard: 'NFPA 70', code: 'TEC-INC-002', description: 'Fuego causado por un equipo que opera a una temperatura superior a la que puede disipar de forma segura.' },
@@ -492,6 +525,7 @@ const riskCatalog = {
             'proteccion-incendio': {
                 label: 'Detección y Protección contra Incendio',
                 code: 'TEC-06',
+                suggestedAssetCategories: ["Equipo y Maquinaria"],
                 threats: [
                     { key: 'falla-detector-humo', name: 'Falla de Detector de Humo', standard: 'NFPA 72', code: 'TEC-PCI-001', description: 'El detector de humo no activa la alarma ante la presencia de humo, o genera falsas alarmas recurrentes.' },
                     { key: 'falla-panel-alarma-incendio', name: 'Falla de Panel de Alarma Contra Incendio', standard: 'NFPA 72', code: 'TEC-PCI-002', description: 'La central que procesa las señales de detección de incendio deja de funcionar correctamente.' },
@@ -506,6 +540,7 @@ const riskCatalog = {
             'comunicaciones-seguridad': {
                 label: 'Comunicaciones de Seguridad',
                 code: 'TEC-07',
+                suggestedAssetCategories: ["Equipo y Maquinaria"],
                 threats: [
                     { key: 'falla-radio-personal-seguridad', name: 'Falla de Radio de Comunicación del Personal de Seguridad', standard: 'ASIS', code: 'TEC-COM-001', description: 'El equipo de radio usado por guardias o personal de vigilancia deja de transmitir o recibir.' },
                     { key: 'falla-intercomunicador', name: 'Falla de Sistema de Intercomunicación (Interfón)', standard: 'ASIS', code: 'TEC-COM-002', description: 'El equipo que permite comunicación entre un punto de acceso y la caseta de vigilancia deja de funcionar.' },
@@ -519,6 +554,7 @@ const riskCatalog = {
             'iluminacion-seguridad': {
                 label: 'Iluminación de Seguridad',
                 code: 'TEC-08',
+                suggestedAssetCategories: ["Instalaciones y Sitio"],
                 threats: [
                     { key: 'falla-iluminacion-perimetral', name: 'Falla de Iluminación Perimetral', standard: 'NFPA 730', code: 'TEC-ILU-001', description: 'Las luminarias que iluminan el perímetro de las instalaciones dejan de funcionar, reduciendo la visibilidad y disuasión.' },
                     { key: 'falla-iluminacion-emergencia', name: 'Falla de Iluminación de Emergencia', standard: 'NFPA 101', code: 'TEC-ILU-002', description: 'El sistema de luces de emergencia no se activa durante un corte de energía.' },
@@ -529,6 +565,7 @@ const riskCatalog = {
             'inspeccion-deteccion': {
                 label: 'Equipos de Inspección y Detección',
                 code: 'TEC-09',
+                suggestedAssetCategories: ["Equipo y Maquinaria"],
                 threats: [
                     { key: 'falla-escaner-rayos-x', name: 'Falla de Escáner de Rayos X', standard: 'ASIS, C-TPAT', code: 'TEC-INS-001', description: 'El equipo de inspección por rayos X de carga, correo o pertenencias deja de funcionar o pierde calibración.' },
                     { key: 'falla-detector-metales', name: 'Falla de Detector de Metales', standard: 'ASIS', code: 'TEC-INS-002', description: 'El arco o detector portátil de metales pierde sensibilidad o deja de responder.' },
@@ -540,6 +577,7 @@ const riskCatalog = {
             'rastreo-monitoreo-activos': {
                 label: 'Rastreo y Monitoreo de Activos',
                 code: 'TEC-10',
+                suggestedAssetCategories: ["Equipo y Maquinaria"],
                 threats: [
                     { key: 'falla-perdida-senal-gps', name: 'Falla o Pérdida de Señal de Rastreo GPS', standard: 'ASIS', code: 'TEC-RAS-001', description: 'El equipo de rastreo satelital de un vehículo o activo deja de reportar su ubicación.' },
                     { key: 'falla-telemetria-flota', name: 'Falla de Telemetría de Flota', standard: 'ASIS', code: 'TEC-RAS-002', description: 'El sistema que reporta velocidad, rutas o eventos de manejo de la flota deja de transmitir datos.' },
@@ -551,6 +589,7 @@ const riskCatalog = {
             'obsolescencia-tecnologica': {
                 label: 'Obsolescencia y Ciclo de Vida de Tecnología de Seguridad',
                 code: 'TEC-11',
+                suggestedAssetCategories: ["Equipo y Maquinaria"],
                 threats: [
                     { key: 'obsolescencia-equipo-seguridad', name: 'Obsolescencia de Equipo de Seguridad', standard: 'ISO 55001', code: 'TEC-OBS-001', description: 'Equipo de seguridad que ya no ofrece un desempeño adecuado por antigüedad, frente a las amenazas actuales.' },
                     { key: 'discontinuacion-soporte-fabricante', name: 'Discontinuación de Soporte del Fabricante', standard: 'ISO 55001', code: 'TEC-OBS-002', description: 'El fabricante deja de dar soporte técnico o actualizaciones a un sistema de seguridad todavía en uso.' },
@@ -579,6 +618,7 @@ const riskCatalog = {
             'procesos-produccion': {
                 label: 'Procesos y Producción',
                 code: 'OPE-01',
+                suggestedAssetCategories: ["Equipo y Maquinaria"],
                 threats: [
                     { key: 'interrupcion-linea-produccion', name: 'Interrupción de Línea de Producción', standard: 'ISO 22301', code: 'OPE-PRO-001', description: 'Detención no planeada de una línea de producción que afecta la operación.' },
                     { key: 'paro-no-programado-planta', name: 'Paro No Programado de Planta', standard: 'ISO 22301', code: 'OPE-PRO-002', description: 'Detención total de la planta fuera del calendario de operación previsto.' },
@@ -597,6 +637,7 @@ const riskCatalog = {
             'mantenimiento': {
                 label: 'Mantenimiento',
                 code: 'OPE-02',
+                suggestedAssetCategories: ["Equipo y Maquinaria"],
                 threats: [
                     { key: 'falla-mantenimiento-diferido', name: 'Falla por Mantenimiento Diferido', standard: 'ISO 55001', code: 'OPE-MTO-001', description: 'Falla de equipo causada por posponer el mantenimiento programado.' },
                     { key: 'mantenimiento-correctivo-no-planeado', name: 'Mantenimiento Correctivo No Planeado', standard: 'ISO 55001', code: 'OPE-MTO-002', description: 'Necesidad de reparación urgente no prevista que interrumpe la operación.' },
@@ -613,6 +654,7 @@ const riskCatalog = {
             'calidad': {
                 label: 'Calidad',
                 code: 'OPE-03',
+                suggestedAssetCategories: ["Inventario / Mercancía"],
                 threats: [
                     { key: 'no-conformidad-producto', name: 'No Conformidad de Producto', standard: 'ISO 9001', code: 'OPE-CAL-001', description: 'Producto que no cumple con los requisitos de calidad establecidos.' },
                     { key: 'retiro-producto-mercado', name: 'Retiro de Producto del Mercado (Recall)', standard: 'ISO 9001', code: 'OPE-CAL-002', description: 'Necesidad de retirar producto ya distribuido por un defecto o riesgo detectado.' },
@@ -629,6 +671,7 @@ const riskCatalog = {
             'capacidad-programacion': {
                 label: 'Capacidad y Programación',
                 code: 'OPE-04',
+                suggestedAssetCategories: [],
                 threats: [
                     { key: 'sobrecarga-capacidad-instalada', name: 'Sobrecarga de Capacidad Instalada', standard: 'ISO 31000', code: 'OPE-CAP-001', description: 'Demanda que excede la capacidad máxima de producción u operación disponible.' },
                     { key: 'programacion-deficiente-produccion', name: 'Programación Deficiente de Producción', standard: 'ISO 31000', code: 'OPE-CAP-002', description: 'Mala planeación de la secuencia u horarios de producción que genera ineficiencia.' },
@@ -641,6 +684,7 @@ const riskCatalog = {
             'logistica-interna': {
                 label: 'Logística Interna',
                 code: 'OPE-05',
+                suggestedAssetCategories: ["Inventario / Mercancía"],
                 threats: [
                     { key: 'dano-producto-manejo-interno', name: 'Daño de Producto en Manejo Interno', standard: 'ISO 22301', code: 'OPE-LOG-001', description: 'Deterioro de producto durante su manejo dentro de las instalaciones de la organización.' },
                     { key: 'error-picking-surtido', name: 'Error de Picking/Surtido de Pedido', standard: 'ISO 31000', code: 'OPE-LOG-002', description: 'Preparación incorrecta de un pedido (producto, cantidad o destino equivocado).' },
@@ -657,6 +701,7 @@ const riskCatalog = {
             'gestion-instalaciones': {
                 label: 'Gestión de Instalaciones',
                 code: 'OPE-06',
+                suggestedAssetCategories: ["Instalaciones y Sitio"],
                 threats: [
                     { key: 'falla-hvac', name: 'Falla de Sistema de Climatización (HVAC)', standard: 'ISO 22301', code: 'OPE-INS-001', description: 'Falla del sistema de calefacción, ventilación o aire acondicionado que afecta personal, producto o equipo.' },
                     { key: 'falla-suministro-agua', name: 'Falla de Suministro de Agua', standard: 'ISO 22301', code: 'OPE-INS-002', description: 'Interrupción del abastecimiento de agua a las instalaciones.' },
@@ -676,6 +721,7 @@ const riskCatalog = {
             'recursos-humanos-operativos': {
                 label: 'Recursos Humanos Operativos',
                 code: 'OPE-07',
+                suggestedAssetCategories: ["Personas"],
                 threats: [
                     { key: 'escasez-personal-calificado', name: 'Escasez de Personal Calificado', standard: 'ISO 31000', code: 'OPE-RRH-001', description: 'Dificultad para cubrir puestos operativos con el nivel de calificación requerido.' },
                     { key: 'rotacion-personal-elevada', name: 'Rotación de Personal Elevada', standard: 'ISO 31000', code: 'OPE-RRH-002', description: 'Salida frecuente de personal que afecta la continuidad y curva de aprendizaje operativa.' },
@@ -692,6 +738,7 @@ const riskCatalog = {
             'continuidad-operativa': {
                 label: 'Continuidad Operativa',
                 code: 'OPE-08',
+                suggestedAssetCategories: [],
                 threats: [
                     { key: 'interrupcion-servicio-cliente-critico', name: 'Interrupción de Servicio a Cliente Crítico', standard: 'ISO 22301', code: 'OPE-CON-001', description: 'Falla en la entrega de producto o servicio a un cliente cuya relación es crítica para la operación.' },
                     { key: 'falla-plan-continuidad-no-probado', name: 'Falla de Plan de Continuidad No Probado', standard: 'ISO 22301', code: 'OPE-CON-002', description: 'Un plan de continuidad de negocio no funciona como se esperaba por no haberse probado previamente.' },
@@ -720,6 +767,7 @@ const riskCatalog = {
             'socios-comerciales': {
                 label: 'Seguridad de Socios Comerciales',
                 code: 'CTP-01',
+                suggestedAssetCategories: [],
                 threats: [
                     { key: 'seleccion-socio-sin-verificacion', name: 'Selección de Socio Comercial sin Verificación de Seguridad', standard: 'C-TPAT', code: 'CTP-SOC-001', description: 'Incorporación de un proveedor, transportista o socio sin evaluar su cumplimiento de criterios mínimos de seguridad.' },
                     { key: 'incumplimiento-socio-comercial', name: 'Incumplimiento de Seguridad por Socio Comercial', standard: 'C-TPAT', code: 'CTP-SOC-002', description: 'Un proveedor, transportista o socio de la cadena de suministro no cumple los criterios mínimos de seguridad exigidos.' },
@@ -731,6 +779,7 @@ const riskCatalog = {
             'contenedores-transporte': {
                 label: 'Seguridad de Contenedores y Medios de Transporte',
                 code: 'CTP-02',
+                suggestedAssetCategories: ["Inventario / Mercancía"],
                 threats: [
                     { key: 'manipulacion-contenedor', name: 'Manipulación No Autorizada de Contenedor', standard: 'C-TPAT', code: 'CTP-CON-001', description: 'Apertura o alteración indebida de un contenedor durante el trayecto.' },
                     { key: 'ausencia-inspeccion-7-puntos', name: 'Ausencia de Inspección de 7 Puntos del Contenedor', standard: 'C-TPAT', code: 'CTP-CON-002', description: 'El contenedor no se inspecciona (pared frontal, lados, piso, techo, puertas, exterior/chasis) antes de la carga.' },
@@ -744,6 +793,7 @@ const riskCatalog = {
             'sellos-seguridad': {
                 label: 'Seguridad de Sellos',
                 code: 'CTP-03',
+                suggestedAssetCategories: ["Inventario / Mercancía"],
                 threats: [
                     { key: 'sello-no-conforme-iso17712', name: 'Sello de Alta Seguridad No Conforme a Norma ISO 17712', standard: 'C-TPAT, ISO 17712', code: 'CTP-SEL-001', description: 'Se usa un sello que no cumple con la norma ISO 17712 para sellos de alta seguridad en contenedores de carga.' },
                     { key: 'manipulacion-sello-seguridad', name: 'Sustitución No Autorizada de Sello de Seguridad', standard: 'C-TPAT, ISO 17712', code: 'CTP-SEL-002', description: 'Un sello de seguridad es retirado y reemplazado sin autorización durante el trayecto.' },
@@ -755,6 +805,7 @@ const riskCatalog = {
             'seguridad-procedimental': {
                 label: 'Seguridad Procedimental',
                 code: 'CTP-04',
+                suggestedAssetCategories: [],
                 threats: [
                     { key: 'documentacion-embarque-incompleta', name: 'Documentación de Embarque Incompleta o Alterada', standard: 'C-TPAT', code: 'CTP-PRO-001', description: 'Los documentos de embarque están incompletos, ilegibles o muestran señales de alteración.' },
                     { key: 'discrepancia-manifiesto-carga', name: 'Discrepancia entre Manifiesto y Carga Física', standard: 'C-TPAT', code: 'CTP-PRO-002', description: 'La mercancía física no coincide con lo declarado en el manifiesto de carga.' },
@@ -766,6 +817,7 @@ const riskCatalog = {
             'controles-acceso-fisico': {
                 label: 'Controles de Acceso Físico',
                 code: 'CTP-05',
+                suggestedAssetCategories: ["Instalaciones y Sitio"],
                 threats: [
                     { key: 'ingreso-visitante-sin-registro', name: 'Ingreso de Visitante sin Registro', standard: 'C-TPAT', code: 'CTP-ACC-001', description: 'Una persona ajena ingresa a las instalaciones sin quedar registrada.' },
                     { key: 'falta-credencial-diferenciada', name: 'Falta de Credencial Diferenciada para Empleados, Visitantes y Proveedores', standard: 'C-TPAT', code: 'CTP-ACC-002', description: 'No hay forma visual de distinguir entre empleados, visitantes y proveedores dentro de las instalaciones.' },
@@ -776,6 +828,7 @@ const riskCatalog = {
             'seguridad-fisica-instalaciones': {
                 label: 'Seguridad Física de Instalaciones',
                 code: 'CTP-06',
+                suggestedAssetCategories: ["Instalaciones y Sitio"],
                 threats: [
                     { key: 'perimetro-sin-cercado', name: 'Perímetro sin Cercado Adecuado', standard: 'C-TPAT', code: 'CTP-FIS-001', description: 'El perímetro de las instalaciones carece de una barrera física suficiente para disuadir el acceso no autorizado.' },
                     { key: 'iluminacion-perimetral-insuficiente', name: 'Iluminación Perimetral Insuficiente', standard: 'C-TPAT', code: 'CTP-FIS-002', description: 'La iluminación del perímetro y áreas críticas no es suficiente para la vigilancia nocturna.' },
@@ -788,6 +841,7 @@ const riskCatalog = {
             'seguridad-personal': {
                 label: 'Seguridad de Personal',
                 code: 'CTP-07',
+                suggestedAssetCategories: ["Personas"],
                 threats: [
                     { key: 'personal-no-verificado', name: 'Contratación sin Verificación de Antecedentes', standard: 'C-TPAT', code: 'CTP-PER-001', description: 'Personal sin verificación de antecedentes con acceso a carga, vehículos o instalaciones logísticas.' },
                     { key: 'personal-temporal-sin-verificacion', name: 'Personal Temporal sin Verificación de Antecedentes', standard: 'C-TPAT', code: 'CTP-PER-002', description: 'Personal eventual o subcontratado obtiene acceso sin pasar por el mismo proceso de verificación que el personal permanente.' },
@@ -798,6 +852,7 @@ const riskCatalog = {
             'capacitacion-conciencia': {
                 label: 'Capacitación y Conciencia de Seguridad',
                 code: 'CTP-08',
+                suggestedAssetCategories: ["Personas"],
                 threats: [
                     { key: 'falta-capacitacion-deteccion-contrabando', name: 'Falta de Capacitación en Detección de Contrabando', standard: 'C-TPAT', code: 'CTP-CAP-001', description: 'El personal no está capacitado para reconocer indicios de contrabando en la carga.' },
                     { key: 'falta-capacitacion-manipulacion-indebida', name: 'Falta de Capacitación en Reconocimiento de Manipulación Indebida', standard: 'C-TPAT', code: 'CTP-CAP-002', description: 'El personal no está capacitado para identificar señales de que un contenedor o sello fue manipulado.' },
@@ -807,6 +862,7 @@ const riskCatalog = {
             'seguridad-agricola': {
                 label: 'Seguridad Agrícola',
                 code: 'CTP-09',
+                suggestedAssetCategories: ["Inventario / Mercancía"],
                 threats: [
                     { key: 'contaminacion-contenedor-plagas', name: 'Contaminación de Contenedor con Plagas o Material Vegetal', standard: 'C-TPAT', code: 'CTP-AGR-001', description: 'Presencia de plagas, insectos o material vegetal no declarado dentro de un contenedor de carga.' },
                     { key: 'presencia-suelo-materia-organica', name: 'Presencia de Suelo o Materia Orgánica en Contenedor', standard: 'C-TPAT', code: 'CTP-AGR-002', description: 'Se detecta tierra u otro material orgánico en un contenedor, con riesgo de introducir contaminación biológica.' },
@@ -826,6 +882,7 @@ const riskCatalog = {
             'ciberseguridad': {
                 label: 'Ciberseguridad de la Cadena de Suministro',
                 code: 'CTP-10',
+                suggestedAssetCategories: ["Información y Procesos"],
                 threats: [
                     { key: 'acceso-no-autorizado-sistemas-cadena-suministro', name: 'Acceso No Autorizado a Sistemas de Información de la Cadena de Suministro', standard: 'C-TPAT (Ciberseguridad)', code: 'CTP-CYB-001', description: 'Ingreso no autorizado a los sistemas que administran carga, manifiestos o control de acceso.' },
                     { key: 'falta-control-contrasenas-sistemas-criticos', name: 'Falta de Control de Contraseñas en Sistemas Críticos', standard: 'C-TPAT (Ciberseguridad)', code: 'CTP-CYB-002', description: 'Contraseñas débiles, compartidas o sin cambio periódico en sistemas que soportan la cadena de suministro.' },
@@ -869,6 +926,7 @@ const riskCatalog = {
             'solvencia-financiera': {
                 label: 'Solvencia Financiera',
                 code: 'OEA-01',
+                suggestedAssetCategories: [],
                 threats: [
                     { key: 'insolvencia-financiera-empresa', name: 'Insolvencia Financiera de la Empresa', standard: 'OEA (Marco SAFE de la OMA)', code: 'OEA-FIN-001', description: 'La empresa no cuenta con la solvencia financiera exigida para calificar o mantener la certificación OEA.' },
                     { key: 'falta-registro-contable-auditable', name: 'Falta de Registro Contable Auditable', standard: 'OEA (Marco SAFE de la OMA)', code: 'OEA-FIN-002', description: 'La contabilidad de la empresa no cumple con los estándares exigidos para ser auditada por la autoridad aduanera.' },
@@ -879,6 +937,7 @@ const riskCatalog = {
             'historial-cumplimiento': {
                 label: 'Historial de Cumplimiento',
                 code: 'OEA-02',
+                suggestedAssetCategories: ["Imagen y Reputación"],
                 threats: [
                     { key: 'antecedente-infraccion-aduanera', name: 'Antecedente de Infracción Aduanera', standard: 'OEA (Marco SAFE de la OMA)', code: 'OEA-CUM-001', description: 'La empresa registra una infracción previa ante la autoridad aduanera que afecta su elegibilidad OEA.' },
                     { key: 'antecedente-penal-comercio-exterior', name: 'Antecedente Penal Relacionado con Comercio Exterior', standard: 'OEA (Marco SAFE de la OMA)', code: 'OEA-CUM-002', description: 'La empresa o alguno de sus representantes tiene un antecedente penal vinculado a operaciones de comercio exterior.' },
@@ -889,6 +948,7 @@ const riskCatalog = {
             'gestion-registros': {
                 label: 'Gestión de Registros Comerciales y Logísticos',
                 code: 'OEA-03',
+                suggestedAssetCategories: ["Información y Procesos"],
                 threats: [
                     { key: 'falta-trazabilidad-documental', name: 'Falta de Trazabilidad Documental de la Operación de Comercio Exterior', standard: 'OEA (Marco SAFE de la OMA)', code: 'OEA-REG-001', description: 'No es posible reconstruir el historial documental completo de una operación de importación/exportación.' },
                     { key: 'discrepancia-registros-operacion-fisica', name: 'Discrepancia entre Registros Contables y Operación Física', standard: 'OEA (Marco SAFE de la OMA)', code: 'OEA-REG-002', description: 'Los registros contables no coinciden con el movimiento físico real de la mercancía.' },
@@ -899,6 +959,7 @@ const riskCatalog = {
             'socios-comerciales-oea': {
                 label: 'Seguridad de Socios Comerciales',
                 code: 'OEA-04',
+                suggestedAssetCategories: [],
                 threats: [
                     { key: 'socio-sin-certificacion-oea', name: 'Socio Comercial sin Certificación OEA Reconocida', standard: 'OEA (Marco SAFE de la OMA)', code: 'OEA-SOC-001', description: 'Se opera con un socio comercial extranjero sin certificación OEA reconocida por acuerdo de reconocimiento mutuo.' },
                     { key: 'falta-evaluacion-riesgo-socio', name: 'Falta de Evaluación de Riesgo de Socio Comercial', standard: 'OEA (Marco SAFE de la OMA)', code: 'OEA-SOC-002', description: 'No se evalúa formalmente el riesgo de seguridad y cumplimiento de un socio antes de operar con él.' },
@@ -908,6 +969,7 @@ const riskCatalog = {
             'seguridad-carga-oea': {
                 label: 'Seguridad de la Carga',
                 code: 'OEA-05',
+                suggestedAssetCategories: ["Inventario / Mercancía"],
                 threats: [
                     { key: 'alteracion-carga-almacenamiento', name: 'Alteración de Carga Durante Almacenamiento', standard: 'OEA (Marco SAFE de la OMA)', code: 'OEA-CAR-001', description: 'La mercancía es alterada mientras permanece almacenada bajo control aduanero.' },
                     { key: 'sustitucion-mercancia-declarada', name: 'Sustitución de Mercancía Declarada', standard: 'OEA (Marco SAFE de la OMA)', code: 'OEA-CAR-002', description: 'La mercancía físicamente embarcada no corresponde a la declarada ante la autoridad aduanera.' },
@@ -918,6 +980,7 @@ const riskCatalog = {
             'seguridad-transporte-oea': {
                 label: 'Seguridad del Transporte',
                 code: 'OEA-06',
+                suggestedAssetCategories: ["Inventario / Mercancía"],
                 threats: [
                     { key: 'unidad-sin-dispositivo-rastreo', name: 'Unidad de Transporte sin Dispositivo de Rastreo', standard: 'OEA (Marco SAFE de la OMA)', code: 'OEA-TRA-001', description: 'La unidad que transporta la mercancía no cuenta con un dispositivo de geolocalización activo.' },
                     { key: 'ruta-no-autorizada-desviada', name: 'Ruta de Transporte No Autorizada o Desviada', standard: 'OEA (Marco SAFE de la OMA)', code: 'OEA-TRA-002', description: 'La unidad se desvía de la ruta autorizada o programada sin justificación registrada.' },
@@ -927,6 +990,7 @@ const riskCatalog = {
             'seguridad-instalaciones-oea': {
                 label: 'Seguridad de las Instalaciones',
                 code: 'OEA-07',
+                suggestedAssetCategories: ["Instalaciones y Sitio"],
                 threats: [
                     { key: 'acceso-no-controlado-almacen-aduanero', name: 'Acceso No Controlado a Áreas de Almacenamiento Aduanero', standard: 'OEA (Marco SAFE de la OMA)', code: 'OEA-INS-001', description: 'Personal o vehículos ingresan sin control a un área bajo control aduanero.' },
                     { key: 'falta-vigilancia-recinto-fiscalizado', name: 'Falta de Vigilancia en Recinto Fiscalizado', standard: 'OEA (Marco SAFE de la OMA)', code: 'OEA-INS-002', description: 'Un recinto bajo control fiscal opera sin la vigilancia mínima exigida.' },
@@ -936,6 +1000,7 @@ const riskCatalog = {
             'seguridad-personal-oea': {
                 label: 'Seguridad del Personal',
                 code: 'OEA-08',
+                suggestedAssetCategories: ["Personas"],
                 threats: [
                     { key: 'personal-sin-verificacion-confiabilidad', name: 'Personal sin Verificación de Confiabilidad', standard: 'OEA (Marco SAFE de la OMA)', code: 'OEA-PER-001', description: 'Personal con acceso a operaciones de comercio exterior sin un proceso de verificación de confianza.' },
                     { key: 'falta-capacitacion-procedimientos-aduaneros', name: 'Falta de Capacitación en Procedimientos Aduaneros', standard: 'OEA (Marco SAFE de la OMA)', code: 'OEA-PER-002', description: 'El personal involucrado en comercio exterior no está capacitado en los procedimientos aduaneros aplicables.' },
@@ -945,6 +1010,7 @@ const riskCatalog = {
             'gestion-crisis-continuidad': {
                 label: 'Gestión de Crisis y Continuidad',
                 code: 'OEA-09',
+                suggestedAssetCategories: [],
                 threats: [
                     { key: 'falta-plan-gestion-crisis', name: 'Falta de Plan de Gestión de Crisis', standard: 'OEA (Marco SAFE de la OMA)', code: 'OEA-CRI-001', description: 'La empresa no cuenta con un plan formal para gestionar una crisis de seguridad o cumplimiento aduanero.' },
                     { key: 'ausencia-procedimiento-recuperacion-incidente', name: 'Ausencia de Procedimiento de Recuperación ante Incidente Aduanero', standard: 'OEA (Marco SAFE de la OMA)', code: 'OEA-CRI-002', description: 'No existe un procedimiento definido para restablecer la operación tras un incidente que afecte a la autoridad aduanera.' },
@@ -954,6 +1020,7 @@ const riskCatalog = {
             'mejora-continua': {
                 label: 'Medición, Análisis y Mejora Continua',
                 code: 'OEA-10',
+                suggestedAssetCategories: [],
                 threats: [
                     { key: 'falta-autoevaluacion-periodica', name: 'Falta de Autoevaluación Periódica del Programa de Seguridad', standard: 'OEA (Marco SAFE de la OMA)', code: 'OEA-MEJ-001', description: 'La empresa no revisa periódicamente el desempeño de su propio programa de seguridad OEA.' },
                     { key: 'ausencia-auditoria-interna-cumplimiento', name: 'Ausencia de Auditoría Interna de Cumplimiento OEA', standard: 'OEA (Marco SAFE de la OMA)', code: 'OEA-MEJ-002', description: 'No se realiza una auditoría interna periódica del cumplimiento de los requisitos OEA.' },
@@ -979,6 +1046,7 @@ const riskCatalog = {
             'cumplimiento-regulatorio': {
                 label: 'Cumplimiento Regulatorio',
                 code: 'LEG-01',
+                suggestedAssetCategories: [],
                 threats: [
                     { key: 'incumplimiento-normativa-vigente', name: 'Incumplimiento de Normativa Vigente', standard: 'ISO 37301, ISO 31000', code: 'LEG-REG-001', description: 'Operación fuera de los requisitos legales aplicables a la actividad de la organización.' },
                     { key: 'cambio-regulatorio-sobreviniente', name: 'Cambio Regulatorio Sobreviniente', standard: 'ISO 37301', code: 'LEG-REG-002', description: 'Una nueva ley o reglamento modifica los requisitos bajo los que opera la organización, sin tiempo suficiente para adaptarse.' },
@@ -993,6 +1061,7 @@ const riskCatalog = {
             'litigios-responsabilidad-civil': {
                 label: 'Litigios y Responsabilidad Civil',
                 code: 'LEG-02',
+                suggestedAssetCategories: [],
                 threats: [
                     { key: 'demanda-terceros-danos', name: 'Demanda de Terceros por Daños', standard: 'ISO 31000', code: 'LEG-LIT-001', description: 'Un tercero inicia una acción legal alegando un daño causado por la organización.' },
                     { key: 'demanda-laboral', name: 'Demanda Laboral', standard: 'ISO 45001, ISO 31000', code: 'LEG-LIT-002', description: 'Un empleado actual o anterior inicia una acción legal contra la organización.' },
@@ -1006,6 +1075,7 @@ const riskCatalog = {
             'contratos-obligaciones-comerciales': {
                 label: 'Contratos y Obligaciones Comerciales',
                 code: 'LEG-03',
+                suggestedAssetCategories: [],
                 threats: [
                     { key: 'incumplimiento-contrato-contraparte', name: 'Incumplimiento de Contrato por Contraparte', standard: 'ISO 31000', code: 'LEG-CON-001', description: 'Un proveedor, cliente o socio comercial no cumple con lo pactado contractualmente.' },
                     { key: 'incumplimiento-contrato-organizacion', name: 'Incumplimiento de Contrato por la Organización', standard: 'ISO 31000', code: 'LEG-CON-002', description: 'La organización no cumple con una obligación contractual que había asumido.' },
@@ -1019,6 +1089,7 @@ const riskCatalog = {
             'licencias-permisos-operativos': {
                 label: 'Licencias y Permisos Operativos',
                 code: 'LEG-04',
+                suggestedAssetCategories: [],
                 threats: [
                     { key: 'vencimiento-licencia-sin-renovacion', name: 'Vencimiento de Licencia sin Renovación', standard: 'ISO 37301', code: 'LEG-LIC-001', description: 'Una licencia o permiso operativo expira sin haberse renovado a tiempo.' },
                     { key: 'permiso-insuficiente-alcance-real', name: 'Permiso de Operación Insuficiente para el Alcance Real', standard: 'ISO 37301', code: 'LEG-LIC-002', description: 'La operación real de la organización excede lo autorizado en el permiso vigente.' },
@@ -1030,6 +1101,7 @@ const riskCatalog = {
             'propiedad-intelectual': {
                 label: 'Propiedad Intelectual',
                 code: 'LEG-05',
+                suggestedAssetCategories: ["Información y Procesos"],
                 threats: [
                     { key: 'infraccion-marca-patente-por-organizacion', name: 'Infracción de Marca o Patente por la Organización', standard: 'ISO 31000', code: 'LEG-PIN-001', description: 'La organización usa, sin autorización, una marca o patente propiedad de un tercero.' },
                     { key: 'infraccion-marca-patente-contra-organizacion', name: 'Infracción de Marca o Patente contra la Organización', standard: 'ISO 31000', code: 'LEG-PIN-002', description: 'Un tercero usa sin autorización una marca o patente propiedad de la organización.' },
@@ -1040,6 +1112,7 @@ const riskCatalog = {
             'responsabilidad-custodia-terceros': {
                 label: 'Responsabilidad por Custodia de Bienes de Terceros',
                 code: 'LEG-06',
+                suggestedAssetCategories: ["Inventario / Mercancía"],
                 threats: [
                     { key: 'reclamo-perdida-mercancia-custodia', name: 'Reclamo por Pérdida de Mercancía Bajo Custodia', standard: 'ISO 28000', code: 'LEG-CUS-001', description: 'Un cliente reclama la pérdida de bienes que estaban bajo resguardo de la organización.' },
                     { key: 'reclamo-dano-mercancia-custodia', name: 'Reclamo por Daño a Mercancía Bajo Custodia', standard: 'ISO 28000', code: 'LEG-CUS-002', description: 'Un cliente reclama daño a bienes que estaban bajo resguardo de la organización.' },

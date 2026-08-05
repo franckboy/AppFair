@@ -1142,6 +1142,7 @@ export const FairWizard = {
             document.getElementById('fair-riskName').value = '';
             document.getElementById('fair-riskDescription').value = '';
             document.getElementById('fair-asset').value = '';
+            document.getElementById('fair-asset-suggestion').classList.add('hidden');
             state.quick.currentRiskId = null;
             state.quick.selectedCatalogRef = null;
             state.quick.selectedAssetRef = null;
