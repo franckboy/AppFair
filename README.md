@@ -7,11 +7,11 @@ autocálculo, tratamiento de riesgos, Registro de Riesgos) vive en el backend, y
 un cliente de su API REST.
 
 - `frontend/app_fair.html` — app de una sola página (el wizard de FAIR completo, 4 pasos). Su
-  lógica vive en `frontend/src/main.js` + `frontend/src/modules/*.js` (módulos ES reales, en
-  migración incremental — ver "Plan de migración" abajo); no hay build en producción todavía.
-  El autocompletado de texto es 100% local; todo lo demás (Criterios de Riesgo, Valores por
-  Defecto, Contexto Organizacional, simulación FAIR, tratamiento y Registro de Riesgos) se
-  guarda y calcula en el backend.
+  lógica vive en `frontend/src/main.js` + `frontend/src/modules/*.js` (19 módulos ES — ver
+  "Plan de migración" abajo); no hay build en producción todavía. El autocompletado de texto
+  es 100% local; todo lo demás (Criterios de Riesgo, Valores por Defecto, Contexto
+  Organizacional, simulación FAIR, tratamiento y Registro de Riesgos) se guarda y calcula en
+  el backend.
 - `backend/` — API REST en Express con el motor de cálculo como módulos puros de Node,
   protegida por API key. Persistencia en archivo JSON local por defecto, o en Postgres
   (gratis, sin vencimiento — recomendado en producción) si se configura `DATABASE_URL`. Ver
@@ -76,10 +76,10 @@ vía GitHub Actions (`.github/workflows/frontend-e2e.yml`), igual que las prueba
 
 ## Plan de migración (arquitectura del frontend)
 
-`app_fair.html` es un solo archivo de miles de líneas — funciona, pero cada cambio nuevo cuesta
-más de ubicar. Hay un plan de migración incremental en marcha (bundler → CSS formal → módulos ES,
-cada paso verificado con la suite E2E antes de avanzar al siguiente) — sin reescritura, sin
-framework nuevo por ahora.
+`app_fair.html` era un solo archivo de miles de líneas — funcionaba, pero cada cambio nuevo
+costaba más de ubicar. Un plan de migración incremental (bundler → CSS formal → módulos ES,
+cada paso verificado con la suite E2E antes de avanzar al siguiente) lo llevó a su arquitectura
+actual — sin reescritura, sin framework nuevo.
 
 - **Fase 0 (hecha)**: la suite de pruebas E2E de arriba — la red de seguridad que permite
   reorganizar el código con confianza.
@@ -113,11 +113,16 @@ framework nuevo por ahora.
   ~2700 líneas. Producción sigue sin build (GitHub Pages sirve el árbol de módulos tal cual,
   los imports relativos funcionan por HTTP sin necesitar bundler) — el único costo real es que
   ya no se puede abrir `app_fair.html` por `file://` (ver arriba).
-- **Fase 3b (pendiente)**: los dos módulos más grandes e interconectados —
-  `FairWizard` (~1700 líneas) y `FairRegister` (~900 líneas, con dependencia circular entre
-  ambos) — más `FairAnalysis` (fachada delgada que los envuelve) y `QuickAnalysis` (depende de
-  `FairRegister`), que juntos son más de la mitad del código y se dejaron aparte a propósito
-  por su tamaño y riesgo.
+- **Fase 3b (hecha)**: los dos módulos más grandes e interconectados —
+  `frontend/src/modules/fair-wizard.js` (~1700 líneas) y `fair-register.js` (~900 líneas, con
+  dependencia circular entre ambos) — más `fair-analysis.js` (fachada delgada que los envuelve)
+  y `quick-analysis.js` (depende de `FairRegister`). La dependencia circular no fue un problema
+  real: ninguno de los dos importa al otro directamente, ambos solo llaman
+  `App.FairWizard.x()`/`App.FairRegister.x()` sobre el namespace compartido (mismo patrón de la
+  Fase 3a), así que no hay ciclo de imports ES que resolver. `main.js` quedó en ~40 líneas —
+  solo el arranque (`App.init()`/`continueInit()`), sin lógica propia. Con esto termina la
+  división en módulos: los 19 módulos de `frontend/src/modules/` cubren toda la lógica que
+  antes vivía en un solo `<script>` de ~4500 líneas.
 
 ## Licencia
 
