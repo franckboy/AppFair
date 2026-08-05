@@ -185,70 +185,6 @@
                                 </div>
                             </div>
 
-                            <div class="fair-section bg-gray-50">
-                                <h4><span id="governance-section-title">Gobernanza y Revisión</span> <i class="fas fa-info-circle text-blue-500 cursor-pointer ml-1" title="ISO 31000, cláusula 6.6: el riesgo debe tener un responsable y una fecha de revisión definida, no quedar como un análisis estático."></i></h4>
-                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <div class="input-group">
-                                        <label for="fair-owner" id="fair-owner-label">Dueño del Riesgo (responsable):</label>
-                                        <input type="text" id="fair-owner" class="form-input" list="datalist-owners" placeholder="Ej. Gerente de Seguridad Patrimonial">
-                                    </div>
-                                    <div class="input-group">
-                                        <label for="fair-review-date" id="fair-review-date-label">Próxima Fecha de Revisión:</label>
-                                        <input type="date" id="fair-review-date" class="form-input">
-                                    </div>
-                                    <div class="input-group advanced-only">
-                                        <label for="fair-assessor">Apreciador / Analista Responsable:</label>
-                                        <input type="text" id="fair-assessor" class="form-input" placeholder="Ej. Tu nombre o el del equipo apreciador">
-                                    </div>
-                                    <div class="input-group advanced-only">
-                                        <label for="fair-assessment-date">Fecha de esta Apreciación:</label>
-                                        <input type="date" id="fair-assessment-date" class="form-input">
-                                    </div>
-                                    <div class="input-group md:col-span-2 advanced-only">
-                                        <label for="fair-assessment-location">Lugar / Ubicación Apreciada:</label>
-                                        <input type="text" id="fair-assessment-location" class="form-input" placeholder="Ej. Planta industrial Monterrey, Nuevo León">
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div class="fair-section bg-gray-50">
-                                <h4><span id="data-quality-section-title">Calidad de la Información</span> <i class="fas fa-info-circle text-blue-500 cursor-pointer ml-1" title="Deja constancia de en qué se basaron los estimados de este análisis — es clave para poder auditar el resultado y detectar sesgo después."></i></h4>
-                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <div class="input-group advanced-only">
-                                        <label for="fair-data-source">Fuente Principal de los Datos:</label>
-                                        <select id="fair-data-source" class="form-select">
-                                            <option value="historico">Histórico interno de incidentes</option>
-                                            <option value="benchmark">Benchmark / referencia externa del sector</option>
-                                            <option value="experto-calibrado">Juicio experto calibrado (rangos de 3 puntos)</option>
-                                            <option value="experto-sin-calibrar" selected>Juicio experto sin calibrar</option>
-                                        </select>
-                                    </div>
-                                    <div class="input-group">
-                                        <label for="fair-data-confidence" id="fair-data-confidence-label">Nivel de Confianza en los Estimados:</label>
-                                        <select id="fair-data-confidence" class="form-select">
-                                            <option value="alto">Alto</option>
-                                            <option value="medio" selected>Medio</option>
-                                            <option value="bajo">Bajo</option>
-                                        </select>
-                                    </div>
-                                    <div class="input-group md:col-span-2 advanced-only">
-                                        <label for="fair-data-notes">Notas / Justificación de los Estimados:</label>
-                                        <textarea id="fair-data-notes" class="form-textarea" rows="2" placeholder="Ej. TEF basado en 3 incidentes similares en los últimos 2 años; Vulnerabilidad estimada por el equipo de seguridad sin dato histórico."></textarea>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div class="fair-section bg-gray-50 advanced-only">
-                                <h4>
-                                    Plan de Seguridad / Medidas Vigentes
-                                    <i class="fas fa-info-circle text-blue-500 cursor-pointer ml-1" title="ISO 28001: describe las medidas de seguridad ya implementadas para manejar este escenario específico — no el nivel de defensa general, sino qué procedimientos, personal o controles concretos existen hoy."></i>
-                                </h4>
-                                <div class="input-group">
-                                    <label for="fair-security-plan">Medidas de Seguridad Vigentes para este Riesgo:</label>
-                                    <textarea id="fair-security-plan" class="form-textarea" rows="3" placeholder="Ej. Ronda de vigilancia cada 2 horas en el área de carga, CCTV con retención de 30 días, control de acceso con tarjeta para personal autorizado, procedimiento de sellado de contenedores según norma C-TPAT."></textarea>
-                                </div>
-                            </div>
-
                             <div class="mt-8 flex justify-end">
                                 <button id="fair-step1-next" class="btn btn-primary">Siguiente: Analizar Frecuencia <i class="fas fa-arrow-right ml-2"></i></button>
                             </div>
@@ -391,6 +327,79 @@
                                 📊 Ya tenemos todo lo que necesitamos. Dale clic al botón de abajo y vamos a simular 10,000 años posibles
                                 con tus datos, para ver qué tan probable es que esto te salga caro — y qué tan caro.
                             </p>
+
+                            <!-- Movido aquí desde el Paso 1: gobernanza/calidad de datos/plan de seguridad no son
+                                 parte de "definir el escenario" (ni hacen falta para empezar a calcular TEF/
+                                 Vulnerabilidad/Magnitud) — son metadatos de cierre del análisis, así que tiene más
+                                 sentido llenarlos justo antes de simular y guardar, no antes de empezar. El guardado
+                                 automático al Registro ocurre justo después de simular (ver
+                                 App.FairRegister.saveToRiskRegister) y ya lee fair-owner/fair-security-plan por su
+                                 id de siempre — con estos campos arriba del botón de simular, sus valores quedan
+                                 listos justo a tiempo, sin tener que tocar esa lógica. -->
+                            <div class="fair-section bg-gray-50">
+                                <h4><span id="governance-section-title">Gobernanza y Revisión</span> <i class="fas fa-info-circle text-blue-500 cursor-pointer ml-1" title="ISO 31000, cláusula 6.6: el riesgo debe tener un responsable y una fecha de revisión definida, no quedar como un análisis estático."></i></h4>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div class="input-group">
+                                        <label for="fair-owner" id="fair-owner-label">Dueño del Riesgo (responsable):</label>
+                                        <input type="text" id="fair-owner" class="form-input" list="datalist-owners" placeholder="Ej. Gerente de Seguridad Patrimonial">
+                                    </div>
+                                    <div class="input-group">
+                                        <label for="fair-review-date" id="fair-review-date-label">Próxima Fecha de Revisión:</label>
+                                        <input type="date" id="fair-review-date" class="form-input">
+                                    </div>
+                                    <div class="input-group advanced-only">
+                                        <label for="fair-assessor">Apreciador / Analista Responsable:</label>
+                                        <input type="text" id="fair-assessor" class="form-input" placeholder="Ej. Tu nombre o el del equipo apreciador">
+                                    </div>
+                                    <div class="input-group advanced-only">
+                                        <label for="fair-assessment-date">Fecha de esta Apreciación:</label>
+                                        <input type="date" id="fair-assessment-date" class="form-input">
+                                    </div>
+                                    <div class="input-group md:col-span-2 advanced-only">
+                                        <label for="fair-assessment-location">Lugar / Ubicación Apreciada:</label>
+                                        <input type="text" id="fair-assessment-location" class="form-input" placeholder="Ej. Planta industrial Monterrey, Nuevo León">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="fair-section bg-gray-50">
+                                <h4><span id="data-quality-section-title">Calidad de la Información</span> <i class="fas fa-info-circle text-blue-500 cursor-pointer ml-1" title="Deja constancia de en qué se basaron los estimados de este análisis — es clave para poder auditar el resultado y detectar sesgo después."></i></h4>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div class="input-group advanced-only">
+                                        <label for="fair-data-source">Fuente Principal de los Datos:</label>
+                                        <select id="fair-data-source" class="form-select">
+                                            <option value="historico">Histórico interno de incidentes</option>
+                                            <option value="benchmark">Benchmark / referencia externa del sector</option>
+                                            <option value="experto-calibrado">Juicio experto calibrado (rangos de 3 puntos)</option>
+                                            <option value="experto-sin-calibrar" selected>Juicio experto sin calibrar</option>
+                                        </select>
+                                    </div>
+                                    <div class="input-group">
+                                        <label for="fair-data-confidence" id="fair-data-confidence-label">Nivel de Confianza en los Estimados:</label>
+                                        <select id="fair-data-confidence" class="form-select">
+                                            <option value="alto">Alto</option>
+                                            <option value="medio" selected>Medio</option>
+                                            <option value="bajo">Bajo</option>
+                                        </select>
+                                    </div>
+                                    <div class="input-group md:col-span-2 advanced-only">
+                                        <label for="fair-data-notes">Notas / Justificación de los Estimados:</label>
+                                        <textarea id="fair-data-notes" class="form-textarea" rows="2" placeholder="Ej. TEF basado en 3 incidentes similares en los últimos 2 años; Vulnerabilidad estimada por el equipo de seguridad sin dato histórico."></textarea>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="fair-section bg-gray-50 advanced-only">
+                                <h4>
+                                    Plan de Seguridad / Medidas Vigentes
+                                    <i class="fas fa-info-circle text-blue-500 cursor-pointer ml-1" title="ISO 28001: describe las medidas de seguridad ya implementadas para manejar este escenario específico — no el nivel de defensa general, sino qué procedimientos, personal o controles concretos existen hoy."></i>
+                                </h4>
+                                <div class="input-group">
+                                    <label for="fair-security-plan">Medidas de Seguridad Vigentes para este Riesgo:</label>
+                                    <textarea id="fair-security-plan" class="form-textarea" rows="3" placeholder="Ej. Ronda de vigilancia cada 2 horas en el área de carga, CCTV con retención de 30 días, control de acceso con tarjeta para personal autorizado, procedimiento de sellado de contenedores según norma C-TPAT."></textarea>
+                                </div>
+                            </div>
+
                             <div class="input-group max-w-sm mx-auto mb-4 advanced-only">
                                 <label for="fair-simulation-seed">
                                     Semilla de Simulación (opcional)
