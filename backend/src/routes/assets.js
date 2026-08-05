@@ -23,10 +23,15 @@ function createAssetsRouter(store) {
 
     /**
      * POST /api/assets — crea un activo nuevo.
-     * Body esperado: { nombre, valorEstimado, categoria?, ubicacion?, notas? }
+     * Body esperado: { nombre, valorEstimado, currency?, categoria?, ubicacion?, notas? }
      */
     router.post('/', (req, res) => {
-        const { nombre, valorEstimado, categoria = '', ubicacion = '', notas = '' } = req.body;
+        // Bug real: sin 'currency', valorEstimado era un número sin moneda — el frontend lo
+        // formateaba con la moneda que estuviera seleccionada en ese momento en Análisis
+        // Rápido, así que el mismo activo cambiaba de moneda (mismo número, símbolo distinto)
+        // según qué análisis estuvieras viendo cuando lo consultabas. Default 'USD' igual que
+        // el resto de los endpoints que manejan moneda (register.js, simulate.js, treatment.js).
+        const { nombre, valorEstimado, currency = 'USD', categoria = '', ubicacion = '', notas = '' } = req.body;
 
         if (typeof nombre !== 'string' || !nombre.trim()) {
             return res.status(400).json({ error: 'nombre es requerido.' });
@@ -39,6 +44,7 @@ function createAssetsRouter(store) {
             id: crypto.randomUUID(),
             nombre: nombre.trim(),
             valorEstimado,
+            currency,
             categoria,
             ubicacion,
             notas,
@@ -59,7 +65,7 @@ function createAssetsRouter(store) {
             return res.status(404).json({ error: 'Activo no encontrado.' });
         }
 
-        const { nombre, valorEstimado, categoria = '', ubicacion = '', notas = '' } = req.body;
+        const { nombre, valorEstimado, currency = 'USD', categoria = '', ubicacion = '', notas = '' } = req.body;
         if (typeof nombre !== 'string' || !nombre.trim()) {
             return res.status(400).json({ error: 'nombre es requerido.' });
         }
@@ -67,7 +73,7 @@ function createAssetsRouter(store) {
             return res.status(400).json({ error: 'valorEstimado debe ser un número mayor o igual a 0.' });
         }
 
-        const entry = { ...existing, nombre: nombre.trim(), valorEstimado, categoria, ubicacion, notas };
+        const entry = { ...existing, nombre: nombre.trim(), valorEstimado, currency, categoria, ubicacion, notas };
         const updated = store.upsertAsset(entry);
         res.json({ entry, totalAssets: updated.length });
     });
