@@ -194,6 +194,127 @@ body.modo-tecnico .simple-only {
   color: #1e3a8a;
 }
 
+/* Árbol de Riesgos en Cascada (ver App.RiskCascadeTree): conectores dibujados con
+   pseudo-elementos sobre una lista anidada — técnica CSS clásica de organigrama, sin ninguna
+   librería nueva. El color de cada tarjeta (clases bg/border/text de Tailwind) lo aporta
+   severityToClasses por fuera, aquí solo va la geometría. */
+.risk-tree,
+.risk-tree ul {
+  display: flex;
+  justify-content: center;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.risk-tree {
+  padding-top: 8px;
+}
+/* La utilidad .hidden de Tailwind (display: none) tiene MENOS especificidad que ".risk-tree
+   ul" de arriba (una clase vs. clase+tipo) — sin esto, el toggle de colapsar/expandir
+   (App.RiskCascadeTree) agrega la clase pero el display:flex de arriba sigue ganando y la
+   rama nunca se oculta visualmente. */
+.risk-tree ul.hidden {
+  display: none;
+}
+.risk-tree li {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 24px 12px 0 12px;
+}
+.risk-tree li::before,
+.risk-tree li::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  width: 50%;
+  height: 24px;
+  border-top: 2px solid #cbd5e1;
+}
+.risk-tree li::before {
+  left: 0;
+  border-right: 2px solid #cbd5e1;
+}
+.risk-tree li::after {
+  right: 0;
+  border-left: 2px solid #cbd5e1;
+}
+.risk-tree > li {
+  padding-top: 0;
+}
+.risk-tree > li::before,
+.risk-tree > li::after,
+.risk-tree li:only-child::before,
+.risk-tree li:only-child::after {
+  display: none;
+}
+.risk-tree li:only-child {
+  padding-top: 0;
+}
+.risk-tree li:first-child::before,
+.risk-tree li:last-child::after {
+  border: 0 none;
+}
+.risk-tree li:last-child::before {
+  border-right: 2px solid #cbd5e1;
+  border-radius: 0 6px 0 0;
+}
+.risk-tree li:first-child::after {
+  border-radius: 6px 0 0 0;
+}
+.risk-tree ul::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 0;
+  height: 24px;
+  border-left: 2px solid #cbd5e1;
+}
+.risk-tree-card {
+  position: relative;
+  min-width: 190px;
+  max-width: 230px;
+  border-width: 2px;
+  border-radius: 8px;
+  padding: 10px 12px 14px 12px;
+  text-align: center;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+.risk-tree-name {
+  font-weight: 600;
+  font-size: 0.8125rem;
+  overflow-wrap: break-word;
+}
+.risk-tree-meta {
+  font-size: 0.6875rem;
+  margin-top: 2px;
+  opacity: 0.85;
+}
+.risk-tree-orphan-note {
+  font-size: 0.6875rem;
+  margin-top: 4px;
+  font-style: italic;
+  opacity: 0.75;
+}
+.risk-tree-toggle {
+  /* Dentro del flujo normal de la tarjeta (no absolute) — un botón colgando fuera de su
+     caja, aunque visualmente cabe, puede quedar fuera del área que Playwright considera
+     "en viewport" dentro de un contenedor con scroll (ver #risk-cascade-tree-scroll). */
+  display: inline-block;
+  margin-top: 8px;
+  width: 20px;
+  height: 20px;
+  border-radius: 9999px;
+  background: #fff;
+  border: 1px solid #94a3b8;
+  color: #334155;
+  font-size: 0.7rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
 #fair-print-report {
   display: none;
 }
