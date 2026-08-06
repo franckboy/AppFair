@@ -301,7 +301,11 @@ export const Treatment = {
             const stratData = result[rec.strategy];
             let advertencia = '';
             if (stratData.reliability === 'baja') {
-                advertencia = ` <strong class="text-orange-700">Atención:</strong> esta opción tiene Fiabilidad Baja — el beneficio neto calculado podría no materializarse si el control falla o no funciona como se espera.`;
+                // El beneficio neto YA descuenta la Fiabilidad Baja (ver App.Treatment /
+                // expectedNetBenefit en el backend: es un valor esperado, no el resultado "si
+                // todo sale bien") — esta nota no advierte que el número podría estar mal, sino
+                // que ese descuento viene de un riesgo real de que el control no funcione.
+                advertencia = ` <strong class="text-orange-700">Atención:</strong> esta opción tiene Fiabilidad Baja — el beneficio neto de arriba ya está ajustado por ese riesgo, pero el rango de resultados posibles es amplio (desde el beneficio completo hasta perder lo invertido, si el control no funciona).`;
             } else if (stratData.delayDays > 90) {
                 advertencia = ` <strong class="text-orange-700">Atención:</strong> el tiempo de implementación es de ${stratData.delayDays} días — el riesgo actual sigue expuesto mientras tanto.`;
             }

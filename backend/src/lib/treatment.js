@@ -1,5 +1,41 @@
 'use strict';
 
+const { evaluateDecisionTree } = require('./decisionTree');
+
+// Traduce Fiabilidad (Alta/Media/Baja, ver el <select> del formulario) a la probabilidad de que
+// la estrategia SÍ funcione como se espera — calibración inicial razonable, no un dato medido;
+// fácil de ajustar acá si en el futuro se calibra con casos reales. Fiabilidad "Baja" no es 0%
+// (un control poco confiable a veces sí funciona) ni "Alta" es 100% (nada es infalible).
+const RELIABILITY_TO_PROBABILITY = { alta: 0.9, media: 0.7, baja: 0.4 };
+
+/**
+ * Beneficio neto ESPERADO de una estrategia, dado que tiene un costo real capturado — antes este
+ * cálculo era un solo número (avoidedLoss - cost), como si la estrategia fuera a funcionar
+ * siempre. Ahora es un árbol de decisión de un solo nodo de azar ("¿funciona como se espera?"):
+ * si funciona, se logra el avoidedLoss completo menos el costo; si falla, igual se pagó el costo
+ * sin lograr nada (relativo a Aceptar, que es el punto de comparación — no es que quedes
+ * "-cost -currentALE", es que quedas -cost peor que si nunca hubieras intentado nada, porque de
+ * cualquier forma seguías expuesto al currentALE completo).
+ *
+ * @param {number} cost
+ * @param {number} avoidedLoss Lo que se evita SI la estrategia funciona (deterministico, ya
+ *   calculado aparte — este valor no cambia, ver avoidedLoss en evaluateTreatmentStrategies).
+ * @param {string} reliability 'alta' | 'media' | 'baja'
+ * @returns {number}
+ */
+function expectedNetBenefit(cost, avoidedLoss, reliability) {
+    const probabilityOfSuccess = RELIABILITY_TO_PROBABILITY[reliability] ?? RELIABILITY_TO_PROBABILITY.media;
+    const tree = {
+        type: 'chance',
+        label: 'la estrategia funciona como se espera',
+        branches: [
+            { probability: probabilityOfSuccess, node: { type: 'terminal', value: avoidedLoss - cost } },
+            { probability: 1 - probabilityOfSuccess, node: { type: 'terminal', value: -cost } },
+        ],
+    };
+    return evaluateDecisionTree(tree).value;
+}
+
 /**
  * Calcula la pérdida retenida por año, aplicando un deducible y un límite de
  * cobertura de seguro sobre CADA escenario simulado (no una aproximación
@@ -96,7 +132,16 @@ function evaluateTreatmentStrategies({ currentALE, annualLosses, mitigar, transf
     // 1. Mitigar
     const aleAfterMitigar = currentALE * (1 - (mitigar.reductionPercent || 0) / 100);
     const avoidedMitigar = currentALE - aleAfterMitigar;
-    const netBenefitMitigar = avoidedMitigar - mitigar.cost;
+    // Bug real: reductionPercent se autocalcula solo (ver App.Treatment.updateReduccionALEAuto
+    // en el frontend) en cuanto se elige un nivel de defensa objetivo, ANTES de que el usuario
+    // haya escrito ningún costo — así que avoidedMitigar > 0 con cost = 0 (su default) era
+    // frecuente, no un caso raro, y getInvestmentVerdict genérico diría "SÍ conviene, sin
+    // costo capturado" como si mantener un control fuera gratis, lo cual nunca es cierto en
+    // la práctica. Mismo criterio que ya usa Evitar más abajo — se exige un costo real.
+    const netBenefitMitigar =
+        mitigar.cost > 0
+            ? expectedNetBenefit(mitigar.cost, avoidedMitigar, mitigar.reliability)
+            : avoidedMitigar - mitigar.cost;
     results.mitigar = {
         cost: mitigar.cost,
         residualALE: aleAfterMitigar,
@@ -104,15 +149,13 @@ function evaluateTreatmentStrategies({ currentALE, annualLosses, mitigar, transf
         netBenefit: netBenefitMitigar,
         reliability: mitigar.reliability,
         delayDays: mitigar.delayDays,
-        // Bug real: reductionPercent se autocalcula solo (ver App.Treatment.updateReduccionALEAuto
-        // en el frontend) en cuanto se elige un nivel de defensa objetivo, ANTES de que el usuario
-        // haya escrito ningún costo — así que avoidedMitigar > 0 con cost = 0 (su default) era
-        // frecuente, no un caso raro, y getInvestmentVerdict genérico diría "SÍ conviene, sin
-        // costo capturado" como si mantener un control fuera gratis, lo cual nunca es cierto en
-        // la práctica. Mismo criterio que ya usa Evitar más abajo — se exige un costo real.
+        // lossAvoided se manda "ajustado" (netBenefit + cost) para que el netBenefit que
+        // getInvestmentVerdict calcula internamente (lossAvoided - cost) coincida exacto con
+        // netBenefitMitigar de arriba — así el veredicto/ROSI/mensaje ya reflejan el valor
+        // esperado bajo Fiabilidad, no el resultado "si todo sale bien".
         verdict:
             mitigar.cost > 0
-                ? getInvestmentVerdict(mitigar.cost, avoidedMitigar, formatCurrency)
+                ? getInvestmentVerdict(mitigar.cost, netBenefitMitigar + mitigar.cost, formatCurrency)
                 : {
                       verdict: 'sin_datos',
                       rosi: null,
@@ -136,7 +179,13 @@ function evaluateTreatmentStrategies({ currentALE, annualLosses, mitigar, transf
         );
     }
     const avoidedTransferir = currentALE - retainedALE;
-    const netBenefitTransferir = avoidedTransferir - transferir.premium;
+    // Mismo bug que Mitigar (ver comentario ahí): avoidedTransferir puede ser > 0 en cuanto se
+    // captura deducible/límite, sin que el usuario haya escrito todavía la prima anual (0 por
+    // default) — una póliza de seguro real siempre tiene prima, nunca es gratis.
+    const netBenefitTransferir =
+        transferir.premium > 0
+            ? expectedNetBenefit(transferir.premium, avoidedTransferir, transferir.reliability)
+            : avoidedTransferir - transferir.premium;
     results.transferir = {
         cost: transferir.premium,
         residualALE: retainedALE,
@@ -144,12 +193,9 @@ function evaluateTreatmentStrategies({ currentALE, annualLosses, mitigar, transf
         netBenefit: netBenefitTransferir,
         reliability: transferir.reliability,
         delayDays: transferir.delayDays,
-        // Mismo bug que Mitigar (ver comentario ahí): avoidedTransferir puede ser > 0 en cuanto se
-        // captura deducible/límite, sin que el usuario haya escrito todavía la prima anual (0 por
-        // default) — una póliza de seguro real siempre tiene prima, nunca es gratis.
         verdict:
             transferir.premium > 0
-                ? getInvestmentVerdict(transferir.premium, avoidedTransferir, formatCurrency)
+                ? getInvestmentVerdict(transferir.premium, netBenefitTransferir + transferir.premium, formatCurrency)
                 : {
                       verdict: 'sin_datos',
                       rosi: null,
@@ -157,8 +203,13 @@ function evaluateTreatmentStrategies({ currentALE, annualLosses, mitigar, transf
                   },
     };
 
-    // 3. Evitar (elimina la fuente del riesgo → residual = 0 por definición)
-    const netBenefitEvitar = currentALE - evitar.cost;
+    // 3. Evitar (elimina la fuente del riesgo → residual = 0 por definición, SI funciona)
+    // Mismo criterio que Mitigar/Transferir arriba: eliminar la fuente de un riesgo real nunca es
+    // gratis — se exige un costo real antes de dar cualquier veredicto. Acá es todavía más fácil
+    // de disparar en falso: avoidedLoss de Evitar es SIEMPRE currentALE por definición (elimina
+    // el 100% del riesgo), sin depender de ningún otro dato capturado.
+    const netBenefitEvitar =
+        evitar.cost > 0 ? expectedNetBenefit(evitar.cost, currentALE, evitar.reliability) : currentALE - evitar.cost;
     results.evitar = {
         cost: evitar.cost,
         residualALE: 0,
@@ -166,13 +217,9 @@ function evaluateTreatmentStrategies({ currentALE, annualLosses, mitigar, transf
         netBenefit: netBenefitEvitar,
         reliability: evitar.reliability,
         delayDays: evitar.delayDays,
-        // Mismo criterio que Mitigar/Transferir arriba: eliminar la fuente de un riesgo real
-        // nunca es gratis — se exige un costo real antes de dar cualquier veredicto. Acá es
-        // todavía más fácil de disparar en falso: avoidedLoss de Evitar es SIEMPRE currentALE por
-        // definición (elimina el 100% del riesgo), sin depender de ningún otro dato capturado.
         verdict:
             evitar.cost > 0
-                ? getInvestmentVerdict(evitar.cost, currentALE, formatCurrency)
+                ? getInvestmentVerdict(evitar.cost, netBenefitEvitar + evitar.cost, formatCurrency)
                 : {
                       verdict: 'sin_datos',
                       rosi: null,
@@ -219,4 +266,11 @@ function evaluateTreatmentStrategies({ currentALE, annualLosses, mitigar, transf
     return { ...results, recommendation };
 }
 
-module.exports = { calculateInsuranceRetainedALE, calculateROSI, getInvestmentVerdict, evaluateTreatmentStrategies };
+module.exports = {
+    calculateInsuranceRetainedALE,
+    calculateROSI,
+    getInvestmentVerdict,
+    expectedNetBenefit,
+    RELIABILITY_TO_PROBABILITY,
+    evaluateTreatmentStrategies,
+};

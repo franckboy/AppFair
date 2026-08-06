@@ -13,7 +13,13 @@ const {
 } = require('../src/lib/random');
 const { runMonteCarloSimulation, summarizeLosses, pearsonCorrelation } = require('../src/lib/simulation');
 const { calculateVulnerability, calculateReduccionALE } = require('../src/lib/autocalc');
-const { calculateInsuranceRetainedALE, calculateROSI, evaluateTreatmentStrategies } = require('../src/lib/treatment');
+const {
+    calculateInsuranceRetainedALE,
+    calculateROSI,
+    expectedNetBenefit,
+    RELIABILITY_TO_PROBABILITY,
+    evaluateTreatmentStrategies,
+} = require('../src/lib/treatment');
 const { evaluateFairThreat } = require('../src/lib/evaluation');
 const { calculateParetoAnalysis } = require('../src/lib/register');
 const { sampleActivatedTransitions, walkMarkovChain } = require('../src/lib/markov');
@@ -421,7 +427,10 @@ test('evaluateTreatmentStrategies: SÍ recomienda "Evitar" cuando tiene un costo
         fmt,
     );
     assert.strictEqual(result.recommendation.strategy, 'evitar');
-    assert.strictEqual(result.recommendation.netBenefit, 95000);
+    // netBenefit ya no es currentALE - cost (95000, determinista) — es el valor ESPERADO bajo
+    // Fiabilidad "alta" (90% de probabilidad, ver RELIABILITY_TO_PROBABILITY en treatment.js):
+    //   0.9*(100000-5000) + 0.1*(-5000) = 85500 - 500 = 85000
+    assert.strictEqual(result.recommendation.netBenefit, 85000);
 });
 
 test('evaluateTreatmentStrategies: NO recomienda "Mitigar" cuando su costo se dejó en el default (0) sin tocar', () => {
@@ -485,8 +494,55 @@ test('evaluateTreatmentStrategies: SÍ recomienda "Mitigar" cuando tiene costo r
         fmt,
     );
     assert.strictEqual(result.recommendation.strategy, 'mitigar');
-    assert.strictEqual(result.recommendation.netBenefit, 50000);
+    // netBenefit ya no es avoidedLoss - cost (50000, determinista) — es el valor ESPERADO bajo
+    // Fiabilidad "media" (70%, ver RELIABILITY_TO_PROBABILITY en treatment.js):
+    //   0.7*(60000-10000) + 0.3*(-10000) = 35000 - 3000 = 32000
+    assert.strictEqual(result.recommendation.netBenefit, 32000);
     assert.strictEqual(result.mitigar.verdict.verdict, 'conviene');
+});
+
+test('expectedNetBenefit: usa la probabilidad de RELIABILITY_TO_PROBABILITY para cada nivel de Fiabilidad', () => {
+    // cost=10000, avoidedLoss=40000 (si funciona: 30000; si falla: -10000)
+    Object.entries(RELIABILITY_TO_PROBABILITY).forEach(([reliability, p]) => {
+        const expected = p * 30000 + (1 - p) * -10000;
+        assert.ok(
+            Math.abs(expectedNetBenefit(10000, 40000, reliability) - expected) < 1e-9,
+            `Fiabilidad "${reliability}" (p=${p})`,
+        );
+    });
+});
+
+test('expectedNetBenefit: una Fiabilidad desconocida cae al mismo trato que "media" (no revienta)', () => {
+    assert.strictEqual(expectedNetBenefit(10000, 40000, 'no-existe'), expectedNetBenefit(10000, 40000, 'media'));
+});
+
+test('evaluateTreatmentStrategies: la Fiabilidad SÍ puede cambiar cuál estrategia se recomienda, no solo advertir con texto', () => {
+    // Bug real corregido: antes, "reliability" no entraba a ningún cálculo — dos estrategias con
+    // el mismo beneficio neto "de punto" (avoidedLoss - cost) siempre quedaban empatadas sin
+    // importar qué tan confiable fuera cada una. Acá Mitigar tiene el MAYOR beneficio neto
+    // ingenuo (70000) pero Fiabilidad Baja; Evitar tiene un beneficio neto ingenuo MENOR (60000)
+    // pero Fiabilidad Alta — con el árbol de decisión, Evitar gana de verdad, no solo en teoría.
+    const fmt = (n) => `$${n}`;
+    const result = evaluateTreatmentStrategies(
+        {
+            currentALE: 100000,
+            annualLosses: null,
+            // avoidedLoss=90000, cost=20000 -> neto ingenuo = 70000; con Fiabilidad Baja (40%):
+            //   0.4*70000 + 0.6*(-20000) = 28000 - 12000 = 16000
+            mitigar: { cost: 20000, reductionPercent: 90, reliability: 'baja', delayDays: 0 },
+            transferir: { premium: 0, deductible: 0, limit: 0, unlimited: false, reliability: 'media', delayDays: 0 },
+            // avoidedLoss=100000, cost=40000 -> neto ingenuo = 60000 (MENOS que Mitigar); con
+            // Fiabilidad Alta (90%): 0.9*60000 + 0.1*(-40000) = 54000 - 4000 = 50000
+            evitar: { cost: 40000, reliability: 'alta', delayDays: 0 },
+        },
+        fmt,
+    );
+    assert.strictEqual(result.mitigar.netBenefit, 16000);
+    assert.strictEqual(result.evitar.netBenefit, 50000);
+    // Sin este fix, "mitigar" ganaría (70000 > 60000, comparando el beneficio ingenuo) — con el
+    // beneficio esperado real, "evitar" es la mejor opción.
+    assert.strictEqual(result.recommendation.strategy, 'evitar');
+    assert.strictEqual(result.recommendation.netBenefit, 50000);
 });
 
 test('evaluateFairThreat: clasifica correctamente como Crítico por encima del umbral', () => {
