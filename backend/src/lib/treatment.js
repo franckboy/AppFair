@@ -104,7 +104,21 @@ function evaluateTreatmentStrategies({ currentALE, annualLosses, mitigar, transf
         netBenefit: netBenefitMitigar,
         reliability: mitigar.reliability,
         delayDays: mitigar.delayDays,
-        verdict: getInvestmentVerdict(mitigar.cost, avoidedMitigar, formatCurrency),
+        // Bug real: reductionPercent se autocalcula solo (ver App.Treatment.updateReduccionALEAuto
+        // en el frontend) en cuanto se elige un nivel de defensa objetivo, ANTES de que el usuario
+        // haya escrito ningún costo — así que avoidedMitigar > 0 con cost = 0 (su default) era
+        // frecuente, no un caso raro, y getInvestmentVerdict genérico diría "SÍ conviene, sin
+        // costo capturado" como si mantener un control fuera gratis, lo cual nunca es cierto en
+        // la práctica. Mismo criterio que ya usa Evitar más abajo — se exige un costo real.
+        verdict:
+            mitigar.cost > 0
+                ? getInvestmentVerdict(mitigar.cost, avoidedMitigar, formatCurrency)
+                : {
+                      verdict: 'sin_datos',
+                      rosi: null,
+                      message:
+                          'Ingresa el costo anualizado de mantener este control para ver si conviene invertir en él.',
+                  },
     };
 
     // 2. Transferir (Seguro)
@@ -130,7 +144,17 @@ function evaluateTreatmentStrategies({ currentALE, annualLosses, mitigar, transf
         netBenefit: netBenefitTransferir,
         reliability: transferir.reliability,
         delayDays: transferir.delayDays,
-        verdict: getInvestmentVerdict(transferir.premium, avoidedTransferir, formatCurrency),
+        // Mismo bug que Mitigar (ver comentario ahí): avoidedTransferir puede ser > 0 en cuanto se
+        // captura deducible/límite, sin que el usuario haya escrito todavía la prima anual (0 por
+        // default) — una póliza de seguro real siempre tiene prima, nunca es gratis.
+        verdict:
+            transferir.premium > 0
+                ? getInvestmentVerdict(transferir.premium, avoidedTransferir, formatCurrency)
+                : {
+                      verdict: 'sin_datos',
+                      rosi: null,
+                      message: 'Ingresa la prima anual del seguro para ver si conviene transferir este riesgo.',
+                  },
     };
 
     // 3. Evitar (elimina la fuente del riesgo → residual = 0 por definición)
@@ -142,11 +166,10 @@ function evaluateTreatmentStrategies({ currentALE, annualLosses, mitigar, transf
         netBenefit: netBenefitEvitar,
         reliability: evitar.reliability,
         delayDays: evitar.delayDays,
-        // A diferencia de Mitigar/Transferir, avoidedLoss de Evitar es SIEMPRE currentALE por
-        // definición (elimina el 100% del riesgo) — con costo 0 (su default sin tocar), el
-        // getInvestmentVerdict genérico diría "SÍ conviene, sin costo capturado" como si eliminar
-        // la fuente del riesgo fuera gratis, lo cual nunca es cierto en la práctica. Se exige un
-        // costo real antes de dar cualquier veredicto, mismo criterio que en la recomendación.
+        // Mismo criterio que Mitigar/Transferir arriba: eliminar la fuente de un riesgo real
+        // nunca es gratis — se exige un costo real antes de dar cualquier veredicto. Acá es
+        // todavía más fácil de disparar en falso: avoidedLoss de Evitar es SIEMPRE currentALE por
+        // definición (elimina el 100% del riesgo), sin depender de ningún otro dato capturado.
         verdict:
             evitar.cost > 0
                 ? getInvestmentVerdict(evitar.cost, currentALE, formatCurrency)
@@ -160,20 +183,14 @@ function evaluateTreatmentStrategies({ currentALE, annualLosses, mitigar, transf
     // 4. Aceptar / Retener (sin costo, sin cambio)
     results.aceptar = { cost: 0, residualALE: currentALE, avoidedLoss: 0, netBenefit: 0 };
 
-    // Recomendación: la estrategia activa (con datos capturados) con mayor beneficio neto.
-    // "Evitar" es un caso especial: por definición evita el 100% del ALE actual (avoidedLoss =
-    // currentALE) SIEMPRE, sin importar si el usuario metió algún dato — a diferencia de Mitigar
-    // (avoidedLoss depende de una reducción% real) y Transferir (avoidedLoss solo es > 0 si se
-    // cargó deducible/límite/sin-límite). Sin este caso especial, "Evitar" quedaba "activa" con
-    // costo 0 (su default) y beneficio neto = 100% del ALE gratis — literalmente imposible de
-    // superar por Mitigar o Transferir — así que ganaba (o empataba) la recomendación siempre,
-    // aunque el usuario nunca hubiera tocado esa sección. Eliminar la fuente de un riesgo real
-    // nunca es gratis; se exige un costo > 0 para contarla como una opción real.
-    const activeStrategies = Object.entries(results).filter(([key, r]) => {
-        if (key === 'aceptar') return false;
-        if (key === 'evitar') return r.cost > 0;
-        return r.cost > 0 || r.avoidedLoss > 0;
-    });
+    // Recomendación: la estrategia activa (con un costo real capturado) con mayor beneficio neto.
+    // Bug real corregido: antes, Mitigar/Transferir contaban como "activas" con solo
+    // avoidedLoss > 0 (cost = 0, su default) — reductionPercent y deducible/límite se autocalculan
+    // o se capturan ANTES de que el usuario escriba ningún costo, así que "SÍ conviene, sin costo
+    // capturado" salía seguido, no solo en un caso raro. Ninguna de las 3 estrategias es gratis en
+    // la práctica (mantener un control, pagar una prima, o eliminar la fuente del riesgo), así que
+    // las 3 comparten la misma regla: solo cuenta como activa si tiene un costo real capturado.
+    const activeStrategies = Object.entries(results).filter(([key, r]) => key !== 'aceptar' && r.cost > 0);
 
     let recommendation;
     if (activeStrategies.length === 0) {

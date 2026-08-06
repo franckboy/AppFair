@@ -130,6 +130,71 @@ test('evaluateTreatmentStrategies: SÍ recomienda "Evitar" cuando tiene un costo
     assert.strictEqual(result.recommendation.netBenefit, 95000);
 });
 
+test('evaluateTreatmentStrategies: NO recomienda "Mitigar" cuando su costo se dejó en el default (0) sin tocar', () => {
+    // Bug real encontrado: reductionPercent se autocalcula solo en cuanto se elige un nivel de
+    // defensa objetivo (ver App.Treatment.updateReduccionALEAuto, frontend), ANTES de que el
+    // usuario haya escrito ningún costo — así que avoidedLoss > 0 con cost = 0 (su default) era
+    // frecuente, no un caso raro, y Mitigar quedaba "activa" con beneficio neto = 100% de la
+    // reducción gratis, como si mantener un control de seguridad no costara nada.
+    const fmt = (n) => `$${n}`;
+    const result = evaluateTreatmentStrategies(
+        {
+            currentALE: 100000,
+            annualLosses: null,
+            mitigar: { cost: 0, reductionPercent: 60, reliability: 'media', delayDays: 0 }, // costo nunca tocado
+            transferir: { premium: 0, deductible: 0, limit: 0, unlimited: false, reliability: 'media', delayDays: 0 },
+            evitar: { cost: 0, reliability: 'alta', delayDays: 0 },
+        },
+        fmt,
+    );
+    assert.strictEqual(result.recommendation.strategy, 'aceptar');
+    // Mismo problema a nivel de veredicto individual: sin este chequeo, la fila de "Mitigar" por
+    // sí sola mostraba "✅ SÍ conviene, sin costo capturado" — contradiciendo la recomendación.
+    assert.strictEqual(result.mitigar.verdict.verdict, 'sin_datos');
+});
+
+test('evaluateTreatmentStrategies: NO recomienda "Transferir" cuando la prima se dejó en el default (0) sin tocar', () => {
+    // Mismo bug que Mitigar: deducible/límite se pueden capturar antes de escribir la prima
+    // anual (0 por default) — una póliza de seguro real siempre tiene prima.
+    const fmt = (n) => `$${n}`;
+    const result = evaluateTreatmentStrategies(
+        {
+            currentALE: 100000,
+            annualLosses: [80000, 90000, 100000, 110000, 120000],
+            mitigar: { cost: 0, reductionPercent: 0, reliability: 'media', delayDays: 0 },
+            transferir: {
+                premium: 0, // nunca tocado
+                deductible: 20000,
+                limit: 0,
+                unlimited: true,
+                reliability: 'media',
+                delayDays: 0,
+            },
+            evitar: { cost: 0, reliability: 'alta', delayDays: 0 },
+        },
+        fmt,
+    );
+    assert.strictEqual(result.recommendation.strategy, 'aceptar');
+    assert.strictEqual(result.transferir.verdict.verdict, 'sin_datos');
+});
+
+test('evaluateTreatmentStrategies: SÍ recomienda "Mitigar" cuando tiene costo real capturado y gana en beneficio neto', () => {
+    const fmt = (n) => `$${n}`;
+    const result = evaluateTreatmentStrategies(
+        {
+            currentALE: 100000,
+            annualLosses: null,
+            mitigar: { cost: 10000, reductionPercent: 60, reliability: 'media', delayDays: 0 },
+            transferir: { premium: 0, deductible: 0, limit: 0, unlimited: false, reliability: 'media', delayDays: 0 },
+            evitar: { cost: 0, reliability: 'alta', delayDays: 0 },
+        },
+        fmt,
+    );
+    assert.strictEqual(result.recommendation.strategy, 'mitigar');
+    assert.strictEqual(result.recommendation.netBenefit, 50000);
+    assert.strictEqual(result.mitigar.verdict.verdict, 'conviene');
+});
+
 test('evaluateFairThreat: clasifica correctamente como Crítico por encima del umbral', () => {
     const criteria = { aleAceptable: 50000, aleCritico: 250000 };
     const fmt = (n) => `$${n}`;
