@@ -34,22 +34,31 @@ function suggestedReviewDate(evaluationLevel) {
 }
 
 export const RiskManagement = {
+    // Guardados pendientes de disparar (debounce) — selectRisk() los vacía ANTES de cambiar de
+    // riesgo (ver _flushPendingSaves), para no perder una edición en curso silenciosamente.
+    _pendingSaves: [],
+
     init() {
+        this._pendingSaves = [];
         document
             .getElementById('riskmgmt-risk-select')
             .addEventListener('change', (e) => this.selectRisk(e.target.value));
 
         const debouncedSave = debounce(() => this.persist(), 500);
+        this._pendingSaves.push(debouncedSave);
         ['fair-owner', 'fair-review-date', 'fair-assessor', 'fair-assessment-date', 'fair-assessment-location'].forEach(
             (id) => {
                 document.getElementById(id).addEventListener('input', debouncedSave);
                 document.getElementById(id).addEventListener('change', debouncedSave);
             },
         );
-        document.getElementById('fair-security-plan').addEventListener(
-            'input',
-            debounce(() => this.persist(), 600),
-        );
+        const debouncedSecurityPlan = debounce(() => this.persist(), 600);
+        this._pendingSaves.push(debouncedSecurityPlan);
+        document.getElementById('fair-security-plan').addEventListener('input', debouncedSecurityPlan);
+    },
+
+    _flushPendingSaves() {
+        this._pendingSaves.forEach((debounced) => debounced.flush());
     },
 
     // riskNameToSelect: para llegar aquí con un riesgo específico ya elegido (ver "Gestionar este
@@ -88,6 +97,10 @@ export const RiskManagement = {
     selectRisk(riskName) {
         const entry = (state.fair.riskRegister || []).find((r) => r.riskName === riskName);
         if (!entry) return;
+        // Dispara YA cualquier guardado pendiente del riesgo ANTERIOR (ver _pendingSaves) — antes
+        // de este flush, cambiar de riesgo mientras el debounce seguía en vuelo perdía la edición
+        // en curso en silencio.
+        this._flushPendingSaves();
         state.riskManagement.currentEntry = entry;
         document.getElementById('riskmgmt-risk-select').value = riskName;
 
@@ -128,7 +141,13 @@ export const RiskManagement = {
             showToast(e.userMessage || 'No se pudo guardar la gestión de este riesgo.');
             return;
         }
-        state.riskManagement.currentEntry = res.entry;
+        // Solo pisa currentEntry/el formulario visible si TODAVÍA es este mismo riesgo el que
+        // está siendo mostrado — si el usuario ya cambió a otro riesgo mientras este guardado
+        // estaba en vuelo (un solo await, pero igual posible), currentEntry no debe volver a
+        // apuntar al riesgo anterior.
+        if (state.riskManagement.currentEntry && state.riskManagement.currentEntry.id === entry.id) {
+            state.riskManagement.currentEntry = res.entry;
+        }
         const idx = (state.fair.riskRegister || []).findIndex((r) => r.id === entry.id);
         if (idx !== -1) state.fair.riskRegister[idx] = res.entry;
     },

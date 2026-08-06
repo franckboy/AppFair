@@ -70,6 +70,28 @@ describe('debounce', () => {
         expect(fn).toHaveBeenCalledOnce();
         expect(fn).toHaveBeenCalledWith('c');
     });
+
+    it('.flush() dispara ya la llamada pendiente, con los últimos argumentos, y cancela el timer', () => {
+        const fn = vi.fn();
+        const debounced = debounce(fn, 300);
+
+        debounced('a');
+        debounced.flush();
+        expect(fn).toHaveBeenCalledOnce();
+        expect(fn).toHaveBeenCalledWith('a');
+
+        // El timer original ya se canceló — que no vuelva a llamar a fn cuando habría vencido.
+        vi.advanceTimersByTime(300);
+        expect(fn).toHaveBeenCalledOnce();
+    });
+
+    it('.flush() no hace nada si no hay ninguna llamada pendiente', () => {
+        const fn = vi.fn();
+        const debounced = debounce(fn, 300);
+
+        debounced.flush();
+        expect(fn).not.toHaveBeenCalled();
+    });
 });
 
 describe('severityToClasses / severityToHex', () => {

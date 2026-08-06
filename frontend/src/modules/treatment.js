@@ -13,12 +13,18 @@ import { debounce, getSafeNumber, sanitizeHTML, showToast } from './utils.js';
 // aparecen en el selector.
 // ============================================================
 export const Treatment = {
+    // Guardados pendientes de disparar (debounce) — selectRisk() los vacía ANTES de cambiar de
+    // riesgo (ver _flushPendingSaves), para no perder una edición en curso silenciosamente.
+    _pendingSaves: [],
+
     init() {
+        this._pendingSaves = [];
         document
             .getElementById('treatment-risk-select')
             .addEventListener('change', (e) => this.selectRisk(e.target.value));
 
         const debouncedUpdate = debounce(() => this.updateTreatmentView(true), 400);
+        this._pendingSaves.push(debouncedUpdate);
         [
             'fair-costoControlAnual',
             'fair-reduccionALE',
@@ -41,10 +47,9 @@ export const Treatment = {
             limiteInput.classList.toggle('bg-gray-100', e.target.checked);
             this.updateTreatmentView(true);
         });
-        document.getElementById('fair-aceptar-justificacion').addEventListener(
-            'input',
-            debounce(() => this.updateTreatmentView(true), 600),
-        );
+        const debouncedJustificacion = debounce(() => this.updateTreatmentView(true), 600);
+        this._pendingSaves.push(debouncedJustificacion);
+        document.getElementById('fair-aceptar-justificacion').addEventListener('input', debouncedJustificacion);
         document
             .getElementById('fair-mitigar-defensa-objetivo')
             .addEventListener('change', () => this.updateReduccionALEAuto());
@@ -61,6 +66,10 @@ export const Treatment = {
             }
             this.updateTreatmentView(true);
         });
+    },
+
+    _flushPendingSaves() {
+        this._pendingSaves.forEach((debounced) => debounced.flush());
     },
 
     // riskNameToSelect: para llegar aquí con un riesgo específico ya elegido (ver el botón
@@ -105,6 +114,10 @@ export const Treatment = {
     selectRisk(riskName) {
         const entry = (state.fair.riskRegister || []).find((r) => r.riskName === riskName);
         if (!entry) return;
+        // Dispara YA cualquier guardado pendiente del riesgo ANTERIOR (ver _pendingSaves) —
+        // antes de este flush, cambiar de riesgo mientras el debounce seguía en vuelo perdía la
+        // edición en curso en silencio.
+        this._flushPendingSaves();
         state.treatment.currentEntry = entry;
         document.getElementById('treatment-risk-select').value = riskName;
 
@@ -295,15 +308,22 @@ export const Treatment = {
             recEl.innerHTML = `<p><strong>Estrategia con mayor beneficio neto: ${stratNames[rec.strategy]}</strong> (${formatCurrency(rec.netBenefit)}/año). Fiabilidad: ${fiabilidadLabel[stratData.reliability] || stratData.reliability}, Tiempo de implementación: ${stratData.delayDays} días.${advertencia} Compara igual el resto de las filas antes de decidir.</p>`;
         }
 
-        if (save) await this.persistTreatment(mitigar, transferir, evitar);
+        if (save) await this.persistTreatment(entry, mitigar, transferir, evitar);
     },
 
     // Guarda mitigar/transferir/evitar/aceptarJustificacion de vuelta en esta entrada del
     // Registro — PUT reemplaza la entrada completa (no es un PATCH parcial, ver
     // backend/src/routes/register.js), así que se manda la entrada entera tal cual ya estaba
     // (spread) y solo se pisan estos 4 campos, para no perder el resto de sus datos.
-    async persistTreatment(mitigar, transferir, evitar) {
-        const entry = state.treatment.currentEntry;
+    //
+    // `entry` se recibe como parámetro (el mismo que updateTreatmentView ya leyó de
+    // state.treatment.currentEntry ANTES de su propio await a /api/treatment/evaluate) — NO se
+    // vuelve a leer state.treatment.currentEntry aquí. Bug real: entre ese await y este PUT hay
+    // una ventana asíncrona; si el usuario cambia de riesgo en el selector mientras tanto (ver
+    // selectRisk → _flushPendingSaves), currentEntry ya apunta al riesgo NUEVO para cuando este
+    // código corría — el guardado terminaba escribiendo los datos editados del riesgo ANTERIOR
+    // en la entrada del riesgo nuevo, corrompiéndola, en vez de guardarlos en la entrada correcta.
+    async persistTreatment(entry, mitigar, transferir, evitar) {
         if (!entry) return;
         const aceptarJustificacion = document.getElementById('fair-aceptar-justificacion').value.trim() || null;
 
@@ -317,7 +337,12 @@ export const Treatment = {
             showToast(e.userMessage || 'No se pudo guardar el tratamiento de este riesgo.');
             return;
         }
-        state.treatment.currentEntry = res.entry;
+        // Solo pisa currentEntry/el formulario visible si TODAVÍA es este mismo riesgo el que
+        // está siendo mostrado — si el usuario ya cambió a otro riesgo mientras este guardado
+        // estaba en vuelo, currentEntry ya no debe volver a apuntar al riesgo anterior.
+        if (state.treatment.currentEntry && state.treatment.currentEntry.id === entry.id) {
+            state.treatment.currentEntry = res.entry;
+        }
         const idx = (state.fair.riskRegister || []).findIndex((r) => r.id === entry.id);
         if (idx !== -1) state.fair.riskRegister[idx] = res.entry;
     },

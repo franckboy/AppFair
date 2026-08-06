@@ -40,6 +40,31 @@ test.describe('Tratamiento del Riesgo (página aparte)', () => {
         await expect(page.locator('#fair-costoControlAnual')).toHaveValue('5000');
     });
 
+    test('cambiar de riesgo justo después de editar (antes del debounce) no pierde la edición', async ({ page }) => {
+        await connectAndBoot(page);
+        await runFullFairAnalysis(page, 'E2E Tratamiento — Riesgo A (carrera)');
+        await connectAndBoot(page);
+        await runFullFairAnalysis(page, 'E2E Tratamiento — Riesgo B (carrera)');
+
+        await page.click('#nav-treatment');
+        await page.waitForTimeout(500);
+        await page.selectOption('#treatment-risk-select', 'E2E Tratamiento — Riesgo A (carrera)');
+        await page.waitForTimeout(300);
+
+        // Editar el costo y, ANTES de que venza el debounce (400ms), cambiar de riesgo — sin el
+        // flush en selectRisk() esta edición se perdía en silencio (ver App.Treatment).
+        await page.fill('#fair-costoControlAnual', '7500');
+        await page.selectOption('#treatment-risk-select', 'E2E Tratamiento — Riesgo B (carrera)');
+        await page.waitForTimeout(500);
+
+        const register = await page.evaluate(async () => {
+            const res = await fetch('http://localhost:3000/api/register', { headers: { 'X-API-Key': 'test-e2e-key' } });
+            return res.json();
+        });
+        const entryA = register.risks.find((r) => r.riskName === 'E2E Tratamiento — Riesgo A (carrera)');
+        expect(entryA.mitigar.cost).toBe(7500);
+    });
+
     test('un riesgo tipo Oportunidad no aparece en el selector de Tratamiento ni tiene botón "Tratar" en la tabla', async ({
         page,
     }) => {

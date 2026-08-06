@@ -51,8 +51,15 @@ export const Autocomplete = {
 
     renderDatalist(field) {
         const datalist = document.getElementById(field.datalistId);
-        datalist.innerHTML = this.history[field.key].map((v) => `<option value="${v}"></option>`).join('');
+        datalist.innerHTML = this.history[field.key].map((v) => `<option value="${escapeAttr(v)}"></option>`).join('');
     },
 };
+
+// sanitizeHTML() (usado en remember()) no escapa comillas dobles — protege contra inyección de
+// etiquetas, pero un valor guardado con una comilla (ej. `24" monitor rack`) rompería el atributo
+// value="..." de abajo si se interpolara tal cual (mismo criterio que App.RiskManagement).
+function escapeAttr(str) {
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
 
 App.Autocomplete = Autocomplete;
