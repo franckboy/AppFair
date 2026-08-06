@@ -234,6 +234,9 @@ export const FairExport = {
                             data: pareto.risks.map((r) => r.ale),
                             backgroundColor: 'rgba(124, 58, 237, 0.6)',
                             yAxisID: 'y',
+                            // Mismo motivo que en App.FairRegister.renderParetoChart: con pocos
+                            // riesgos, las barras se estiran a todo el ancho del canvas fijo.
+                            maxBarThickness: 70,
                         },
                         {
                             type: 'line',

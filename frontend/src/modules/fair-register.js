@@ -854,6 +854,11 @@ export const FairRegister = {
                         data: pareto.risks.map((r) => r.ale),
                         backgroundColor: 'rgba(124, 58, 237, 0.6)',
                         yAxisID: 'y',
+                        // Sin esto, con pocos riesgos guardados (1-3) cada barra se estira para
+                        // llenar todo el ancho disponible, con espacios enormes entre ellas — se
+                        // ve "desparramado" en vez de una barra de ancho razonable y consistente,
+                        // tenga 2 o 20 riesgos el Registro.
+                        maxBarThickness: 70,
                     },
                     {
                         type: 'line',
