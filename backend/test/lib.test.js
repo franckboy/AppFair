@@ -17,6 +17,13 @@ const { calculateInsuranceRetainedALE, calculateROSI, evaluateTreatmentStrategie
 const { evaluateFairThreat } = require('../src/lib/evaluation');
 const { calculateParetoAnalysis } = require('../src/lib/register');
 const { sampleActivatedTransitions, walkMarkovChain } = require('../src/lib/markov');
+const {
+    cptKey,
+    sampleFromDistribution,
+    forwardSample,
+    likelihoodWeightedSample,
+    inferPosterior,
+} = require('../src/lib/bayesianNetwork');
 
 test('mulberry32 es determinista: misma semilla -> misma secuencia', () => {
     const rngA = mulberry32(42);
@@ -125,6 +132,91 @@ test('walkMarkovChain: es reproducible con la misma semilla (mulberry32), igual 
     const runA = walkMarkovChain('incendio', (s) => graph[s], mulberry32(7));
     const runB = walkMarkovChain('incendio', (s) => graph[s], mulberry32(7));
     assert.deepStrictEqual(runA, runB);
+});
+
+// --- bayesianNetwork.js (motor todavía sin conectar a ningún endpoint, ver el comentario del
+// archivo) --- Red de 2 nodos reutilizada en varias pruebas: "moneda" (raíz, 50/50) causa
+// "resultado" con distinta probabilidad según salga cara o sello — el ejemplo clásico de libro
+// de texto para validar inferencia bayesiana, porque el posterior correcto se puede calcular a
+// mano con la regla de Bayes y comparar contra lo que estima el motor.
+const coinNetwork = [
+    { name: 'moneda', states: ['cara', 'sello'], parents: [], cpt: { '': { cara: 0.5, sello: 0.5 } } },
+    {
+        name: 'resultado',
+        states: ['exito', 'fallo'],
+        parents: ['moneda'],
+        cpt: {
+            cara: { exito: 0.9, fallo: 0.1 },
+            sello: { exito: 0.2, fallo: 0.8 },
+        },
+    },
+];
+
+test('cptKey: une los valores de los padres con "|", en su mismo orden', () => {
+    assert.strictEqual(cptKey(['organizado', 'basica']), 'organizado|basica');
+    assert.strictEqual(cptKey([]), '');
+});
+
+test('sampleFromDistribution: se queda con el primer estado cuyo acumulado supera el número aleatorio', () => {
+    const dist = { baja: 0.2, media: 0.3, alta: 0.5 };
+    // acumulados: baja hasta 0.2, media hasta 0.5, alta hasta 1.0
+    assert.strictEqual(sampleFromDistribution(dist, fakeRng([0.1])), 'baja');
+    assert.strictEqual(sampleFromDistribution(dist, fakeRng([0.25])), 'media');
+    assert.strictEqual(sampleFromDistribution(dist, fakeRng([0.9])), 'alta');
+});
+
+test('sampleFromDistribution: si la suma da un poco menos de 1 por redondeo, el último estado es respaldo', () => {
+    const dist = { a: 0.3333, b: 0.3333, c: 0.3333 }; // suma 0.9999, no 1
+    assert.strictEqual(sampleFromDistribution(dist, fakeRng([0.99999])), 'c');
+});
+
+test('forwardSample: el hijo se muestrea según la fila que corresponde al valor YA muestreado del padre', () => {
+    // rng bajo -> "moneda" sale cara (primer estado); para "resultado" con padre=cara, rng bajo
+    // también cae en "exito" (primer estado de esa fila).
+    const assignment = forwardSample(coinNetwork, fakeRng([0.1, 0.1]));
+    assert.deepStrictEqual(assignment, { moneda: 'cara', resultado: 'exito' });
+});
+
+test('likelihoodWeightedSample: un nodo con evidencia se fija a ese valor, no se muestrea', () => {
+    // "moneda" no tiene evidencia -> se muestrea (rng bajo -> cara). "resultado" SÍ tiene
+    // evidencia (fallo) -> se fija ahí sin consultar el rng para ese nodo.
+    const { assignment, weight } = likelihoodWeightedSample(coinNetwork, { resultado: 'fallo' }, fakeRng([0.1]));
+    assert.strictEqual(assignment.moneda, 'cara');
+    assert.strictEqual(assignment.resultado, 'fallo');
+    // peso = P(resultado=fallo | moneda=cara) = 0.1, según la tabla de coinNetwork
+    assert.ok(Math.abs(weight - 0.1) < 1e-9);
+});
+
+test('likelihoodWeightedSample: evidencia imposible según la tabla (probabilidad 0) da peso 0, no revienta', () => {
+    const imposibleNetwork = [
+        { name: 'a', states: ['x'], parents: [], cpt: { '': { x: 1 } } },
+        { name: 'b', states: ['si', 'no'], parents: ['a'], cpt: { x: { si: 1, no: 0 } } },
+    ];
+    const { weight } = likelihoodWeightedSample(imposibleNetwork, { b: 'no' }, fakeRng([0]));
+    assert.strictEqual(weight, 0);
+});
+
+test('inferPosterior: estima el posterior correcto (validado contra la regla de Bayes calculada a mano)', () => {
+    // P(moneda=cara | resultado=exito), a mano:
+    //   = P(exito|cara)*P(cara) / [P(exito|cara)*P(cara) + P(exito|sello)*P(sello)]
+    //   = (0.9*0.5) / (0.9*0.5 + 0.2*0.5) = 0.45 / 0.55 = 0.8181818...
+    const posterior = inferPosterior(coinNetwork, 'moneda', { resultado: 'exito' }, 50000, mulberry32(42));
+    assert.ok(posterior.cara > 0.8 && posterior.cara < 0.84, `esperaba ~0.818, dio ${posterior.cara}`);
+    assert.ok(Math.abs(posterior.cara + posterior.sello - 1) < 1e-9, 'el posterior debe sumar 1');
+});
+
+test('inferPosterior: sin evidencia, el posterior converge a la creencia previa (el 50/50 de la tabla raíz)', () => {
+    const posterior = inferPosterior(coinNetwork, 'moneda', {}, 50000, mulberry32(3));
+    assert.ok(Math.abs(posterior.cara - 0.5) < 0.02, `esperaba ~0.5 sin evidencia, dio ${posterior.cara}`);
+});
+
+test('inferPosterior: evidencia imposible según la red -> null (probabilidad total 0), no revienta', () => {
+    const imposibleNetwork = [
+        { name: 'a', states: ['x'], parents: [], cpt: { '': { x: 1 } } },
+        { name: 'b', states: ['si', 'no'], parents: ['a'], cpt: { x: { si: 1, no: 0 } } },
+    ];
+    const posterior = inferPosterior(imposibleNetwork, 'a', { b: 'no' }, 100, mulberry32(1));
+    assert.strictEqual(posterior, null);
 });
 
 test('pearsonCorrelation detecta una correlación perfecta', () => {
