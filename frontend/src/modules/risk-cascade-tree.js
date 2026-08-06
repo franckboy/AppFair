@@ -1,6 +1,7 @@
 import { App } from './app-namespace.js';
 import { state } from './state.js';
-import { sanitizeHTML, severityToClasses } from './utils.js';
+import { Modal } from './modal.js';
+import { sanitizeHTML, severityToClasses, showToast } from './utils.js';
 
 // ============================================================
 // App.RiskCascadeTree — vista de árbol del vínculo "Riesgo Desencadenante" (Paso 1, opcional,
@@ -129,13 +130,76 @@ export const RiskCascadeTree = {
         `;
 
         container.querySelectorAll('[data-tree-toggle]').forEach((btn) => {
-            btn.addEventListener('click', () => {
+            btn.addEventListener('click', (e) => {
+                // Sin esto, el clic también le llega al listener de la tarjeta (ver abajo,
+                // [data-tree-card]) y abre el detalle al mismo tiempo que colapsa la rama — el
+                // botón vive DENTRO de la tarjeta, así que el evento burbujea por defecto.
+                e.stopPropagation();
                 const subtree = btn.closest('li').querySelector(':scope > ul');
                 if (!subtree) return;
                 const collapsed = subtree.classList.toggle('hidden');
                 btn.textContent = collapsed ? '▸' : '▾';
                 btn.setAttribute('aria-expanded', String(!collapsed));
             });
+        });
+
+        container.querySelectorAll('[data-tree-card]').forEach((card) => {
+            // El nombre sale del texto ya renderizado (.risk-tree-name), no de un atributo —
+            // sanitizeHTML escapa &/</> para texto, pero no comillas dobles, así que un nombre
+            // de riesgo con " rompería un atributo data-tree-card="...". textContent no tiene
+            // ese problema: siempre devuelve el string original tal cual, sin importar qué
+            // caracteres tenga.
+            card.addEventListener('click', () => this.openDetail(card.querySelector('.risk-tree-name').textContent));
+        });
+    },
+
+    // Detalle completo de un riesgo al hacer clic en su tarjeta (mismo `Modal` que ya usan el
+    // Catálogo de Riesgos y el Catálogo de Activos) — evita tener que salir del árbol para ver
+    // la descripción/estatus completos. "Tratar" reutiliza EXACTAMENTE lo que ya hace el botón
+    // "Analizar" del Registro (App.FairRegister): carga el riesgo en el wizard y lo deja en el
+    // Paso 1, con el mismo aviso de que hay que volver a correr el Paso 4 para ver resultados y
+    // tratamiento actualizados — no existe hoy una forma de saltar directo a Tratamiento sin
+    // volver a simular, así que este botón no inventa una ruta nueva, solo reusa la que ya hay.
+    openDetail(riskName) {
+        const risk = (state.fair.riskRegister || []).find((r) => r.riskName === riskName);
+        if (!risk) {
+            showToast('No se encontró este riesgo en el Registro.');
+            return;
+        }
+        const isOpportunity = risk.riskType === 'oportunidad';
+        const badgeClasses = isOpportunity
+            ? 'bg-blue-50 border-blue-500 text-blue-800'
+            : risk.evaluationClasses || severityToClasses(risk.severity);
+        const badgeLabel = isOpportunity ? 'Oportunidad' : risk.evaluationLevel || '—';
+
+        Modal.title.textContent = risk.riskName;
+        Modal.body.innerHTML = `
+            <div class="flex justify-between items-start flex-wrap gap-2 mb-3">
+                <span class="px-2 py-1 rounded text-xs border-l-4 ${badgeClasses}">${sanitizeHTML(badgeLabel)}</span>
+            </div>
+            <p class="description-text mb-3">${sanitizeHTML(risk.description || 'Sin descripción.')}</p>
+            <ul class="text-sm text-gray-700 space-y-1 mb-3">
+                <li><strong>Activo:</strong> ${sanitizeHTML(risk.asset || '—')}</li>
+                <li><strong>Agente de Amenaza:</strong> ${sanitizeHTML(risk.threat || '—')}</li>
+                <li><strong>Responsable:</strong> ${sanitizeHTML(risk.owner || '—')}</li>
+                <li><strong>${isOpportunity ? 'Beneficio' : 'Pérdida'} Anual Esperada:</strong> ${formatAle(risk.ale)}</li>
+                <li><strong>Mediana:</strong> ${formatAle(risk.median)}</li>
+                <li><strong>P90:</strong> ${formatAle(risk.p90)}</li>
+                <li><strong>CVaR 95%:</strong> ${formatAle(risk.cvar95)}</li>
+                ${risk.evaluationJustification ? `<li><strong>Justificación:</strong> ${sanitizeHTML(risk.evaluationJustification)}</li>` : ''}
+            </ul>
+        `;
+        Modal.footer.innerHTML = `
+            <button id="risktree-detail-close-btn" class="btn btn-secondary">Cerrar</button>
+            <button id="risktree-detail-tratar-btn" class="btn btn-primary">Tratar</button>
+        `;
+        Modal.modal.classList.remove('hidden');
+
+        document.getElementById('risktree-detail-close-btn').addEventListener('click', () => Modal.hide());
+        document.getElementById('risktree-detail-tratar-btn').addEventListener('click', () => {
+            Modal.hide();
+            App.Navigation.switchPage('fair');
+            App.FairWizard.loadRegisteredRiskIntoForm(risk.riskName);
         });
     },
 
@@ -155,7 +219,7 @@ export const RiskCascadeTree = {
 
         return `
             <li>
-                <div class="risk-tree-card ${classes}">
+                <div class="risk-tree-card cursor-pointer ${classes}" data-tree-card>
                     <p class="risk-tree-name">${sanitizeHTML(risk.riskName)}</p>
                     <p class="risk-tree-meta">${typeLabel} · ${formatAle(risk.ale)}/año</p>
                     ${
