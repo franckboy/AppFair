@@ -365,6 +365,15 @@ body.modo-tecnico .simple-only {
     border-bottom: 1px solid #999;
   }
   #fair-print-report img {
+    /* height:auto (no solo max-width) evita que un <img> con alto explícito se vea
+       estirado/deformado al achicarse por max-width — y page-break-inside/break-inside
+       evita que un gráfico se corte a la mitad entre dos páginas del PDF (los gráficos del
+       Informe Consolidado se dibujan a tamaño fijo fuera de pantalla, ver
+       App.FairExport.renderOffscreenHeatmap/renderOffscreenPareto/renderOffscreenHistogram). */
     max-width: 100%;
+    height: auto;
+    display: block;
+    page-break-inside: avoid;
+    break-inside: avoid;
   }
 }

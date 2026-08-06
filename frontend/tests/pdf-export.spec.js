@@ -39,5 +39,21 @@ test.describe('Informe Consolidado (PDF único)', () => {
         expect(reportHTML).toContain('Resultados de la Simulación Monte Carlo');
         expect(reportHTML).toContain('Análisis de Sensibilidad');
         expect(reportHTML).toContain('Comparación de Estrategias de Tratamiento');
+
+        // REGRESIÓN: los gráficos (mapa de calor, Pareto, histograma del riesgo) se exportaban
+        // en blanco cuando se exportaba SIN haber visitado antes "Registro de Riesgos" en la
+        // misma sesión — justo el flujo de este test, que solo pasa por "Análisis de Riesgo"
+        // (#nav-fair), nunca por #nav-register. Antes del fix, el <canvas> real de esa página
+        // nunca se dibujaba y toDataURL() capturaba un PNG casi vacío de 300×150 (el tamaño
+        // por defecto del navegador) — ahora los tres gráficos se redibujan fuera de pantalla a
+        // tamaño fijo (ver App.FairExport.renderOffscreen*), sin depender de qué página se
+        // visitó antes. Un PNG real de un gráfico pesa muchos KB en base64; uno casi vacío pesa
+        // unos pocos cientos de bytes — 3000 caracteres es un umbral cómodo entre ambos.
+        const images = await page.locator('#fair-print-report img').all();
+        expect(images.length).toBeGreaterThanOrEqual(3); // mapa de calor + Pareto + histograma del riesgo
+        for (const img of images) {
+            const src = await img.getAttribute('src');
+            expect(src.length).toBeGreaterThan(3000);
+        }
     });
 });

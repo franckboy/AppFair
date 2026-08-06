@@ -1538,11 +1538,14 @@ export const FairWizard = {
         state.fair.lastThresholdK = `${currencySymbol}${summary.exceedanceThreshold / 1000}k`;
         App.UIMode.applyProbThresholdLabel();
         document.getElementById('prob-threshold-result').textContent = `${summary.probExceedance.toFixed(1)}%`;
-        await App.FairRegister.saveToRiskRegister(summary, evaluation);
 
-        document.getElementById('fair-roi-section').classList.remove('hidden');
-        this.updateTreatmentView();
-
+        // El histograma se construye ANTES de guardar en el Registro a propósito —
+        // saveToRiskRegister() lee state.fair.fairResultsChart para guardar chartLabels/
+        // chartData (ver App.FairExport.buildFullRiskReportSection, que los usa para
+        // redibujar este mismo histograma en el PDF). Guardarlo primero y crear el gráfico
+        // después dejaba el Registro con los datos de la corrida ANTERIOR (o null, en la
+        // primera simulación de la sesión) — el histograma de este riesgo nunca aparecía en
+        // el PDF, o aparecía con la corrida equivocada.
         const ctx = document.getElementById('fair-results-chart').getContext('2d');
         const { labels, binCounts } = buildHistogramBins(annualLosses, summary.max);
         if (state.fair.fairResultsChart) {
@@ -1585,6 +1588,11 @@ export const FairWizard = {
                 },
             },
         });
+
+        await App.FairRegister.saveToRiskRegister(summary, evaluation);
+
+        document.getElementById('fair-roi-section').classList.remove('hidden');
+        this.updateTreatmentView();
 
         this.persistFairAnalysis();
     },
