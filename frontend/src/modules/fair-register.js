@@ -497,12 +497,26 @@ export const FairRegister = {
                         pointBorderColor: 'white',
                         pointRadius: 10,
                         pointHoverRadius: 13,
+                        // impactPercent/probabilityPercent se recortan a [0,100] (ver el backend) —
+                        // un riesgo cuyo ALE ya iguala o supera el umbral Crítico cae EXACTO en
+                        // x=100, con el centro del punto sobre el borde del eje. Chart.js por
+                        // defecto recorta cada punto al área del gráfico, así que ese punto se veía
+                        // cortado a la mitad (mismo problema en y=0/100). clip amplía esa zona de
+                        // recorte más allá del área del gráfico, para que el círculo completo (radio
+                        // 10, hasta 13 al pasar el mouse) siempre quepa sin cortarse.
+                        clip: 16,
                     },
                 ],
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
+                // Espacio de sobra alrededor del área de dibujo — sin esto, un punto en el borde
+                // (ver el comentario de "clip" arriba) puede quedar apenas fuera del <canvas>
+                // mismo, no solo del área del gráfico, y clip por sí solo no alcanza.
+                layout: {
+                    padding: { top: 14, right: 14, bottom: 4, left: 4 },
+                },
                 scales: {
                     x: {
                         title: { display: true, text: 'Impacto (ALE como % del umbral Crítico)' },

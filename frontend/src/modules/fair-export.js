@@ -165,12 +165,19 @@ export const FairExport = {
                             pointBackgroundColor: threatRegister.map((r) => severityToHex(r.severity)),
                             pointBorderColor: 'white',
                             pointRadius: 10,
+                            // Mismo motivo que en App.FairRegister.renderRiskRegister: un riesgo en
+                            // x=100 o y=100 (ALE que ya iguala/supera el umbral Crítico) cae exacto
+                            // en el borde del eje, y Chart.js recorta el punto ahí por defecto.
+                            clip: 16,
                         },
                     ],
                 },
                 options: {
                     responsive: false,
                     animation: false,
+                    layout: {
+                        padding: { top: 14, right: 14, bottom: 4, left: 4 },
+                    },
                     scales: {
                         x: {
                             title: { display: true, text: 'Impacto (ALE como % del umbral Crítico)' },
