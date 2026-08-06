@@ -74,9 +74,11 @@ La suite E2E arranca su propio backend + servidor estático (ver `frontend/playw
 y corre los flujos críticos de punta a punta: wizard completo, guardar borrador y reanudarlo,
 Análisis Profundo, exportar el Informe Consolidado, eliminar un riesgo, vincular un activo del
 Catálogo de Activos a un riesgo simulado y verlo reflejado en ambos lados, la sugerencia de
-tipo de activo al elegir un riesgo del Catálogo de Riesgos (Paso 1), y el Árbol de Riesgos en
+tipo de activo al elegir un riesgo del Catálogo de Riesgos (Paso 1), el Árbol de Riesgos en
 Cascada (un riesgo con "Riesgo Desencadenante" aparece anidado bajo su padre, y la rama se
-puede colapsar).
+puede colapsar), y Tratamiento del Riesgo como página aparte (elegir un riesgo ya guardado,
+editar Mitigar/Transferir/Evitar/Aceptar y verlo persistido en el Registro, sin pasar por el
+wizard ni volver a simular).
 
 Las pruebas unitarias (Vitest, co-ubicadas junto al código que prueban — `*.test.js` dentro de
 `frontend/src/modules/`) cubren la lógica que ya es pura hoy: formateo/clasificación en

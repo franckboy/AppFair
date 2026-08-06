@@ -49,7 +49,7 @@ test.describe('Árbol de Riesgos en Cascada', () => {
         await expect(childCard).toBeHidden();
     });
 
-    test('clic en una tarjeta abre su detalle, y "Tratar" lo carga en el wizard', async ({ page }) => {
+    test('clic en una tarjeta abre su detalle, y "Tratar" lo carga en la página de Tratamiento', async ({ page }) => {
         await connectAndBoot(page);
         await runFullFairAnalysis(page, 'E2E Árbol — Detalle');
 
@@ -64,11 +64,9 @@ test.describe('Árbol de Riesgos en Cascada', () => {
         await page.click('#risktree-detail-tratar-btn');
         await page.waitForTimeout(500);
 
-        // "Tratar" reusa exactamente lo que ya hace "Analizar" en el Registro: aterriza en el
-        // Paso 1 del wizard con el mismo riesgo cargado, no en Tratamiento directo (no existe
-        // hoy una forma de saltar ahí sin volver a simular).
-        await expect(page.locator('#fairAnalysisPage')).toBeVisible();
-        await expect(page.locator('#fair-riskName')).toHaveValue('E2E Árbol — Detalle');
-        await expect(page.locator('#fair-step-1')).toBeVisible();
+        // Tratamiento (Mitigar/Transferir/Evitar/Aceptar) vive en su propia página — "Tratar"
+        // aterriza ahí con este riesgo ya elegido, sin pasar por el wizard.
+        await expect(page.locator('#treatmentPage')).toBeVisible();
+        await expect(page.locator('#treatment-risk-select')).toHaveValue('E2E Árbol — Detalle');
     });
 });

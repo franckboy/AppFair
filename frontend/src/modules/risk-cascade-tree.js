@@ -155,11 +155,9 @@ export const RiskCascadeTree = {
 
     // Detalle completo de un riesgo al hacer clic en su tarjeta (mismo `Modal` que ya usan el
     // Catálogo de Riesgos y el Catálogo de Activos) — evita tener que salir del árbol para ver
-    // la descripción/estatus completos. "Tratar" reutiliza EXACTAMENTE lo que ya hace el botón
-    // "Analizar" del Registro (App.FairRegister): carga el riesgo en el wizard y lo deja en el
-    // Paso 1, con el mismo aviso de que hay que volver a correr el Paso 4 para ver resultados y
-    // tratamiento actualizados — no existe hoy una forma de saltar directo a Tratamiento sin
-    // volver a simular, así que este botón no inventa una ruta nueva, solo reusa la que ya hay.
+    // la descripción/estatus completos. "Tratar" manda a #treatmentPage (App.Treatment) con
+    // este riesgo ya elegido — se omite para una Oportunidad, que esa página tampoco acepta
+    // (un beneficio esperado no es una pérdida a reducir, ver App.Treatment.populateRiskSelect).
     openDetail(riskName) {
         const risk = (state.fair.riskRegister || []).find((r) => r.riskName === riskName);
         if (!risk) {
@@ -191,16 +189,18 @@ export const RiskCascadeTree = {
         `;
         Modal.footer.innerHTML = `
             <button id="risktree-detail-close-btn" class="btn btn-secondary">Cerrar</button>
-            <button id="risktree-detail-tratar-btn" class="btn btn-primary">Tratar</button>
+            ${isOpportunity ? '' : '<button id="risktree-detail-tratar-btn" class="btn btn-primary">Tratar</button>'}
         `;
         Modal.modal.classList.remove('hidden');
 
         document.getElementById('risktree-detail-close-btn').addEventListener('click', () => Modal.hide());
-        document.getElementById('risktree-detail-tratar-btn').addEventListener('click', () => {
-            Modal.hide();
-            App.Navigation.switchPage('fair');
-            App.FairWizard.loadRegisteredRiskIntoForm(risk.riskName);
-        });
+        if (!isOpportunity) {
+            document.getElementById('risktree-detail-tratar-btn').addEventListener('click', () => {
+                Modal.hide();
+                App.Navigation.switchPage('treatment');
+                App.Treatment.load(risk.riskName);
+            });
+        }
     },
 
     // `visited`: nombres ya recorridos en esta rama — corta cualquier ciclo (A desencadena B,

@@ -219,29 +219,22 @@ export const FairRegister = {
         // Rápida ya no existe, así que ningún riesgo nuevo llega con sourceRiskId).
         if (!state.fair.registerEntryId) state.fair.registerEntryId = crypto.randomUUID();
 
-        // Igual que en updateTreatmentView() — se leen tal cual, sin importar si esa función
-        // ya corrió o no (los campos existen en el DOM de todas formas). Se guardan aquí
-        // para que el Informe Consolidado pueda reconstruir la Sección 9 (Tratamiento) de
-        // CUALQUIER riesgo guardado, no solo el que esté abierto en este momento.
-        const mitigar = {
-            cost: getSafeNumber(document.getElementById('fair-costoControlAnual')),
-            reductionPercent: getSafeNumber(document.getElementById('fair-reduccionALE')),
-            reliability: document.getElementById('fair-mitigar-fiabilidad').value,
-            delayDays: getSafeNumber(document.getElementById('fair-mitigar-retraso')),
+        // Mitigar/Transferir/Evitar/Aceptar ya no se editan en el wizard — viven en su propia
+        // página (ver App.Treatment). Al (re)simular, se conservan tal cual estaban en esta
+        // MISMA entrada si ya existía (para no perder lo que el usuario ya haya configurado ahí
+        // antes), o quedan en su valor por defecto si es un riesgo nuevo.
+        const existingEntry = (state.fair.riskRegister || []).find((r) => r.id === state.fair.registerEntryId) || null;
+        const mitigar = existingEntry?.mitigar || { cost: 0, reductionPercent: 0, reliability: 'media', delayDays: 0 };
+        const transferir = existingEntry?.transferir || {
+            premium: 0,
+            deductible: 0,
+            limit: 0,
+            unlimited: false,
+            reliability: 'media',
+            delayDays: 0,
         };
-        const transferir = {
-            premium: getSafeNumber(document.getElementById('fair-seguro-prima')),
-            deductible: getSafeNumber(document.getElementById('fair-seguro-deducible')),
-            limit: getSafeNumber(document.getElementById('fair-seguro-limite')),
-            unlimited: document.getElementById('fair-seguro-sin-limite').checked,
-            reliability: document.getElementById('fair-seguro-fiabilidad').value,
-            delayDays: getSafeNumber(document.getElementById('fair-seguro-retraso')),
-        };
-        const evitar = {
-            cost: getSafeNumber(document.getElementById('fair-evitar-costo')),
-            reliability: document.getElementById('fair-evitar-fiabilidad').value,
-            delayDays: getSafeNumber(document.getElementById('fair-evitar-retraso')),
-        };
+        const evitar = existingEntry?.evitar || { cost: 0, reliability: 'alta', delayDays: 0 };
+        const aceptarJustificacion = existingEntry?.aceptarJustificacion || null;
         const attackerProfile = state.quick.attackerProfiles[state.fair.attackerKey] || {};
         const defenseProfile = state.quick.defenseProfiles[state.fair.defenseKey] || {};
         const chart = state.fair.fairResultsChart;
@@ -313,10 +306,16 @@ export const FairRegister = {
                     attackerScore: state.fair.attackerScore || null,
                     defenseProfileName: defenseProfile.name || null,
                     defenseScore: state.fair.defenseScore || null,
+                    // Identificadores internos (ej. 'estandar'), a diferencia de
+                    // attacker/defenseProfileName de arriba — los necesita App.Treatment para
+                    // poder recalcular "Reducción de ALE" sin depender de que el wizard siga
+                    // abierto con este riesgo cargado.
+                    attackerKey: state.fair.attackerKey || null,
+                    defenseKey: state.fair.defenseKey || null,
                     mitigar,
                     transferir,
                     evitar,
-                    aceptarJustificacion: document.getElementById('fair-aceptar-justificacion').value.trim() || null,
+                    aceptarJustificacion,
                     chartLabels: chart ? chart.data.labels : null,
                     chartData: chart ? chart.data.datasets[0].data : null,
                 },
@@ -610,15 +609,22 @@ export const FairRegister = {
                     ? `<input type="checkbox" class="concentrated-checkbox" data-id="${item.rowKey}" />`
                     : '';
 
-                // "Analizar" abre el wizard completo de FAIR (pasos 1-4, incluyendo Tratamiento)
-                // para ESTE riesgo — a diferencia de "Simular" (un vistazo rápido de solo lectura
-                // sin salir del Registro). Es la vista de detalle por riesgo.
+                // "Analizar" abre el wizard completo de FAIR (pasos 1-3; Tratamiento ya no vive
+                // ahí, ver "Tratar" abajo) para ESTE riesgo — a diferencia de "Simular" (un
+                // vistazo rápido de solo lectura sin salir del Registro). Es la vista de detalle
+                // por riesgo. "Tratar" no aplica a una Oportunidad (ver App.Treatment) — se
+                // omite el botón en vez de mandar a una página que lo va a rechazar.
+                const treatBtn =
+                    item.stage === 'fair' && item.fairEntry.riskType !== 'oportunidad'
+                        ? `<button class="btn btn-success text-xs ml-1" data-treat-fair title="Tratar este riesgo (Mitigar/Transferir/Evitar/Aceptar)"><i class="fas fa-shield-halved mr-1"></i>Tratar</button>`
+                        : '';
                 const actionsCell =
                     item.stage === 'fair'
                         ? `<button class="btn btn-primary text-xs" data-analyze-fair="${sanitizeHTML(item.fairEntry.riskName)}"><i class="fas fa-balance-scale mr-1"></i>Analizar</button>
                     <button class="btn btn-secondary text-xs ml-1" data-simulate-risk="${sanitizeHTML(item.fairEntry.riskName)}" ${item.fairEntry.tef && item.fairEntry.vuln && item.fairEntry.lossMagnitudes ? '' : 'disabled title="Este riesgo se guardó antes de esta función — vuelve a correr su simulación desde Análisis FAIR para poder verla aquí."'}>
                         <i class="fas fa-chart-bar mr-1"></i>Simular
                     </button>
+                    ${treatBtn}
                     <button class="inline-flex items-center justify-center p-2 text-red-600 hover:text-red-800 text-sm ml-2" title="Eliminar riesgo" aria-label="Eliminar riesgo" data-delete-risk="${sanitizeHTML(item.fairEntry.riskName)}" data-delete-source-id="${item.id || ''}" data-delete-entry-id="${item.fairEntry.id || ''}"><i class="fas fa-trash"></i></button>`
                         : `<button class="btn btn-primary text-xs" data-analyze-quick="${item.id}" ${item.fullData ? '' : 'disabled title="No se encontró la información completa de este riesgo."'}><i class="fas fa-balance-scale mr-1"></i>Analizar con FAIR</button>
                     <button class="inline-flex items-center justify-center p-2 text-red-600 hover:text-red-800 text-sm ml-2" title="Eliminar riesgo" aria-label="Eliminar riesgo" data-delete-quick="${item.id}"><i class="fas fa-trash"></i></button>`;
@@ -627,7 +633,7 @@ export const FairRegister = {
                 <tr class="border-b">
                     <td class="py-2 text-center">${checkboxCell}</td>
                     <td class="text-center text-gray-500">${item.number}</td>
-                    <td>${sanitizeHTML(item.riskName)}</td>
+                    <td class="risk-name-cell">${sanitizeHTML(item.riskName)}</td>
                     <td>${stageBadge}</td>
                     <td>${inherenteCell}</td>
                     <td>${item.controlEffectiveness || '—'}</td>
@@ -657,6 +663,16 @@ export const FairRegister = {
         });
         document.querySelectorAll('[data-simulate-risk]').forEach((btn) => {
             btn.addEventListener('click', () => this.simulateRegisteredRisk(btn.dataset.simulateRisk));
+        });
+        document.querySelectorAll('[data-treat-fair]').forEach((btn) => {
+            // El nombre sale del texto ya renderizado (.risk-name-cell), no de un atributo —
+            // mismo motivo que App.RiskCascadeTree.render(): sanitizeHTML no escapa comillas
+            // dobles, así que un nombre de riesgo con " rompería un atributo data-treat-fair="...".
+            btn.addEventListener('click', () => {
+                const riskName = btn.closest('tr').querySelector('.risk-name-cell').textContent;
+                App.Navigation.switchPage('treatment');
+                App.Treatment.load(riskName);
+            });
         });
         document.querySelectorAll('[data-delete-quick]').forEach((btn) => {
             btn.addEventListener('click', () =>

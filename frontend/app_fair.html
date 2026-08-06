@@ -81,6 +81,15 @@
                 <button id="nav-register" class="nav-button nav-requires-boot">
                     <i class="fas fa-th-large mr-2"></i><span class="hidden md:inline">Registro de Riesgos</span>
                 </button>
+                <!-- Tratamiento del Riesgo (ISO 31000, 6.5): antes vivía dentro del Paso 4 del
+                     wizard, atado a que acabaras de correr una simulación. Se sacó a su propia
+                     página (ver App.Treatment) porque /api/treatment/evaluate solo necesita el ALE
+                     actual + los insumos de Mitigar/Transferir/Evitar — datos que ya vive cada
+                     entrada del Registro — así que cualquier riesgo ya guardado se puede tratar sin
+                     volver a simular ni pasar por el wizard. -->
+                <button id="nav-treatment" class="nav-button nav-requires-boot" title="Compara Mitigar/Transferir/Evitar/Aceptar para cualquier riesgo ya guardado">
+                    <i class="fas fa-shield-halved mr-2"></i><span class="hidden md:inline">Tratamiento</span>
+                </button>
                 <!-- Árbol de Riesgos en Cascada: visualiza el vínculo "Riesgo Desencadenante" (Paso
                      1, opcional) entre los riesgos ya guardados en el Registro — quién desencadena a
                      quién. Puramente informativo (ver App.RiskCascadeTree): no combina ni recalcula
@@ -495,165 +504,13 @@
                                 </div>
                             </div>
 
-                            <div id="fair-roi-section" class="hidden mt-6">
-                                <div id="fair-roi-content" class="col-span-1 md:col-span-2 mt-6 p-4 bg-green-50 border border-green-200 rounded-md">
-                                    <h3 class="text-xl font-semibold text-green-800 mb-2">Tratamiento del Riesgo</h3>
-                                    <p class="description-text mb-4">
-                                        Compara las estrategias de tratamiento de ISO 31000 (cláusula 6.5) contra tu Pérdida Anual Esperada (ALE) actual:
-                                        <strong><span id="fair-treat-ale-base">$0.00</span></strong>
-                                    </p>
-
-                                    <div class="fair-section bg-white">
-                                        <h4 id="fair-mitigar-title">1. Mitigar (reducir probabilidad o impacto)</h4>
-                                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                            <div class="input-group">
-                                                <label for="fair-costoControlAnual" id="fair-costoControlAnual-label">Costo Anual del Control:</label>
-                                                <input type="number" id="fair-costoControlAnual" class="form-input" value="0" min="0" oninput="validity.valid||(value='');">
-                                            </div>
-                                            <div class="input-group">
-                                                <label for="fair-mitigar-defensa-objetivo">
-                                                    <span id="fair-mitigar-defensa-objetivo-label">Nivel de Defensa Objetivo con este Control</span>
-                                                    <i class="fas fa-info-circle text-blue-500 cursor-pointer ml-1" title="A qué nivel de defensa subirías con este control. La Reducción de ALE se calcula sola comparando tu nivel actual contra este objetivo."></i>
-                                                </label>
-                                                <select id="fair-mitigar-defensa-objetivo" class="form-select">
-                                                    <option value="basica">Básica</option>
-                                                    <option value="estandar">Estándar</option>
-                                                    <option value="avanzada">Avanzada</option>
-                                                    <option value="elite">Defensa Élite</option>
-                                                </select>
-                                            </div>
-                                            <div class="input-group">
-                                                <label class="flex items-center">
-                                                    <input type="checkbox" id="fair-reduccionALE-manual-override" class="form-checkbox mr-2">
-                                                    <span id="fair-reduccionALE-override-label">Escribir la Reducción de ALE (%) manualmente</span>
-                                                </label>
-                                                <label for="fair-reduccionALE" class="mt-1" id="fair-reduccionALE-label">Reducción Estimada de ALE (%) — calculada</label>
-                                                <input type="number" id="fair-reduccionALE" class="form-input bg-gray-100" value="0" min="0" max="100" readonly oninput="validity.valid||(value='');">
-                                                <p id="fair-reduccionALE-explanation" class="description-text mt-1"></p>
-                                            </div>
-                                            <div class="input-group advanced-only">
-                                                <label for="fair-mitigar-fiabilidad">
-                                                    Fiabilidad del Control
-                                                    <i class="fas fa-info-circle text-blue-500 cursor-pointer ml-1" title="Qué tan probado/confiable es este control (Broder, 1984, Cap. 5). Un control barato pero poco fiable puede salir más caro que uno más caro y probado."></i>
-                                                </label>
-                                                <select id="fair-mitigar-fiabilidad" class="form-select">
-                                                    <option value="alta">Alta (tecnología probada, historial confiable)</option>
-                                                    <option value="media" selected>Media</option>
-                                                    <option value="baja">Baja (tecnología nueva o sin probar)</option>
-                                                </select>
-                                            </div>
-                                            <div class="input-group advanced-only">
-                                                <label for="fair-mitigar-retraso">Tiempo de Implementación (días):</label>
-                                                <input type="number" id="fair-mitigar-retraso" class="form-input" value="0" min="0" oninput="validity.valid||(value='');">
-                                            </div>
-                                        </div>
-                                        <div class="mt-2 text-sm grid grid-cols-2 md:grid-cols-4 gap-2">
-                                            <p>Costo Anual: <strong id="fair-roi-costo">$0.00</strong></p>
-                                            <p>Pérdida Residual: <strong id="fair-roi-ale-despues">$0.00</strong></p>
-                                            <p>Pérdida Evitada: <strong id="fair-roi-ale-evitada">$0.00</strong></p>
-                                            <p id="fair-roi-label">Beneficio Neto: <strong id="fair-roi-resultado" class="font-bold">$0.00</strong></p>
-                                            <p class="advanced-only">ROSI: <strong id="fair-roi-rosi">—</strong></p>
-                                        </div>
-                                        <div id="fair-mitigar-verdict" class="mt-3 p-2 rounded text-sm font-semibold"></div>
-                                    </div>
-
-                                    <div class="fair-section bg-white">
-                                        <h4 id="fair-seguro-title">2. Transferir / Compartir (seguro)</h4>
-                                        <p class="description-text mb-2">Simula cómo cambia la pérdida retenida al aplicar un deducible y un límite de cobertura sobre cada uno de los escenarios simulados (no una aproximación sobre el promedio).</p>
-                                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                            <div class="input-group">
-                                                <label for="fair-seguro-prima" id="fair-seguro-prima-label">Prima Anual:</label>
-                                                <input type="number" id="fair-seguro-prima" class="form-input" value="0" min="0" oninput="validity.valid||(value='');">
-                                            </div>
-                                            <div class="input-group">
-                                                <label for="fair-seguro-deducible" id="fair-seguro-deducible-label">Deducible por Evento:</label>
-                                                <input type="number" id="fair-seguro-deducible" class="form-input" value="0" min="0" oninput="validity.valid||(value='');">
-                                            </div>
-                                            <div class="input-group">
-                                                <label for="fair-seguro-limite">
-                                                    <span id="fair-seguro-limite-label">Límite de Cobertura</span>
-                                                    <i class="fas fa-info-circle text-blue-500 cursor-pointer ml-1" title="Cuánto paga la aseguradora como máximo por evento, por encima del deducible."></i>
-                                                </label>
-                                                <input type="number" id="fair-seguro-limite" class="form-input" value="0" min="0" oninput="validity.valid||(value='');">
-                                                <label class="flex items-center mt-1 text-sm">
-                                                    <input type="checkbox" id="fair-seguro-sin-limite" class="form-checkbox mr-2">
-                                                    <span id="fair-seguro-sin-limite-label">Cobertura ilimitada (sin tope) arriba del deducible</span>
-                                                </label>
-                                            </div>
-                                            <div class="input-group advanced-only">
-                                                <label for="fair-seguro-fiabilidad">Fiabilidad (solidez de la aseguradora):</label>
-                                                <select id="fair-seguro-fiabilidad" class="form-select">
-                                                    <option value="alta">Alta</option>
-                                                    <option value="media" selected>Media</option>
-                                                    <option value="baja">Baja</option>
-                                                </select>
-                                            </div>
-                                            <div class="input-group advanced-only">
-                                                <label for="fair-seguro-retraso">Tiempo de Contratación (días):</label>
-                                                <input type="number" id="fair-seguro-retraso" class="form-input" value="0" min="0" oninput="validity.valid||(value='');">
-                                            </div>
-                                        </div>
-                                        <div class="mt-2 text-sm grid grid-cols-2 md:grid-cols-4 gap-2">
-                                            <p>Costo Anual (Prima): <strong id="fair-seguro-costo">$0.00</strong></p>
-                                            <p>Pérdida Retenida (simulada): <strong id="fair-seguro-residual">$0.00</strong></p>
-                                            <p>Pérdida Evitada: <strong id="fair-seguro-evitada">$0.00</strong></p>
-                                            <p>Beneficio Neto: <strong id="fair-seguro-beneficio" class="font-bold">$0.00</strong></p>
-                                            <p class="advanced-only">ROSI: <strong id="fair-seguro-rosi">—</strong></p>
-                                        </div>
-                                        <div id="fair-seguro-verdict" class="mt-3 p-2 rounded text-sm font-semibold"></div>
-                                    </div>
-
-                                    <div class="fair-section bg-white">
-                                        <h4 id="fair-evitar-title">3. Evitar (eliminar la fuente del riesgo)</h4>
-                                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                            <div class="input-group">
-                                                <label for="fair-evitar-costo" id="fair-evitar-costo-label">Costo Anualizado de Eliminar la Actividad/Fuente:</label>
-                                                <input type="number" id="fair-evitar-costo" class="form-input" value="0" min="0" oninput="validity.valid||(value='');">
-                                            </div>
-                                            <div class="input-group advanced-only">
-                                                <label for="fair-evitar-fiabilidad">Fiabilidad (certeza de eliminar el riesgo):</label>
-                                                <select id="fair-evitar-fiabilidad" class="form-select">
-                                                    <option value="alta" selected>Alta</option>
-                                                    <option value="media">Media</option>
-                                                    <option value="baja">Baja</option>
-                                                </select>
-                                            </div>
-                                            <div class="input-group advanced-only">
-                                                <label for="fair-evitar-retraso">Tiempo de Implementación (días):</label>
-                                                <input type="number" id="fair-evitar-retraso" class="form-input" value="0" min="0" oninput="validity.valid||(value='');">
-                                            </div>
-                                        </div>
-                                        <div class="mt-2 text-sm grid grid-cols-2 md:grid-cols-4 gap-2">
-                                            <p>Costo Anual: <strong id="fair-evitar-costo-display">$0.00</strong></p>
-                                            <p>Pérdida Residual: <strong>$0.00 (por definición)</strong></p>
-                                            <p>Pérdida Evitada: <strong id="fair-evitar-evitada">$0.00</strong></p>
-                                            <p>Beneficio Neto: <strong id="fair-evitar-beneficio" class="font-bold">$0.00</strong></p>
-                                            <p class="advanced-only">ROSI: <strong id="fair-evitar-rosi">—</strong></p>
-                                        </div>
-                                        <div id="fair-evitar-verdict" class="mt-3 p-2 rounded text-sm font-semibold"></div>
-                                    </div>
-
-                                    <div class="fair-section bg-white">
-                                        <h4 id="fair-aceptar-title">4. Aceptar / Retener (sin tratamiento)</h4>
-                                        <p class="description-text mb-2" id="fair-aceptar-description">ISO 31000 exige que aceptar un riesgo sea una decisión documentada y deliberada, no la ausencia de una decisión. Escribe la justificación.</p>
-                                        <div class="input-group">
-                                            <label for="fair-aceptar-justificacion" id="fair-aceptar-justificacion-label">Justificación de la aceptación:</label>
-                                            <textarea id="fair-aceptar-justificacion" class="form-textarea" rows="2" placeholder="Ej. El costo de tratamiento supera la pérdida esperada; se acepta y se revisará en 12 meses."></textarea>
-                                        </div>
-                                        <div class="mt-2 text-sm grid grid-cols-2 md:grid-cols-4 gap-2">
-                                            <p>Costo Anual: <strong>$0.00</strong></p>
-                                            <p>Pérdida Residual: <strong id="fair-aceptar-residual">$0.00 (= ALE actual)</strong></p>
-                                        </div>
-                                    </div>
-
-                                    <div id="fair-treatment-recommendation" class="mt-4 p-3 bg-white rounded-md border-l-4 border-blue-500 text-sm"></div>
-                                </div>
-
-                                <div id="fair-roi-opportunity-note" class="hidden mt-6 p-4 bg-blue-50 border border-blue-200 rounded-md text-sm text-blue-900">
-                                    <p><strong>El análisis de Tratamiento (Mitigar / Transferir / Evitar / Aceptar) no aplica a una Oportunidad.</strong></p>
-                                    <p class="mt-2">Esas cuatro estrategias (ISO 31000, cláusula 6.5) están pensadas para reducir una <em>pérdida</em> — "evitar" o "mitigar" una oportunidad significaría renunciar al beneficio o reducirlo a propósito, lo opuesto de lo que buscas.</p>
-                                    <p class="mt-2">La pregunta relevante aquí es otra: ¿vale la pena invertir para capturar esta oportunidad? Eso ya lo responde la evaluación de arriba, comparando el Beneficio Anual Esperado contra tus Criterios de Riesgo.</p>
-                                </div>
+                            <!-- Tratamiento (Mitigar/Transferir/Evitar/Aceptar) ya no vive aquí — ver
+                                 #treatmentPage / App.Treatment. No aplica a una Oportunidad (ISO
+                                 31000, 6.5 asume que la base es una pérdida a reducir), por eso el
+                                 botón se oculta para ese caso en vez de mostrar una nota aparte. -->
+                            <div id="fair-treatment-cta" class="hidden mt-6 p-4 bg-green-50 border border-green-200 rounded-md text-center">
+                                <p class="mb-3">Ya se guardó en el Registro — compara Mitigar/Transferir/Evitar/Aceptar (ISO 31000, cláusula 6.5) en la página de Tratamiento.</p>
+                                <button type="button" id="fair-treat-this-risk-btn" class="btn btn-success"><i class="fas fa-shield-halved mr-2"></i>Tratar este riesgo</button>
                             </div>
 
                             <div class="mt-8 flex justify-between flex-wrap gap-3">
@@ -775,6 +632,184 @@
 
                         <h3 class="text-lg font-semibold text-gray-800 mb-2">Interpretación General</h3>
                         <div id="fair-register-interpretation" class="description-text text-base text-gray-700"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tratamiento del Riesgo (ISO 31000, 6.5) — ver App.Treatment. Cualquier riesgo del
+                 Registro que no sea Oportunidad se puede tratar aquí, sin volver a simular: solo
+                 necesita su ALE actual + los insumos de Mitigar/Transferir/Evitar, que ya se
+                 guardan en cada entrada. -->
+            <div id="treatmentPage" class="page-content hidden">
+                <div class="bg-white p-6 rounded-lg shadow-md">
+                    <h2 class="text-2xl font-bold text-gray-800 mb-2">Tratamiento del Riesgo</h2>
+                    <p class="description-text mb-4">
+                        Compara las estrategias de tratamiento de ISO 31000 (cláusula 6.5) para cualquier riesgo ya
+                        guardado en el Registro — elige uno abajo, sin tener que volver a correr su simulación. No
+                        aplica a riesgos tipo Oportunidad (un beneficio esperado no es una pérdida a reducir).
+                    </p>
+
+                    <div id="treatment-empty" class="text-center text-gray-500 py-8">
+                        Aún no tienes ningún riesgo guardado en el Registro (que no sea Oportunidad). En cuanto
+                        guardes uno desde Análisis de Riesgo, aparece aquí para poder tratarlo.
+                    </div>
+
+                    <div id="treatment-content" class="hidden">
+                        <div class="input-group max-w-lg">
+                            <label for="treatment-risk-select">Riesgo a tratar:</label>
+                            <select id="treatment-risk-select" class="form-select"></select>
+                        </div>
+
+                        <div id="fair-roi-content" class="mt-4 p-4 bg-green-50 border border-green-200 rounded-md">
+                            <p class="description-text mb-4">
+                                Pérdida Anual Esperada (ALE) actual: <strong><span id="fair-treat-ale-base">$0.00</span></strong>
+                            </p>
+
+                            <div class="fair-section bg-white">
+                                <h4 id="fair-mitigar-title">1. Mitigar (reducir probabilidad o impacto)</h4>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div class="input-group">
+                                        <label for="fair-costoControlAnual" id="fair-costoControlAnual-label">Costo Anual del Control:</label>
+                                        <input type="number" id="fair-costoControlAnual" class="form-input" value="0" min="0" oninput="validity.valid||(value='');">
+                                    </div>
+                                    <div class="input-group">
+                                        <label for="fair-mitigar-defensa-objetivo">
+                                            <span id="fair-mitigar-defensa-objetivo-label">Nivel de Defensa Objetivo con este Control</span>
+                                            <i class="fas fa-info-circle text-blue-500 cursor-pointer ml-1" title="A qué nivel de defensa subirías con este control. La Reducción de ALE se calcula sola comparando tu nivel actual contra este objetivo."></i>
+                                        </label>
+                                        <select id="fair-mitigar-defensa-objetivo" class="form-select">
+                                            <option value="basica">Básica</option>
+                                            <option value="estandar">Estándar</option>
+                                            <option value="avanzada">Avanzada</option>
+                                            <option value="elite">Defensa Élite</option>
+                                        </select>
+                                    </div>
+                                    <div class="input-group">
+                                        <label class="flex items-center">
+                                            <input type="checkbox" id="fair-reduccionALE-manual-override" class="form-checkbox mr-2">
+                                            <span id="fair-reduccionALE-override-label">Escribir la Reducción de ALE (%) manualmente</span>
+                                        </label>
+                                        <label for="fair-reduccionALE" class="mt-1" id="fair-reduccionALE-label">Reducción Estimada de ALE (%) — calculada</label>
+                                        <input type="number" id="fair-reduccionALE" class="form-input bg-gray-100" value="0" min="0" max="100" readonly oninput="validity.valid||(value='');">
+                                        <p id="fair-reduccionALE-explanation" class="description-text mt-1"></p>
+                                    </div>
+                                    <div class="input-group advanced-only">
+                                        <label for="fair-mitigar-fiabilidad">
+                                            Fiabilidad del Control
+                                            <i class="fas fa-info-circle text-blue-500 cursor-pointer ml-1" title="Qué tan probado/confiable es este control (Broder, 1984, Cap. 5). Un control barato pero poco fiable puede salir más caro que uno más caro y probado."></i>
+                                        </label>
+                                        <select id="fair-mitigar-fiabilidad" class="form-select">
+                                            <option value="alta">Alta (tecnología probada, historial confiable)</option>
+                                            <option value="media" selected>Media</option>
+                                            <option value="baja">Baja (tecnología nueva o sin probar)</option>
+                                        </select>
+                                    </div>
+                                    <div class="input-group advanced-only">
+                                        <label for="fair-mitigar-retraso">Tiempo de Implementación (días):</label>
+                                        <input type="number" id="fair-mitigar-retraso" class="form-input" value="0" min="0" oninput="validity.valid||(value='');">
+                                    </div>
+                                </div>
+                                <div class="mt-2 text-sm grid grid-cols-2 md:grid-cols-4 gap-2">
+                                    <p>Costo Anual: <strong id="fair-roi-costo">$0.00</strong></p>
+                                    <p>Pérdida Residual: <strong id="fair-roi-ale-despues">$0.00</strong></p>
+                                    <p>Pérdida Evitada: <strong id="fair-roi-ale-evitada">$0.00</strong></p>
+                                    <p id="fair-roi-label">Beneficio Neto: <strong id="fair-roi-resultado" class="font-bold">$0.00</strong></p>
+                                    <p class="advanced-only">ROSI: <strong id="fair-roi-rosi">—</strong></p>
+                                </div>
+                                <div id="fair-mitigar-verdict" class="mt-3 p-2 rounded text-sm font-semibold"></div>
+                            </div>
+
+                            <div class="fair-section bg-white">
+                                <h4 id="fair-seguro-title">2. Transferir / Compartir (seguro)</h4>
+                                <p class="description-text mb-2">Simula cómo cambia la pérdida retenida al aplicar un deducible y un límite de cobertura sobre cada uno de los escenarios simulados (no una aproximación sobre el promedio).</p>
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <div class="input-group">
+                                        <label for="fair-seguro-prima" id="fair-seguro-prima-label">Prima Anual:</label>
+                                        <input type="number" id="fair-seguro-prima" class="form-input" value="0" min="0" oninput="validity.valid||(value='');">
+                                    </div>
+                                    <div class="input-group">
+                                        <label for="fair-seguro-deducible" id="fair-seguro-deducible-label">Deducible por Evento:</label>
+                                        <input type="number" id="fair-seguro-deducible" class="form-input" value="0" min="0" oninput="validity.valid||(value='');">
+                                    </div>
+                                    <div class="input-group">
+                                        <label for="fair-seguro-limite">
+                                            <span id="fair-seguro-limite-label">Límite de Cobertura</span>
+                                            <i class="fas fa-info-circle text-blue-500 cursor-pointer ml-1" title="Cuánto paga la aseguradora como máximo por evento, por encima del deducible."></i>
+                                        </label>
+                                        <input type="number" id="fair-seguro-limite" class="form-input" value="0" min="0" oninput="validity.valid||(value='');">
+                                        <label class="flex items-center mt-1 text-sm">
+                                            <input type="checkbox" id="fair-seguro-sin-limite" class="form-checkbox mr-2">
+                                            <span id="fair-seguro-sin-limite-label">Cobertura ilimitada (sin tope) arriba del deducible</span>
+                                        </label>
+                                    </div>
+                                    <div class="input-group advanced-only">
+                                        <label for="fair-seguro-fiabilidad">Fiabilidad (solidez de la aseguradora):</label>
+                                        <select id="fair-seguro-fiabilidad" class="form-select">
+                                            <option value="alta">Alta</option>
+                                            <option value="media" selected>Media</option>
+                                            <option value="baja">Baja</option>
+                                        </select>
+                                    </div>
+                                    <div class="input-group advanced-only">
+                                        <label for="fair-seguro-retraso">Tiempo de Contratación (días):</label>
+                                        <input type="number" id="fair-seguro-retraso" class="form-input" value="0" min="0" oninput="validity.valid||(value='');">
+                                    </div>
+                                </div>
+                                <div class="mt-2 text-sm grid grid-cols-2 md:grid-cols-4 gap-2">
+                                    <p>Costo Anual (Prima): <strong id="fair-seguro-costo">$0.00</strong></p>
+                                    <p>Pérdida Retenida (simulada): <strong id="fair-seguro-residual">$0.00</strong></p>
+                                    <p>Pérdida Evitada: <strong id="fair-seguro-evitada">$0.00</strong></p>
+                                    <p>Beneficio Neto: <strong id="fair-seguro-beneficio" class="font-bold">$0.00</strong></p>
+                                    <p class="advanced-only">ROSI: <strong id="fair-seguro-rosi">—</strong></p>
+                                </div>
+                                <div id="fair-seguro-verdict" class="mt-3 p-2 rounded text-sm font-semibold"></div>
+                            </div>
+
+                            <div class="fair-section bg-white">
+                                <h4 id="fair-evitar-title">3. Evitar (eliminar la fuente del riesgo)</h4>
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <div class="input-group">
+                                        <label for="fair-evitar-costo" id="fair-evitar-costo-label">Costo Anualizado de Eliminar la Actividad/Fuente:</label>
+                                        <input type="number" id="fair-evitar-costo" class="form-input" value="0" min="0" oninput="validity.valid||(value='');">
+                                    </div>
+                                    <div class="input-group advanced-only">
+                                        <label for="fair-evitar-fiabilidad">Fiabilidad (certeza de eliminar el riesgo):</label>
+                                        <select id="fair-evitar-fiabilidad" class="form-select">
+                                            <option value="alta" selected>Alta</option>
+                                            <option value="media">Media</option>
+                                            <option value="baja">Baja</option>
+                                        </select>
+                                    </div>
+                                    <div class="input-group advanced-only">
+                                        <label for="fair-evitar-retraso">Tiempo de Implementación (días):</label>
+                                        <input type="number" id="fair-evitar-retraso" class="form-input" value="0" min="0" oninput="validity.valid||(value='');">
+                                    </div>
+                                </div>
+                                <div class="mt-2 text-sm grid grid-cols-2 md:grid-cols-4 gap-2">
+                                    <p>Costo Anual: <strong id="fair-evitar-costo-display">$0.00</strong></p>
+                                    <p>Pérdida Residual: <strong>$0.00 (por definición)</strong></p>
+                                    <p>Pérdida Evitada: <strong id="fair-evitar-evitada">$0.00</strong></p>
+                                    <p>Beneficio Neto: <strong id="fair-evitar-beneficio" class="font-bold">$0.00</strong></p>
+                                    <p class="advanced-only">ROSI: <strong id="fair-evitar-rosi">—</strong></p>
+                                </div>
+                                <div id="fair-evitar-verdict" class="mt-3 p-2 rounded text-sm font-semibold"></div>
+                            </div>
+
+                            <div class="fair-section bg-white">
+                                <h4 id="fair-aceptar-title">4. Aceptar / Retener (sin tratamiento)</h4>
+                                <p class="description-text mb-2" id="fair-aceptar-description">ISO 31000 exige que aceptar un riesgo sea una decisión documentada y deliberada, no la ausencia de una decisión. Escribe la justificación.</p>
+                                <div class="input-group">
+                                    <label for="fair-aceptar-justificacion" id="fair-aceptar-justificacion-label">Justificación de la aceptación:</label>
+                                    <textarea id="fair-aceptar-justificacion" class="form-textarea" rows="2" placeholder="Ej. El costo de tratamiento supera la pérdida esperada; se acepta y se revisará en 12 meses."></textarea>
+                                </div>
+                                <div class="mt-2 text-sm grid grid-cols-2 md:grid-cols-4 gap-2">
+                                    <p>Costo Anual: <strong>$0.00</strong></p>
+                                    <p>Pérdida Residual: <strong id="fair-aceptar-residual">$0.00 (= ALE actual)</strong></p>
+                                </div>
+                            </div>
+
+                            <div id="fair-treatment-recommendation" class="mt-4 p-3 bg-white rounded-md border-l-4 border-blue-500 text-sm"></div>
+                        </div>
                     </div>
                 </div>
             </div>

@@ -387,6 +387,32 @@ test('PUT /api/register/:riskName guarda assetId (vínculo real con el Catálogo
         .set('X-API-Key', TEST_API_KEY);
 });
 
+test('PUT /api/register/:riskName guarda attackerKey/defenseKey (identificadores internos para Tratamiento)', async () => {
+    const riskName = 'Riesgo con attackerKey/defenseKey de prueba HTTP';
+    const putRes = await request(app)
+        .put(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            ale: 50000,
+            cvar95: 80000,
+            evaluationLevel: 'Riesgo Medio',
+            attackerKey: 'organizado',
+            defenseKey: 'estandar',
+        });
+    assert.strictEqual(putRes.status, 200);
+    assert.strictEqual(putRes.body.entry.attackerKey, 'organizado');
+    assert.strictEqual(putRes.body.entry.defenseKey, 'estandar');
+
+    const getRes = await request(app).get('/api/register').set('X-API-Key', TEST_API_KEY);
+    const saved = getRes.body.risks.find((r) => r.riskName === riskName);
+    assert.strictEqual(saved.attackerKey, 'organizado');
+    assert.strictEqual(saved.defenseKey, 'estandar');
+
+    await request(app)
+        .delete(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY);
+});
+
 test('PUT /api/register/:riskName sin assetId lo guarda como null (riesgo sin activo del catálogo vinculado)', async () => {
     const riskName = 'Riesgo sin activo vinculado de prueba HTTP';
     const putRes = await request(app)
