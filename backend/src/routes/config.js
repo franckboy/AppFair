@@ -60,9 +60,10 @@ function createConfigRouter(store) {
     router.put(
         '/org-defaults',
         asyncHandler(async (req, res) => {
-            const current = await store.get('orgDefaults');
-            const updated = { ...current, ...req.body };
-            await store.set('orgDefaults', updated);
+            // mergeConfig lee y escribe en un solo paso atómico — un store.get() + store.set()
+            // sueltos acá (como antes) dejaban una ventana real de carrera en Postgres entre las
+            // dos llamadas (ver PostgresStore.mergeConfig).
+            const updated = await store.mergeConfig('orgDefaults', req.body);
             res.json(updated);
         }),
     );
@@ -78,9 +79,7 @@ function createConfigRouter(store) {
     router.put(
         '/org-context',
         asyncHandler(async (req, res) => {
-            const current = await store.get('orgContext');
-            const updated = { ...current, ...req.body };
-            await store.set('orgContext', updated);
+            const updated = await store.mergeConfig('orgContext', req.body);
             res.json(updated);
         }),
     );

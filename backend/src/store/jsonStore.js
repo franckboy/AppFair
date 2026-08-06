@@ -71,6 +71,20 @@ class JsonStore {
         return value;
     }
 
+    // Lee y escribe en un solo paso (leer valor actual → mezclar con lo nuevo → guardar) —
+    // usado por PUT /api/config/org-defaults y org-context, que antes hacían su propio
+    // store.get() seguido de un store.set() aparte en la ruta misma. En JsonStore eso nunca fue
+    // un problema real (todo corre síncrono, sin ningún hueco entre las dos llamadas), pero en
+    // PostgresStore sí lo era (ver el mismo método ahí) — se agrega acá también para que el
+    // método público sea idéntico en los dos backends, mismo criterio que el resto del archivo.
+    async mergeConfig(key, partial) {
+        const all = this._readAll();
+        const updated = { ...(all[key] || {}), ...partial };
+        all[key] = updated;
+        this._writeAll(all);
+        return updated;
+    }
+
     /** Agrega o actualiza una entrada del Registro de Riesgos (ver findRegisterEntryIndex). */
     async upsertRiskInRegister(entry) {
         const all = this._readAll();
