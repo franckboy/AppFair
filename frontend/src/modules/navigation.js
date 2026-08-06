@@ -18,6 +18,10 @@ export const Navigation = {
             this.switchPage('treatment');
             App.Treatment.load();
         });
+        document.getElementById('nav-risk-mgmt').addEventListener('click', () => {
+            this.switchPage('riskmgmt');
+            App.RiskManagement.load();
+        });
         document.getElementById('nav-risk-tree').addEventListener('click', () => {
             this.switchPage('tree');
             App.RiskCascadeTree.load();
@@ -30,6 +34,7 @@ export const Navigation = {
             fair: document.getElementById('fairAnalysisPage'),
             register: document.getElementById('registerPage'),
             treatment: document.getElementById('treatmentPage'),
+            riskmgmt: document.getElementById('riskMgmtPage'),
             assets: document.getElementById('assetsPage'),
             tree: document.getElementById('riskTreePage'),
         };
@@ -39,6 +44,7 @@ export const Navigation = {
             fair: document.getElementById('nav-fair'),
             register: document.getElementById('nav-register'),
             treatment: document.getElementById('nav-treatment'),
+            riskmgmt: document.getElementById('nav-risk-mgmt'),
             assets: document.getElementById('nav-config'),
             tree: document.getElementById('nav-risk-tree'),
         };

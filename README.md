@@ -76,9 +76,11 @@ Análisis Profundo, exportar el Informe Consolidado, eliminar un riesgo, vincula
 Catálogo de Activos a un riesgo simulado y verlo reflejado en ambos lados, la sugerencia de
 tipo de activo al elegir un riesgo del Catálogo de Riesgos (Paso 1), el Árbol de Riesgos en
 Cascada (un riesgo con "Riesgo Desencadenante" aparece anidado bajo su padre, y la rama se
-puede colapsar), y Tratamiento del Riesgo como página aparte (elegir un riesgo ya guardado,
+puede colapsar), Tratamiento del Riesgo como página aparte (elegir un riesgo ya guardado,
 editar Mitigar/Transferir/Evitar/Aceptar y verlo persistido en el Registro, sin pasar por el
-wizard ni volver a simular).
+wizard ni volver a simular), y Gestión de Riesgos como página aparte (Gobernanza/Revisión y
+Plan de Seguridad de cualquier riesgo ya guardado, incluida Oportunidad, editables sin volver a
+simular).
 
 Las pruebas unitarias (Vitest, co-ubicadas junto al código que prueban — `*.test.js` dentro de
 `frontend/src/modules/`) cubren la lógica que ya es pura hoy: formateo/clasificación en

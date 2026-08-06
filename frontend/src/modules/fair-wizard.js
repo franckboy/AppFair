@@ -28,7 +28,6 @@ import {
 export const FairWizard = {
     applyOrgDefaults() {
         document.getElementById('fair-defense-profile').value = App.OrgDefaults.defaults.defenseKey;
-        document.getElementById('fair-owner').value = App.OrgDefaults.defaults.owner;
         document.getElementById('fair-data-source').value = App.OrgDefaults.defaults.dataSource;
         document.getElementById('fair-data-confidence').value = App.OrgDefaults.defaults.dataConfidence;
         this.updateAttackerDefenseSummary();
@@ -57,7 +56,6 @@ export const FairWizard = {
         document.getElementById('fair-risk-type').value = data.riskType || 'amenaza';
         document.getElementById('fair-time-horizon').value = data.timeHorizon || '1';
         this.toggleRiskTypeLabels();
-        document.getElementById('fair-owner').value = data.owner || App.OrgDefaults.defaults.owner;
         document.getElementById('fair-data-source').value = data.dataSource || App.OrgDefaults.defaults.dataSource;
         document.getElementById('fair-data-confidence').value =
             data.dataConfidence || App.OrgDefaults.defaults.dataConfidence;
@@ -228,6 +226,11 @@ export const FairWizard = {
             App.Navigation.switchPage('treatment');
             App.Treatment.load(riskName);
         });
+        document.getElementById('fair-manage-this-risk-btn').addEventListener('click', () => {
+            const riskName = document.getElementById('fair-riskName').value.trim();
+            App.Navigation.switchPage('riskmgmt');
+            App.RiskManagement.load(riskName);
+        });
         document
             .getElementById('selectAllHistory')
             .addEventListener('change', (e) =>
@@ -348,27 +351,6 @@ export const FairWizard = {
 
         const confidenceLabel = { alto: 'Alta', medio: 'Media', bajo: 'Baja' }[confidence] || 'Media';
         explanationEl.textContent = `Calculado como: Factor de Amenaza (${data.attackerScore.toFixed(0)}%) × [1 − Nivel de Defensa (${data.defenseScore.toFixed(0)}%)] = ${data.mode}%. Rango ±según tu Nivel de Confianza declarado (${confidenceLabel}).`;
-    },
-
-    // Conecta la Fecha de Revisión con qué tan grave salió la Evaluación (ISO 31000, 6.6):
-    // un riesgo Crítico se revisa pronto, uno Aceptable puede esperar un año. Solo sugiere si
-    // el campo está vacío — nunca pisa una fecha que el usuario ya haya elegido a propósito.
-    suggestReviewDate() {
-        const reviewInput = document.getElementById('fair-review-date');
-        if (reviewInput.value) return;
-
-        const level = (state.fair.lastEvaluation && state.fair.lastEvaluation.level) || '';
-        let months = 12;
-        if (level.includes('Crítico')) {
-            months = 3;
-        } else if (level.includes('Requiere Tratamiento') || level.includes('Oportunidad Significativa')) {
-            months = 6;
-        }
-
-        const suggested = new Date();
-        suggested.setMonth(suggested.getMonth() + months);
-        reviewInput.value = suggested.toISOString().split('T')[0];
-        showToast(`Fecha de revisión sugerida a ${months} meses, según la evaluación de este riesgo.`);
     },
 
     toggleRiskTypeLabels() {
@@ -606,9 +588,10 @@ export const FairWizard = {
         if (entry.asset && entry.asset !== '—') document.getElementById('fair-asset').value = entry.asset;
         // Restaura el vínculo real con el Catálogo de Activos (ver saveToRiskRegister).
         if (entry.assetId) state.quick.selectedAssetRef = { id: entry.assetId };
-        if (entry.owner && entry.owner !== '—') document.getElementById('fair-owner').value = entry.owner;
-        if (entry.securityPlan && entry.securityPlan !== '—')
-            document.getElementById('fair-security-plan').value = entry.securityPlan;
+        // Gobernanza/Revisión y Plan de Seguridad (owner/reviewDate/securityPlan/etc.) ya no se
+        // restauran aquí — no viven en el wizard (ver App.RiskManagement). Como registerEntryId
+        // ya quedó fijado arriba, saveToRiskRegister() los conserva solos vía existingEntry al
+        // volver a guardar, sin que el wizard tenga que tocarlos.
         document.getElementById('fair-risk-type').value = entry.riskType || 'amenaza';
         this.toggleRiskTypeLabels();
 
@@ -1084,15 +1067,9 @@ export const FairWizard = {
             this.populateTriggeredByOptions();
             document.getElementById('fair-triggered-by').value = '';
             this.toggleRiskTypeLabels();
-            document.getElementById('fair-owner').value = App.OrgDefaults.defaults.owner;
-            document.getElementById('fair-review-date').value = '';
-            document.getElementById('fair-assessor').value = '';
-            document.getElementById('fair-assessment-date').value = '';
-            document.getElementById('fair-assessment-location').value = '';
             document.getElementById('fair-data-source').value = App.OrgDefaults.defaults.dataSource;
             document.getElementById('fair-data-confidence').value = App.OrgDefaults.defaults.dataConfidence;
             document.getElementById('fair-data-notes').value = '';
-            document.getElementById('fair-security-plan').value = '';
             document.getElementById('fair-simulation-seed').value = '0';
             document.getElementById('fair-seed-used').textContent = '';
             document.getElementById('fair-review-history-body').innerHTML = '';
@@ -1123,6 +1100,7 @@ export const FairWizard = {
             document.querySelectorAll('.input-error').forEach((el) => el.classList.remove('input-error'));
             document.getElementById('simulation-results-container').classList.add('hidden');
             document.getElementById('fair-treatment-cta').classList.add('hidden');
+            document.getElementById('fair-riskmgmt-cta').classList.add('hidden');
             state.fair.lastAnnualLosses = null;
             state.fair.lastEvaluation = null;
             state.fair.lastSeed = null;
@@ -1270,7 +1248,6 @@ export const FairWizard = {
             <p class="font-bold text-lg">Evaluación: ${evaluation.level}</p>
             <p class="text-sm mt-1">${evaluation.justification}</p>
         `;
-        this.suggestReviewDate();
 
         document.getElementById('fair-seed-used').textContent =
             `Semilla usada: ${result.usedSeed} (anótala para reproducir exactamente esta corrida)`;
@@ -1363,6 +1340,10 @@ export const FairWizard = {
         // la base es una pérdida a reducir), así que el CTA se oculta para ese caso.
         const isOpportunity = document.getElementById('fair-risk-type').value === 'oportunidad';
         document.getElementById('fair-treatment-cta').classList.toggle('hidden', isOpportunity);
+        // Gobernanza/Revisión y Plan de Seguridad tampoco viven ya en el wizard — ver
+        // #riskMgmtPage / App.RiskManagement. A diferencia de Tratamiento, sí aplica a
+        // Oportunidad, así que este CTA nunca se oculta por tipo de riesgo.
+        document.getElementById('fair-riskmgmt-cta').classList.remove('hidden');
 
         this.persistFairAnalysis();
     },
@@ -1400,15 +1381,9 @@ export const FairWizard = {
                 effect: document.getElementById('fair-effect').value,
                 riskType: document.getElementById('fair-risk-type').value,
                 timeHorizon: document.getElementById('fair-time-horizon').value,
-                owner: document.getElementById('fair-owner').value,
-                reviewDate: document.getElementById('fair-review-date').value,
-                assessor: document.getElementById('fair-assessor').value,
-                assessmentDate: document.getElementById('fair-assessment-date').value,
-                assessmentLocation: document.getElementById('fair-assessment-location').value,
                 dataSource: document.getElementById('fair-data-source').value,
                 dataConfidence: document.getElementById('fair-data-confidence').value,
                 dataNotes: document.getElementById('fair-data-notes').value,
-                securityPlan: document.getElementById('fair-security-plan').value,
                 attackerKey: document.getElementById('fair-attacker-profile').value,
                 defenseKey: document.getElementById('fair-defense-profile').value,
                 isDeliberate: document.getElementById('fair-deliberate-threat').checked,
@@ -1499,15 +1474,9 @@ export const FairWizard = {
             document.getElementById('fair-risk-type').value = data.riskType || 'amenaza';
             document.getElementById('fair-time-horizon').value = data.timeHorizon || '1';
             this.toggleRiskTypeLabels();
-            document.getElementById('fair-owner').value = data.owner || App.OrgDefaults.defaults.owner;
-            document.getElementById('fair-review-date').value = data.reviewDate || '';
-            document.getElementById('fair-assessor').value = data.assessor || '';
-            document.getElementById('fair-assessment-date').value = data.assessmentDate || '';
-            document.getElementById('fair-assessment-location').value = data.assessmentLocation || '';
             document.getElementById('fair-data-source').value = data.dataSource || 'experto-sin-calibrar';
             document.getElementById('fair-data-confidence').value = data.dataConfidence || 'medio';
             document.getElementById('fair-data-notes').value = data.dataNotes || '';
-            document.getElementById('fair-security-plan').value = data.securityPlan || '';
             document.getElementById('fair-attacker-profile').value = data.attackerKey || 'empleado-desleal';
             document.getElementById('fair-defense-profile').value = data.defenseKey || 'estandar';
             document.getElementById('fair-deliberate-threat').checked = !!data.isDeliberate;
@@ -1594,6 +1563,7 @@ export const FairWizard = {
                 document
                     .getElementById('fair-treatment-cta')
                     .classList.toggle('hidden', (data.riskType || 'amenaza') === 'oportunidad');
+                document.getElementById('fair-riskmgmt-cta').classList.remove('hidden');
 
                 const ctx = document.getElementById('fair-results-chart').getContext('2d');
                 if (state.fair.fairResultsChart) state.fair.fairResultsChart.destroy();
