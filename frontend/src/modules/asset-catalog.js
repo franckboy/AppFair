@@ -181,13 +181,28 @@ export const AssetCatalog = {
         );
     },
 
-    // Selector reutilizable (ver applyAssetToFair y el botón de #fair-asset).
+    // Las 6 categorías RIMS RA.1-2015/ASIS PAP.1 — mismas opciones que #asset-categoria en el
+    // formulario completo (ver app_fair.html), repetidas aquí porque el picker arma su propio
+    // mini-formulario de alta rápida (ver openPicker) en vez de reusar ese <select> del DOM,
+    // que solo existe en la página "Catálogo de Activos".
+    ASSET_CATEGORY_OPTIONS: [
+        'Personas',
+        'Instalaciones y Sitio',
+        'Equipo y Maquinaria',
+        'Inventario / Mercancía',
+        'Información y Procesos',
+        'Imagen y Reputación',
+    ],
+
+    // Selector reutilizable (ver applyAssetToFair y el botón de #fair-asset) — mismo patrón
+    // que App.RiskCatalog.openPicker (un modal con lo necesario para resolver la elección ahí
+    // mismo, sin salir del wizard). A diferencia del Catálogo de Riesgos (curado, de solo
+    // lectura), este SÍ permite dar de alta un activo nuevo sin salir del modal: antes, si
+    // el catálogo estaba vacío, el botón solo mostraba un toast mandando al usuario a la
+    // página "Catálogo de Activos" y cortaba el flujo del wizard a la mitad.
     openPicker(onSelect) {
         const assets = state.quick.assets || [];
-        if (assets.length === 0) {
-            showToast('Aún no hay activos en el catálogo. Agrega uno primero en "Catálogo de Activos".');
-            return;
-        }
+        const hasAssets = assets.length > 0;
         const fmt = (v) =>
             new Intl.NumberFormat('en-US', {
                 style: 'currency',
@@ -195,47 +210,115 @@ export const AssetCatalog = {
                 minimumFractionDigits: 0,
                 maximumFractionDigits: 0,
             }).format(v);
+        const categoryOptionsHTML = `<option value="">— Sin clasificar —</option>${this.ASSET_CATEGORY_OPTIONS.map(
+            (c) => `<option value="${c}">${c}</option>`,
+        ).join('')}`;
 
         Modal.title.textContent = 'Catálogo de Activos';
         Modal.body.innerHTML = `
-            <div class="input-group">
-                <label for="assetpick-select">Activo:</label>
-                <select id="assetpick-select" class="form-select"></select>
+            ${
+                hasAssets
+                    ? `
+            <div id="assetpick-existing">
+                <div class="input-group">
+                    <label for="assetpick-select">Activo:</label>
+                    <select id="assetpick-select" class="form-select"></select>
+                </div>
+                <div id="assetpick-info" class="p-3 bg-gray-50 border rounded-md text-sm text-gray-700 mt-2"></div>
             </div>
-            <div id="assetpick-info" class="p-3 bg-gray-50 border rounded-md text-sm text-gray-700 mt-2"></div>
+            <button type="button" id="assetpick-toggle-new-btn" class="btn btn-secondary text-sm mt-4">+ Registrar un activo nuevo</button>
+            `
+                    : `<p class="description-text mb-4">Aún no tienes ningún activo registrado — créalo aquí y se aplicará directo a este riesgo.</p>`
+            }
+            <div id="assetpick-new" class="${hasAssets ? 'hidden' : ''} mt-4">
+                <div class="input-group">
+                    <label for="assetpick-new-nombre">Nombre:</label>
+                    <input type="text" id="assetpick-new-nombre" class="form-input" placeholder="Ej. Bodega de mercancía (Bodega 3)">
+                </div>
+                <div class="input-group">
+                    <label for="assetpick-new-valor">Valor Estimado:</label>
+                    <input type="number" id="assetpick-new-valor" class="form-input" min="0" value="0">
+                </div>
+                <div class="input-group">
+                    <label for="assetpick-new-categoria">Categoría (opcional):</label>
+                    <select id="assetpick-new-categoria" class="form-select">${categoryOptionsHTML}</select>
+                </div>
+                <p id="assetpick-new-error" class="text-red-600 text-sm hidden"></p>
+            </div>
         `;
         Modal.footer.innerHTML = `
             <button id="assetpick-cancel-btn" class="btn btn-secondary">Cancelar</button>
-            <button id="assetpick-use-btn" class="btn btn-primary">Usar este activo</button>
+            ${hasAssets ? `<button id="assetpick-use-btn" class="btn btn-primary">Usar este activo</button>` : ''}
+            <button id="assetpick-create-btn" class="btn btn-primary ${hasAssets ? 'hidden' : ''}">Registrar y Usar</button>
         `;
         Modal.modal.classList.remove('hidden');
 
-        const select = document.getElementById('assetpick-select');
-        const infoEl = document.getElementById('assetpick-info');
-        assets.forEach((a) => {
-            const opt = document.createElement('option');
-            opt.value = a.id;
-            opt.textContent = `${a.nombre} — ${fmt(a.valorEstimado)}`;
-            select.appendChild(opt);
-        });
-        const currentAsset = () => assets.find((a) => a.id === select.value);
-        const updateInfo = () => {
-            const a = currentAsset();
-            if (!a) {
-                infoEl.innerHTML = '';
-                return;
-            }
-            infoEl.innerHTML = `<p><strong>Valor Estimado: ${fmt(a.valorEstimado)}</strong></p>${a.categoria ? `<p class="mt-1">Categoría: ${sanitizeHTML(a.categoria)}</p>` : ''}${a.ubicacion ? `<p>Ubicación: ${sanitizeHTML(a.ubicacion)}</p>` : ''}`;
-        };
-        select.addEventListener('change', updateInfo);
-        updateInfo();
+        if (hasAssets) {
+            const select = document.getElementById('assetpick-select');
+            const infoEl = document.getElementById('assetpick-info');
+            assets.forEach((a) => {
+                const opt = document.createElement('option');
+                opt.value = a.id;
+                opt.textContent = `${a.nombre} — ${fmt(a.valorEstimado)}`;
+                select.appendChild(opt);
+            });
+            const currentAsset = () => assets.find((a) => a.id === select.value);
+            const updateInfo = () => {
+                const a = currentAsset();
+                if (!a) {
+                    infoEl.innerHTML = '';
+                    return;
+                }
+                infoEl.innerHTML = `<p><strong>Valor Estimado: ${fmt(a.valorEstimado)}</strong></p>${a.categoria ? `<p class="mt-1">Categoría: ${sanitizeHTML(a.categoria)}</p>` : ''}${a.ubicacion ? `<p>Ubicación: ${sanitizeHTML(a.ubicacion)}</p>` : ''}`;
+            };
+            select.addEventListener('change', updateInfo);
+            updateInfo();
+
+            document.getElementById('assetpick-use-btn').addEventListener('click', () => {
+                const a = currentAsset();
+                if (!a) return;
+                onSelect(a);
+                Modal.hide();
+            });
+
+            document.getElementById('assetpick-toggle-new-btn').addEventListener('click', () => {
+                document.getElementById('assetpick-existing').classList.add('hidden');
+                document.getElementById('assetpick-toggle-new-btn').classList.add('hidden');
+                document.getElementById('assetpick-new').classList.remove('hidden');
+                document.getElementById('assetpick-use-btn').classList.add('hidden');
+                document.getElementById('assetpick-create-btn').classList.remove('hidden');
+            });
+        }
 
         document.getElementById('assetpick-cancel-btn').addEventListener('click', () => Modal.hide());
-        document.getElementById('assetpick-use-btn').addEventListener('click', () => {
-            const a = currentAsset();
-            if (!a) return;
-            onSelect(a);
-            Modal.hide();
+        document.getElementById('assetpick-create-btn').addEventListener('click', async (e) => {
+            const errorEl = document.getElementById('assetpick-new-error');
+            errorEl.classList.add('hidden');
+            const nombre = document.getElementById('assetpick-new-nombre').value.trim();
+            if (!nombre) {
+                errorEl.textContent = 'El nombre del activo es obligatorio.';
+                errorEl.classList.remove('hidden');
+                return;
+            }
+            const body = {
+                nombre,
+                valorEstimado: getSafeNumber(document.getElementById('assetpick-new-valor')),
+                categoria: document.getElementById('assetpick-new-categoria').value,
+            };
+            const btn = e.target;
+            btn.disabled = true;
+            try {
+                const res = await App.Api.request('/api/assets', { method: 'POST', body });
+                state.quick.assets = [...(state.quick.assets || []), res.entry];
+                onSelect(res.entry);
+                Modal.hide();
+                showToast('Activo registrado y aplicado.');
+            } catch (err) {
+                errorEl.textContent = err.userMessage || 'No se pudo registrar el activo.';
+                errorEl.classList.remove('hidden');
+            } finally {
+                btn.disabled = false;
+            }
         });
     },
 
