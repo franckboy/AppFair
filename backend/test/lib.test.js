@@ -17,6 +17,7 @@ const {
     calculateInsuranceRetainedALE,
     calculateROSI,
     expectedNetBenefit,
+    evaluateMitigarConTransferir,
     RELIABILITY_TO_PROBABILITY,
     evaluateTreatmentStrategies,
 } = require('../src/lib/treatment');
@@ -543,6 +544,122 @@ test('evaluateTreatmentStrategies: la Fiabilidad SÍ puede cambiar cuál estrate
     // beneficio esperado real, "evitar" es la mejor opción.
     assert.strictEqual(result.recommendation.strategy, 'evitar');
     assert.strictEqual(result.recommendation.netBenefit, 50000);
+});
+
+test('evaluateMitigarConTransferir: sin annualLosses, transferir queda siempre dominado por aceptar (el seguro no reduce nada sin datos de pólizas simuladas)', () => {
+    // Sin annualLosses no hay con qué calcular cuánto reduce la póliza (canCalculateInsurance =
+    // false) — el residual "retenido" se trata igual que si nunca se transfiriera, así que
+    // transferir solo agrega el costo de la prima sin ningún beneficio: SIEMPRE pierde contra
+    // aceptar por exactamente el monto de la prima, en ambas ramas del árbol.
+    const result = evaluateMitigarConTransferir({
+        currentALE: 100000,
+        annualLosses: null,
+        mitigar: { cost: 10000, reductionPercent: 50, reliability: 'alta' },
+        transferir: { premium: 5000, reliability: 'alta', deductible: 0, limit: 0, unlimited: false },
+    });
+    // Rama "mitigar funciona" (p=0.9): aceptar dado baseALE=50000 = 100000-50000-10000 = 40000;
+    // transferir (con o sin éxito) = 40000-5000 = 35000 en ambos casos → gana aceptar (40000).
+    // Rama "mitigar falla" (p=0.1): aceptar dado baseALE=100000 = 100000-100000-10000 = -10000;
+    // transferir = -10000-5000 = -15000 en ambos casos → gana aceptar (-10000).
+    // Valor total = 0.9*40000 + 0.1*(-10000) = 36000 - 1000 = 35000.
+    assert.strictEqual(result.value, 35000);
+    // result.branches viene de evaluateDecisionTree(tree) (spread en el retorno) — las ramas YA
+    // evaluadas, con su `bestOption`; result.tree es el árbol crudo SIN evaluar (solo para
+    // inspección/depuración), sus ramas tienen `.node`, no `.bestOption`.
+    assert.strictEqual(result.branches[0].bestOption, 'aceptar');
+    assert.strictEqual(result.branches[1].bestOption, 'aceptar');
+});
+
+test('evaluateMitigarConTransferir: con annualLosses, cada rama del residual puede elegir una opción distinta (aceptar vs transferir)', () => {
+    // Caso diseñado para que la rama "mitigar funciona" (el residual ya es ~0, transferir no
+    // aporta nada) elija aceptar, y la rama "mitigar falla" (el residual sigue siendo el ALE
+    // completo, y el seguro sí reduce bastante gracias al deducible) elija transferir — el árbol
+    // no colapsa a una sola opción "global", decide por separado en cada rama.
+    const result = evaluateMitigarConTransferir({
+        currentALE: 100000,
+        annualLosses: [100000],
+        mitigar: { cost: 10000, reductionPercent: 100, reliability: 'alta' },
+        transferir: { premium: 5000, reliability: 'alta', deductible: 20000, limit: 0, unlimited: true },
+    });
+    // Rama "mitigar funciona" (p=0.9, baseALE=0): aceptar = 100000-0-10000 = 90000; transferir
+    // (retainedALE=0 también, sin residual que asegurar) = 90000-5000 = 85000 → gana aceptar.
+    // Rama "mitigar falla" (p=0.1, baseALE=100000): aceptar = -10000; retainedALE=20000 (seguro
+    // con deducible 20000, sin límite), transferir = 0.9*(100000-20000-10000-5000) +
+    // 0.1*(-10000-5000) = 0.9*65000 + 0.1*(-15000) = 58500-1500 = 57000 → gana transferir.
+    assert.strictEqual(result.branches[0].bestOption, 'aceptar');
+    assert.strictEqual(result.branches[0].value, 90000);
+    assert.strictEqual(result.branches[1].bestOption, 'transferir');
+    assert.strictEqual(result.branches[1].value, 57000);
+    // Total = 0.9*90000 + 0.1*57000 = 81000 + 5700 = 86700.
+    assert.strictEqual(result.value, 86700);
+});
+
+test('evaluateTreatmentStrategies: NO evalúa la combinación Mitigar+Transferir si falta el costo de cualquiera de las dos', () => {
+    // Mismo criterio de "no hay estrategia gratis" que las 3 estrategias individuales — la
+    // combinación tampoco debe aparecer como opción si cualquiera de sus 2 partes está en su
+    // default (0) sin tocar.
+    const fmt = (n) => `$${n}`;
+    const sinTransferir = evaluateTreatmentStrategies(
+        {
+            currentALE: 100000,
+            annualLosses: [100000],
+            mitigar: { cost: 10000, reductionPercent: 100, reliability: 'alta', delayDays: 0 },
+            transferir: { premium: 0, deductible: 20000, limit: 0, unlimited: true, reliability: 'alta', delayDays: 0 },
+            evitar: { cost: 0, reliability: 'alta', delayDays: 0 },
+        },
+        fmt,
+    );
+    assert.strictEqual(sinTransferir.mitigarTransferir, undefined);
+
+    const sinMitigar = evaluateTreatmentStrategies(
+        {
+            currentALE: 100000,
+            annualLosses: [100000],
+            mitigar: { cost: 0, reductionPercent: 0, reliability: 'alta', delayDays: 0 },
+            transferir: {
+                premium: 5000,
+                deductible: 20000,
+                limit: 0,
+                unlimited: true,
+                reliability: 'alta',
+                delayDays: 0,
+            },
+            evitar: { cost: 0, reliability: 'alta', delayDays: 0 },
+        },
+        fmt,
+    );
+    assert.strictEqual(sinMitigar.mitigarTransferir, undefined);
+});
+
+test('evaluateTreatmentStrategies: la combinación Mitigar+Transferir puede ganar la recomendación por encima de cualquier estrategia individual', () => {
+    // Mismos números que el test de evaluateMitigarConTransferir de arriba (combo = 86700) — acá
+    // se confirma que, comparada con Mitigar solo (80000), Transferir solo (67000) y Evitar
+    // (30000), la combinación gana la recomendación general, no solo su propio cálculo aislado.
+    const fmt = (n) => `$${n}`;
+    const result = evaluateTreatmentStrategies(
+        {
+            currentALE: 100000,
+            annualLosses: [100000],
+            mitigar: { cost: 10000, reductionPercent: 100, reliability: 'alta', delayDays: 0 },
+            transferir: {
+                premium: 5000,
+                deductible: 20000,
+                limit: 0,
+                unlimited: true,
+                reliability: 'alta',
+                delayDays: 0,
+            },
+            evitar: { cost: 60000, reliability: 'alta', delayDays: 0 },
+        },
+        fmt,
+    );
+    assert.strictEqual(result.mitigar.netBenefit, 80000);
+    assert.strictEqual(result.transferir.netBenefit, 67000);
+    assert.strictEqual(result.evitar.netBenefit, 30000);
+    assert.strictEqual(result.mitigarTransferir.netBenefit, 86700);
+    assert.strictEqual(result.mitigarTransferir.cost, 15000); // mitigar.cost + transferir.premium
+    assert.strictEqual(result.recommendation.strategy, 'mitigarTransferir');
+    assert.strictEqual(result.recommendation.netBenefit, 86700);
 });
 
 test('evaluateFairThreat: clasifica correctamente como Crítico por encima del umbral', () => {

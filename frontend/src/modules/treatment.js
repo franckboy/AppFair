@@ -294,22 +294,42 @@ export const Treatment = {
 
         const recEl = document.getElementById('fair-treatment-recommendation');
         const rec = result.recommendation;
-        const stratNames = { mitigar: 'Mitigar', transferir: 'Transferir (Seguro)', evitar: 'Evitar' };
+        const stratNames = {
+            mitigar: 'Mitigar',
+            transferir: 'Transferir (Seguro)',
+            evitar: 'Evitar',
+            mitigarTransferir: 'Mitigar + Transferir (combinado)',
+        };
         if (rec.strategy === 'aceptar') {
             recEl.innerHTML = `<p>${sanitizeHTML(rec.reason)}</p>`;
         } else {
             const stratData = result[rec.strategy];
+            // La combinación Mitigar+Transferir no tiene una única Fiabilidad (trae
+            // mitigarReliability/transferirReliability, ver evaluateMitigarConTransferir en el
+            // backend) — se arma un texto de Fiabilidad/advertencia distinto para ese caso, en
+            // vez de leer stratData.reliability (undefined ahí).
+            let fiabilidadTexto;
             let advertencia = '';
-            if (stratData.reliability === 'baja') {
-                // El beneficio neto YA descuenta la Fiabilidad Baja (ver App.Treatment /
-                // expectedNetBenefit en el backend: es un valor esperado, no el resultado "si
-                // todo sale bien") — esta nota no advierte que el número podría estar mal, sino
-                // que ese descuento viene de un riesgo real de que el control no funcione.
-                advertencia = ` <strong class="text-orange-700">Atención:</strong> esta opción tiene Fiabilidad Baja — el beneficio neto de arriba ya está ajustado por ese riesgo, pero el rango de resultados posibles es amplio (desde el beneficio completo hasta perder lo invertido, si el control no funciona).`;
-            } else if (stratData.delayDays > 90) {
-                advertencia = ` <strong class="text-orange-700">Atención:</strong> el tiempo de implementación es de ${stratData.delayDays} días — el riesgo actual sigue expuesto mientras tanto.`;
+            if (rec.strategy === 'mitigarTransferir') {
+                fiabilidadTexto = `Mitigar ${fiabilidadLabel[stratData.mitigarReliability] || stratData.mitigarReliability} / Transferir ${fiabilidadLabel[stratData.transferirReliability] || stratData.transferirReliability}`;
+                if (stratData.mitigarReliability === 'baja' || stratData.transferirReliability === 'baja') {
+                    advertencia = ` <strong class="text-orange-700">Atención:</strong> una parte de esta combinación tiene Fiabilidad Baja — el beneficio neto de arriba ya está ajustado por ese riesgo, pero el rango de resultados posibles es amplio (desde el beneficio completo hasta perder lo invertido, si esa parte no funciona).`;
+                } else if (stratData.delayDays > 90) {
+                    advertencia = ` <strong class="text-orange-700">Atención:</strong> el tiempo de implementación es de ${stratData.delayDays} días — el riesgo actual sigue expuesto mientras tanto.`;
+                }
+            } else {
+                fiabilidadTexto = fiabilidadLabel[stratData.reliability] || stratData.reliability;
+                if (stratData.reliability === 'baja') {
+                    // El beneficio neto YA descuenta la Fiabilidad Baja (ver App.Treatment /
+                    // expectedNetBenefit en el backend: es un valor esperado, no el resultado "si
+                    // todo sale bien") — esta nota no advierte que el número podría estar mal, sino
+                    // que ese descuento viene de un riesgo real de que el control no funcione.
+                    advertencia = ` <strong class="text-orange-700">Atención:</strong> esta opción tiene Fiabilidad Baja — el beneficio neto de arriba ya está ajustado por ese riesgo, pero el rango de resultados posibles es amplio (desde el beneficio completo hasta perder lo invertido, si el control no funciona).`;
+                } else if (stratData.delayDays > 90) {
+                    advertencia = ` <strong class="text-orange-700">Atención:</strong> el tiempo de implementación es de ${stratData.delayDays} días — el riesgo actual sigue expuesto mientras tanto.`;
+                }
             }
-            recEl.innerHTML = `<p><strong>Estrategia con mayor beneficio neto: ${stratNames[rec.strategy]}</strong> (${formatCurrency(rec.netBenefit)}/año). Fiabilidad: ${fiabilidadLabel[stratData.reliability] || stratData.reliability}, Tiempo de implementación: ${stratData.delayDays} días.${advertencia} Compara igual el resto de las filas antes de decidir.</p>`;
+            recEl.innerHTML = `<p><strong>Estrategia con mayor beneficio neto: ${stratNames[rec.strategy]}</strong> (${formatCurrency(rec.netBenefit)}/año). Fiabilidad: ${fiabilidadTexto}, Tiempo de implementación: ${stratData.delayDays} días.${advertencia} Compara igual el resto de las filas antes de decidir.</p>`;
         }
 
         if (save) await this.persistTreatment(entry, mitigar, transferir, evitar);
