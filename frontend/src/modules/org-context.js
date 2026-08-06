@@ -39,7 +39,7 @@ export const OrgContext = {
         return `
             <div class="input-group">
                 <label for="${prefix}-nombre">Nombre de la Empresa:</label>
-                <input type="text" id="${prefix}-nombre" class="form-input" value="${sanitizeHTML(c.nombreEmpresa)}" />
+                <input type="text" id="${prefix}-nombre" class="form-input" />
             </div>
             <div class="input-group">
                 <label for="${prefix}-mision">Misión y Objetivos Estratégicos:</label>
@@ -75,6 +75,14 @@ export const OrgContext = {
         `;
     },
 
+    // Se asigna vía .value (no interpolado en el HTML de buildFormHTML) para que el texto del
+    // usuario nunca pueda romper el atributo value="..." — sanitizeHTML() no escapa comillas,
+    // solo protege contra inyección de etiquetas, así que no basta para este contexto (mismo
+    // criterio ya usado en App.OrgDefaults.openEditor para el campo "Dueño del Riesgo").
+    applyFormValues(prefix) {
+        document.getElementById(`${prefix}-nombre`).value = this.context.nombreEmpresa;
+    },
+
     readFormValues(prefix) {
         return {
             nombreEmpresa: document.getElementById(`${prefix}-nombre`).value,
@@ -101,6 +109,7 @@ export const OrgContext = {
             <button id="orgctx-save-btn" class="btn btn-primary">Guardar</button>
         `;
         Modal.modal.classList.remove('hidden');
+        this.applyFormValues('orgctx');
 
         document.getElementById('orgctx-cancel-btn').addEventListener('click', () => Modal.hide());
         document.getElementById('orgctx-save-btn').addEventListener('click', async (e) => {
@@ -128,6 +137,7 @@ export const OrgContext = {
             .forEach((el) => el.classList.add('hidden'));
         document.getElementById('orgcontext-gate-form').innerHTML = this.buildFormHTML('orgctx-gate');
         document.getElementById('orgcontext-gate').classList.remove('hidden');
+        this.applyFormValues('orgctx-gate');
 
         const saveBtn = document.getElementById('orgctx-gate-save-btn');
         const saveHandler = async () => {

@@ -40,6 +40,31 @@ test.describe('Gestión de Riesgos (página aparte)', () => {
         await expect(page.locator('#fair-owner')).toHaveValue('Gerente de Seguridad Patrimonial');
     });
 
+    test('cambiar de riesgo justo después de editar (antes del debounce) no pierde la edición', async ({ page }) => {
+        await connectAndBoot(page);
+        await runFullFairAnalysis(page, 'E2E Gestión — Riesgo A (carrera)');
+        await connectAndBoot(page);
+        await runFullFairAnalysis(page, 'E2E Gestión — Riesgo B (carrera)');
+
+        await page.click('#nav-risk-mgmt');
+        await page.waitForTimeout(500);
+        await page.selectOption('#riskmgmt-risk-select', 'E2E Gestión — Riesgo A (carrera)');
+        await page.waitForTimeout(300);
+
+        // Editar el dueño y, ANTES de que venza el debounce (500ms), cambiar de riesgo — sin el
+        // flush en selectRisk() esta edición se perdía en silencio (ver App.RiskManagement).
+        await page.fill('#fair-owner', 'Gerente de Riesgo A');
+        await page.selectOption('#riskmgmt-risk-select', 'E2E Gestión — Riesgo B (carrera)');
+        await page.waitForTimeout(500);
+
+        const register = await page.evaluate(async () => {
+            const res = await fetch('http://localhost:3000/api/register', { headers: { 'X-API-Key': 'test-e2e-key' } });
+            return res.json();
+        });
+        const entryA = register.risks.find((r) => r.riskName === 'E2E Gestión — Riesgo A (carrera)');
+        expect(entryA.owner).toBe('Gerente de Riesgo A');
+    });
+
     test('un riesgo tipo Oportunidad sí aparece en el selector de Gestión de Riesgos (a diferencia de Tratamiento)', async ({
         page,
     }) => {

@@ -101,12 +101,34 @@ export const getSafeNumber = (input) => {
 // campos de Tratamiento (costo/prima/deducible, etc.) porque, a diferencia de los demás
 // autocálculos (que reaccionan a un <select> en 'change'), esos SÍ están atados a 'input'
 // de texto libre, y cada llamada ahora es una petición de red a /api/treatment/evaluate.
+//
+// .flush(): dispara YA la llamada pendiente (si hay una) y cancela el timer — sin esto, cambiar
+// de riesgo en el selector de Tratamiento/Gestión de Riesgos ANTES de que venza el delay perdía
+// la edición en curso en silencio: el guardado debounced disparaba después de que selectRisk()
+// ya había cambiado state.xxx.currentEntry Y los valores del DOM al riesgo nuevo, así que
+// terminaba guardando (sin cambios) el riesgo nuevo en vez de la edición del riesgo anterior.
 export const debounce = (fn, delayMs) => {
-    let timeoutId;
-    return (...args) => {
+    let timeoutId = null;
+    let pendingArgs = null;
+    const debounced = (...args) => {
+        pendingArgs = args;
         clearTimeout(timeoutId);
-        timeoutId = setTimeout(() => fn(...args), delayMs);
+        timeoutId = setTimeout(() => {
+            timeoutId = null;
+            const args = pendingArgs;
+            pendingArgs = null;
+            fn(...args);
+        }, delayMs);
     };
+    debounced.flush = () => {
+        if (timeoutId === null) return;
+        clearTimeout(timeoutId);
+        timeoutId = null;
+        const args = pendingArgs;
+        pendingArgs = null;
+        fn(...args);
+    };
+    return debounced;
 };
 
 export const updateProgressBar = (containerId, currentStep, totalSteps) => {
