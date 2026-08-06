@@ -9,6 +9,7 @@ const assert = require('node:assert');
 const path = require('node:path');
 const fs = require('node:fs');
 const request = require('supertest');
+const { timingSafeEqualStrings } = require('../src/middleware/apiKeyAuth');
 
 const TEST_API_KEY = 'test-key-for-http-integration-tests';
 process.env.API_KEY = TEST_API_KEY;
@@ -25,6 +26,19 @@ test.after(() => {
 });
 
 // --- Salud y autenticación ---
+
+test('timingSafeEqualStrings: la key correcta coincide consigo misma', () => {
+    assert.strictEqual(timingSafeEqualStrings(TEST_API_KEY, TEST_API_KEY), true);
+});
+
+test('timingSafeEqualStrings: mismo largo, contenido distinto -> false', () => {
+    assert.strictEqual(timingSafeEqualStrings('aaaaaaaaaa', 'aaaaaaaaab'), false);
+});
+
+test('timingSafeEqualStrings: largos distintos -> false (sin tronar por el RangeError de crypto.timingSafeEqual)', () => {
+    assert.strictEqual(timingSafeEqualStrings('corta', 'una-key-mucho-mas-larga-que-la-otra'), false);
+    assert.strictEqual(timingSafeEqualStrings('', TEST_API_KEY), false);
+});
 
 test('GET /api/health responde 200 sin necesitar API key', async () => {
     const res = await request(app).get('/api/health');
