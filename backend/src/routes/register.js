@@ -126,6 +126,13 @@ function createRegisterRouter(store) {
                 attackerScore = null,
                 defenseProfileName = null,
                 defenseScore = null,
+                // Identificadores internos (ej. 'estandar'), a diferencia de
+                // attacker/defenseProfileName de arriba (solo el nombre para mostrar) — los
+                // necesita la página de Tratamiento para poder recalcular "Reducción de ALE"
+                // (POST /api/autocalc/reduccion-ale) sin depender de que el wizard siga abierto
+                // con ese riesgo cargado.
+                attackerKey = null,
+                defenseKey = null,
                 // Snapshot de las 4 estrategias de tratamiento (ISO 31000, 6.5) tal como estaban
                 // configuradas al guardar — permite reconstruir la Sección 9 del reporte para
                 // CUALQUIER riesgo del Registro, no solo el que esté abierto en el wizard.
@@ -192,6 +199,8 @@ function createRegisterRouter(store) {
                 attackerScore,
                 defenseProfileName,
                 defenseScore,
+                attackerKey,
+                defenseKey,
                 mitigar,
                 transferir,
                 evitar,

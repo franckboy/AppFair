@@ -11,6 +11,7 @@ import './modules/autocomplete.js';
 import './modules/risk-catalog.js';
 import './modules/asset-catalog.js';
 import './modules/risk-cascade-tree.js';
+import './modules/treatment.js';
 import './modules/ui-mode.js';
 import './modules/org-defaults.js';
 import './modules/org-context.js';
@@ -50,6 +51,7 @@ document.addEventListener('DOMContentLoaded', () => {
             this.RiskCatalog.init();
             this.AssetCatalog.init();
             this.RiskCascadeTree.init();
+            this.Treatment.init();
             this.FairAnalysis.init();
             // Página de entrada por defecto — necesario porque OrgContext.showGate() oculta
             // #fairAnalysisPage mientras el gate está abierto (ver App.OrgContext.showGate) y

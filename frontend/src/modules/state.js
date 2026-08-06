@@ -47,6 +47,16 @@ export const state = {
         // encima de "Nombre del Riesgo" a mano, igual que selectedCatalogRef/selectedAssetRef.
         currentRiskId: null,
     },
+    // Tratamiento del Riesgo (ISO 31000, 6.5) — página aparte (ver App.Treatment), separada
+    // del wizard de FAIR: cualquier riesgo ya guardado se puede tratar sin volver a simular,
+    // porque /api/treatment/evaluate solo necesita el ALE actual + los insumos de Mitigar/
+    // Transferir/Evitar, que ya se guardan en cada entrada del Registro.
+    treatment: {
+        // La entrada COMPLETA del Registro que se está tratando ahora mismo (no solo su
+        // nombre) — evita tener que volver a buscarla en state.fair.riskRegister en cada
+        // función; se reemplaza por la respuesta del backend después de cada guardado.
+        currentEntry: null,
+    },
     fair: {
         fairResultsChart: null,
         simulatedALE: 0,

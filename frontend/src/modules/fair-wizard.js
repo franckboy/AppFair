@@ -7,7 +7,6 @@ import {
     LOSS_FIELD_LABELS,
     buildHistogramBins,
     computeSuggestedTef,
-    debounce,
     getSafeNumber,
     sanitizeHTML,
     sensitivityLabel,
@@ -173,32 +172,6 @@ export const FairWizard = {
         document.getElementById('fair-resume-banner-dismiss-btn').addEventListener('click', () => {
             document.getElementById('fair-resume-banner').classList.add('hidden');
         });
-        const debouncedUpdateTreatmentView = debounce(() => this.updateTreatmentView(), 400);
-        [
-            'fair-costoControlAnual',
-            'fair-reduccionALE',
-            'fair-mitigar-fiabilidad',
-            'fair-mitigar-retraso',
-            'fair-seguro-prima',
-            'fair-seguro-deducible',
-            'fair-seguro-limite',
-            'fair-seguro-fiabilidad',
-            'fair-seguro-retraso',
-            'fair-evitar-costo',
-            'fair-evitar-fiabilidad',
-            'fair-evitar-retraso',
-        ].forEach((id) => {
-            document.getElementById(id).addEventListener('input', debouncedUpdateTreatmentView);
-        });
-        document.getElementById('fair-seguro-sin-limite').addEventListener('change', (e) => {
-            const limiteInput = document.getElementById('fair-seguro-limite');
-            limiteInput.disabled = e.target.checked;
-            limiteInput.classList.toggle('bg-gray-100', e.target.checked);
-            this.updateTreatmentView();
-        });
-        document
-            .getElementById('fair-aceptar-justificacion')
-            .addEventListener('input', () => this.persistFairAnalysis());
         document
             .getElementById('fair-attacker-profile')
             .addEventListener('change', () => this._trackPendingAutocalc(this.updateAttackerDefenseSummary()));
@@ -217,22 +190,6 @@ export const FairWizard = {
                     ? 'Ahora puedes editar Mín/Máx manualmente en todas las categorías.'
                     : 'Mín/Máx calculados automáticamente de nuevo.',
             );
-        });
-        document
-            .getElementById('fair-mitigar-defensa-objetivo')
-            .addEventListener('change', () => this.updateReduccionALEAuto());
-        document.getElementById('fair-reduccionALE-manual-override').addEventListener('change', (e) => {
-            const manual = e.target.checked;
-            document.getElementById('fair-reduccionALE').readOnly = !manual;
-            document.getElementById('fair-reduccionALE').classList.toggle('bg-gray-100', !manual);
-            document.getElementById('fair-reduccionALE-explanation').classList.toggle('hidden', manual);
-            if (manual) {
-                showToast('Ahora puedes escribir la Reducción de ALE manualmente.');
-            } else {
-                this.updateReduccionALEAuto();
-                showToast('Reducción de ALE calculada automáticamente de nuevo.');
-            }
-            this.updateTreatmentView();
         });
         document.getElementById('vuln-manual-override').addEventListener('change', (e) => {
             const manual = e.target.checked;
@@ -266,6 +223,11 @@ export const FairWizard = {
         document
             .getElementById('fair-export-consolidated-btn')
             .addEventListener('click', () => App.FairExport.exportConsolidatedReport());
+        document.getElementById('fair-treat-this-risk-btn').addEventListener('click', () => {
+            const riskName = document.getElementById('fair-riskName').value.trim();
+            App.Navigation.switchPage('treatment');
+            App.Treatment.load(riskName);
+        });
         document
             .getElementById('selectAllHistory')
             .addEventListener('change', (e) =>
@@ -344,38 +306,7 @@ export const FairWizard = {
         `;
 
         this.suggestTefRange();
-        await Promise.all([this.updateVulnerabilityAuto(), this.updateReduccionALEAuto()]);
-    },
-
-    // Reducción de ALE (%) al Mitigar: se deriva de comparar tu Nivel de Defensa ACTUAL contra
-    // el Nivel de Defensa OBJETIVO que alcanzarías con el control propuesto. No inventa el
-    // costo del control (eso sí depende del mundo real), pero sí la reducción porcentual,
-    // porque es la misma relación matemática que ya usa Vulnerabilidad.
-    async updateReduccionALEAuto() {
-        const objetivoSelect = document.getElementById('fair-mitigar-defensa-objetivo');
-        if (!objetivoSelect) return;
-        if (document.getElementById('fair-reduccionALE-manual-override').checked) return;
-        if (!state.fair.defenseKey) return;
-
-        const objetivoKey = objetivoSelect.value;
-        const explanationEl = document.getElementById('fair-reduccionALE-explanation');
-        explanationEl.textContent = 'Calculando…';
-
-        let data;
-        try {
-            data = await App.Api.request('/api/autocalc/reduccion-ale', {
-                method: 'POST',
-                body: { currentDefenseKey: state.fair.defenseKey, targetDefenseKey: objetivoKey },
-            });
-        } catch (err) {
-            explanationEl.textContent = 'No se pudo calcular automáticamente. Verifica tu conexión.';
-            return;
-        }
-
-        document.getElementById('fair-reduccionALE').value = data.reductionPercent;
-        explanationEl.textContent = `Calculado como: pasar de tu defensa actual (${data.currentScore.toFixed(0)}%) a "${state.quick.defenseProfiles[objetivoKey].name}" (${data.targetScore.toFixed(0)}%) = ${data.reductionPercent}% de reducción estimada.`;
-
-        if (this.updateTreatmentView) this.updateTreatmentView();
+        await this.updateVulnerabilityAuto();
     },
 
     // Vulnerabilidad = probabilidad de que la amenaza tenga éxito = capacidad del atacante
@@ -1191,28 +1122,7 @@ export const FairWizard = {
             document.querySelectorAll('.error-message').forEach((el) => el.classList.add('hidden'));
             document.querySelectorAll('.input-error').forEach((el) => el.classList.remove('input-error'));
             document.getElementById('simulation-results-container').classList.add('hidden');
-            document.getElementById('fair-roi-section').classList.add('hidden');
-            document.getElementById('fair-costoControlAnual').value = '0';
-            document.getElementById('fair-reduccionALE').value = '0';
-            document.getElementById('fair-mitigar-defensa-objetivo').value = 'basica';
-            document.getElementById('fair-reduccionALE-manual-override').checked = false;
-            document.getElementById('fair-reduccionALE').readOnly = true;
-            document.getElementById('fair-reduccionALE').classList.add('bg-gray-100');
-            document.getElementById('fair-reduccionALE-explanation').classList.remove('hidden');
-            document.getElementById('fair-seguro-prima').value = '0';
-            document.getElementById('fair-seguro-deducible').value = '0';
-            document.getElementById('fair-seguro-limite').value = '0';
-            document.getElementById('fair-seguro-sin-limite').checked = false;
-            document.getElementById('fair-seguro-limite').disabled = false;
-            document.getElementById('fair-seguro-limite').classList.remove('bg-gray-100');
-            document.getElementById('fair-evitar-costo').value = '0';
-            document.getElementById('fair-mitigar-fiabilidad').value = 'media';
-            document.getElementById('fair-mitigar-retraso').value = '0';
-            document.getElementById('fair-seguro-fiabilidad').value = 'media';
-            document.getElementById('fair-seguro-retraso').value = '0';
-            document.getElementById('fair-evitar-fiabilidad').value = 'alta';
-            document.getElementById('fair-evitar-retraso').value = '0';
-            document.getElementById('fair-aceptar-justificacion').value = '';
+            document.getElementById('fair-treatment-cta').classList.add('hidden');
             state.fair.lastAnnualLosses = null;
             state.fair.lastEvaluation = null;
             state.fair.lastSeed = null;
@@ -1326,149 +1236,6 @@ export const FairWizard = {
             })
             .join('');
         document.getElementById('fair-sensitivity-container').classList.remove('hidden');
-    },
-
-    // Traduce el `verdict` que ya calculó el backend (POST /api/treatment/evaluate) al
-    // mismo texto/emoji/clase que mostraba la UI — el backend no sabe nada de CSS/emojis,
-    // solo devuelve `{verdict, rosi, message}`. ROSI = (Pérdida Evitada - Costo) / Costo × 100.
-    renderInvestmentVerdict(rosiElementId, verdictElementId, verdictData) {
-        const rosiEl = document.getElementById(rosiElementId);
-        const verdictEl = document.getElementById(verdictElementId);
-        const { verdict, rosi, message } = verdictData;
-
-        rosiEl.textContent =
-            rosi === null || rosi === undefined
-                ? verdict === 'conviene'
-                    ? 'Sin costo capturado'
-                    : '—'
-                : `${rosi >= 0 ? '+' : ''}${rosi.toFixed(0)}%`;
-
-        const styles = {
-            conviene: { cls: 'bg-green-100 text-green-800', prefix: '✅ Esta opción SÍ conviene: ' },
-            no_conviene: { cls: 'bg-red-100 text-red-800', prefix: '❌ Esta opción NO conviene: ' },
-            neutro: { cls: 'bg-gray-100 text-gray-700', prefix: '⚖️ ' },
-            sin_datos: { cls: '', prefix: '' },
-        };
-        const style = styles[verdict] || styles.sin_datos;
-        verdictEl.className = `mt-3 p-2 rounded text-sm font-semibold ${style.cls}`;
-        verdictEl.textContent = message ? `${style.prefix}${message}` : '';
-    },
-
-    async updateTreatmentView() {
-        // Mitigar/Transferir/Evitar/Aceptar (ISO 31000, 6.5) asumen que la base es una
-        // PÉRDIDA a reducir — aplicado a una Oportunidad, "Evitar" mostraría como "beneficio
-        // neto" el beneficio que en realidad se pierde al no perseguirla (matemática al
-        // revés), y "Mitigar" invitaría a reducir a propósito lo que es tu beneficio. Se
-        // reemplaza toda la sección por una nota, en vez de mostrar esos números.
-        const riskType = document.getElementById('fair-risk-type').value;
-        const roiContent = document.getElementById('fair-roi-content');
-        const opportunityNote = document.getElementById('fair-roi-opportunity-note');
-        if (riskType === 'oportunidad') {
-            roiContent.classList.add('hidden');
-            opportunityNote.classList.remove('hidden');
-            this.persistFairAnalysis();
-            return;
-        }
-        roiContent.classList.remove('hidden');
-        opportunityNote.classList.add('hidden');
-
-        const currency = 'USD';
-        const formatCurrency = (value) =>
-            new Intl.NumberFormat('en-US', { style: 'currency', currency: currency }).format(value);
-        const aleActual = state.fair.simulatedALE || 0;
-        document.getElementById('fair-treat-ale-base').textContent = formatCurrency(aleActual);
-
-        const mitigar = {
-            cost: getSafeNumber(document.getElementById('fair-costoControlAnual')),
-            reductionPercent: getSafeNumber(document.getElementById('fair-reduccionALE')),
-            reliability: document.getElementById('fair-mitigar-fiabilidad').value,
-            delayDays: getSafeNumber(document.getElementById('fair-mitigar-retraso')),
-        };
-        const transferir = {
-            premium: getSafeNumber(document.getElementById('fair-seguro-prima')),
-            deductible: getSafeNumber(document.getElementById('fair-seguro-deducible')),
-            limit: getSafeNumber(document.getElementById('fair-seguro-limite')),
-            unlimited: document.getElementById('fair-seguro-sin-limite').checked,
-            reliability: document.getElementById('fair-seguro-fiabilidad').value,
-            delayDays: getSafeNumber(document.getElementById('fair-seguro-retraso')),
-        };
-        const evitar = {
-            cost: getSafeNumber(document.getElementById('fair-evitar-costo')),
-            reliability: document.getElementById('fair-evitar-fiabilidad').value,
-            delayDays: getSafeNumber(document.getElementById('fair-evitar-retraso')),
-        };
-
-        let result;
-        try {
-            result = await App.Api.request('/api/treatment/evaluate', {
-                method: 'POST',
-                body: {
-                    currentALE: aleActual,
-                    annualLosses: state.fair.lastAnnualLosses || undefined,
-                    mitigar,
-                    transferir,
-                    evitar,
-                    currency,
-                },
-            });
-        } catch (err) {
-            showToast(err.userMessage || 'No se pudo calcular el tratamiento del riesgo.');
-            return;
-        }
-
-        const fiabilidadLabel = { alta: 'Alta', media: 'Media', baja: 'Baja' };
-
-        // 1. Mitigar
-        document.getElementById('fair-roi-costo').textContent = formatCurrency(result.mitigar.cost);
-        document.getElementById('fair-roi-ale-despues').textContent = formatCurrency(result.mitigar.residualALE);
-        document.getElementById('fair-roi-ale-evitada').textContent = formatCurrency(result.mitigar.avoidedLoss);
-        const mitigarEl = document.getElementById('fair-roi-resultado');
-        mitigarEl.textContent = formatCurrency(result.mitigar.netBenefit);
-        mitigarEl.className = `font-bold ${result.mitigar.netBenefit > 0 ? 'text-green-700' : result.mitigar.netBenefit < 0 ? 'text-red-700' : 'text-gray-800'}`;
-        this.renderInvestmentVerdict('fair-roi-rosi', 'fair-mitigar-verdict', result.mitigar.verdict);
-
-        // 2. Transferir / Compartir (seguro) — el backend lo aplica a cada escenario simulado
-        // (annualLosses), no al promedio, para un cálculo preciso.
-        document.getElementById('fair-seguro-costo').textContent = formatCurrency(result.transferir.cost);
-        document.getElementById('fair-seguro-residual').textContent = formatCurrency(result.transferir.residualALE);
-        document.getElementById('fair-seguro-evitada').textContent = formatCurrency(result.transferir.avoidedLoss);
-        const seguroEl = document.getElementById('fair-seguro-beneficio');
-        seguroEl.textContent = formatCurrency(result.transferir.netBenefit);
-        seguroEl.className = `font-bold ${result.transferir.netBenefit > 0 ? 'text-green-700' : result.transferir.netBenefit < 0 ? 'text-red-700' : 'text-gray-800'}`;
-        this.renderInvestmentVerdict('fair-seguro-rosi', 'fair-seguro-verdict', result.transferir.verdict);
-
-        // 3. Evitar
-        document.getElementById('fair-evitar-costo-display').textContent = formatCurrency(result.evitar.cost);
-        document.getElementById('fair-evitar-evitada').textContent = formatCurrency(result.evitar.avoidedLoss);
-        const evitarEl = document.getElementById('fair-evitar-beneficio');
-        evitarEl.textContent = formatCurrency(result.evitar.netBenefit);
-        evitarEl.className = `font-bold ${result.evitar.netBenefit > 0 ? 'text-green-700' : result.evitar.netBenefit < 0 ? 'text-red-700' : 'text-gray-800'}`;
-        this.renderInvestmentVerdict('fair-evitar-rosi', 'fair-evitar-verdict', result.evitar.verdict);
-
-        // 4. Aceptar / Retener
-        const aceptarSuffix = App.UIMode.mode === 'simple' ? '(= lo que perderías si no haces nada)' : '(= ALE actual)';
-        document.getElementById('fair-aceptar-residual').textContent =
-            `${formatCurrency(result.aceptar.residualALE)} ${aceptarSuffix}`;
-
-        // Recomendación: la calcula el backend (estrategia activa con mayor beneficio neto,
-        // considerando también Fiabilidad y Retraso — Broder, 1984, Cap. 5).
-        const recEl = document.getElementById('fair-treatment-recommendation');
-        const rec = result.recommendation;
-        const stratNames = { mitigar: 'Mitigar', transferir: 'Transferir (Seguro)', evitar: 'Evitar' };
-        if (rec.strategy === 'aceptar') {
-            recEl.innerHTML = `<p>${sanitizeHTML(rec.reason)}</p>`;
-        } else {
-            const stratData = result[rec.strategy];
-            let advertencia = '';
-            if (stratData.reliability === 'baja') {
-                advertencia = ` <strong class="text-orange-700">Atención:</strong> esta opción tiene Fiabilidad Baja — el beneficio neto calculado podría no materializarse si el control falla o no funciona como se espera.`;
-            } else if (stratData.delayDays > 90) {
-                advertencia = ` <strong class="text-orange-700">Atención:</strong> el tiempo de implementación es de ${stratData.delayDays} días — el riesgo actual sigue expuesto mientras tanto.`;
-            }
-            recEl.innerHTML = `<p><strong>Estrategia con mayor beneficio neto: ${stratNames[rec.strategy]}</strong> (${formatCurrency(rec.netBenefit)}/año). Fiabilidad: ${fiabilidadLabel[stratData.reliability] || stratData.reliability}, Tiempo de implementación: ${stratData.delayDays} días.${advertencia} Compara igual el resto de las filas antes de decidir.</p>`;
-        }
-
-        this.persistFairAnalysis();
     },
 
     async displaySimulationResults(result) {
@@ -1591,8 +1358,11 @@ export const FairWizard = {
 
         await App.FairRegister.saveToRiskRegister(summary, evaluation);
 
-        document.getElementById('fair-roi-section').classList.remove('hidden');
-        this.updateTreatmentView();
+        // Tratamiento (Mitigar/Transferir/Evitar/Aceptar) ya no vive en el wizard — ver
+        // #treatmentPage / App.Treatment. No aplica a una Oportunidad (ISO 31000, 6.5 asume que
+        // la base es una pérdida a reducir), así que el CTA se oculta para ese caso.
+        const isOpportunity = document.getElementById('fair-risk-type').value === 'oportunidad';
+        document.getElementById('fair-treatment-cta').classList.toggle('hidden', isOpportunity);
 
         this.persistFairAnalysis();
     },
@@ -1656,22 +1426,6 @@ export const FairWizard = {
                 vulnManualOverride: document.getElementById('vuln-manual-override').checked,
                 lossForms: lossForms,
                 lmManualOverride: document.getElementById('lm-manual-override').checked,
-                costoControlAnual: document.getElementById('fair-costoControlAnual').value,
-                reduccionALE: document.getElementById('fair-reduccionALE').value,
-                mitigarDefensaObjetivo: document.getElementById('fair-mitigar-defensa-objetivo').value,
-                reduccionALEManualOverride: document.getElementById('fair-reduccionALE-manual-override').checked,
-                seguroPrima: document.getElementById('fair-seguro-prima').value,
-                seguroDeducible: document.getElementById('fair-seguro-deducible').value,
-                seguroLimite: document.getElementById('fair-seguro-limite').value,
-                seguroSinLimite: document.getElementById('fair-seguro-sin-limite').checked,
-                evitarCosto: document.getElementById('fair-evitar-costo').value,
-                mitigarFiabilidad: document.getElementById('fair-mitigar-fiabilidad').value,
-                mitigarRetraso: document.getElementById('fair-mitigar-retraso').value,
-                seguroFiabilidad: document.getElementById('fair-seguro-fiabilidad').value,
-                seguroRetraso: document.getElementById('fair-seguro-retraso').value,
-                evitarFiabilidad: document.getElementById('fair-evitar-fiabilidad').value,
-                evitarRetraso: document.getElementById('fair-evitar-retraso').value,
-                aceptarJustificacion: document.getElementById('fair-aceptar-justificacion').value,
                 lastSeed: state.fair.lastSeed || null,
                 reviewHistory: state.fair.reviewHistory || [],
                 results: {
@@ -1791,32 +1545,6 @@ export const FairWizard = {
                     this.refreshLossMagnitudeCompactDisplay(key);
                 });
             }
-            document.getElementById('fair-costoControlAnual').value = data.costoControlAnual || '0';
-            document.getElementById('fair-reduccionALE').value = data.reduccionALE || '0';
-            document.getElementById('fair-mitigar-defensa-objetivo').value = data.mitigarDefensaObjetivo || 'basica';
-            document.getElementById('fair-reduccionALE-manual-override').checked = !!data.reduccionALEManualOverride;
-            document.getElementById('fair-reduccionALE').readOnly = !data.reduccionALEManualOverride;
-            document
-                .getElementById('fair-reduccionALE')
-                .classList.toggle('bg-gray-100', !data.reduccionALEManualOverride);
-            document
-                .getElementById('fair-reduccionALE-explanation')
-                .classList.toggle('hidden', !!data.reduccionALEManualOverride);
-            document.getElementById('fair-seguro-prima').value = data.seguroPrima || '0';
-            document.getElementById('fair-seguro-deducible').value = data.seguroDeducible || '0';
-            document.getElementById('fair-seguro-limite').value = data.seguroLimite || '0';
-            document.getElementById('fair-seguro-sin-limite').checked = !!data.seguroSinLimite;
-            document.getElementById('fair-seguro-limite').disabled = !!data.seguroSinLimite;
-            document.getElementById('fair-seguro-limite').classList.toggle('bg-gray-100', !!data.seguroSinLimite);
-            document.getElementById('fair-evitar-costo').value = data.evitarCosto || '0';
-            document.getElementById('fair-mitigar-fiabilidad').value = data.mitigarFiabilidad || 'media';
-            document.getElementById('fair-mitigar-retraso').value = data.mitigarRetraso || '0';
-            document.getElementById('fair-seguro-fiabilidad').value = data.seguroFiabilidad || 'media';
-            document.getElementById('fair-seguro-retraso').value = data.seguroRetraso || '0';
-            document.getElementById('fair-evitar-fiabilidad').value = data.evitarFiabilidad || 'alta';
-            document.getElementById('fair-evitar-retraso').value = data.evitarRetraso || '0';
-            document.getElementById('fair-aceptar-justificacion').value = data.aceptarJustificacion || '';
-
             if (data.results) {
                 document.getElementById('ale-result').textContent = data.results.ale;
                 document.getElementById('median-loss-result').textContent = data.results.median;
@@ -1863,7 +1591,9 @@ export const FairWizard = {
                 }
 
                 document.getElementById('simulation-results-container').classList.remove('hidden');
-                document.getElementById('fair-roi-section').classList.remove('hidden');
+                document
+                    .getElementById('fair-treatment-cta')
+                    .classList.toggle('hidden', (data.riskType || 'amenaza') === 'oportunidad');
 
                 const ctx = document.getElementById('fair-results-chart').getContext('2d');
                 if (state.fair.fairResultsChart) state.fair.fairResultsChart.destroy();
@@ -1903,7 +1633,6 @@ export const FairWizard = {
                     },
                 });
 
-                this.updateTreatmentView();
                 this.navigateWizard(4, true);
                 showToast('Se restauró tu último análisis FAIR guardado en este navegador.');
             }
