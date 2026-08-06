@@ -5,6 +5,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { DEFAULTS } = require('./defaults');
 const { findRegisterEntryIndex } = require('../lib/registerIdentity');
+const { clearDanglingAssetId } = require('../lib/assetCascade');
 
 const DB_PATH = path.join(__dirname, '..', '..', 'data', 'db.json');
 
@@ -110,6 +111,10 @@ class JsonStore {
     async deleteAsset(id) {
         const all = this._readAll();
         all.assets = (all.assets || []).filter((a) => a.id !== id);
+        // Bug real: sin esto, una entrada del Registro (o un borrador aún no simulado) que
+        // vinculaba este activo se quedaba apuntando para siempre a uno que ya no existe — ver
+        // el criterio completo en assetCascade.js.
+        clearDanglingAssetId(all, id);
         this._writeAll(all);
         return all.assets;
     }

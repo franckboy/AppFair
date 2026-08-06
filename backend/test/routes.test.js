@@ -628,6 +628,51 @@ test('flujo completo del Catálogo de Activos: POST crea, GET lo lista, PUT lo a
     assert.ok(!getRes2.body.assets.some((a) => a.id === id));
 });
 
+test('DELETE /api/assets/:id limpia el vínculo assetId de lo que lo referencie, sin borrar el riesgo', async () => {
+    // Bug real: a diferencia de borrar un riesgo (que sí borra en cascada su entrada del
+    // Registro vinculada), borrar un activo no limpiaba nada — una entrada del Registro (o un
+    // borrador de Análisis Rápido todavía sin simular) se quedaba apuntando para siempre a un
+    // activo que ya no existe (ver assetCascade.js).
+    const assetRes = await request(app)
+        .post('/api/assets')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ nombre: 'Bodega a Eliminar', valorEstimado: 100000 });
+    const assetId = assetRes.body.entry.id;
+
+    const riskName = 'Riesgo vinculado a activo eliminado';
+    await request(app)
+        .put(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            ale: 20000,
+            cvar95: 30000,
+            evaluationLevel: 'Aceptable',
+            evaluationJustification: 'prueba automatizada',
+            asset: 'Bodega a Eliminar',
+            assetId,
+        });
+
+    const draftRes = await request(app)
+        .post('/api/risks')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ name: 'Borrador vinculado a activo eliminado', fullData: { assetId } });
+    const draftId = draftRes.body.entry.id;
+
+    const delRes = await request(app).delete(`/api/assets/${assetId}`).set('X-API-Key', TEST_API_KEY);
+    assert.strictEqual(delRes.status, 200);
+
+    const registerRes = await request(app).get('/api/register').set('X-API-Key', TEST_API_KEY);
+    const entry = registerRes.body.risks.find((r) => r.riskName === riskName);
+    assert.ok(entry, 'la entrada del Registro NO debe borrarse, solo perder el vínculo');
+    assert.strictEqual(entry.assetId, null);
+    assert.strictEqual(entry.asset, 'Bodega a Eliminar', 'el nombre copiado (foto del momento) se conserva');
+
+    const risksRes = await request(app).get('/api/risks').set('X-API-Key', TEST_API_KEY);
+    const draft = risksRes.body.risks.find((r) => r.id === draftId);
+    assert.ok(draft, 'el borrador NO debe borrarse, solo perder el vínculo');
+    assert.strictEqual(draft.fullData.assetId, null);
+});
+
 test('PUT /api/assets/:id con id inexistente responde 404', async () => {
     const res = await request(app)
         .put('/api/assets/id-que-no-existe')
