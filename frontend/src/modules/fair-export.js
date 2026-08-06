@@ -1,7 +1,7 @@
 import { App } from './app-namespace.js';
 import { state } from './state.js';
 import { Modal } from './modal.js';
-import { LOSS_FORMS_KEYS, LOSS_FORM_LABELS, sanitizeHTML } from './utils.js';
+import { LOSS_FORMS_KEYS, LOSS_FORM_LABELS, sanitizeHTML, severityToHex } from './utils.js';
 
 // ============================================================
 // App.FairExport — arma el HTML imprimible y dispara window.print() para el Informe
@@ -68,6 +68,197 @@ export const FairExport = {
                             ticks: { autoSkip: true, maxRotation: 45, minRotation: 45 },
                         },
                     },
+                },
+            });
+            requestAnimationFrame(() => {
+                const img = canvas.toDataURL('image/png');
+                chart.destroy();
+                canvas.remove();
+                resolve(img);
+            });
+        });
+    },
+
+    // Redibuja, fuera de pantalla, el Mapa de Calor Consolidado (mismo diseño que
+    // App.FairRegister.renderRiskRegister: zonas de fondo Bajo/Medio/Alto/Crítico + número por
+    // punto) — a propósito NO se lee el <canvas> #fair-register-chart real, porque ese solo se
+    // dibuja al visitar "Registro de Riesgos" (ver el comentario en loadRiskRegister sobre
+    // canvases de tamaño 0). El botón de exportar vive en "Análisis de Riesgo", así que exportar
+    // sin haber visitado Registro antes capturaba ese <canvas> en blanco (300×150, el
+    // tamaño por defecto del navegador) — un PNG casi vacío, estirado a max-width:100% en el
+    // PDF. Tamaño fijo (responsive:false) por la misma razón que renderOffscreenHistogram: el
+    // auto-tamaño de Chart.js depende del contenedor CSS, que aquí no existe.
+    renderOffscreenHeatmap(threatRegister, heatmapZones) {
+        return new Promise((resolve) => {
+            const canvas = document.createElement('canvas');
+            canvas.width = 700;
+            canvas.height = 400;
+            canvas.style.position = 'fixed';
+            canvas.style.left = '-9999px';
+            document.body.appendChild(canvas);
+
+            const textColorByLevel = { Bajo: '#000', Medio: '#000', Alto: '#fff', Crítico: '#fff' };
+            const matrixBackgroundPlugin = {
+                id: 'fairExportMatrixBackground',
+                beforeDatasetsDraw(chart) {
+                    const {
+                        ctx,
+                        scales: { x, y },
+                    } = chart;
+                    ctx.save();
+                    (heatmapZones || []).forEach((zone) => {
+                        ctx.fillStyle = zone.color;
+                        ctx.fillRect(
+                            x.getPixelForValue(zone.x[0]),
+                            y.getPixelForValue(zone.y[1]),
+                            x.getPixelForValue(zone.x[1]) - x.getPixelForValue(zone.x[0]),
+                            y.getPixelForValue(zone.y[0]) - y.getPixelForValue(zone.y[1]),
+                        );
+                    });
+                    ctx.font = 'bold 14px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    (heatmapZones || []).forEach((zone) => {
+                        const midX = x.getPixelForValue((zone.x[0] + zone.x[1]) / 2);
+                        const midY = y.getPixelForValue((zone.y[0] + zone.y[1]) / 2);
+                        ctx.fillStyle = textColorByLevel[zone.level] || '#000';
+                        ctx.fillText(zone.level, midX, midY);
+                    });
+                    ctx.restore();
+                },
+            };
+            const pointNumberPlugin = {
+                id: 'fairExportPointNumbers',
+                afterDatasetsDraw(chart) {
+                    const {
+                        ctx,
+                        scales: { x, y },
+                    } = chart;
+                    ctx.save();
+                    ctx.font = 'bold 11px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillStyle = '#fff';
+                    threatRegister.forEach((r, i) => {
+                        ctx.fillText(
+                            String(i + 1),
+                            x.getPixelForValue(r.impactPercent),
+                            y.getPixelForValue(r.probabilityPercent),
+                        );
+                    });
+                    ctx.restore();
+                },
+            };
+
+            const chart = new Chart(canvas, {
+                type: 'scatter',
+                data: {
+                    datasets: [
+                        {
+                            label: 'Riesgos FAIR',
+                            data: threatRegister.map((r) => ({
+                                x: r.impactPercent,
+                                y: r.probabilityPercent,
+                                name: r.riskName,
+                                level: r.evaluationLevel,
+                            })),
+                            pointBackgroundColor: threatRegister.map((r) => severityToHex(r.severity)),
+                            pointBorderColor: 'white',
+                            pointRadius: 10,
+                        },
+                    ],
+                },
+                options: {
+                    responsive: false,
+                    animation: false,
+                    scales: {
+                        x: {
+                            title: { display: true, text: 'Impacto (ALE como % del umbral Crítico)' },
+                            min: 0,
+                            max: 100,
+                            ticks: { stepSize: 25 },
+                        },
+                        y: {
+                            title: { display: true, text: 'Probabilidad de superar el umbral de excedencia (%)' },
+                            min: 0,
+                            max: 100,
+                            ticks: { stepSize: 25 },
+                        },
+                    },
+                    plugins: { legend: { display: false } },
+                },
+                plugins: [matrixBackgroundPlugin, pointNumberPlugin],
+            });
+            requestAnimationFrame(() => {
+                const img = canvas.toDataURL('image/png');
+                chart.destroy();
+                canvas.remove();
+                resolve(img);
+            });
+        });
+    },
+
+    // Mismo motivo y misma técnica que renderOffscreenHeatmap — el <canvas> #fair-pareto-chart
+    // real solo existe con contenido si se visitó "Registro de Riesgos" antes de exportar.
+    renderOffscreenPareto(pareto) {
+        return new Promise((resolve) => {
+            const canvas = document.createElement('canvas');
+            canvas.width = 700;
+            canvas.height = 350;
+            canvas.style.position = 'fixed';
+            canvas.style.left = '-9999px';
+            document.body.appendChild(canvas);
+            const formatCurrency = (value) =>
+                new Intl.NumberFormat('en-US', {
+                    style: 'currency',
+                    currency: 'USD',
+                    minimumFractionDigits: 0,
+                    maximumFractionDigits: 0,
+                }).format(value);
+
+            const chart = new Chart(canvas, {
+                type: 'bar',
+                data: {
+                    labels: pareto.risks.map((r) => r.riskName),
+                    datasets: [
+                        {
+                            type: 'bar',
+                            label: 'Pérdida Anual Esperada',
+                            data: pareto.risks.map((r) => r.ale),
+                            backgroundColor: 'rgba(124, 58, 237, 0.6)',
+                            yAxisID: 'y',
+                        },
+                        {
+                            type: 'line',
+                            label: '% Acumulado',
+                            data: pareto.risks.map((r) => r.cumulativePercent),
+                            borderColor: '#B22222',
+                            backgroundColor: '#B22222',
+                            yAxisID: 'y1',
+                            tension: 0.1,
+                        },
+                    ],
+                },
+                options: {
+                    responsive: false,
+                    animation: false,
+                    scales: {
+                        y: {
+                            position: 'left',
+                            beginAtZero: true,
+                            title: { display: true, text: 'Pérdida Anual Esperada' },
+                            ticks: { callback: (v) => formatCurrency(v) },
+                        },
+                        y1: {
+                            position: 'right',
+                            beginAtZero: true,
+                            max: 100,
+                            title: { display: true, text: '% Acumulado' },
+                            grid: { drawOnChartArea: false },
+                        },
+                        x: { ticks: { maxRotation: 45, minRotation: 45 } },
+                    },
+                    plugins: { legend: { position: 'bottom' } },
                 },
             });
             requestAnimationFrame(() => {
@@ -206,7 +397,7 @@ export const FairExport = {
                     ${r.p90 != null ? `<tr><td>Peor 10% de los casos (P90)</td><td>> ${fmt(r.p90)}</td></tr>` : ''}
                     <tr><td>CVaR 95% (Expected Shortfall)</td><td>${fmt(r.cvar95)}</td></tr>
                 </table>
-                ${chartImg ? `<img src="${chartImg}" alt="Distribución de Pérdida Anual" style="max-width:100%;">` : ''}
+                ${chartImg ? `<img src="${chartImg}" alt="Distribución de Pérdida Anual" style="max-width:100%; height:auto; display:block;">` : ''}
                 <h3>Evaluación del Riesgo (contra Criterios de Riesgo definidos)</h3>
                 <table>
                     <tr><td><strong>Clasificación</strong></td><td>${evalBadge}</td></tr>
@@ -229,6 +420,14 @@ export const FairExport = {
     },
 
     async exportConsolidatedReport() {
+        // El botón "Exportar Informe Consolidado" vive en Análisis de Riesgo (ver
+        // app_fair.html), no en Registro de Riesgos — no se puede asumir que el usuario ya
+        // visitó esa página en esta sesión. loadRiskRegister(false) sí deja
+        // state.fair.riskRegister/registerPareto/registerHeatmapZones/
+        // registerConsolidatedSensitivity al día siempre (vienen de GET /api/register), aunque
+        // no dibuje ningún <canvas> — eso es justo lo que se necesita aquí: los datos, no los
+        // gráficos ya dibujados en pantalla.
+        await App.FairRegister.loadRiskRegister(false);
         const register = state.fair.riskRegister;
         if (!register || register.length === 0) {
             Modal.alert('Aún no tienes ningún riesgo guardado en el Registro.', 'Nada que exportar');
@@ -252,9 +451,26 @@ export const FairExport = {
         const criticos = threatRegister.filter((r) => r.evaluationLevel.includes('Crítico')).length;
         const exposicionTotalTexto = formatCurrency(totalALE);
 
-        const heatmapImg = document.getElementById('fair-register-chart').toDataURL('image/png');
-        const paretoImg = document.getElementById('fair-pareto-chart').toDataURL('image/png');
+        // Interpretación General y Sensibilidad Consolidada son texto puro (sin canvas) — se
+        // regeneran directo aquí, en vez de leer el DOM de "Registro de Riesgos" (que puede no
+        // haberse dibujado nunca en esta sesión), mismo motivo que el mapa de calor/Pareto abajo.
+        App.FairRegister.renderPortfolioInterpretation(register);
+        App.FairRegister.renderConsolidatedSensitivity();
+        const interpretationHTML = document.getElementById('fair-register-interpretation').innerHTML;
         const sensitivityHTML = document.getElementById('fair-consolidated-sensitivity-list').innerHTML;
+
+        // Mapa de calor y Pareto: SIEMPRE se redibujan fuera de pantalla a tamaño fijo (ver
+        // renderOffscreenHeatmap/renderOffscreenPareto) — nunca se lee el <canvas> real de
+        // "Registro de Riesgos". Ese canvas solo tiene contenido si esa página ya se dibujó
+        // (responsive:true necesita el tamaño de un contenedor visible); leerlo sin eso
+        // capturaba un PNG en blanco de 300×150 (el tamaño por defecto del navegador),
+        // estirado por CSS y viéndose "desparramado"/borroso en el PDF.
+        const heatmapImg = await this.renderOffscreenHeatmap(threatRegister, state.fair.registerHeatmapZones);
+        const pareto = state.fair.registerPareto;
+        const paretoImg = pareto ? await this.renderOffscreenPareto(pareto) : '';
+        const paretoSummaryText = pareto
+            ? `${pareto.riskCountFor80Percent} de ${pareto.totalRiskCount} riesgo(s) concentran el 80% de tu exposición total (${formatCurrency(pareto.totalExposure)}/año). Prioriza el tratamiento en esos primero.`
+            : 'Aún no hay suficientes riesgos guardados para el análisis de Pareto.';
         // Mismo orden que los puntos numerados del mapa de calor (ver renderRiskRegister) —
         // solo amenazas, para que el número en el mapa corresponda al mismo riesgo aquí.
         const heatmapLegendHTML = threatRegister
@@ -333,7 +549,7 @@ export const FairExport = {
                 <h2>Mapa de Calor Consolidado</h2>
                 <table style="border:none;">
                     <tr>
-                        <td style="width:65%; vertical-align:top; border:none; padding:0;"><img src="${heatmapImg}" alt="Mapa de calor consolidado" style="max-width:100%;"></td>
+                        <td style="width:65%; vertical-align:top; border:none; padding:0;"><img src="${heatmapImg}" alt="Mapa de calor consolidado" style="max-width:100%; height:auto; display:block;"></td>
                         <td style="width:35%; vertical-align:top; border:none; padding:0 0 0 12px;">
                             <strong style="font-size:12px;">Riesgos:</strong>
                             <ol style="margin:4px 0 0 16px; padding:0; font-size:11px;">${heatmapLegendHTML}</ol>
@@ -343,8 +559,8 @@ export const FairExport = {
             </div>
             <div class="print-section">
                 <h2>Análisis 80-20 (Pareto)</h2>
-                <p style="font-size:12px;">${document.getElementById('fair-pareto-summary').textContent}</p>
-                <img src="${paretoImg}" alt="Análisis de Pareto">
+                <p style="font-size:12px;">${paretoSummaryText}</p>
+                ${paretoImg ? `<img src="${paretoImg}" alt="Análisis de Pareto" style="max-width:100%; height:auto; display:block;">` : ''}
             </div>
             <div class="print-section">
                 <h2>Sensibilidad Consolidada</h2>
@@ -353,7 +569,7 @@ export const FairExport = {
             ${riskDetailHTML}
             <div class="print-section">
                 <h2>Interpretación General</h2>
-                ${document.getElementById('fair-register-interpretation').innerHTML}
+                ${interpretationHTML}
             </div>
             <div class="print-section" style="margin-top:24px; border-top:1px solid #999; padding-top:8px;">
                 <p style="font-size:11px; color:#555;">Este documento contiene información confidencial de análisis de riesgo. Su distribución debe limitarse a las personas autorizadas por la organización apreciada.</p>
