@@ -14,6 +14,10 @@ export const Navigation = {
             this.switchPage('register');
             App.FairAnalysis.loadRiskRegister();
         });
+        document.getElementById('nav-risk-tree').addEventListener('click', () => {
+            this.switchPage('tree');
+            App.RiskCascadeTree.load();
+        });
         // El Catálogo de Activos ahora se abre desde el menú "Configuración" (ver
         // App.ConfigMenu) — el cambio de página en sí sigue siendo switchPage('assets').
     },
@@ -22,6 +26,7 @@ export const Navigation = {
             fair: document.getElementById('fairAnalysisPage'),
             register: document.getElementById('registerPage'),
             assets: document.getElementById('assetsPage'),
+            tree: document.getElementById('riskTreePage'),
         };
         // "assets" resalta el botón "Configuración" (ya no tiene su propio botón de nav) —
         // así el usuario ve de dónde vino aunque haya entrado por un menú.
@@ -29,6 +34,7 @@ export const Navigation = {
             fair: document.getElementById('nav-fair'),
             register: document.getElementById('nav-register'),
             assets: document.getElementById('nav-config'),
+            tree: document.getElementById('nav-risk-tree'),
         };
         Object.keys(pages).forEach((key) => {
             pages[key].classList.toggle('hidden', key !== pageKey);
