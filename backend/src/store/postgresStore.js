@@ -4,6 +4,7 @@ const { Pool } = require('pg');
 const crypto = require('crypto');
 const { DEFAULTS } = require('./defaults');
 const { findRegisterEntryIndex } = require('../lib/registerIdentity');
+const { clearDanglingAssetId } = require('../lib/assetCascade');
 
 /**
  * Mismo modelo que JsonStore (un solo documento con todas las colecciones),
@@ -99,6 +100,8 @@ class PostgresStore {
     async deleteAsset(id) {
         const all = await this._readAll();
         all.assets = (all.assets || []).filter((a) => a.id !== id);
+        // Cascada: ver assetCascade.js — mismo criterio que JsonStore.deleteAsset.
+        clearDanglingAssetId(all, id);
         await this._writeAll(all);
         return all.assets;
     }
