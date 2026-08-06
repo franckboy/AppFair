@@ -24,6 +24,7 @@ const {
     likelihoodWeightedSample,
     inferPosterior,
 } = require('../src/lib/bayesianNetwork');
+const { expectedValue, evaluateDecisionTree } = require('../src/lib/decisionTree');
 
 test('mulberry32 es determinista: misma semilla -> misma secuencia', () => {
     const rngA = mulberry32(42);
@@ -217,6 +218,111 @@ test('inferPosterior: evidencia imposible según la red -> null (probabilidad to
     ];
     const posterior = inferPosterior(imposibleNetwork, 'a', { b: 'no' }, 100, mulberry32(1));
     assert.strictEqual(posterior, null);
+});
+
+// --- decisionTree.js (motor todavía sin conectar a ningún endpoint, ver el comentario del
+// archivo) --- A diferencia de Markov/red bayesiana, esto es matemática exacta (no muestreo), así
+// que las pruebas comparan contra el número calculado a mano, sin ninguna tolerancia estadística.
+
+test('expectedValue: promedio ponderado por probabilidad', () => {
+    const branches = [
+        { probability: 0.8, value: 50000 },
+        { probability: 0.2, value: -10000 },
+    ];
+    // 0.8*50000 + 0.2*(-10000) = 40000 - 2000 = 38000
+    assert.strictEqual(expectedValue(branches), 38000);
+});
+
+test('evaluateDecisionTree: "Mitigar" (nodo de azar por reliability) le gana a "Aceptar" (terminal)', () => {
+    // Mismo ejemplo del comentario del archivo: reliability=alta (0.8) se traduce en la
+    // probabilidad de que el control SÍ funcione.
+    const tree = {
+        type: 'decision',
+        options: [
+            {
+                label: 'Aceptar',
+                node: { type: 'terminal', value: 0 },
+            },
+            {
+                label: 'Mitigar',
+                node: {
+                    type: 'chance',
+                    label: '¿el control funciona?',
+                    branches: [
+                        { probability: 0.8, node: { type: 'terminal', value: 50000 } }, // funciona: avoidedLoss - cost
+                        { probability: 0.2, node: { type: 'terminal', value: -10000 } }, // falla: -cost (pagado, sin beneficio)
+                    ],
+                },
+            },
+        ],
+    };
+    const result = evaluateDecisionTree(tree);
+    assert.strictEqual(result.bestOption, 'Mitigar');
+    assert.strictEqual(result.value, 38000);
+    // Las DOS opciones quedan evaluadas, no solo la ganadora — para poder comparar todas.
+    assert.strictEqual(result.options.find((o) => o.label === 'Aceptar').value, 0);
+    assert.strictEqual(result.options.find((o) => o.label === 'Mitigar').value, 38000);
+});
+
+test('evaluateDecisionTree: elige la mejor entre 3 opciones, no solo compara la primera contra la segunda', () => {
+    const tree = {
+        type: 'decision',
+        options: [
+            { label: 'Aceptar', node: { type: 'terminal', value: 0 } },
+            { label: 'Transferir', node: { type: 'terminal', value: 25000 } },
+            { label: 'Evitar', node: { type: 'terminal', value: 15000 } },
+        ],
+    };
+    const result = evaluateDecisionTree(tree);
+    assert.strictEqual(result.bestOption, 'Transferir');
+    assert.strictEqual(result.value, 25000);
+});
+
+test('evaluateDecisionTree: recorre árboles anidados (azar dentro de decisión dentro de azar)', () => {
+    // Si el control falla (20%), hay una SEGUNDA decisión: aceptar la pérdida residual (-10000)
+    // o reforzar pagando más (-4000). Reforzar es mejor, así que debería tomarse esa rama.
+    const tree = {
+        type: 'chance',
+        branches: [
+            { probability: 0.8, node: { type: 'terminal', value: 50000 } },
+            {
+                probability: 0.2,
+                node: {
+                    type: 'decision',
+                    options: [
+                        { label: 'Aceptar residual', node: { type: 'terminal', value: -10000 } },
+                        { label: 'Reforzar', node: { type: 'terminal', value: -4000 } },
+                    ],
+                },
+            },
+        ],
+    };
+    // 0.8*50000 + 0.2*(-4000, la mejor de las dos sub-opciones) = 40000 - 800 = 39200
+    const result = evaluateDecisionTree(tree);
+    assert.strictEqual(result.value, 39200);
+    assert.strictEqual(result.branches[1].bestOption, 'Reforzar');
+});
+
+test('evaluateDecisionTree: probabilidades de un nodo "chance" que no suman 1 revienta con error explícito', () => {
+    const tree = {
+        type: 'chance',
+        label: 'mal capturado',
+        branches: [
+            { probability: 0.8, node: { type: 'terminal', value: 100 } },
+            { probability: 0.5, node: { type: 'terminal', value: 200 } }, // 0.8+0.5 = 1.3, no 1
+        ],
+    };
+    assert.throws(() => evaluateDecisionTree(tree), /mal capturado/);
+});
+
+test('evaluateDecisionTree: un nodo "decision" sin opciones, o "chance" sin ramas, revienta con error explícito', () => {
+    assert.throws(() => evaluateDecisionTree({ type: 'decision', options: [] }), /al menos una opción/);
+    assert.throws(() => evaluateDecisionTree({ type: 'chance', branches: [] }), /al menos una rama/);
+});
+
+test('evaluateDecisionTree: un tipo de nodo desconocido (o ausente) revienta con error explícito', () => {
+    assert.throws(() => evaluateDecisionTree({ type: 'no-existe', value: 1 }), /tipo de nodo desconocido/);
+    assert.throws(() => evaluateDecisionTree({}), /necesita un "type"/);
 });
 
 test('pearsonCorrelation detecta una correlación perfecta', () => {
