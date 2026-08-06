@@ -62,6 +62,91 @@ function calculateInsuranceRetainedALE(annualLosses, deductible, limit, unlimite
 }
 
 /**
+ * "Mitigar + Transferir" combinados: un árbol de decisión de 2 NIVELES, no dos estrategias
+ * evaluadas aparte y comparadas por fuera. Nivel 1 (azar): ¿Mitigar funciona? Nivel 2 (decisión),
+ * en CADA rama del nivel 1: dado el ALE que queda después de ese resultado, ¿se acepta tal cual,
+ * o también se transfiere (con su propia Fiabilidad de que el seguro responda)? — modela el
+ * patrón real de ISO 31000 de tratamiento en capas (mitigar lo que se pueda, transferir el
+ * resto), en vez de tratar las estrategias como si solo se pudiera elegir una.
+ *
+ * El seguro aplicado al residual DESPUÉS de una mitigación exitosa se calcula sobre las mismas
+ * pérdidas simuladas (annualLosses) pero ESCALADAS por la reducción lograda — un deducible fijo
+ * dispara con menos frecuencia contra pérdidas ya más chicas, que es el comportamiento correcto,
+ * no un error de cálculo.
+ *
+ * @param {Object} params Mismos currentALE/annualLosses/mitigar/transferir que
+ *   evaluateTreatmentStrategies — se asume mitigar.cost > 0 Y transferir.premium > 0 (quien
+ *   llama decide cuándo tiene sentido evaluar esta combinación, ver evaluateTreatmentStrategies).
+ * @returns {{value: number, tree: Object}} `value` es el beneficio neto esperado de la mejor
+ *   combinación posible; `tree` es el árbol evaluado completo (con qué opción ganó en cada rama),
+ *   por si se necesita explicar la recomendación con más detalle en el futuro.
+ */
+function evaluateMitigarConTransferir({ currentALE, annualLosses, mitigar, transferir }) {
+    const pMitigar = RELIABILITY_TO_PROBABILITY[mitigar.reliability] ?? RELIABILITY_TO_PROBABILITY.media;
+    const pTransferir = RELIABILITY_TO_PROBABILITY[transferir.reliability] ?? RELIABILITY_TO_PROBABILITY.media;
+    const canCalculateInsurance =
+        annualLosses &&
+        annualLosses.length > 0 &&
+        (transferir.deductible > 0 || transferir.limit > 0 || transferir.unlimited);
+
+    // Nodo "¿qué hacer con el residual?" — baseALE es lo que queda expuesto ANTES de decidir si
+    // también se transfiere (currentALE si Mitigar falló, aleAfterMitigar si funcionó);
+    // scaleFactor escala annualLosses proporcional a ESE MISMO residual, para que el seguro se
+    // calcule sobre las pérdidas que de verdad quedarían en juego en esa rama, no las originales.
+    function residualDecisionNode(baseALE, scaleFactor, sunkCost) {
+        const acceptedValue = currentALE - baseALE - sunkCost;
+        const retainedALE = canCalculateInsurance
+            ? calculateInsuranceRetainedALE(
+                  annualLosses.map((loss) => loss * scaleFactor),
+                  transferir.deductible || 0,
+                  transferir.limit || 0,
+                  !!transferir.unlimited,
+              )
+            : baseALE; // sin datos de póliza, transferir no aporta nada sobre aceptar tal cual.
+
+        return {
+            type: 'decision',
+            options: [
+                { label: 'aceptar', node: { type: 'terminal', value: acceptedValue } },
+                {
+                    label: 'transferir',
+                    node: {
+                        type: 'chance',
+                        label: 'transferir el residual funciona',
+                        branches: [
+                            {
+                                probability: pTransferir,
+                                node: {
+                                    type: 'terminal',
+                                    value: currentALE - retainedALE - sunkCost - transferir.premium,
+                                },
+                            },
+                            {
+                                probability: 1 - pTransferir,
+                                node: { type: 'terminal', value: acceptedValue - transferir.premium },
+                            },
+                        ],
+                    },
+                },
+            ],
+        };
+    }
+
+    const reductionFraction = (mitigar.reductionPercent || 0) / 100;
+    const aleAfterMitigar = currentALE * (1 - reductionFraction);
+    const tree = {
+        type: 'chance',
+        label: 'mitigar funciona',
+        branches: [
+            { probability: pMitigar, node: residualDecisionNode(aleAfterMitigar, 1 - reductionFraction, mitigar.cost) },
+            { probability: 1 - pMitigar, node: residualDecisionNode(currentALE, 1, mitigar.cost) },
+        ],
+    };
+
+    return { ...evaluateDecisionTree(tree), tree };
+}
+
+/**
  * ROSI (Retorno de Inversión en Seguridad) = (Pérdida Evitada - Costo) / Costo × 100.
  * Es el mismo Beneficio Neto, expresado como % de retorno.
  * @param {number} cost
@@ -227,16 +312,35 @@ function evaluateTreatmentStrategies({ currentALE, annualLosses, mitigar, transf
                   },
     };
 
-    // 4. Aceptar / Retener (sin costo, sin cambio)
+    // 4. Mitigar + Transferir combinados (árbol de decisión de 2 niveles, ver
+    // evaluateMitigarConTransferir) — solo tiene sentido evaluar la combinación cuando AMBAS
+    // partes tienen un costo real capturado (mismo criterio de "no hay estrategia gratis" que
+    // las 3 de arriba); si falta cualquiera de los dos, esa combinación ya está cubierta por
+    // Mitigar o Transferir solos, evaluados arriba.
+    if (mitigar.cost > 0 && transferir.premium > 0) {
+        const combined = evaluateMitigarConTransferir({ currentALE, annualLosses, mitigar, transferir });
+        const combinedCost = mitigar.cost + transferir.premium;
+        results.mitigarTransferir = {
+            cost: combinedCost,
+            netBenefit: combined.value,
+            mitigarReliability: mitigar.reliability,
+            transferirReliability: transferir.reliability,
+            delayDays: Math.max(mitigar.delayDays || 0, transferir.delayDays || 0),
+            verdict: getInvestmentVerdict(combinedCost, combined.value + combinedCost, formatCurrency),
+        };
+    }
+
+    // 5. Aceptar / Retener (sin costo, sin cambio)
     results.aceptar = { cost: 0, residualALE: currentALE, avoidedLoss: 0, netBenefit: 0 };
 
-    // Recomendación: la estrategia activa (con un costo real capturado) con mayor beneficio neto.
+    // Recomendación: la estrategia activa (con un costo real capturado) con mayor beneficio neto,
+    // incluyendo la combinación Mitigar+Transferir cuando ambas partes tienen costo capturado.
     // Bug real corregido: antes, Mitigar/Transferir contaban como "activas" con solo
     // avoidedLoss > 0 (cost = 0, su default) — reductionPercent y deducible/límite se autocalculan
     // o se capturan ANTES de que el usuario escriba ningún costo, así que "SÍ conviene, sin costo
-    // capturado" salía seguido, no solo en un caso raro. Ninguna de las 3 estrategias es gratis en
-    // la práctica (mantener un control, pagar una prima, o eliminar la fuente del riesgo), así que
-    // las 3 comparten la misma regla: solo cuenta como activa si tiene un costo real capturado.
+    // capturado" salía seguido, no solo en un caso raro. Ninguna estrategia es gratis en la
+    // práctica (mantener un control, pagar una prima, o eliminar la fuente del riesgo), así que
+    // todas comparten la misma regla: solo cuenta como activa si tiene un costo real capturado.
     const activeStrategies = Object.entries(results).filter(([key, r]) => key !== 'aceptar' && r.cost > 0);
 
     let recommendation;
@@ -271,6 +375,7 @@ module.exports = {
     calculateROSI,
     getInvestmentVerdict,
     expectedNetBenefit,
+    evaluateMitigarConTransferir,
     RELIABILITY_TO_PROBABILITY,
     evaluateTreatmentStrategies,
 };
