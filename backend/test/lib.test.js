@@ -16,6 +16,7 @@ const { calculateVulnerability, calculateReduccionALE } = require('../src/lib/au
 const { calculateInsuranceRetainedALE, calculateROSI, evaluateTreatmentStrategies } = require('../src/lib/treatment');
 const { evaluateFairThreat } = require('../src/lib/evaluation');
 const { calculateParetoAnalysis } = require('../src/lib/register');
+const { sampleActivatedTransitions, walkMarkovChain } = require('../src/lib/markov');
 
 test('mulberry32 es determinista: misma semilla -> misma secuencia', () => {
     const rngA = mulberry32(42);
@@ -29,6 +30,101 @@ test('mulberry32: semillas distintas dan secuencias distintas', () => {
     const rngA = mulberry32(1);
     const rngB = mulberry32(2);
     assert.notStrictEqual(rngA(), rngB());
+});
+
+// --- markov.js (motor todavía sin conectar a ningún endpoint, ver el comentario del archivo) ---
+// Generador de rng falso y determinista para probar sin depender de mulberry32: devuelve, en
+// orden, los valores exactos que se le pasan — así cada prueba controla con precisión qué
+// transición "gana" y cuál no, en vez de depender de una semilla y confiar en que le toque bien.
+function fakeRng(sequence) {
+    let i = 0;
+    return () => sequence[i++ % sequence.length];
+}
+
+test('sampleActivatedTransitions: rng por debajo de la probabilidad -> se activa', () => {
+    const transitions = [
+        { state: 'b', probability: 0.5 },
+        { state: 'c', probability: 0.5 },
+    ];
+    // 0.1 < 0.5 (se activa) y 0.9 no < 0.5 (no se activa) — una de cada.
+    const activated = sampleActivatedTransitions(transitions, fakeRng([0.1, 0.9]));
+    assert.deepStrictEqual(activated, ['b']);
+});
+
+test('sampleActivatedTransitions: no son mutuamente excluyentes, pueden activarse varias a la vez', () => {
+    const transitions = [
+        { state: 'interrupcion-operativa', probability: 0.6 },
+        { state: 'dano-reputacional', probability: 0.6 },
+    ];
+    const activated = sampleActivatedTransitions(transitions, fakeRng([0.1, 0.1]));
+    assert.deepStrictEqual(activated, ['interrupcion-operativa', 'dano-reputacional']);
+});
+
+test('sampleActivatedTransitions: sin transiciones (estado hoja) no revienta, devuelve vacío', () => {
+    assert.deepStrictEqual(sampleActivatedTransitions([], fakeRng([0])), []);
+    assert.deepStrictEqual(sampleActivatedTransitions(undefined, fakeRng([0])), []);
+});
+
+test('walkMarkovChain: baja en cascada mientras cada transición se dispare', () => {
+    // incendio -> interrupcion -> perdida-clientes (cadena de 3, ver el ejemplo de la
+    // conversación) — rng siempre 0.1 hace que CUALQUIER probabilidad > 0.1 se dispare.
+    const graph = {
+        incendio: [{ state: 'interrupcion', probability: 0.4 }],
+        interrupcion: [{ state: 'perdida-clientes', probability: 0.4 }],
+        'perdida-clientes': [],
+    };
+    const activated = walkMarkovChain('incendio', (s) => graph[s], fakeRng([0.1]));
+    assert.deepStrictEqual(activated, ['incendio', 'interrupcion', 'perdida-clientes']);
+});
+
+test('walkMarkovChain: si una transición no se dispara, la cadena se corta ahí (no sigue de largo)', () => {
+    const graph = {
+        incendio: [{ state: 'interrupcion', probability: 0.4 }],
+        interrupcion: [{ state: 'perdida-clientes', probability: 0.4 }],
+        'perdida-clientes': [],
+    };
+    // 0.1 (sí dispara incendio->interrupcion) seguido de 0.9 (NO dispara interrupcion->perdida)
+    const activated = walkMarkovChain('incendio', (s) => graph[s], fakeRng([0.1, 0.9]));
+    assert.deepStrictEqual(activated, ['incendio', 'interrupcion']);
+});
+
+test('walkMarkovChain: un padre con varios hijos puede activar más de uno en la misma corrida', () => {
+    const graph = {
+        incendio: [
+            { state: 'interrupcion-operativa', probability: 0.5 },
+            { state: 'dano-reputacional', probability: 0.5 },
+        ],
+        'interrupcion-operativa': [],
+        'dano-reputacional': [],
+    };
+    const activated = walkMarkovChain('incendio', (s) => graph[s], fakeRng([0.1]));
+    assert.deepStrictEqual(activated, ['incendio', 'interrupcion-operativa', 'dano-reputacional']);
+});
+
+test('walkMarkovChain: un ciclo en el grafo (A -> B -> A) no cuelga la función, cada estado se activa una sola vez', () => {
+    const graph = {
+        a: [{ state: 'b', probability: 1 }],
+        b: [{ state: 'a', probability: 1 }],
+    };
+    // rng siempre 0 -> todas las transiciones se disparan siempre; si no hubiera protección
+    // contra ciclos, esto correría para siempre en vez de terminar.
+    const activated = walkMarkovChain('a', (s) => graph[s], fakeRng([0]));
+    assert.deepStrictEqual(activated, ['a', 'b']);
+});
+
+test('walkMarkovChain: es reproducible con la misma semilla (mulberry32), igual que el resto del motor', () => {
+    const graph = {
+        incendio: [
+            { state: 'interrupcion-operativa', probability: 0.5 },
+            { state: 'dano-reputacional', probability: 0.3 },
+        ],
+        'interrupcion-operativa': [{ state: 'perdida-clientes', probability: 0.4 }],
+        'dano-reputacional': [],
+        'perdida-clientes': [],
+    };
+    const runA = walkMarkovChain('incendio', (s) => graph[s], mulberry32(7));
+    const runB = walkMarkovChain('incendio', (s) => graph[s], mulberry32(7));
+    assert.deepStrictEqual(runA, runB);
 });
 
 test('pearsonCorrelation detecta una correlación perfecta', () => {
