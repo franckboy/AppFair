@@ -235,6 +235,17 @@ export const FairRegister = {
         };
         const evitar = existingEntry?.evitar || { cost: 0, reliability: 'alta', delayDays: 0 };
         const aceptarJustificacion = existingEntry?.aceptarJustificacion || null;
+        // Gobernanza/Revisión y Plan de Seguridad tampoco se editan ya en el wizard — viven en su
+        // propia página (ver App.RiskManagement). Mismo criterio que mitigar/transferir/evitar de
+        // arriba: se conservan tal cual si ya existían, o quedan en su valor por defecto (el mismo
+        // que antes precargaba el wizard) si es un riesgo nuevo — el usuario los ajusta después
+        // desde Gestión de Riesgos, sin necesidad de volver a simular.
+        const owner = existingEntry?.owner || App.OrgDefaults.defaults.owner || '—';
+        const reviewDate = existingEntry?.reviewDate || null;
+        const assessor = existingEntry?.assessor || null;
+        const assessmentDate = existingEntry?.assessmentDate || null;
+        const assessmentLocation = existingEntry?.assessmentLocation || null;
+        const securityPlan = existingEntry?.securityPlan || '—';
         const attackerProfile = state.quick.attackerProfiles[state.fair.attackerKey] || {};
         const defenseProfile = state.quick.defenseProfiles[state.fair.defenseKey] || {};
         const chart = state.fair.fairResultsChart;
@@ -255,7 +266,7 @@ export const FairRegister = {
                     // referencian a cada activo (ver linkedRisksFor). null si el riesgo no se
                     // armó eligiendo un activo del catálogo (ej. "Activo Afectado" escrito a mano).
                     assetId: state.quick.selectedAssetRef ? state.quick.selectedAssetRef.id : null,
-                    owner: document.getElementById('fair-owner').value.trim() || '—',
+                    owner,
                     ale: summary.average,
                     cvar95: summary.cvar95,
                     median: summary.median,
@@ -274,7 +285,7 @@ export const FairRegister = {
                     probExceedance: summary.probExceedance,
                     sensitivity: (state.fair.lastSensitivity || []).slice(0, 5),
                     currency,
-                    securityPlan: document.getElementById('fair-security-plan').value.trim() || '—',
+                    securityPlan,
                     tef: readRange('tef'),
                     vuln: readRange('vuln'),
                     lossMagnitudes,
@@ -295,13 +306,13 @@ export const FairRegister = {
                     threat: document.getElementById('fair-threat').value.trim() || '—',
                     effect: document.getElementById('fair-effect').value,
                     timeHorizon: document.getElementById('fair-time-horizon').value,
-                    reviewDate: document.getElementById('fair-review-date').value || null,
+                    reviewDate,
                     dataSource: document.getElementById('fair-data-source').value,
                     dataConfidence: document.getElementById('fair-data-confidence').value,
                     dataNotes: document.getElementById('fair-data-notes').value.trim() || null,
-                    assessor: document.getElementById('fair-assessor').value.trim() || null,
-                    assessmentDate: document.getElementById('fair-assessment-date').value || null,
-                    assessmentLocation: document.getElementById('fair-assessment-location').value.trim() || null,
+                    assessor,
+                    assessmentDate,
+                    assessmentLocation,
                     attackerProfileName: attackerProfile.name || null,
                     attackerScore: state.fair.attackerScore || null,
                     defenseProfileName: defenseProfile.name || null,

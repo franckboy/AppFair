@@ -57,6 +57,12 @@ export const state = {
         // función; se reemplaza por la respuesta del backend después de cada guardado.
         currentEntry: null,
     },
+    // Gestión de Riesgos (Gobernanza/Revisión + Plan de Seguridad) — página aparte (ver
+    // App.RiskManagement), mismo criterio que treatment de arriba: separada del wizard porque
+    // estos datos se actualizan durante toda la vida del riesgo, no solo al simular.
+    riskManagement: {
+        currentEntry: null,
+    },
     fair: {
         fairResultsChart: null,
         simulatedALE: 0,
