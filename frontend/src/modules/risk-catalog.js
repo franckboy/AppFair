@@ -18,7 +18,15 @@ export const RiskCatalog = {
         if (btn) btn.addEventListener('click', () => this.openPicker('fair-riskName', 'fair-riskDescription'));
     },
 
-    openPicker(nameFieldId = 'fair-riskName', descFieldId = 'fair-riskDescription') {
+    // { onSelect, onCancel }: modo alternativo para llamadores cuyos campos de nombre/
+    // descripción viven DENTRO de otro modal (ver App.RiskCascadeTree.openCreateChildModal) —
+    // el picker reemplaza Modal.body/footer por completo, así que un nameFieldId/descFieldId
+    // que esté adentro de ese mismo modal ya no existe en el DOM cuando toca escribirle el
+    // valor elegido. Con el callback, quien llama decide qué hacer con el riesgo elegido (o con
+    // la cancelación) en vez de que este método escriba directo por id. Sin ellos, se comporta
+    // exactamente igual que siempre (útil para fair-riskName/fair-riskDescription, que viven
+    // fuera del modal, en el Paso 1 del wizard).
+    openPicker(nameFieldId = 'fair-riskName', descFieldId = 'fair-riskDescription', { onSelect, onCancel } = {}) {
         const catalog = state.quick.riskCatalog || {};
         const domainKeys = Object.keys(catalog);
         if (domainKeys.length === 0) {
@@ -103,13 +111,23 @@ export const RiskCatalog = {
         threatSelect.addEventListener('change', updateInfo);
         populateCategories();
 
-        document.getElementById('riskcat-cancel-btn').addEventListener('click', () => Modal.hide());
+        document.getElementById('riskcat-cancel-btn').addEventListener('click', () => {
+            if (onCancel) {
+                onCancel();
+            } else {
+                Modal.hide();
+            }
+        });
         document.getElementById('riskcat-use-btn').addEventListener('click', () => {
             const threat = currentThreat();
             if (!threat) return;
             const category = currentCategories()[categorySelect.value];
-            this.useSelected(threat, nameFieldId, descFieldId, category);
-            Modal.hide();
+            if (onSelect) {
+                onSelect(threat, category);
+            } else {
+                this.useSelected(threat, nameFieldId, descFieldId, category);
+                Modal.hide();
+            }
         });
     },
 
