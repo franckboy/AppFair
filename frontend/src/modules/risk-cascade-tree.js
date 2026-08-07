@@ -254,29 +254,48 @@ export const RiskCascadeTree = {
             // diferencia de fair-riskName en el Paso 1, que vive FUERA del modal). Por eso se usa
             // el modo callback de openPicker: reabrimos "Crear riesgo desencadenado" desde cero y
             // ahí sí volvemos a rellenar todo, incluyendo lo que ya tenía Tipo/Probabilidad.
-            const previousName = document.getElementById('tree-child-name').value;
+            const nameInput = document.getElementById('tree-child-name');
+            const previousName = nameInput.value;
             const previousDescription = document.getElementById('tree-child-description').value;
             const previousType = document.getElementById('tree-child-type').value;
             const previousProbability = document.getElementById('tree-child-probability').value;
-            const reopenWith = (name, description) => {
+            // catalogStandard/catalogCode del threat elegido (si se eligió alguno) viajan en el
+            // dataset de tree-child-name en vez de en una variable — este handler se vuelve a
+            // registrar desde cero cada vez que reopenWith llama a openCreateChildModal, así que
+            // una variable normal no sobreviviría a un segundo viaje por el catálogo.
+            const previousCatalogStandard = nameInput.dataset.catalogStandard || '';
+            const previousCatalogCode = nameInput.dataset.catalogCode || '';
+            const reopenWith = (name, description, catalogStandard, catalogCode) => {
                 this.openCreateChildModal(parentRiskName);
-                document.getElementById('tree-child-name').value = name;
+                const newNameInput = document.getElementById('tree-child-name');
+                newNameInput.value = name;
+                newNameInput.dataset.catalogStandard = catalogStandard || '';
+                newNameInput.dataset.catalogCode = catalogCode || '';
                 document.getElementById('tree-child-description').value = description;
                 document.getElementById('tree-child-type').value = previousType;
                 document.getElementById('tree-child-probability').value = previousProbability;
             };
             App.RiskCatalog.openPicker('tree-child-name', 'tree-child-description', {
                 onSelect: (threat) =>
-                    reopenWith(threat.name, previousDescription.trim() ? previousDescription : threat.description),
-                onCancel: () => reopenWith(previousName, previousDescription),
+                    reopenWith(
+                        threat.name,
+                        previousDescription.trim() ? previousDescription : threat.description,
+                        threat.standard,
+                        threat.code,
+                    ),
+                onCancel: () =>
+                    reopenWith(previousName, previousDescription, previousCatalogStandard, previousCatalogCode),
             });
         });
         document.getElementById('tree-create-child-cancel-btn').addEventListener('click', () => Modal.hide());
         document.getElementById('tree-create-child-save-btn').addEventListener('click', async (e) => {
-            const name = document.getElementById('tree-child-name').value.trim();
+            const nameInput = document.getElementById('tree-child-name');
+            const name = nameInput.value.trim();
             const description = document.getElementById('tree-child-description').value.trim();
             const riskType = document.getElementById('tree-child-type').value;
             const probability = getSafeNumber(document.getElementById('tree-child-probability'));
+            const catalogStandard = nameInput.dataset.catalogStandard || null;
+            const catalogCode = nameInput.dataset.catalogCode || null;
             const errorEl = document.getElementById('tree-create-child-error');
 
             if (!name) {
@@ -303,6 +322,8 @@ export const RiskCascadeTree = {
                         description: description || null,
                         triggeredByRiskName: parentRiskName,
                         triggeredByProbability: probability,
+                        catalogStandard,
+                        catalogCode,
                     },
                 });
                 Modal.hide();
