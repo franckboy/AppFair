@@ -39,7 +39,7 @@ export const Criteria = {
                 </div>
             </div>
             <h4 class="font-semibold text-gray-700 mb-2">Pérdida Anual Esperada (ALE) — Análisis FAIR</h4>
-            <p class="description-text mb-2">Aún no se usan para clasificar automáticamente los resultados de FAIR (eso viene en el siguiente paso), pero ya quedan guardados.</p>
+            <p class="description-text mb-2">Aceptable/Crítico clasifican "Evaluación" y "Riesgo Inherente/Residual" de cada riesgo (Bajo/Medio/Alto/Crítico) — el Umbral de excedencia define la Probabilidad (eje Y) de la Matriz de Riesgos.</p>
             <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div class="input-group">
                     <label for="crit-ale-aceptable">ALE Aceptable (hasta):</label>
