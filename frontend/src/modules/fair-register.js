@@ -252,6 +252,10 @@ export const FairRegister = {
         };
         const evitar = existingEntry?.evitar || { cost: 0, reliability: 'alta', delayDays: 0 };
         const aceptarJustificacion = existingEntry?.aceptarJustificacion || null;
+        // Decisión de tratamiento (ver App.Treatment.adoptStrategy) — mismo criterio que
+        // mitigar/transferir/evitar de arriba: sin conservarla aquí, volver a simular un riesgo
+        // ya tratado la borraría en silencio en cuanto se guardara de nuevo.
+        const treatmentDecision = existingEntry?.treatmentDecision || null;
         // Gobernanza/Revisión y Plan de Seguridad tampoco se editan ya en el wizard — viven en su
         // propia página (ver App.RiskManagement). Mismo criterio que mitigar/transferir/evitar de
         // arriba: se conservan tal cual si ya existían, o quedan en su valor por defecto (el mismo
@@ -366,6 +370,7 @@ export const FairRegister = {
                     transferir,
                     evitar,
                     aceptarJustificacion,
+                    treatmentDecision,
                     chartLabels: chart ? chart.data.labels : null,
                     chartData: chart ? chart.data.datasets[0].data : null,
                 },

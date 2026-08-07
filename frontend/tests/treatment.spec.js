@@ -187,4 +187,83 @@ test.describe('Tratamiento del Riesgo (página aparte)', () => {
         entry = register.risks.find((r) => r.riskName === 'E2E Tratamiento — Controles');
         expect(entry.mitigar.controls).toEqual([]);
     });
+
+    test('"Adoptar esta estrategia" persiste la Decisión de Tratamiento y sobrevive a re-simular el mismo riesgo', async ({
+        page,
+    }) => {
+        await connectAndBoot(page);
+        await runFullFairAnalysis(page, 'E2E Tratamiento — Decisión');
+
+        await page.click('#nav-treatment');
+        await page.waitForTimeout(500);
+        await page.selectOption('#treatment-risk-select', 'E2E Tratamiento — Decisión');
+        await page.waitForTimeout(500);
+
+        // Sin decisión: los 4 botones "Adoptar" visibles, ningún badge, sin banner.
+        await expect(page.locator('#treatment-adopt-mitigar-btn')).toBeVisible();
+        await expect(page.locator('#treatment-decision-summary')).toBeHidden();
+
+        await page.fill('#fair-costoControlAnual', '2000');
+        await page.waitForTimeout(600);
+        await page.click('#treatment-adopt-mitigar-btn');
+        await page.waitForTimeout(800);
+
+        await expect(page.locator('#treatment-adopted-mitigar-badge')).toBeVisible();
+        await expect(page.locator('#treatment-adopt-mitigar-btn')).toBeHidden();
+        await expect(page.locator('#treatment-decision-summary')).toBeVisible();
+        await expect(page.locator('#treatment-decision-summary-text')).toContainText('Mitigar');
+
+        let register = await page.evaluate(async () => {
+            const res = await fetch('http://localhost:3000/api/register', { headers: { 'X-API-Key': 'test-e2e-key' } });
+            return res.json();
+        });
+        let entry = register.risks.find((r) => r.riskName === 'E2E Tratamiento — Decisión');
+        expect(entry.treatmentDecision.strategy).toBe('mitigar');
+        expect(typeof entry.treatmentDecision.residualALE).toBe('number');
+        const originalId = entry.id;
+
+        // Regresión del fix crítico en fair-register.js: re-simular el MISMO riesgo (vía el
+        // banner de "Reanudar", igual que draft-and-resume.spec.js) no debe borrar la decisión
+        // de tratamiento ya adoptada — antes de agregar treatmentDecision a la lista de campos
+        // que saveToRiskRegister conserva de existingEntry, esto se perdía en silencio.
+        await page.reload({ waitUntil: 'networkidle' });
+        await page.waitForTimeout(1200);
+        await page.click('#fair-resume-banner-btn');
+        await page.waitForTimeout(500);
+        await Promise.all([
+            page.waitForResponse((r) => r.url().includes('/api/simulate'), { timeout: 15000 }),
+            page.click('#run-simulation-btn'),
+        ]);
+        await page.waitForTimeout(1500);
+
+        register = await page.evaluate(async () => {
+            const res = await fetch('http://localhost:3000/api/register', { headers: { 'X-API-Key': 'test-e2e-key' } });
+            return res.json();
+        });
+        entry = register.risks.find((r) => r.riskName === 'E2E Tratamiento — Decisión');
+        expect(entry.id).toBe(originalId);
+        expect(entry.treatmentDecision).not.toBe(null);
+        expect(entry.treatmentDecision.strategy).toBe('mitigar');
+
+        // Recargar Tratamiento y volver a este riesgo debe restaurar el badge/banner.
+        await page.click('#nav-treatment');
+        await page.waitForTimeout(1000);
+        await page.selectOption('#treatment-risk-select', 'E2E Tratamiento — Decisión');
+        await page.waitForTimeout(500);
+        await expect(page.locator('#treatment-adopted-mitigar-badge')).toBeVisible();
+        await expect(page.locator('#treatment-decision-summary')).toBeVisible();
+
+        // "Quitar decisión" borra la decisión y vuelve a estado sin decidir.
+        await page.click('#treatment-decision-clear-btn');
+        await page.waitForTimeout(800);
+        await expect(page.locator('#treatment-decision-summary')).toBeHidden();
+        await expect(page.locator('#treatment-adopted-mitigar-badge')).toBeHidden();
+
+        register = await page.evaluate(async () => {
+            const res = await fetch('http://localhost:3000/api/register', { headers: { 'X-API-Key': 'test-e2e-key' } });
+            return res.json();
+        });
+        entry = register.risks.find((r) => r.riskName === 'E2E Tratamiento — Decisión');
+        expect(entry.treatmentDecision).toBe(null);
+    });
 });

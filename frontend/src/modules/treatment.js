@@ -9,6 +9,18 @@ import { debounce, getSafeNumber, sanitizeHTML, showToast } from './utils.js';
 // agregada (la más débil presente), sin inventar una fórmula numérica nueva.
 const RELIABILITY_ORDER = ['baja', 'media', 'alta'];
 
+// Nombres para mostrar de cada estrategia — compartido entre la recomendación
+// (updateTreatmentView) y el resumen de la Decisión de Tratamiento adoptada
+// (renderTreatmentDecision). mitigarTransferir no es adoptable como decisión propia (ver
+// adoptStrategy) pero sí aparece como recomendación, por eso vive en el mismo mapa.
+const STRATEGY_LABELS = {
+    mitigar: 'Mitigar',
+    transferir: 'Transferir (Seguro)',
+    evitar: 'Evitar',
+    aceptar: 'Aceptar / Retener',
+    mitigarTransferir: 'Mitigar + Transferir (combinado)',
+};
+
 // ============================================================
 // App.Treatment — Tratamiento del Riesgo (ISO 31000, cláusula 6.5), en su propia página. Antes
 // vivía dentro del Paso 4 del wizard de FAIR, atado a que acabaras de correr una simulación —
@@ -84,6 +96,13 @@ export const Treatment = {
             }
             this.updateTreatmentView(true);
         });
+
+        ['mitigar', 'transferir', 'evitar', 'aceptar'].forEach((key) => {
+            document
+                .getElementById(`treatment-adopt-${key}-btn`)
+                .addEventListener('click', () => this.adoptStrategy(key));
+        });
+        document.getElementById('treatment-decision-clear-btn').addEventListener('click', () => this.clearDecision());
     },
 
     _flushPendingSaves() {
@@ -137,7 +156,11 @@ export const Treatment = {
         // edición en curso en silencio.
         this._flushPendingSaves();
         state.treatment.currentEntry = entry;
+        state.treatment.lastResult = null;
         document.getElementById('treatment-risk-select').value = riskName;
+        // Independiente de updateTreatmentView (más abajo) — el badge/banner de la decisión ya
+        // adoptada debe verse de inmediato, sin esperar a la llamada async de evaluate.
+        this.renderTreatmentDecision();
 
         const mitigar = entry.mitigar || {};
         document.getElementById('fair-costoControlAnual').value = mitigar.cost || 0;
@@ -451,6 +474,9 @@ export const Treatment = {
             showToast(err.userMessage || 'No se pudo calcular el tratamiento del riesgo.');
             return;
         }
+        // Cachea el resultado completo — adoptStrategy() lo necesita para leer el residualALE
+        // ya calculado de la estrategia elegida, sin tener que volver a pedirlo.
+        state.treatment.lastResult = result;
 
         const fiabilidadLabel = { alta: 'Alta', media: 'Media', baja: 'Baja' };
 
@@ -482,12 +508,6 @@ export const Treatment = {
 
         const recEl = document.getElementById('fair-treatment-recommendation');
         const rec = result.recommendation;
-        const stratNames = {
-            mitigar: 'Mitigar',
-            transferir: 'Transferir (Seguro)',
-            evitar: 'Evitar',
-            mitigarTransferir: 'Mitigar + Transferir (combinado)',
-        };
         if (rec.strategy === 'aceptar') {
             recEl.innerHTML = `<p>${sanitizeHTML(rec.reason)}</p>`;
         } else {
@@ -517,7 +537,7 @@ export const Treatment = {
                     advertencia = ` <strong class="text-orange-700">Atención:</strong> el tiempo de implementación es de ${stratData.delayDays} días — el riesgo actual sigue expuesto mientras tanto.`;
                 }
             }
-            recEl.innerHTML = `<p><strong>Estrategia con mayor beneficio neto: ${stratNames[rec.strategy]}</strong> (${formatCurrency(rec.netBenefit)}/año). Fiabilidad: ${fiabilidadTexto}, Tiempo de implementación: ${stratData.delayDays} días.${advertencia} Compara igual el resto de las filas antes de decidir.</p>`;
+            recEl.innerHTML = `<p><strong>Estrategia con mayor beneficio neto: ${STRATEGY_LABELS[rec.strategy]}</strong> (${formatCurrency(rec.netBenefit)}/año). Fiabilidad: ${fiabilidadTexto}, Tiempo de implementación: ${stratData.delayDays} días.${advertencia} Compara igual el resto de las filas antes de decidir.</p>`;
         }
 
         if (save) await this.persistTreatment(entry, mitigar, transferir, evitar);
@@ -557,6 +577,83 @@ export const Treatment = {
         }
         const idx = (state.fair.riskRegister || []).findIndex((r) => r.id === entry.id);
         if (idx !== -1) state.fair.riskRegister[idx] = res.entry;
+    },
+
+    // Muestra/oculta el botón "Adoptar esta estrategia" vs. el badge "Estrategia Adoptada" en
+    // cada una de las 4 secciones, y el banner resumen — según entry.treatmentDecision. A
+    // diferencia de mitigar/transferir/evitar (los INSUMOS de las 4 hipótesis comparadas en
+    // paralelo), esto es la decisión real ya tomada, si la hay.
+    renderTreatmentDecision() {
+        const entry = state.treatment.currentEntry;
+        const decision = (entry && entry.treatmentDecision) || null;
+
+        ['mitigar', 'transferir', 'evitar', 'aceptar'].forEach((key) => {
+            const adopted = !!decision && decision.strategy === key;
+            document.getElementById(`treatment-adopt-${key}-btn`).classList.toggle('hidden', adopted);
+            document.getElementById(`treatment-adopted-${key}-badge`).classList.toggle('hidden', !adopted);
+        });
+
+        const summaryEl = document.getElementById('treatment-decision-summary');
+        if (!decision) {
+            summaryEl.classList.add('hidden');
+            return;
+        }
+        const formatCurrency = (value) =>
+            new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
+        const decidedAt = decision.decidedAt ? new Date(decision.decidedAt).toLocaleDateString('es-MX') : '—';
+        document.getElementById('treatment-decision-summary-text').textContent =
+            `Decisión de Tratamiento: ${STRATEGY_LABELS[decision.strategy]} — Residual: ${formatCurrency(decision.residualALE)} (adoptada el ${decidedAt}).`;
+        summaryEl.classList.remove('hidden');
+    },
+
+    // Adopta `strategyKey` ('mitigar'|'transferir'|'evitar'|'aceptar') como la decisión de
+    // tratamiento de este riesgo — lee el residualALE ya calculado en state.treatment.lastResult
+    // (la última corrida de /api/treatment/evaluate, ver updateTreatmentView) en vez de volver a
+    // pedirlo. mitigarTransferir queda afuera a propósito: su resultado no trae residualALE
+    // propio (solo netBenefit del árbol de decisión combinado) y no tiene su propia sección en
+    // el formulario — inventarle un residual sería una precisión no verificable.
+    async adoptStrategy(strategyKey) {
+        // Por si hay una edición reciente (costo, fiabilidad...) todavía sin persistir — no
+        // tiene sentido adoptar una decisión sobre datos que el propio Registro no refleja
+        // todavía.
+        this._flushPendingSaves();
+        const entry = state.treatment.currentEntry;
+        const result = state.treatment.lastResult;
+        if (!entry || !result || !result[strategyKey]) return;
+        await this._persistDecision(entry, {
+            strategy: strategyKey,
+            residualALE: result[strategyKey].residualALE,
+            decidedAt: new Date().toISOString(),
+        });
+        showToast(`Se adoptó "${STRATEGY_LABELS[strategyKey]}" como la decisión de tratamiento de este riesgo.`);
+    },
+
+    async clearDecision() {
+        const entry = state.treatment.currentEntry;
+        if (!entry) return;
+        await this._persistDecision(entry, null);
+        showToast('Se quitó la decisión de tratamiento — el riesgo vuelve a estar sin decidir.');
+    },
+
+    // Mismo patrón que persistTreatment: PUT reemplaza la entrada completa, así que se manda
+    // spread (...entry) y solo se pisa treatmentDecision, para no perder el resto de sus datos.
+    async _persistDecision(entry, decision) {
+        let res;
+        try {
+            res = await App.Api.request(`/api/register/${encodeURIComponent(entry.riskName)}`, {
+                method: 'PUT',
+                body: { ...entry, treatmentDecision: decision },
+            });
+        } catch (e) {
+            showToast(e.userMessage || 'No se pudo guardar la decisión de tratamiento.');
+            return;
+        }
+        if (state.treatment.currentEntry && state.treatment.currentEntry.id === entry.id) {
+            state.treatment.currentEntry = res.entry;
+        }
+        const idx = (state.fair.riskRegister || []).findIndex((r) => r.id === entry.id);
+        if (idx !== -1) state.fair.riskRegister[idx] = res.entry;
+        this.renderTreatmentDecision();
     },
 };
 
