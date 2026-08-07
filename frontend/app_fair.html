@@ -571,11 +571,12 @@
                         </div>
 
                         <h3 class="text-lg font-semibold text-gray-800 mb-2">Análisis 80-20 (Pareto)</h3>
-                        <p class="description-text mb-2">Las barras son la Pérdida Anual Esperada de cada riesgo, de mayor a menor. La línea es el % acumulado — te dice cuántos riesgos concentran el 80% de tu exposición total.</p>
+                        <p class="description-text mb-2">Las barras son la Pérdida Anual Esperada de cada riesgo, de mayor a menor (1 = mayor). La línea es el % acumulado — te dice cuántos riesgos concentran el 80% de tu exposición total. Cada número lleva su nombre en la lista de abajo.</p>
                         <div style="height: 320px; max-width: 700px; margin: 0 auto;" class="mb-2">
                             <canvas id="fair-pareto-chart"></canvas>
                         </div>
-                        <p id="fair-pareto-summary" class="description-text mb-8 font-semibold"></p>
+                        <p id="fair-pareto-summary" class="description-text mb-4 font-semibold"></p>
+                        <div id="fair-pareto-legend" class="text-sm mb-8" style="max-width: 700px; margin: 0 auto;"></div>
 
                         <h3 class="text-lg font-semibold text-gray-800 mb-2">Sensibilidad Consolidada</h3>
                         <p class="description-text mb-2">Promedio de qué tanto influye cada variable en el resultado, considerando todos los riesgos guardados.</p>

@@ -895,6 +895,19 @@ export const FairRegister = {
         document.getElementById('fair-pareto-summary').textContent =
             `${pareto.riskCountFor80Percent} de ${pareto.totalRiskCount} riesgo(s) concentran el 80% de tu exposición total (${formatCurrency(pareto.totalExposure)}/año). Prioriza el tratamiento en esos primero.`;
 
+        // Antes el eje X mostraba el nombre completo de cada riesgo, rotado 45° — con un
+        // nombre largo, la etiqueta terminaba ocupando más alto que el gráfico mismo. Ahora
+        // cada barra lleva solo su número (1 = mayor ALE, igual que el orden del Pareto) y la
+        // lista de abajo (#fair-pareto-legend) dice qué riesgo es cada uno — mismo patrón que
+        // ya usa el Mapa de Calor Consolidado. También resuelve una ambigüedad real: dos
+        // riesgos legítimamente pueden compartir nombre (ver registerIdentity.js), y con solo
+        // el nombre como etiqueta no había forma de distinguir cuál barra era cuál.
+        document.getElementById('fair-pareto-legend').innerHTML = `
+            <p class="font-semibold text-gray-700 mb-2">Riesgos en el gráfico</p>
+            <ol class="space-y-1">
+                ${pareto.risks.map((r, i) => `<li><strong>${i + 1}.</strong> ${sanitizeHTML(r.riskName)}</li>`).join('')}
+            </ol>`;
+
         const canvas = document.getElementById('fair-pareto-chart');
         if (state.fair.paretoChart) state.fair.paretoChart.destroy();
         state.fair.paretoChart = new Chart(canvas, {
@@ -903,7 +916,7 @@ export const FairRegister = {
             // justo lo que pasaba aquí.
             type: 'bar',
             data: {
-                labels: pareto.risks.map((r) => r.riskName),
+                labels: pareto.risks.map((r, i) => String(i + 1)),
                 datasets: [
                     {
                         type: 'bar',
@@ -945,9 +958,21 @@ export const FairRegister = {
                         title: { display: true, text: '% Acumulado' },
                         grid: { drawOnChartArea: false },
                     },
-                    x: { ticks: { maxRotation: 45, minRotation: 45 } },
+                    // Ya no hace falta rotar nada — la etiqueta es solo un número (ver el
+                    // comentario de arriba sobre labels/fair-pareto-legend).
+                    x: { title: { display: true, text: 'Riesgo #' } },
                 },
-                plugins: { legend: { position: 'bottom' } },
+                plugins: {
+                    legend: { position: 'bottom' },
+                    // El eje ya no muestra el nombre — se agrega como título del tooltip para no
+                    // perder esa información al pasar el mouse, aunque la lista de abajo también
+                    // la tenga siempre visible.
+                    tooltip: {
+                        callbacks: {
+                            title: (items) => pareto.risks[items[0].dataIndex].riskName,
+                        },
+                    },
+                },
             },
         });
     },
