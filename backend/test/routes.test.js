@@ -108,6 +108,14 @@ test('GET /api/config/profiles trae el Catálogo de Riesgos en 3 niveles (Domini
     }
 });
 
+test('GET /api/config/profiles trae el catálogo de normas/marcos (hazardStandards/isoProcessClauses/rimsClauses)', async () => {
+    const res = await request(app).get('/api/config/profiles').set('X-API-Key', TEST_API_KEY);
+    assert.strictEqual(res.status, 200);
+    assert.ok(res.body.hazardStandards['ISO 31000'].description.length > 0);
+    assert.ok(res.body.isoProcessClauses['6.5'].title.length > 0);
+    assert.ok(res.body.rimsClauses['5.2'].title.length > 0);
+});
+
 test('PUT /api/config/criteria rechaza bandas no crecientes con 400', async () => {
     const res = await request(app)
         .put('/api/config/criteria')

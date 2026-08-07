@@ -10,6 +10,7 @@ const {
     lossFormsLabels,
     defaultRiskCriteria,
 } = require('../data/profiles');
+const { hazardStandards, isoProcessClauses, rimsClauses } = require('../data/standardsReference');
 const { normalizeRiskCriteria } = require('../lib/riskCriteria');
 const { asyncHandler } = require('../middleware/asyncHandler');
 
@@ -18,7 +19,20 @@ function createConfigRouter(store) {
 
     // --- Perfiles y catálogos (de solo lectura, vienen del código, no de la base) ---
     router.get('/profiles', (req, res) => {
-        res.json({ attackerProfiles, defenseProfiles, riskProfiles, riskCatalog, lossFormsKeys, lossFormsLabels });
+        res.json({
+            attackerProfiles,
+            defenseProfiles,
+            riskProfiles,
+            riskCatalog,
+            lossFormsKeys,
+            lossFormsLabels,
+            // Catálogo de normas/marcos (ver data/standardsReference.js) — base para mostrar,
+            // en la ficha de un riesgo, contra qué norma/punto del proceso se sustenta (todavía
+            // sin conectar a ninguna tarjeta, ver esa conversación).
+            hazardStandards,
+            isoProcessClauses,
+            rimsClauses,
+        });
     });
 
     // --- Criterios de Riesgo (Contexto — ISO 31000, 6.3.4) ---
