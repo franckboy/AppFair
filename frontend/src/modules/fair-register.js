@@ -263,6 +263,12 @@ export const FairRegister = {
         const assessmentDate = existingEntry?.assessmentDate || null;
         const assessmentLocation = existingEntry?.assessmentLocation || null;
         const securityPlan = existingEntry?.securityPlan || '—';
+        // Probabilidad condicional de la flecha padre→este riesgo (Árbol de Riesgos en Cascada,
+        // ver App.RiskCascadeTree.openCreateChildModal) — el wizard no tiene ningún campo para
+        // editarla, así que sin conservarla aquí se perdería en silencio justo al completar el
+        // análisis FAIR de un riesgo hijo creado con el botón "+" (exactamente el momento en que
+        // runFamilyCascadeSimulation, en el backend, empieza a necesitarla).
+        const triggeredByProbability = existingEntry?.triggeredByProbability ?? null;
         const attackerProfile = state.quick.attackerProfiles[state.fair.attackerKey] || {};
         const defenseProfile = state.quick.defenseProfiles[state.fair.defenseKey] || {};
         const chart = state.fair.fairResultsChart;
@@ -319,6 +325,7 @@ export const FairRegister = {
                     // Riesgo en cascada (Paso 1, "Riesgo Desencadenante") — solo organizativo
                     // por ahora, ver el campo en el HTML para el detalle.
                     triggeredByRiskName: document.getElementById('fair-triggered-by').value || null,
+                    triggeredByProbability,
                     description: document.getElementById('fair-riskDescription').value.trim() || null,
                     // A partir de aquí: campos que antes solo vivían en este formulario (o en
                     // el Reporte individual, leídos directo del DOM) — se guardan para que el

@@ -496,6 +496,105 @@ test('PUT /api/register/:riskName rechaza triggeredByProbability fuera de 0-100 
     assert.strictEqual(res.status, 400);
 });
 
+// --- POST /api/cascade/:riskName/simulate-family ("Simular Familia" — conecta markov.js) ---
+
+async function putAnalyzedRisk(riskName, overrides = {}) {
+    return request(app)
+        .put(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            ale: 1000,
+            cvar95: 2000,
+            riskType: 'amenaza',
+            tef: { min: 5, mode: 8, max: 12 },
+            vuln: { min: 40, mode: 50, max: 60 },
+            lossMagnitudes: { productividad: { min: 20000, mode: 30000, max: 50000 } },
+            ...overrides,
+        });
+}
+
+test('POST /api/cascade/:riskName/simulate-family simula la familia correlacionada (raíz + hijo forzado)', async () => {
+    const rootName = 'Incendio Cascada HTTP';
+    const childName = 'Interrupcion Cascada HTTP';
+    await putAnalyzedRisk(rootName);
+    await putAnalyzedRisk(childName, {
+        triggeredByRiskName: rootName,
+        triggeredByProbability: 100, // se activa siempre, para que la prueba sea determinista
+        lossMagnitudes: { productividad: { min: 10000, mode: 15000, max: 25000 } },
+    });
+
+    const res = await request(app)
+        .post(`/api/cascade/${encodeURIComponent(rootName)}/simulate-family`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ iterations: 500, seed: 123 });
+
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.familySize, 2);
+    assert.deepStrictEqual([...res.body.includedRiskNames].sort(), [childName, rootName].sort());
+    assert.strictEqual(res.body.activationRates[rootName], 100);
+    assert.strictEqual(res.body.activationRates[childName], 100);
+    assert.ok(res.body.summary.average > 0);
+    assert.ok(res.body.evaluation && res.body.evaluation.level);
+    assert.strictEqual(res.body.annualLosses.length, 500);
+
+    await request(app)
+        .delete(`/api/register/${encodeURIComponent(rootName)}`)
+        .set('X-API-Key', TEST_API_KEY);
+    await request(app)
+        .delete(`/api/register/${encodeURIComponent(childName)}`)
+        .set('X-API-Key', TEST_API_KEY);
+});
+
+test('POST /api/cascade/:riskName/simulate-family excluye un hijo "Sin analizar" pero no rompe la simulación', async () => {
+    const rootName = 'Incendio Cascada Stub HTTP';
+    const stubChildName = 'Dano Sin Analizar HTTP';
+    await putAnalyzedRisk(rootName);
+    await request(app)
+        .put(`/api/register/${encodeURIComponent(stubChildName)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ale: 0, cvar95: 0, triggeredByRiskName: rootName, triggeredByProbability: 50 });
+
+    const res = await request(app)
+        .post(`/api/cascade/${encodeURIComponent(rootName)}/simulate-family`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ iterations: 200, seed: 5 });
+
+    assert.strictEqual(res.status, 200);
+    assert.deepStrictEqual(res.body.includedRiskNames, [rootName]);
+    assert.strictEqual(res.body.excludedRiskNames.length, 1);
+    assert.strictEqual(res.body.excludedRiskNames[0].riskName, stubChildName);
+
+    await request(app)
+        .delete(`/api/register/${encodeURIComponent(rootName)}`)
+        .set('X-API-Key', TEST_API_KEY);
+    await request(app)
+        .delete(`/api/register/${encodeURIComponent(stubChildName)}`)
+        .set('X-API-Key', TEST_API_KEY);
+});
+
+test('POST /api/cascade/:riskName/simulate-family responde 404 si la raíz no existe en el Registro', async () => {
+    const res = await request(app)
+        .post(`/api/cascade/${encodeURIComponent('Riesgo Que No Existe HTTP')}/simulate-family`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ iterations: 100 });
+    assert.strictEqual(res.status, 404);
+});
+
+test('POST /api/cascade/:riskName/simulate-family rechaza iterations inválidas con 400', async () => {
+    const rootName = 'Incendio Cascada Validacion HTTP';
+    await putAnalyzedRisk(rootName);
+
+    const res = await request(app)
+        .post(`/api/cascade/${encodeURIComponent(rootName)}/simulate-family`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ iterations: -5 });
+    assert.strictEqual(res.status, 400);
+
+    await request(app)
+        .delete(`/api/register/${encodeURIComponent(rootName)}`)
+        .set('X-API-Key', TEST_API_KEY);
+});
+
 test('PUT /api/register/:riskName rechaza un riskCriteriaOverride fuera de rango con 400', async () => {
     const res = await request(app)
         .put(`/api/register/${encodeURIComponent('Riesgo override inválido HTTP')}`)

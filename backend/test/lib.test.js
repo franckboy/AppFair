@@ -25,6 +25,7 @@ const { evaluateFairThreat } = require('../src/lib/evaluation');
 const { normalizeRiskCriteria, validateRiskCriteriaOverride } = require('../src/lib/riskCriteria');
 const { calculateParetoAnalysis } = require('../src/lib/register');
 const { sampleActivatedTransitions, walkMarkovChain } = require('../src/lib/markov');
+const { buildFamilySubtree, runFamilyCascadeSimulation, MAX_FAMILY_SIZE } = require('../src/lib/cascadeSimulation');
 const {
     cptKey,
     sampleFromDistribution,
@@ -141,6 +142,145 @@ test('walkMarkovChain: es reproducible con la misma semilla (mulberry32), igual 
     const runA = walkMarkovChain('incendio', (s) => graph[s], mulberry32(7));
     const runB = walkMarkovChain('incendio', (s) => graph[s], mulberry32(7));
     assert.deepStrictEqual(runA, runB);
+});
+
+// --- cascadeSimulation.js (motor de "Simular Familia" — conecta markov.js + simulation.js) ---
+function makeCascadeFamily() {
+    const incendio = {
+        riskName: 'Incendio',
+        riskType: 'amenaza',
+        tef: { min: 5, mode: 8, max: 12 },
+        vuln: { min: 40, mode: 50, max: 60 },
+        lossMagnitudes: { productividad: { min: 20000, mode: 30000, max: 50000 } },
+    };
+    const interrupcion = {
+        riskName: 'Interrupcion',
+        riskType: 'amenaza',
+        triggeredByRiskName: 'Incendio',
+        triggeredByProbability: 100, // fuerza la cascada en TODAS las iteraciones
+        tef: { min: 1, mode: 2, max: 3 },
+        vuln: { min: 30, mode: 40, max: 50 },
+        lossMagnitudes: { productividad: { min: 10000, mode: 15000, max: 25000 } },
+    };
+    const danoReputacional = {
+        riskName: 'DanoReputacional',
+        riskType: 'amenaza',
+        triggeredByRiskName: 'Incendio',
+        triggeredByProbability: 50,
+        // Sin tef/vuln/lossMagnitudes — "Sin analizar" (creado con el botón "+").
+    };
+    const ahorroEnSeguro = {
+        riskName: 'Ahorro',
+        riskType: 'oportunidad',
+        triggeredByRiskName: 'Incendio',
+        triggeredByProbability: 50,
+        tef: { min: 1, mode: 2, max: 3 },
+        vuln: { min: 30, mode: 40, max: 50 },
+        lossMagnitudes: { productividad: { min: 5000, mode: 8000, max: 12000 } },
+    };
+    return [incendio, interrupcion, danoReputacional, ahorroEnSeguro];
+}
+
+test('buildFamilySubtree: arma el subárbol completo que cuelga de la raíz vía triggeredByRiskName', () => {
+    const { order, childrenOf } = buildFamilySubtree('Incendio', makeCascadeFamily());
+    assert.deepStrictEqual([...order].sort(), ['Ahorro', 'DanoReputacional', 'Incendio', 'Interrupcion'].sort());
+    assert.deepStrictEqual(
+        [...(childrenOf.get('Incendio') || [])].sort(),
+        ['Ahorro', 'DanoReputacional', 'Interrupcion'].sort(),
+    );
+});
+
+test('buildFamilySubtree: un ciclo (A desencadena B, B desencadena A) no cuelga la función', () => {
+    const register = [
+        { riskName: 'A', triggeredByRiskName: 'B' },
+        { riskName: 'B', triggeredByRiskName: 'A' },
+    ];
+    const { order } = buildFamilySubtree('A', register);
+    assert.deepStrictEqual([...order].sort(), ['A', 'B']);
+});
+
+test('runFamilyCascadeSimulation: separa correctamente analizados (incluidos) de excluidos (sin analizar / oportunidad)', () => {
+    const result = runFamilyCascadeSimulation({
+        rootRiskName: 'Incendio',
+        register: makeCascadeFamily(),
+        iterations: 500,
+        seed: 123,
+    });
+    assert.deepStrictEqual([...result.includedRiskNames].sort(), ['Incendio', 'Interrupcion']);
+    const excludedNames = result.excludedRiskNames.map((e) => e.riskName).sort();
+    assert.deepStrictEqual(excludedNames, ['Ahorro', 'DanoReputacional']);
+    assert.match(result.excludedRiskNames.find((e) => e.riskName === 'DanoReputacional').reason, /sin analizar/i);
+    assert.match(result.excludedRiskNames.find((e) => e.riskName === 'Ahorro').reason, /oportunidad/i);
+});
+
+test('runFamilyCascadeSimulation: la raíz siempre se activa (100%), y un hijo con triggeredByProbability=100 también', () => {
+    const result = runFamilyCascadeSimulation({
+        rootRiskName: 'Incendio',
+        register: makeCascadeFamily(),
+        iterations: 500,
+        seed: 123,
+    });
+    assert.strictEqual(result.activationRates['Incendio'], 100);
+    assert.strictEqual(result.activationRates['Interrupcion'], 100);
+});
+
+test('runFamilyCascadeSimulation: la pérdida de familia (raíz + hijo forzado) es mayor, en promedio, que la de la raíz sola', () => {
+    const family = runFamilyCascadeSimulation({
+        rootRiskName: 'Incendio',
+        register: makeCascadeFamily(),
+        iterations: 3000,
+        seed: 123,
+    });
+    const solo = runMonteCarloSimulation({
+        iterations: 3000,
+        seed: 123,
+        tef: { min: 5, mode: 8, max: 12 },
+        vuln: { min: 40, mode: 50, max: 60 },
+        lossMagnitudes: { productividad: { min: 20000, mode: 30000, max: 50000 } },
+    });
+    const avg = (arr) => arr.reduce((a, b) => a + b, 0) / arr.length;
+    assert.ok(
+        avg(family.familyAnnualLosses) > avg(solo.annualLosses),
+        `familia (${avg(family.familyAnnualLosses)}) debería superar a la raíz sola (${avg(solo.annualLosses)}) — el hijo se activa siempre`,
+    );
+});
+
+test('runFamilyCascadeSimulation: es reproducible con la misma semilla', () => {
+    const runA = runFamilyCascadeSimulation({
+        rootRiskName: 'Incendio',
+        register: makeCascadeFamily(),
+        iterations: 500,
+        seed: 777,
+    });
+    const runB = runFamilyCascadeSimulation({
+        rootRiskName: 'Incendio',
+        register: makeCascadeFamily(),
+        iterations: 500,
+        seed: 777,
+    });
+    assert.deepStrictEqual(runA.familyAnnualLosses, runB.familyAnnualLosses);
+});
+
+test('runFamilyCascadeSimulation: un riesgo sin hijos se simula igual (familia = el riesgo solo)', () => {
+    const result = runFamilyCascadeSimulation({
+        rootRiskName: 'Interrupcion',
+        register: makeCascadeFamily(),
+        iterations: 200,
+        seed: 42,
+    });
+    assert.deepStrictEqual(result.includedRiskNames, ['Interrupcion']);
+    assert.strictEqual(result.familySize, 1);
+});
+
+test('runFamilyCascadeSimulation: una familia de más de MAX_FAMILY_SIZE riesgos revienta con error explícito (FAMILY_TOO_LARGE)', () => {
+    const register = [{ riskName: 'raiz-0' }];
+    for (let i = 1; i <= MAX_FAMILY_SIZE + 5; i++) {
+        register.push({ riskName: `raiz-${i}`, triggeredByRiskName: `raiz-${i - 1}` });
+    }
+    assert.throws(
+        () => runFamilyCascadeSimulation({ rootRiskName: 'raiz-0', register, iterations: 10, seed: 1 }),
+        (err) => err.code === 'FAMILY_TOO_LARGE',
+    );
 });
 
 // --- bayesianNetwork.js (motor todavía sin conectar a ningún endpoint, ver el comentario del

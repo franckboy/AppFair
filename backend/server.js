@@ -15,6 +15,7 @@ const createTreatmentRouter = require('./src/routes/treatment');
 const createRegisterRouter = require('./src/routes/register');
 const createAssetsRouter = require('./src/routes/assets');
 const createRisksRouter = require('./src/routes/risks');
+const createCascadeRouter = require('./src/routes/cascade');
 
 const app = express();
 // Con DATABASE_URL configurada usa Postgres (persiste entre redeploys); si no, un archivo
@@ -95,6 +96,7 @@ app.use('/api/treatment', createTreatmentRouter());
 app.use('/api/register', createRegisterRouter(store));
 app.use('/api/assets', createAssetsRouter(store));
 app.use('/api/risks', createRisksRouter(store));
+app.use('/api/cascade', createCascadeRouter(store));
 
 // Manejador de errores genérico — evita que una excepción no controlada tumbe el proceso
 app.use((err, req, res, next) => {
