@@ -22,13 +22,40 @@ const formatAle = (value) =>
           }).format(value)
         : '—';
 
+// Zoom con botones sobre el árbol ya existente (ver .risk-tree-zoom-wrap en tailwind-input.css)
+// — el pellizco de dos dedos en móvil ya lo da el navegador gratis (el <meta name="viewport">
+// de la app no lo bloquea), esto es solo para desktop/cuando el gesto no es cómodo. Puro
+// transform: scale() sobre el wrapper, sin ninguna librería de canvas/pan-zoom: el árbol sigue
+// siendo el mismo <ul>/<li> con conectores CSS de siempre, solo que ahora vive en un visor con
+// su propio alto y scroll (ver .risk-tree-viewport) en vez de mezclado en el flujo de la página.
+const ZOOM_MIN = 0.5;
+const ZOOM_MAX = 1.5;
+const ZOOM_STEP = 0.1;
+
 export const RiskCascadeTree = {
+    _zoom: 1,
+
     init() {
-        // Nada que enganchar al arrancar — App.Navigation dispara load() al entrar a la
-        // página (mismo patrón que Registro/Catálogo de Activos).
+        document
+            .getElementById('risk-tree-zoom-in-btn')
+            .addEventListener('click', () => this.setZoom(this._zoom + ZOOM_STEP));
+        document
+            .getElementById('risk-tree-zoom-out-btn')
+            .addEventListener('click', () => this.setZoom(this._zoom - ZOOM_STEP));
+        document.getElementById('risk-tree-zoom-reset-btn').addEventListener('click', () => this.setZoom(1));
     },
 
+    setZoom(value) {
+        this._zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, value));
+        document.getElementById('risk-cascade-tree-zoom-wrap').style.transform = `scale(${this._zoom})`;
+        document.getElementById('risk-tree-zoom-reset-btn').textContent = `${Math.round(this._zoom * 100)}%`;
+    },
+
+    // El zoom se reinicia a 100% cada vez que se entra a la página — un valor que quedó de la
+    // visita anterior (ej. muy alejado) haría que el árbol se viera vacío/roto al volver, sin
+    // ninguna pista de por qué.
     async load() {
+        this.setZoom(1);
         await App.FairRegister.loadRiskRegister(false);
         this.render();
     },
