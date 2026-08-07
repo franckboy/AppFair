@@ -457,8 +457,16 @@ export const RiskCascadeTree = {
         return `
             <div class="mt-3 pt-3 border-t border-gray-200">
                 <p class="text-sm font-semibold text-gray-700 mb-1">Marco Normativo</p>
-                ${standardChips ? `<div class="mb-2">${standardChips}</div>` : ''}
-                ${clauseChips ? `<div>${clauseChips}</div>` : ''}
+                ${
+                    standardChips
+                        ? `<p class="marco-normativo-group-label">Norma de la amenaza:</p><div class="mb-2">${standardChips}</div>`
+                        : ''
+                }
+                ${
+                    clauseChips
+                        ? `<p class="marco-normativo-group-label">ISO 31000 — Proceso de gestión de riesgos (cláusula 6):</p><div>${clauseChips}</div>`
+                        : ''
+                }
             </div>`;
     },
 
