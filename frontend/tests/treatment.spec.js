@@ -102,4 +102,89 @@ test.describe('Tratamiento del Riesgo (página aparte)', () => {
         await expect(page.locator('#treatmentPage')).toBeVisible();
         await expect(page.locator('#treatment-risk-select')).toHaveValue('E2E Tratamiento — Vía Tabla');
     });
+
+    test('"Gestionar Controles" agrega controles nombrados, deriva Costo/Fiabilidad/Retraso, persiste y revierte a manual al vaciarse', async ({
+        page,
+    }) => {
+        await connectAndBoot(page);
+        await runFullFairAnalysis(page, 'E2E Tratamiento — Controles');
+
+        await page.click('#nav-treatment');
+        await page.waitForTimeout(500);
+        await page.selectOption('#treatment-risk-select', 'E2E Tratamiento — Controles');
+        await page.waitForTimeout(500);
+
+        // Sin controles: los 3 campos siguen editables a mano (comportamiento manual de siempre).
+        await expect(page.locator('#fair-costoControlAnual')).not.toHaveAttribute('readonly', '');
+        await expect(page.locator('#treatment-controls-note')).toBeHidden();
+
+        await page.click('#treatment-manage-controls-btn');
+        await page.waitForSelector('#treatment-controls-add-btn');
+
+        await page.click('#treatment-controls-add-btn');
+        await page.fill('[data-control-row][data-index="0"] [data-field="name"]', 'Cámaras CCTV');
+        await page.fill('[data-control-row][data-index="0"] [data-field="cost"]', '5000');
+        await page.selectOption('[data-control-row][data-index="0"] [data-field="reliability"]', 'alta');
+        await page.fill('[data-control-row][data-index="0"] [data-field="delayDays"]', '10');
+
+        // Agregar una SEGUNDA fila no debe perder lo ya escrito en la primera.
+        await page.click('#treatment-controls-add-btn');
+        await page.fill('[data-control-row][data-index="1"] [data-field="name"]', 'Rondines Nocturnos');
+        await page.fill('[data-control-row][data-index="1"] [data-field="cost"]', '8000');
+        await page.selectOption('[data-control-row][data-index="1"] [data-field="reliability"]', 'baja');
+        await page.fill('[data-control-row][data-index="1"] [data-field="delayDays"]', '30');
+
+        await page.click('#treatment-controls-save-btn');
+        await page.waitForTimeout(1000);
+
+        // Costo = suma (5000+8000), Fiabilidad = la más débil ("baja"), Retraso = el más largo (30).
+        await expect(page.locator('#fair-costoControlAnual')).toHaveValue('13000');
+        await expect(page.locator('#fair-mitigar-fiabilidad')).toHaveValue('baja');
+        await expect(page.locator('#fair-mitigar-retraso')).toHaveValue('30');
+        await expect(page.locator('#fair-costoControlAnual')).toHaveAttribute('readonly', '');
+        await expect(page.locator('#fair-mitigar-fiabilidad')).toBeDisabled();
+        await expect(page.locator('#treatment-controls-note')).toContainText('2 controles nombrados');
+
+        let register = await page.evaluate(async () => {
+            const res = await fetch('http://localhost:3000/api/register', { headers: { 'X-API-Key': 'test-e2e-key' } });
+            return res.json();
+        });
+        let entry = register.risks.find((r) => r.riskName === 'E2E Tratamiento — Controles');
+        expect(entry.mitigar.controls).toEqual([
+            { name: 'Cámaras CCTV', cost: 5000, reliability: 'alta', delayDays: 10 },
+            { name: 'Rondines Nocturnos', cost: 8000, reliability: 'baja', delayDays: 30 },
+        ]);
+        expect(entry.mitigar.cost).toBe(13000);
+        expect(entry.mitigar.reliability).toBe('baja');
+        expect(entry.mitigar.delayDays).toBe(30);
+
+        // Recargar y volver a este riesgo debe restaurar el estado derivado (no un formulario en
+        // blanco ni los controles perdidos).
+        await page.reload({ waitUntil: 'networkidle' });
+        await page.click('#nav-treatment');
+        await page.waitForTimeout(1000);
+        await page.selectOption('#treatment-risk-select', 'E2E Tratamiento — Controles');
+        await page.waitForTimeout(500);
+        await expect(page.locator('#fair-costoControlAnual')).toHaveValue('13000');
+        await expect(page.locator('#fair-costoControlAnual')).toHaveAttribute('readonly', '');
+
+        // Quitar ambos controles debe devolver los 3 campos a editables a mano.
+        await page.click('#treatment-manage-controls-btn');
+        await page.waitForSelector('[data-control-row][data-index="1"] [data-remove-control]');
+        await page.click('[data-control-row][data-index="1"] [data-remove-control]');
+        await page.click('[data-control-row][data-index="0"] [data-remove-control]');
+        await page.click('#treatment-controls-save-btn');
+        await page.waitForTimeout(1000);
+
+        await expect(page.locator('#fair-costoControlAnual')).not.toHaveAttribute('readonly', '');
+        await expect(page.locator('#fair-mitigar-fiabilidad')).toBeEnabled();
+        await expect(page.locator('#treatment-controls-note')).toBeHidden();
+
+        register = await page.evaluate(async () => {
+            const res = await fetch('http://localhost:3000/api/register', { headers: { 'X-API-Key': 'test-e2e-key' } });
+            return res.json();
+        });
+        entry = register.risks.find((r) => r.riskName === 'E2E Tratamiento — Controles');
+        expect(entry.mitigar.controls).toEqual([]);
+    });
 });

@@ -1,6 +1,13 @@
 import { App } from './app-namespace.js';
 import { state } from './state.js';
+import { Modal } from './modal.js';
 import { debounce, getSafeNumber, sanitizeHTML, showToast } from './utils.js';
+
+// Orden de fiabilidad de más débil a más fuerte — mismo orden que
+// RELIABILITY_TO_PROBABILITY en backend/src/lib/treatment.js (baja: 0.4 < media: 0.7 <
+// alta: 0.9). Se usa para combinar varios controles nombrados en una sola fiabilidad
+// agregada (la más débil presente), sin inventar una fórmula numérica nueva.
+const RELIABILITY_ORDER = ['baja', 'media', 'alta'];
 
 // ============================================================
 // App.Treatment — Tratamiento del Riesgo (ISO 31000, cláusula 6.5), en su propia página. Antes
@@ -61,6 +68,9 @@ export const Treatment = {
         document
             .getElementById('fair-mitigar-defensa-objetivo')
             .addEventListener('change', () => this.updateReduccionALEAuto());
+        document
+            .getElementById('treatment-manage-controls-btn')
+            .addEventListener('click', () => this.openControlsModal());
         document.getElementById('fair-reduccionALE-manual-override').addEventListener('change', (e) => {
             const manual = e.target.checked;
             document.getElementById('fair-reduccionALE').readOnly = !manual;
@@ -136,6 +146,12 @@ export const Treatment = {
         document.getElementById('fair-mitigar-retraso').value = mitigar.delayDays || 0;
         document.getElementById('fair-mitigar-defensa-objetivo').value = 'basica';
 
+        // Controles nombrados de Mitigar (ver openControlsModal/applyControlsAggregation más
+        // abajo) — [] si este riesgo nunca usó controles nombrados, y los 3 campos de arriba
+        // siguen editables a mano como siempre.
+        state.treatment.controls = Array.isArray(mitigar.controls) ? mitigar.controls : [];
+        this.applyControlsAggregation();
+
         // Sin defenseKey (riesgos guardados antes de que se empezara a persistir, ver
         // backend/src/routes/register.js) no hay con qué recalcular la Reducción de ALE
         // automáticamente — se deja en modo manual con una explicación, en vez de un campo de
@@ -172,6 +188,157 @@ export const Treatment = {
         // false: solo refresca la vista previa con lo ya guardado — nada cambió todavía, no
         // hace falta un PUT de vuelta con los mismos datos que ya trae la entrada.
         this.updateTreatmentView(false);
+    },
+
+    // Deriva Costo/Fiabilidad/Retraso de Mitigar a partir de state.treatment.controls, cuando
+    // hay al menos un control nombrado — costo = suma, fiabilidad = la más débil presente
+    // (mismo orden que RELIABILITY_TO_PROBABILITY en el backend), retraso = el más largo (la
+    // mitigación completa no está lista hasta que el control más lento lo esté). Los 3 campos
+    // se vuelven de solo lectura mientras haya controles, para que no queden desincronizados de
+    // lo que en verdad describen — sin controles, vuelven a ser editables a mano como siempre.
+    applyControlsAggregation() {
+        const controls = state.treatment.controls || [];
+        const costInput = document.getElementById('fair-costoControlAnual');
+        const reliabilitySelect = document.getElementById('fair-mitigar-fiabilidad');
+        const delayInput = document.getElementById('fair-mitigar-retraso');
+        const noteEl = document.getElementById('treatment-controls-note');
+
+        if (controls.length === 0) {
+            costInput.readOnly = false;
+            costInput.classList.remove('bg-gray-100');
+            reliabilitySelect.disabled = false;
+            delayInput.readOnly = false;
+            delayInput.classList.remove('bg-gray-100');
+            noteEl.classList.add('hidden');
+            return;
+        }
+
+        const totalCost = controls.reduce((sum, c) => sum + (Number(c.cost) || 0), 0);
+        const weakestReliability = controls.reduce((weakest, c) => {
+            const idx = RELIABILITY_ORDER.indexOf(c.reliability);
+            return idx !== -1 && idx < RELIABILITY_ORDER.indexOf(weakest) ? c.reliability : weakest;
+        }, 'alta');
+        const maxDelay = controls.reduce((max, c) => Math.max(max, Number(c.delayDays) || 0), 0);
+
+        costInput.value = totalCost;
+        costInput.readOnly = true;
+        costInput.classList.add('bg-gray-100');
+        reliabilitySelect.value = weakestReliability;
+        reliabilitySelect.disabled = true;
+        delayInput.value = maxDelay;
+        delayInput.readOnly = true;
+        delayInput.classList.add('bg-gray-100');
+
+        const n = controls.length;
+        noteEl.textContent = `Calculado a partir de ${n} control${n === 1 ? '' : 'es'} nombrado${n === 1 ? '' : 's'}: costo = suma, fiabilidad = la más débil, tiempo de implementación = el más largo.`;
+        noteEl.classList.remove('hidden');
+    },
+
+    // Modal con la lista editable de controles nombrados de Mitigar — mismo patrón que
+    // App.RiskCatalog.openPicker/App.RiskCascadeTree.openCreateChildModal: usa el Modal
+    // compartido, arma su propio body/footer, y solo escribe de vuelta en
+    // state.treatment.controls al confirmar "Guardar" (Cancelar descarta cualquier cambio sin
+    // tocar nada).
+    openControlsModal() {
+        const working = (state.treatment.controls || []).map((c) => ({ ...c }));
+
+        const renderRow = (control, i) => `
+            <tr data-control-row data-index="${i}">
+                <td class="px-2 py-1"><input type="text" class="form-input" data-field="name" value="${sanitizeHTML(control.name || '')}" placeholder="Ej. Cámaras CCTV"></td>
+                <td class="px-2 py-1"><input type="number" class="form-input" data-field="cost" value="${control.cost || 0}" min="0"></td>
+                <td class="px-2 py-1">
+                    <select class="form-select" data-field="reliability">
+                        <option value="alta" ${control.reliability === 'alta' ? 'selected' : ''}>Alta</option>
+                        <option value="media" ${!control.reliability || control.reliability === 'media' ? 'selected' : ''}>Media</option>
+                        <option value="baja" ${control.reliability === 'baja' ? 'selected' : ''}>Baja</option>
+                    </select>
+                </td>
+                <td class="px-2 py-1"><input type="number" class="form-input" data-field="delayDays" value="${control.delayDays || 0}" min="0"></td>
+                <td class="py-1"><button type="button" class="btn btn-danger text-xs" data-remove-control title="Quitar este control">✕</button></td>
+            </tr>`;
+
+        const render = () => {
+            Modal.title.textContent = 'Gestionar Controles';
+            Modal.body.innerHTML = `
+                <p class="description-text mb-3">
+                    Desglosa "Mitigar" en los controles concretos que lo componen (cámaras, rondines,
+                    cerrajería, alarmas...). Costo/Fiabilidad/Tiempo de Implementación de Mitigar se
+                    calculan solos a partir de esta lista — no hace falta escribirlos aparte.
+                </p>
+                <p id="treatment-controls-modal-error" class="text-red-600 text-sm mb-3 hidden"></p>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="text-left border-b">
+                                <th class="px-2 py-1">Nombre</th>
+                                <th class="px-2 py-1">Costo Anual</th>
+                                <th class="px-2 py-1">Fiabilidad</th>
+                                <th class="px-2 py-1">Retraso (días)</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="treatment-controls-modal-body">${working.map(renderRow).join('')}</tbody>
+                    </table>
+                </div>
+                <button type="button" id="treatment-controls-add-btn" class="btn btn-secondary text-sm mt-3">+ Agregar Control</button>
+            `;
+            Modal.footer.innerHTML = `
+                <button id="treatment-controls-cancel-btn" class="btn btn-secondary">Cancelar</button>
+                <button id="treatment-controls-save-btn" class="btn btn-primary">Guardar</button>
+            `;
+            Modal.modal.classList.remove('hidden');
+
+            document.getElementById('treatment-controls-add-btn').addEventListener('click', () => {
+                // Sin esto, re-renderizar para mostrar la fila nueva pintaba TODAS las filas
+                // (incluidas las que ya existían) desde `working` sin haber leído antes lo que
+                // el usuario ya había escrito en pantalla — perdía en silencio cualquier edición
+                // de una fila anterior en cuanto se agregaba una fila nueva.
+                syncWorkingFromDom();
+                working.push({ name: '', cost: 0, reliability: 'media', delayDays: 0 });
+                render();
+            });
+            document.querySelectorAll('[data-remove-control]').forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    // Lee los valores en pantalla ANTES de quitar la fila, para no perder lo que
+                    // el usuario ya haya escrito en las OTRAS filas al re-renderizar.
+                    syncWorkingFromDom();
+                    const i = Number(btn.closest('[data-control-row]').dataset.index);
+                    working.splice(i, 1);
+                    render();
+                });
+            });
+            document.getElementById('treatment-controls-cancel-btn').addEventListener('click', () => Modal.hide());
+            document.getElementById('treatment-controls-save-btn').addEventListener('click', () => {
+                syncWorkingFromDom();
+                const errorEl = document.getElementById('treatment-controls-modal-error');
+                if (working.some((c) => !c.name.trim())) {
+                    errorEl.textContent = 'Cada control necesita un nombre.';
+                    errorEl.classList.remove('hidden');
+                    return;
+                }
+                state.treatment.controls = working.map((c) => ({ ...c, name: c.name.trim() }));
+                Modal.hide();
+                this.applyControlsAggregation();
+                this.updateTreatmentView(true);
+            });
+        };
+
+        // Relee los inputs de cada fila hacia `working` — se usa antes de cualquier acción que
+        // vuelva a renderizar (agregar/quitar fila) o que guarde, para no perder ediciones en
+        // curso en las filas que no cambiaron.
+        const syncWorkingFromDom = () => {
+            document.querySelectorAll('[data-control-row]').forEach((row) => {
+                const i = Number(row.dataset.index);
+                working[i] = {
+                    name: row.querySelector('[data-field="name"]').value,
+                    cost: getSafeNumber(row.querySelector('[data-field="cost"]')),
+                    reliability: row.querySelector('[data-field="reliability"]').value,
+                    delayDays: getSafeNumber(row.querySelector('[data-field="delayDays"]')),
+                };
+            });
+        };
+
+        render();
     },
 
     // Mismo cálculo que antes vivía en App.FairWizard (Paso 2) — la diferencia es de dónde sale
@@ -254,6 +421,11 @@ export const Treatment = {
             reductionPercent: getSafeNumber(document.getElementById('fair-reduccionALE')),
             reliability: document.getElementById('fair-mitigar-fiabilidad').value,
             delayDays: getSafeNumber(document.getElementById('fair-mitigar-retraso')),
+            // Controles nombrados (ver openControlsModal/applyControlsAggregation) — [] si este
+            // riesgo no los usa; cost/reliability/delayDays de arriba ya vienen derivados de
+            // esta misma lista cuando no está vacía, así que /api/treatment/evaluate no necesita
+            // saber nada de esto: solo viaja para persistirse y poder reabrir el modal después.
+            controls: state.treatment.controls || [],
         };
         const transferir = {
             premium: getSafeNumber(document.getElementById('fair-seguro-prima')),
