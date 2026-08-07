@@ -1,7 +1,14 @@
 import { App } from './app-namespace.js';
 import { state } from './state.js';
 import { Modal } from './modal.js';
-import { buildHistogramBins, getSafeNumber, sanitizeHTML, severityToClasses, showToast } from './utils.js';
+import {
+    buildHistogramBins,
+    computeCoveredIsoClauses,
+    getSafeNumber,
+    sanitizeHTML,
+    severityToClasses,
+    showToast,
+} from './utils.js';
 
 // ============================================================
 // App.RiskCascadeTree — vista de árbol del vínculo "Riesgo Desencadenante" (Paso 1, opcional,
@@ -360,7 +367,14 @@ export const RiskCascadeTree = {
                 ${risk.evaluationJustification ? `<li><strong>Justificación:</strong> ${sanitizeHTML(risk.evaluationJustification)}</li>` : ''}
             </ul>`
             }
+            ${this.renderMarcoNormativo(risk)}
         `;
+        Modal.body.querySelectorAll('[data-chip-toggle]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const desc = btn.nextElementSibling;
+                if (desc) desc.classList.toggle('hidden');
+            });
+        });
         // "Simular Familia" solo tiene sentido para un riesgo YA analizado (necesita su propio
         // tef/vuln para poder re-simularse) y de tipo Amenaza (ver runFamilyCascadeSimulation en
         // el backend: una Oportunidad se excluye de la suma de familia, así que ofrecer el botón
@@ -400,6 +414,52 @@ export const RiskCascadeTree = {
                 App.Treatment.load(risk.riskName);
             });
         }
+    },
+
+    // "Marco Normativo": la norma de la amenaza elegida del catálogo (risk.catalogStandard, ver
+    // App.RiskCatalog.useSelected) + los puntos de ISO 31000 que este riesgo ya cubrió, según lo
+    // que de verdad tiene guardado (ver computeCoveredIsoClauses en utils.js — nunca una casilla
+    // marcada a mano). Cada uno se pinta como un chip; el texto vacío ('') hace que no aparezca
+    // nada si el riesgo no tiene ni norma ni ningún punto cubierto (ej. un stub "Sin analizar").
+    // Los chips se resuelven contra state.quick.hazardStandards/isoProcessClauses (cargados en
+    // el bootstrap, ver App.Api.bootstrap) — si un token no está en el catálogo (no debería
+    // pasar, hay un test de consistencia en el backend) se muestra igual, solo sin descripción.
+    renderMarcoNormativo(risk) {
+        const standardTokens = (risk.catalogStandard || '')
+            .split(',')
+            .map((t) => t.trim())
+            .filter(Boolean);
+        const clauseCodes = computeCoveredIsoClauses(risk);
+        if (standardTokens.length === 0 && clauseCodes.length === 0) return '';
+
+        const hazardStandards = state.quick.hazardStandards || {};
+        const isoProcessClauses = state.quick.isoProcessClauses || {};
+
+        const renderChip = (label, description) => `
+            <span class="marco-normativo-chip-wrap">
+                <button type="button" class="marco-normativo-chip" data-chip-toggle>${sanitizeHTML(label)}</button>
+                ${description ? `<span class="marco-normativo-chip-desc hidden">${sanitizeHTML(description)}</span>` : ''}
+            </span>`;
+
+        const standardChips = standardTokens
+            .map((token) => {
+                const ref = hazardStandards[token];
+                return renderChip(ref ? ref.name : token, ref ? ref.description : '');
+            })
+            .join('');
+        const clauseChips = clauseCodes
+            .map((code) => {
+                const ref = isoProcessClauses[code];
+                return renderChip(ref ? `${code} — ${ref.title}` : code, ref ? ref.summary : '');
+            })
+            .join('');
+
+        return `
+            <div class="mt-3 pt-3 border-t border-gray-200">
+                <p class="text-sm font-semibold text-gray-700 mb-1">Marco Normativo</p>
+                ${standardChips ? `<div class="mb-2">${standardChips}</div>` : ''}
+                ${clauseChips ? `<div>${clauseChips}</div>` : ''}
+            </div>`;
     },
 
     // Simula, de forma correlacionada, la pérdida anual combinada de `riskName` y todos sus

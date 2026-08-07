@@ -118,6 +118,20 @@ function createRegisterRouter(store) {
                 // cuando esa simulación exista. null mientras nadie la haya definido.
                 triggeredByProbability = null,
                 description = null,
+                // Norma/marco de la amenaza elegida del Catálogo de Riesgos (ver
+                // App.RiskCatalog.useSelected), ej. "ISO 22301, NFPA 1600" + su código interno del
+                // catálogo (ej. "NAT-GEO-001") — se muestra en el Paso 1 al elegir y en el detalle
+                // del Árbol de Riesgos como referencia expandible (ver
+                // backend/src/data/standardsReference.js: hazardStandards). null si el riesgo no
+                // se armó desde el catálogo.
+                catalogStandard = null,
+                catalogCode = null,
+                // Historial de Revisiones (ISO 31000, cláusula 6.6 — Monitoreo): cada corrida de
+                // este mismo análisis, con fecha/ALE/evaluación — antes solo vivía en memoria/
+                // localStorage del navegador (ver App.FairWizard.persistFairAnalysis), nunca
+                // llegaba hasta acá, así que el Árbol de Riesgos (que lee el Registro, no
+                // localStorage) nunca podía mostrarlo ni usarlo para saber si 6.6 ya se cubrió.
+                reviewHistory = [],
                 // Id propio de esta entrada del Registro, si el cliente ya la conoce (re-simular un
                 // riesgo cargado desde aquí — ver App.FairWizard.loadRegisteredRiskIntoForm). Junto
                 // con sourceRiskId, es lo que le permite al store (ver findRegisterEntryIndex)
@@ -217,6 +231,9 @@ function createRegisterRouter(store) {
                 triggeredByRiskName,
                 triggeredByProbability,
                 description,
+                catalogStandard,
+                catalogCode,
+                reviewHistory,
                 threat,
                 effect,
                 timeHorizon,

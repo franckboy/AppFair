@@ -496,6 +496,53 @@ test('PUT /api/register/:riskName persiste triggeredByRiskName y triggeredByProb
         .set('X-API-Key', TEST_API_KEY);
 });
 
+test('PUT /api/register/:riskName persiste catalogStandard/catalogCode y reviewHistory (Marco Normativo)', async () => {
+    const riskName = 'Sismo HTTP';
+    const reviewHistory = [
+        { date: '1 ene 2026', ale: '$10,000', evaluationLevel: 'Aceptable' },
+        { date: '15 ene 2026', ale: '$12,000', evaluationLevel: 'Aceptable' },
+    ];
+    const putRes = await request(app)
+        .put(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            ale: 10000,
+            cvar95: 15000,
+            catalogStandard: 'ISO 22301, NFPA 1600',
+            catalogCode: 'NAT-GEO-001',
+            reviewHistory,
+        });
+    assert.strictEqual(putRes.status, 200);
+    assert.strictEqual(putRes.body.entry.catalogStandard, 'ISO 22301, NFPA 1600');
+    assert.strictEqual(putRes.body.entry.catalogCode, 'NAT-GEO-001');
+    assert.deepStrictEqual(putRes.body.entry.reviewHistory, reviewHistory);
+
+    const getRes = await request(app).get('/api/register').set('X-API-Key', TEST_API_KEY);
+    const saved = getRes.body.risks.find((r) => r.riskName === riskName);
+    assert.strictEqual(saved.catalogStandard, 'ISO 22301, NFPA 1600');
+    assert.deepStrictEqual(saved.reviewHistory, reviewHistory);
+
+    await request(app)
+        .delete(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY);
+});
+
+test('PUT /api/register/:riskName sin catalogStandard/reviewHistory guarda null/[] por defecto', async () => {
+    const riskName = 'Riesgo sin catalogo HTTP';
+    const putRes = await request(app)
+        .put(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ale: 5000, cvar95: 8000 });
+    assert.strictEqual(putRes.status, 200);
+    assert.strictEqual(putRes.body.entry.catalogStandard, null);
+    assert.strictEqual(putRes.body.entry.catalogCode, null);
+    assert.deepStrictEqual(putRes.body.entry.reviewHistory, []);
+
+    await request(app)
+        .delete(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY);
+});
+
 test('PUT /api/register/:riskName rechaza triggeredByProbability fuera de 0-100 con 400', async () => {
     const res = await request(app)
         .put(`/api/register/${encodeURIComponent('Riesgo probabilidad inválida HTTP')}`)

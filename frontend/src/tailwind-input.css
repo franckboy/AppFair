@@ -377,6 +377,46 @@ body.modo-tecnico .simple-only {
   padding: 16px;
 }
 
+/* "Marco Normativo" (App.RiskCascadeTree.renderMarcoNormativo / renderCatalogStandardLine):
+   chips generados en JS (template strings, no en app_fair.html) — Tailwind solo escanea el HTML
+   estático para saber qué utilidades incluir en el build (ver tailwind.config.js: content:
+   ['./app_fair.html']), así que una clase usada solo dentro de un string de JS nunca aparecería
+   en el CSS compilado si fuera una utilidad de Tailwind normal. Por eso son clases propias,
+   igual que .risk-tree-card y compañía arriba. */
+.marco-normativo-chip-wrap {
+  display: inline-block;
+  vertical-align: top;
+  margin: 0 4px 4px 0;
+}
+.marco-normativo-chip {
+  display: inline-block;
+  background: #f3f4f6;
+  border: 1px solid #d1d5db;
+  border-radius: 9999px;
+  padding: 2px 10px;
+  font-size: 0.75rem;
+  color: #374151;
+  cursor: pointer;
+}
+.marco-normativo-chip:hover {
+  background: #e5e7eb;
+}
+.marco-normativo-chip-desc {
+  display: block;
+  font-size: 0.75rem;
+  color: #4b5563;
+  margin: 4px 0 0 2px;
+  max-width: 320px;
+}
+/* Mismo motivo que ".risk-tree ul.hidden" más arriba: la utilidad .hidden de Tailwind y esta
+   clase tienen la MISMA especificidad (una clase cada una) — sin esto, cuál gana depende del
+   orden de aparición en el CSS compilado, no de cuál "debería" ganar, y el toggle de
+   App.RiskCascadeTree.renderMarcoNormativo (mostrar/ocultar la descripción de un chip) no
+   tendría ningún efecto visible. */
+.marco-normativo-chip-desc.hidden {
+  display: none;
+}
+
 #fair-print-report {
   display: none;
 }

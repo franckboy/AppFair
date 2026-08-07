@@ -93,6 +93,10 @@ export const Api = {
             state.quick.attackerProfiles = profiles.attackerProfiles;
             state.quick.defenseProfiles = profiles.defenseProfiles;
             state.quick.riskCatalog = profiles.riskCatalog;
+            // Catálogo curado de normas/marcos (ver backend/src/data/standardsReference.js) —
+            // usado por App.RiskCascadeTree.openDetail para el "Marco Normativo" del riesgo.
+            state.quick.hazardStandards = profiles.hazardStandards;
+            state.quick.isoProcessClauses = profiles.isoProcessClauses;
             state.quick.assets = assetsRes.assets;
             state.config.riskCriteria = criteria;
             App.OrgDefaults.defaults = { ...App.OrgDefaults.defaults, ...orgDefaults };

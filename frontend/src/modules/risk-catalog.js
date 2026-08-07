@@ -140,10 +140,14 @@ export const RiskCatalog = {
     useSelected(threat, nameFieldId = 'fair-riskName', descFieldId = 'fair-riskDescription', category = null) {
         const nameInput = document.getElementById(nameFieldId);
         const descInput = document.getElementById(descFieldId);
-        // catalogStandard/catalogCode (de qué amenaza del catálogo salió este riesgo) — ver
-        // calculateAll(), que lo guarda en fullData.catalogStandard/catalogCode para poder
-        // mostrarlo después. Nombre y Descripción son un solo campo ahora (fair-riskName/
-        // fair-riskDescription), así que siempre corresponde rastrearlo.
+        // catalogStandard/catalogCode (de qué amenaza del catálogo salió este riesgo) — se
+        // guardan en state.fair para que App.FairRegister.saveToRiskRegister los mande al
+        // Registro (ver PUT /api/register), y App.FairWizard.showCatalogStandardLine() los
+        // muestra como referencia fija en el Paso 1. selectedCatalogRef (abajo) es un dato
+        // aparte, de Análisis Rápido — se deja igual, no lo reemplaza.
+        state.fair.catalogStandard = threat.standard;
+        state.fair.catalogCode = threat.code;
+        App.FairWizard.showCatalogStandardLine();
         state.quick.selectedCatalogRef = { standard: threat.standard, code: threat.code };
         nameInput.value = threat.name;
         nameInput.dispatchEvent(new Event('input'));

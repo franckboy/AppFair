@@ -4,6 +4,7 @@ import {
     LOSS_FORMS_KEYS,
     LOSS_FORM_LABELS,
     classifyPointSeverity,
+    computeCoveredIsoClauses,
     debounce,
     getSafeNumber,
     sanitizeHTML,
@@ -151,6 +152,48 @@ describe('classifyPointSeverity', () => {
     it('sin zonas (aún no cargaron), no revienta y devuelve null', () => {
         expect(classifyPointSeverity(50, 50, null)).toBeNull();
         expect(classifyPointSeverity(50, 50, [])).toBeNull();
+    });
+});
+
+describe('computeCoveredIsoClauses', () => {
+    it('sin ningún dato, no cubre nada', () => {
+        expect(computeCoveredIsoClauses({})).toEqual([]);
+        expect(computeCoveredIsoClauses(null)).toEqual([]);
+    });
+
+    it('con tef/vuln/lossMagnitudes, cubre 6.4.2/6.4.3/6.4.4', () => {
+        const risk = { tef: { min: 1, mode: 2, max: 3 }, vuln: { min: 1, mode: 2, max: 3 }, lossMagnitudes: {} };
+        expect(computeCoveredIsoClauses(risk)).toEqual(['6.4.2', '6.4.3', '6.4.4']);
+    });
+
+    it('un tratamiento en su default (costo/prima en 0) NO cuenta como 6.5 cubierto', () => {
+        const risk = { mitigar: { cost: 0 }, transferir: { premium: 0 }, evitar: { cost: 0 } };
+        expect(computeCoveredIsoClauses(risk)).toEqual([]);
+    });
+
+    it('un tratamiento con costo/prima real SÍ cubre 6.5', () => {
+        expect(computeCoveredIsoClauses({ mitigar: { cost: 5000 } })).toEqual(['6.5']);
+        expect(computeCoveredIsoClauses({ transferir: { premium: 1200 } })).toEqual(['6.5']);
+        expect(computeCoveredIsoClauses({ aceptarJustificacion: 'Riesgo residual bajo, se acepta.' })).toEqual(['6.5']);
+    });
+
+    it('menos de 2 revisiones en el historial NO cubre 6.6 (necesita al menos 2 para ser "historial")', () => {
+        expect(computeCoveredIsoClauses({ reviewHistory: [{ date: 'a' }] })).toEqual([]);
+    });
+
+    it('2 o más revisiones en el historial SÍ cubre 6.6', () => {
+        expect(computeCoveredIsoClauses({ reviewHistory: [{ date: 'a' }, { date: 'b' }] })).toEqual(['6.6']);
+    });
+
+    it('un riesgo completo (FAIR + tratamiento + historial) cubre las 5 cláusulas, en orden', () => {
+        const risk = {
+            tef: { min: 1, mode: 2, max: 3 },
+            vuln: { min: 1, mode: 2, max: 3 },
+            lossMagnitudes: {},
+            mitigar: { cost: 5000 },
+            reviewHistory: [{ date: 'a' }, { date: 'b' }],
+        };
+        expect(computeCoveredIsoClauses(risk)).toEqual(['6.4.2', '6.4.3', '6.4.4', '6.5', '6.6']);
     });
 });
 

@@ -190,6 +190,35 @@ export const FairWizard = {
         }
     },
 
+    // Línea fija bajo "Nombre del Riesgo" con la norma de la amenaza elegida del catálogo (ver
+    // App.RiskCatalog.useSelected) — a diferencia de la info del propio picker (que desaparece
+    // al cerrar el modal), esta queda visible mientras se sigue llenando el resto del Paso 1, y
+    // es lo que App.FairRegister.saveToRiskRegister manda como catalogStandard/catalogCode.
+    showCatalogStandardLine() {
+        const el = document.getElementById('fair-catalog-standard-line');
+        if (!el) return;
+        if (!state.fair.catalogStandard) {
+            el.classList.add('hidden');
+            return;
+        }
+        el.textContent = `Norma de referencia: ${state.fair.catalogStandard}`;
+        el.classList.remove('hidden');
+    },
+
+    // Pinta state.fair.reviewHistory en la tabla del Paso 4 — separado de displaySimulationResults
+    // para poder llamarlo también al retomar un riesgo ya guardado (loadRegisteredRiskIntoForm),
+    // sin tener que volver a simular primero solo para ver el historial que ya tenía.
+    renderReviewHistoryTable() {
+        const history = state.fair.reviewHistory || [];
+        document.getElementById('fair-review-history-body').innerHTML = history
+            .map(
+                (entry) =>
+                    `<tr class="border-b"><td class="py-1">${entry.date}</td><td>${entry.ale}</td><td>${entry.evaluationLevel}</td></tr>`,
+            )
+            .join('');
+        document.getElementById('fair-review-history-container').classList.toggle('hidden', history.length < 2);
+    },
+
     // Guarda lo que ya se llenó en el Paso 1 en /api/risks, SIN pasar por TEF/Vulnerabilidad/
     // Magnitud/Simulación — permite dejar un riesgo anotado y volver después a completarlo,
     // en vez de obligar a terminar los 4 pasos en una sola sesión (antes esto lo cubría
@@ -675,6 +704,15 @@ export const FairWizard = {
         state.fair.registerEntryId = entry.id || null;
         state.fair.riskCriteriaOverride = entry.riskCriteriaOverride || null;
         this.updateCriteriaOverrideStatus();
+        // Historial de Revisiones y norma del catálogo: restaurados desde el Registro (no solo
+        // de esta sesión del navegador) — ver el fix de persistencia en saveToRiskRegister/PUT
+        // /api/register. Sin esto, retomar un riesgo ya revisado varias veces se vería como si
+        // nunca se hubiera revisado.
+        state.fair.reviewHistory = Array.isArray(entry.reviewHistory) ? entry.reviewHistory : [];
+        this.renderReviewHistoryTable();
+        state.fair.catalogStandard = entry.catalogStandard || null;
+        state.fair.catalogCode = entry.catalogCode || null;
+        this.showCatalogStandardLine();
 
         document.getElementById('fair-riskName').value = entry.riskName || '';
         document.getElementById('fair-riskDescription').value = entry.description || '';
@@ -1157,6 +1195,9 @@ export const FairWizard = {
             state.quick.currentRiskId = null;
             state.quick.selectedCatalogRef = null;
             state.quick.selectedAssetRef = null;
+            state.fair.catalogStandard = null;
+            state.fair.catalogCode = null;
+            this.showCatalogStandardLine();
             document.getElementById('fair-threat').value = '';
             document.getElementById('fair-effect').value = 'material';
             document.getElementById('fair-risk-type').value = 'amenaza';
@@ -1361,6 +1402,8 @@ export const FairWizard = {
 
         // Historial de Revisiones (ISO 31000, cláusula 6.6 — Monitoreo): cada corrida de
         // este mismo análisis queda registrada, para ver cómo cambió el riesgo entre revisiones.
+        // Se persiste al Registro (ver saveToRiskRegister) para que un riesgo retomado después
+        // (loadRegisteredRiskIntoForm) muestre su historial real, no solo el de esta sesión.
         if (!Array.isArray(state.fair.reviewHistory)) state.fair.reviewHistory = [];
         state.fair.reviewHistory.push({
             date: new Date().toLocaleDateString('es-MX', { year: 'numeric', month: 'short', day: 'numeric' }),
@@ -1368,16 +1411,7 @@ export const FairWizard = {
             evaluationLevel: evaluation.level,
         });
         if (state.fair.reviewHistory.length > 20) state.fair.reviewHistory.shift();
-        const historyBody = document.getElementById('fair-review-history-body');
-        historyBody.innerHTML = state.fair.reviewHistory
-            .map(
-                (entry) =>
-                    `<tr class="border-b"><td class="py-1">${entry.date}</td><td>${entry.ale}</td><td>${entry.evaluationLevel}</td></tr>`,
-            )
-            .join('');
-        document
-            .getElementById('fair-review-history-container')
-            .classList.toggle('hidden', state.fair.reviewHistory.length < 2);
+        this.renderReviewHistoryTable();
 
         // Se guarda en state para que App.UIMode.applyLabels() pueda recalcular este texto
         // si el usuario cambia de Modo Simple/Técnico DESPUÉS de simular — si no, se
