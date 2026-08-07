@@ -78,11 +78,17 @@ export const FairRegister = {
     // Residual usa directamente entry.severity (ya viene calculado sobre ese mismo ALE);
     // Inherente es un monto DISTINTO (mayor, sin controles), así que se clasifica aparte
     // contra el mismo Criterio ALE Aceptable/Crítico.
+    // Mismo criterio que evaluateFairThreat (backend/src/lib/evaluation.js) — el tramo entre
+    // Aceptable y Crítico se parte a la mitad exacta en Medio/Alto, sin un tercer umbral
+    // configurado aparte (decisión del usuario). Bajo/Crítico no se mueven.
     classifyAleAgainstCriteria(ale) {
         const criteria = state.config.riskCriteria;
         if (!criteria || typeof ale !== 'number') return null;
-        if (ale > criteria.aleCritico) return 'critico';
-        if (ale > criteria.aleAceptable) return 'alto';
+        const { aleAceptable, aleCritico } = criteria;
+        const aleMedio = aleAceptable + (aleCritico - aleAceptable) / 2;
+        if (ale > aleCritico) return 'critico';
+        if (ale > aleMedio) return 'alto';
+        if (ale > aleAceptable) return 'medio';
         return 'bajo';
     },
 

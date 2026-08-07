@@ -15,8 +15,17 @@ describe('FairRegister.classifyAleAgainstCriteria', () => {
         expect(FairRegister.classifyAleAgainstCriteria(50000)).toBe('bajo');
     });
 
-    it('clasifica como alto un ALE entre el umbral aceptable y el crítico', () => {
-        expect(FairRegister.classifyAleAgainstCriteria(100000)).toBe('alto');
+    // El tramo entre aceptable (50000) y crítico (250000) se parte a la mitad exacta
+    // (aleMedio=150000) en medio/alto — mismo criterio que evaluateFairThreat en el backend,
+    // sin un tercer umbral configurado aparte.
+    it('clasifica como medio un ALE en la mitad inferior del tramo aceptable-crítico', () => {
+        expect(FairRegister.classifyAleAgainstCriteria(100000)).toBe('medio');
+        expect(FairRegister.classifyAleAgainstCriteria(150000)).toBe('medio'); // límite inclusive
+    });
+
+    it('clasifica como alto un ALE en la mitad superior del tramo aceptable-crítico', () => {
+        expect(FairRegister.classifyAleAgainstCriteria(150001)).toBe('alto');
+        expect(FairRegister.classifyAleAgainstCriteria(250000)).toBe('alto'); // no supera crítico todavía
     });
 
     it('clasifica como crítico un ALE por encima del umbral crítico', () => {

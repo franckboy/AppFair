@@ -27,6 +27,11 @@ function suggestedReviewDate(evaluationLevel) {
         months = 3;
     } else if (level.includes('Requiere Tratamiento') || level.includes('Oportunidad Significativa')) {
         months = 6;
+    } else if (level.includes('Medio')) {
+        // Nivel Medio (ver evaluateFairThreat, backend/src/lib/evaluation.js) — a mitad de
+        // camino entre Alto (6 meses) y Aceptable (12 meses), ni tan urgente como el primero
+        // ni tan tranquilo como el segundo.
+        months = 9;
     }
     const suggested = new Date();
     suggested.setMonth(suggested.getMonth() + months);

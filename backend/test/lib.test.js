@@ -724,6 +724,36 @@ test('evaluateFairThreat: clasifica correctamente como Crítico por encima del u
     assert.strictEqual(result.severity, 'critico');
 });
 
+// El tramo entre Aceptable y Crítico se parte a la mitad exacta en Medio/Alto — sin un tercer
+// umbral configurado aparte (decisión explícita del usuario, ver la conversación). Mismo
+// ejemplo que se usó para definirlo: aceptable=50000, crítico=250000 -> aleMedio=150000.
+//   Bajo: <= 50000 | Medio: 50001-150000 | Alto: 150001-249999 | Crítico: >= 250001
+// (el límite superior de Crítico usa '>' estricto, igual que ya usaba el resto de la app —
+// ale === aleCritico exacto todavía NO cuenta como Crítico, mismo criterio que antes).
+test('evaluateFairThreat: parte el tramo Aceptable-Crítico a la mitad exacta (Medio/Alto)', () => {
+    const criteria = { aleAceptable: 50000, aleCritico: 250000 };
+    const fmt = (n) => `$${n}`;
+    const cvarBajo = 0; // sin riesgo de cola en ninguno de estos casos
+
+    assert.strictEqual(evaluateFairThreat(50000, cvarBajo, criteria, fmt).severity, 'bajo');
+    assert.strictEqual(evaluateFairThreat(50001, cvarBajo, criteria, fmt).severity, 'medio');
+    assert.strictEqual(evaluateFairThreat(150000, cvarBajo, criteria, fmt).severity, 'medio');
+    assert.strictEqual(evaluateFairThreat(150001, cvarBajo, criteria, fmt).severity, 'alto');
+    assert.strictEqual(evaluateFairThreat(250000, cvarBajo, criteria, fmt).severity, 'alto');
+    assert.strictEqual(evaluateFairThreat(250001, cvarBajo, criteria, fmt).severity, 'critico');
+});
+
+test('evaluateFairThreat: el riesgo de cola (CVaR95) sigue escalando a Crítico aunque el promedio caiga en Medio/Alto', () => {
+    // Bug que NO debía reaparecer al agregar el nivel Medio: el chequeo de CVaR95 va ANTES
+    // que la nueva rama de Medio/Alto en el código — un promedio tranquilo con una cola gorda
+    // debe seguir ganándole a cualquier clasificación por el promedio solo.
+    const criteria = { aleAceptable: 50000, aleCritico: 250000 };
+    const fmt = (n) => `$${n}`;
+    const result = evaluateFairThreat(100000, 300000, criteria, fmt); // ale cae en "Medio", cvar95 no
+    assert.strictEqual(result.severity, 'critico');
+    assert.ok(result.level.includes('cola'));
+});
+
 test('calculateParetoAnalysis: excluye riesgos tipo "oportunidad" de la exposición total', () => {
     // Bug real: el "ale" de una oportunidad es un BENEFICIO esperado, no una pérdida — antes
     // de este chequeo, un beneficio grande se sumaba a la "exposición total" y competía por el
