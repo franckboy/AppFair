@@ -326,6 +326,17 @@ export const FairRegister = {
                     // por ahora, ver el campo en el HTML para el detalle.
                     triggeredByRiskName: document.getElementById('fair-triggered-by').value || null,
                     triggeredByProbability,
+                    // Norma del catálogo elegida en el Paso 1 (ver App.RiskCatalog.useSelected) —
+                    // ya viene correctamente hidratado tanto si se acaba de elegir como si se
+                    // restauró al retomar este mismo riesgo (ver loadRegisteredRiskIntoForm), así
+                    // que a diferencia de mitigar/transferir/owner no necesita el respaldo de
+                    // existingEntry (esos se editan en Gestión de Riesgos, una página aparte).
+                    catalogStandard: state.fair.catalogStandard || null,
+                    catalogCode: state.fair.catalogCode || null,
+                    // Historial de Revisiones (ISO 31000, 6.6) — ver el fix de persistencia de
+                    // esta tarea; antes nunca se mandaba, así que un riesgo re-simulado varias
+                    // veces perdía su historial completo apenas se recargaba la página.
+                    reviewHistory: state.fair.reviewHistory || [],
                     description: document.getElementById('fair-riskDescription').value.trim() || null,
                     // A partir de aquí: campos que antes solo vivían en este formulario (o en
                     // el Reporte individual, leídos directo del DOM) — se guardan para que el

@@ -296,3 +296,25 @@ export const classifyPointSeverity = (x, y, zones) => {
     }
     return null;
 };
+
+// Qué puntos de la cláusula 6 de ISO 31000 ("Proceso") ya cubrió un riesgo del Registro, según
+// qué datos tiene guardados — no es una casilla que alguien marca a mano, se deriva de hechos
+// verificables, así que nunca puede afirmar de más (ver App.RiskCascadeTree.openDetail, "Marco
+// Normativo"). El tratamiento usa el mismo criterio de "¿de verdad se configuró?" que ya usa
+// evaluateTreatmentStrategies en el backend (backend/src/lib/treatment.js): costo/prima > 0, no
+// el default en 0 que trae cada riesgo nuevo sin tocar.
+export const computeCoveredIsoClauses = (risk) => {
+    if (!risk) return [];
+    const clauses = [];
+    if (risk.tef && risk.vuln && risk.lossMagnitudes) {
+        clauses.push('6.4.2', '6.4.3', '6.4.4');
+    }
+    const hasRealTreatment =
+        (risk.mitigar && risk.mitigar.cost > 0) ||
+        (risk.transferir && risk.transferir.premium > 0) ||
+        (risk.evitar && risk.evitar.cost > 0) ||
+        !!risk.aceptarJustificacion;
+    if (hasRealTreatment) clauses.push('6.5');
+    if (Array.isArray(risk.reviewHistory) && risk.reviewHistory.length >= 2) clauses.push('6.6');
+    return clauses;
+};
