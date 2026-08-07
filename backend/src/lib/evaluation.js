@@ -49,6 +49,13 @@ function evaluateResidualRisk(value, rrtBands, hardCap = null) {
 /**
  * Evalúa el resultado de una simulación FAIR (Amenaza: riesgo negativo)
  * contra los criterios ALE Aceptable/Crítico.
+ *
+ * Entre Aceptable y Crítico antes había un solo tramo "Alto" indiferenciado — se parte a la
+ * mitad exacta (decisión explícita del usuario, ver la conversación: sin agregar un tercer
+ * valor configurado aparte) en Medio (mitad inferior) y Alto (mitad superior), así esta
+ * clasificación deja de ser la única en la app sin nivel intermedio (la Matriz de Riesgos, ver
+ * getRiskMatrixZones en register.js, ya tenía Bajo/Medio/Alto/Crítico). Bajo y Crítico NO se
+ * mueven — siguen significando exactamente lo mismo que antes.
  * @param {number} ale Pérdida Anual Esperada (promedio simulado)
  * @param {number} cvar95 CVaR 95% (cola de riesgo)
  * @param {{aleAceptable:number, aleCritico:number}} criteria
@@ -56,6 +63,7 @@ function evaluateResidualRisk(value, rrtBands, hardCap = null) {
  */
 function evaluateFairThreat(ale, cvar95, criteria, formatCurrency) {
     const { aleAceptable, aleCritico } = criteria;
+    const aleMedio = aleAceptable + (aleCritico - aleAceptable) / 2;
 
     if (ale > aleCritico) {
         return {
@@ -71,11 +79,18 @@ function evaluateFairThreat(ale, cvar95, criteria, formatCurrency) {
             justification: `Aunque la pérdida promedio (${formatCurrency(ale)}) está dentro de lo aceptable, el CVaR 95% (${formatCurrency(cvar95)}) — el promedio del peor 5% de los escenarios — supera el criterio Crítico. Hay una cola de riesgo relevante que el promedio no muestra.`,
         };
     }
+    if (ale > aleMedio) {
+        return {
+            level: 'Alto — Requiere Tratamiento',
+            severity: 'alto',
+            justification: `La Pérdida Anual Esperada (${formatCurrency(ale)}) está en la mitad superior del tramo entre Aceptable (${formatCurrency(aleAceptable)}) y Crítico (${formatCurrency(aleCritico)}). Requiere tratamiento.`,
+        };
+    }
     if (ale > aleAceptable) {
         return {
-            level: 'Requiere Tratamiento',
-            severity: 'alto',
-            justification: `La Pérdida Anual Esperada (${formatCurrency(ale)}) supera el criterio de Aceptable (${formatCurrency(aleAceptable)}), pero no llega al umbral Crítico (${formatCurrency(aleCritico)}).`,
+            level: 'Medio — Vigilar',
+            severity: 'medio',
+            justification: `La Pérdida Anual Esperada (${formatCurrency(ale)}) está en la mitad inferior del tramo entre Aceptable (${formatCurrency(aleAceptable)}) y Crítico (${formatCurrency(aleCritico)}). No es urgente, pero conviene vigilarlo.`,
         };
     }
     return {
