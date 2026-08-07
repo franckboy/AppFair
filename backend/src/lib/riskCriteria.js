@@ -34,10 +34,18 @@ function normalizeRiskCriteria(criteria) {
  * verdad llegaron, porque un override por riesgo normalmente solo trae aleAceptablePercent/
  * aleCritico, no rrtBands. Sin esto, un override fuera de rango (ej. 200%) no truena, pero sí
  * invierte silenciosamente los umbrales para esa corrida.
+ *
+ * El override individual puede ser más RESTRICTIVO que el global (un ALE Crítico menor, para un
+ * riesgo con menos tolerancia), pero nunca más permisivo — decisión explícita del usuario: "mi
+ * máximo global es $1M, pero para este riesgo mi máximo es $2M" se contradice a sí mismo, porque
+ * el global YA es el techo absoluto de lo que la organización está dispuesta a perder.
+ * globalCriteria (opcional) es el criterio ya vigente (normalizado) contra el que se compara ese
+ * techo — sin él, ese chequeo simplemente se omite (ej. si el propio global aún no se conoce).
  * @param {object|null} override
+ * @param {object|null} [globalCriteria]
  * @returns {string|null} mensaje de error, o null si es válido
  */
-function validateRiskCriteriaOverride(override) {
+function validateRiskCriteriaOverride(override, globalCriteria = null) {
     if (!override) return null;
     if (
         override.aleAceptablePercent !== undefined &&
@@ -49,6 +57,14 @@ function validateRiskCriteriaOverride(override) {
     }
     if (override.aleCritico !== undefined && (typeof override.aleCritico !== 'number' || override.aleCritico <= 0)) {
         return 'aleCritico debe ser un número mayor que 0.';
+    }
+    if (
+        override.aleCritico !== undefined &&
+        globalCriteria &&
+        typeof globalCriteria.aleCritico === 'number' &&
+        override.aleCritico > globalCriteria.aleCritico
+    ) {
+        return `El ALE Crítico de este riesgo (override) no puede superar el ALE Crítico global (${globalCriteria.aleCritico}).`;
     }
     return null;
 }

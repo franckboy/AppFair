@@ -20,6 +20,10 @@ export const state = {
             aleCritico: 250000,
             // Umbral usado para "Probabilidad de superar $X/año" en los resultados FAIR.
             aleUmbralExcedencia: 100000,
+            // false hasta que App.Api.bootstrap() traiga el valor real del backend — mientras
+            // tanto, App.Criteria.isComplete() no debe pensar que esto ya fue declarado por el
+            // usuario (ver App.Criteria.showGate, el candado obligatorio de primer uso).
+            declared: false,
         },
     },
     quick: {

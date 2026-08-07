@@ -136,6 +136,32 @@ test('PUT /api/config/criteria guarda y un GET posterior refleja el cambio', asy
 
     const getRes = await request(app).get('/api/config/criteria').set('X-API-Key', TEST_API_KEY);
     assert.strictEqual(getRes.body.rrtBands.alto, 40);
+    // declared:true lo usa el candado obligatorio de primer uso (App.Criteria.isComplete()) para
+    // saber que esto ya no es el default heredado del código — ver la prueba de abajo para el
+    // caso contrario (nada guardado todavía).
+    assert.strictEqual(putRes.body.declared, true);
+    assert.strictEqual(getRes.body.declared, true);
+});
+
+// Candado obligatorio de primer uso (ver App.Criteria.showGate en el frontend): mientras nadie
+// haya guardado sus propios criterios, GET debe avisar declared:false — de lo contrario el gate
+// no sabría que todavía está corriendo sobre defaultRiskCriteria ($250,000/20%, un número que
+// nadie eligió). Manipula el store directo para simular una instalación recién arrancada.
+test('GET /api/config/criteria responde declared:false cuando nadie ha guardado sus propios criterios', async () => {
+    const { JsonStore } = require('../src/store/jsonStore');
+    const rawStore = new JsonStore();
+    await rawStore.set('riskCriteria', null);
+
+    const res = await request(app).get('/api/config/criteria').set('X-API-Key', TEST_API_KEY);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.declared, false);
+
+    await rawStore.set('riskCriteria', {
+        rrtBands: { medio: 20, alto: 40, critico: 60 },
+        aleAceptablePercent: 20,
+        aleCritico: 5000,
+        aleUmbralExcedencia: 2000,
+    });
 });
 
 // Un criterio guardado ANTES de que existiera "Pérdida Anual Aceptable (%)" (formato viejo, con
@@ -228,6 +254,37 @@ test('POST /api/simulate rechaza un riskCriteria override con aleCritico <= 0 co
             riskCriteria: { rrtBands: { medio: 25, alto: 50, critico: 75 }, aleAceptablePercent: 20, aleCritico: -10 },
         });
     assert.strictEqual(res.status, 400);
+});
+
+// El global vigente en el store, en este punto de la corrida, quedó en aleCritico: 5000 (ver la
+// prueba de migración más arriba, que restaura ese valor al terminar). Un override individual
+// nunca puede pedir un techo más alto que el global — "mi máximo global es $5,000, pero para
+// este riesgo mi máximo es $6,000" se contradice a sí mismo.
+test('POST /api/simulate rechaza un riskCriteria override con aleCritico MAYOR al global con 400', async () => {
+    const res = await request(app)
+        .post('/api/simulate')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            iterations: 50,
+            tef: { min: 1, mode: 2, max: 3 },
+            vuln: { min: 1, mode: 2, max: 3 },
+            riskCriteria: { rrtBands: { medio: 25, alto: 50, critico: 75 }, aleAceptablePercent: 20, aleCritico: 6000 },
+        });
+    assert.strictEqual(res.status, 400);
+});
+
+test('POST /api/simulate acepta un riskCriteria override con aleCritico igual o menor al global', async () => {
+    const res = await request(app)
+        .post('/api/simulate')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            iterations: 50,
+            seed: 1,
+            tef: { min: 1, mode: 2, max: 3 },
+            vuln: { min: 1, mode: 2, max: 3 },
+            riskCriteria: { rrtBands: { medio: 25, alto: 50, critico: 75 }, aleAceptablePercent: 20, aleCritico: 5000 },
+        });
+    assert.strictEqual(res.status, 200);
 });
 
 test('PUT /api/config/org-defaults guarda solo los campos enviados, conserva el resto', async () => {
@@ -412,6 +469,17 @@ test('PUT /api/register/:riskName rechaza un riskCriteriaOverride fuera de rango
         .put(`/api/register/${encodeURIComponent('Riesgo override inválido HTTP')}`)
         .set('X-API-Key', TEST_API_KEY)
         .send({ ale: 500, cvar95: 800, riskCriteriaOverride: { aleAceptablePercent: 20, aleCritico: -5 } });
+    assert.strictEqual(res.status, 400);
+});
+
+// Global vigente en este punto: aleCritico 5000 (ver la prueba de migración de criterios más
+// arriba). Un override cuyo ALE Crítico supera al global se contradice a sí mismo (ver la nota
+// de validateRiskCriteriaOverride) y debe rechazarse, no guardarse en silencio.
+test('PUT /api/register/:riskName rechaza un riskCriteriaOverride con aleCritico MAYOR al global con 400', async () => {
+    const res = await request(app)
+        .put(`/api/register/${encodeURIComponent('Riesgo override mayor al global HTTP')}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ale: 500, cvar95: 800, riskCriteriaOverride: { aleAceptablePercent: 20, aleCritico: 6000 } });
     assert.strictEqual(res.status, 400);
 });
 

@@ -15,6 +15,85 @@ export const Criteria = {
         state.config.riskCriteria = updated;
     },
 
+    // declared (ver GET/PUT /api/config/criteria) es false mientras la organización no haya
+    // guardado su propio ALE Crítico — hasta entonces, state.config.riskCriteria trae el default
+    // heredado del código ($250,000/20%), un número que nadie eligió. Usado por el candado
+    // obligatorio de primer uso (ver showGate) para no dejar clasificar ningún riesgo contra ese
+    // default sin que el usuario lo haya declarado explícitamente.
+    isComplete() {
+        return !!(state.config.riskCriteria && state.config.riskCriteria.declared);
+    },
+
+    // Gate obligatorio de primer uso — mismo patrón que App.OrgContext.showGate, y corre justo
+    // después de ese (ver main.js): "nadie puede perder más del 100% de lo que está dispuesto a
+    // perder" — ese 100% (ALE Crítico) y el % que se acepta de él son criterio de la
+    // organización, no algo que la app pueda adivinar. Solo pide esos dos números — las Bandas de
+    // Riesgo Residual y el Umbral de Excedencia se quedan en sus valores por defecto, editables
+    // después desde "Criterios de Riesgo" (no son parte de este candado).
+    showGate(onComplete) {
+        document.querySelectorAll('.nav-requires-boot').forEach((btn) => (btn.disabled = true));
+        document
+            .querySelectorAll('#fairAnalysisPage, #registerPage, #assetsPage')
+            .forEach((el) => el.classList.add('hidden'));
+        document.getElementById('criteria-gate-form').innerHTML = `
+            <div class="input-group">
+                <label for="criteria-gate-critico">¿Cuál es la pérdida anual máxima que consideras crítica? (tu 100%, en USD)</label>
+                <input type="number" id="criteria-gate-critico" class="form-input" min="1" placeholder="Ej. 250000">
+            </div>
+            <div class="input-group">
+                <label for="criteria-gate-percent">¿Qué porcentaje de ese máximo estás dispuesto a aceptar sin que sea un problema?</label>
+                <input type="number" id="criteria-gate-percent" class="form-input" min="1" max="99" value="20">
+            </div>
+            <p id="criteria-gate-error" class="text-red-600 text-sm mt-2 hidden"></p>
+        `;
+        document.getElementById('criteria-gate').classList.remove('hidden');
+
+        const saveBtn = document.getElementById('criteria-gate-save-btn');
+        const saveHandler = async () => {
+            const aleCritico = getSafeNumber(document.getElementById('criteria-gate-critico'));
+            const aleAceptablePercent = getSafeNumber(document.getElementById('criteria-gate-percent'));
+            const errorEl = document.getElementById('criteria-gate-error');
+
+            if (!(aleCritico > 0)) {
+                errorEl.textContent =
+                    'Indica cuánto dinero representa, para tu organización, una pérdida anual crítica.';
+                errorEl.classList.remove('hidden');
+                return;
+            }
+            if (!(aleAceptablePercent > 0 && aleAceptablePercent < 100)) {
+                errorEl.textContent = 'El porcentaje aceptado debe estar entre 0 y 100.';
+                errorEl.classList.remove('hidden');
+                return;
+            }
+
+            saveBtn.disabled = true;
+            try {
+                await this.save({
+                    rrtBands: { medio: 25, alto: 50, critico: 75 },
+                    aleAceptablePercent,
+                    aleCritico,
+                    // Mismo monto que el ALE Aceptable recién declarado — sin esto, el Umbral de
+                    // Excedencia (Probabilidad, eje Y de la Matriz) tendría que caer en OTRO
+                    // número inventado por el código ($100,000) en vez de derivarse también de lo
+                    // que el usuario acaba de declarar. Se puede ajustar después desde Criterios
+                    // de Riesgo si no le hace sentido a la organización.
+                    aleUmbralExcedencia: Math.round(aleCritico * (aleAceptablePercent / 100)),
+                });
+                document.getElementById('criteria-gate').classList.add('hidden');
+                document.querySelectorAll('.nav-requires-boot').forEach((btn) => (btn.disabled = false));
+                saveBtn.removeEventListener('click', saveHandler);
+                showToast('Apetito de Riesgo guardado.');
+                onComplete();
+            } catch (err) {
+                errorEl.textContent = err.userMessage || 'No se pudo guardar. Intenta de nuevo.';
+                errorEl.classList.remove('hidden');
+            } finally {
+                saveBtn.disabled = false;
+            }
+        };
+        saveBtn.addEventListener('click', saveHandler);
+    },
+
     openEditor() {
         const c = state.config.riskCriteria;
         const formHTML = `

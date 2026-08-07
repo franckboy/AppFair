@@ -161,7 +161,7 @@ function createRegisterRouter(store) {
                 return res.status(400).json({ error: 'ale (número) es requerido.' });
             }
 
-            const overrideError = validateRiskCriteriaOverride(riskCriteriaOverride);
+            const overrideError = validateRiskCriteriaOverride(riskCriteriaOverride, criteria);
             if (overrideError) return res.status(400).json({ error: overrideError });
 
             const effectiveCriteria = riskCriteriaOverride ? { ...criteria, ...riskCriteriaOverride } : criteria;
