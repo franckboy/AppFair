@@ -73,7 +73,7 @@ const hazardStandards = {
     },
     'ISO 31000': {
         name: 'ISO 31000',
-        description: 'Marco y directrices genéricas de gestión del riesgo, aplicable a cualquier tipo de organización y de riesgo — el estándar base de toda esta app.',
+        description: 'Marco y directrices genéricas de gestión del riesgo, aplicable a cualquier tipo de organización y de riesgo.',
     },
     'ISO 37001': {
         name: 'ISO 37001',
@@ -188,7 +188,7 @@ const isoProcessClauses = {
     },
     '6.3.4': {
         title: 'Definición de criterios de riesgo',
-        summary: 'Declarar, antes de evaluar cualquier riesgo, cuánta pérdida es aceptable para la organización (Apetito de Riesgo) y contra qué umbrales se va a clasificar — ver Criterios de Riesgo.',
+        summary: 'Declarar, antes de evaluar cualquier riesgo, cuánta pérdida es aceptable para la organización (Apetito de Riesgo) y contra qué umbrales se va a clasificar.',
     },
     '6.4.2': {
         title: 'Identificación del riesgo',
@@ -221,11 +221,11 @@ const isoProcessClauses = {
 const rimsClauses = {
     '5.2': {
         title: 'Entender la organización y su contexto',
-        summary: 'Conocer la misión, objetivos y naturaleza del negocio antes de apreciar sus riesgos — ver Contexto Organizacional.',
+        summary: 'Conocer la misión, objetivos y naturaleza del negocio antes de apreciar sus riesgos.',
     },
     '6.3.4.3': {
         title: 'Análisis de sensibilidad',
-        summary: 'Identificar qué variables de entrada influyen más en el resultado simulado, para saber dónde vale la pena mejorar la calidad del dato.',
+        summary: 'Identificar qué variables de entrada influyen más en el resultado, para saber dónde vale la pena mejorar la calidad del dato.',
     },
     '6.4.4.3': {
         title: 'Registro de riesgos',
