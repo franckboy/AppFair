@@ -1,7 +1,7 @@
 import { App } from './app-namespace.js';
 import { state } from './state.js';
 import { Modal } from './modal.js';
-import { sanitizeHTML, severityToClasses, showToast } from './utils.js';
+import { getSafeNumber, sanitizeHTML, severityToClasses, showToast } from './utils.js';
 
 // ============================================================
 // App.RiskCascadeTree — vista de árbol del vínculo "Riesgo Desencadenante" (Paso 1, opcional,
@@ -178,6 +178,109 @@ export const RiskCascadeTree = {
             // caracteres tenga.
             card.addEventListener('click', () => this.openDetail(card.querySelector('.risk-tree-name').textContent));
         });
+
+        container.querySelectorAll('[data-tree-add-child]').forEach((btn) => {
+            btn.addEventListener('click', (e) => {
+                // Mismo motivo que [data-tree-toggle] arriba: el botón vive dentro de la
+                // tarjeta, sin esto también abriría el detalle al mismo tiempo.
+                e.stopPropagation();
+                const parentName = btn.closest('.risk-tree-card').querySelector('.risk-tree-name').textContent;
+                this.openCreateChildModal(parentName);
+            });
+        });
+    },
+
+    // Crea un riesgo NUEVO, ya vinculado como desencadenado por `parentRiskName` — a diferencia
+    // de armar el análisis completo en el wizard, esto solo reserva el lugar del riesgo en el
+    // árbol (nace como stub: ale 0, sin TEF/Vulnerabilidad/Magnitud) para completarlo después
+    // desde su propia tarjeta. Se guarda DIRECTO en el Registro (PUT /api/register/:nombre), no
+    // como borrador de Análisis Rápido (/api/risks) — el árbol solo lee state.fair.riskRegister
+    // (ver buildForest), así que un borrador nunca aparecería aquí.
+    // triggeredByProbability (0-100) es la probabilidad condicional de esta flecha padre→hijo —
+    // el dato que le falta a walkMarkovChain (lib/markov.js, todavía sin conectar) para simular
+    // la cascada correlacionada más adelante; se captura ya desde ahora para no tener que volver
+    // flecha por flecha a rellenarla cuando esa simulación exista.
+    openCreateChildModal(parentRiskName) {
+        Modal.title.textContent = 'Crear riesgo desencadenado';
+        Modal.body.innerHTML = `
+            <p class="description-text mb-3">
+                Este riesgo quedará vinculado como consecuencia de "${sanitizeHTML(parentRiskName)}". Nace sin
+                analizar — puedes completar su FAIR completo después, desde su propia tarjeta.
+            </p>
+            <p id="tree-create-child-error" class="text-red-600 text-sm mb-3 hidden"></p>
+            <div class="input-group">
+                <label for="tree-child-name">Nombre del riesgo:</label>
+                <input type="text" id="tree-child-name" class="form-input" placeholder="Ej. Daño reputacional">
+            </div>
+            <div class="input-group">
+                <label for="tree-child-description">Descripción (opcional):</label>
+                <textarea id="tree-child-description" class="form-textarea" rows="2"></textarea>
+            </div>
+            <div class="input-group">
+                <label for="tree-child-type">Tipo:</label>
+                <select id="tree-child-type" class="form-select">
+                    <option value="amenaza">Amenaza (riesgo negativo)</option>
+                    <option value="oportunidad">Oportunidad (riesgo positivo)</option>
+                </select>
+            </div>
+            <div class="input-group">
+                <label for="tree-child-probability">
+                    ¿Qué tan probable es que esto ocurra SI "${sanitizeHTML(parentRiskName)}" ocurre? (%)
+                </label>
+                <input type="number" id="tree-child-probability" class="form-input" value="50" min="0" max="100">
+            </div>
+        `;
+        Modal.footer.innerHTML = `
+            <button id="tree-create-child-cancel-btn" class="btn btn-secondary">Cancelar</button>
+            <button id="tree-create-child-save-btn" class="btn btn-primary">Crear riesgo</button>
+        `;
+        Modal.modal.classList.remove('hidden');
+
+        document.getElementById('tree-create-child-cancel-btn').addEventListener('click', () => Modal.hide());
+        document.getElementById('tree-create-child-save-btn').addEventListener('click', async (e) => {
+            const name = document.getElementById('tree-child-name').value.trim();
+            const description = document.getElementById('tree-child-description').value.trim();
+            const riskType = document.getElementById('tree-child-type').value;
+            const probability = getSafeNumber(document.getElementById('tree-child-probability'));
+            const errorEl = document.getElementById('tree-create-child-error');
+
+            if (!name) {
+                errorEl.textContent = 'El nombre del riesgo es obligatorio.';
+                errorEl.classList.remove('hidden');
+                return;
+            }
+            if (!(probability >= 0 && probability <= 100)) {
+                errorEl.textContent = 'La probabilidad debe estar entre 0 y 100.';
+                errorEl.classList.remove('hidden');
+                return;
+            }
+
+            const saveBtn = e.target;
+            saveBtn.disabled = true;
+            try {
+                await App.Api.request(`/api/register/${encodeURIComponent(name)}`, {
+                    method: 'PUT',
+                    body: {
+                        id: crypto.randomUUID(),
+                        ale: 0,
+                        cvar95: 0,
+                        riskType,
+                        description: description || null,
+                        triggeredByRiskName: parentRiskName,
+                        triggeredByProbability: probability,
+                    },
+                });
+                Modal.hide();
+                showToast(`"${name}" creado y vinculado a "${parentRiskName}".`);
+                await App.FairRegister.loadRiskRegister(false);
+                this.render();
+            } catch (err) {
+                errorEl.textContent = err.userMessage || 'No se pudo crear el riesgo. Intenta de nuevo.';
+                errorEl.classList.remove('hidden');
+            } finally {
+                saveBtn.disabled = false;
+            }
+        });
     },
 
     // Detalle completo de un riesgo al hacer clic en su tarjeta (mismo `Modal` que ya usan el
@@ -192,10 +295,21 @@ export const RiskCascadeTree = {
             return;
         }
         const isOpportunity = risk.riskType === 'oportunidad';
-        const badgeClasses = isOpportunity
-            ? 'bg-blue-50 border-blue-500 text-blue-800'
-            : risk.evaluationClasses || severityToClasses(risk.severity);
-        const badgeLabel = isOpportunity ? 'Oportunidad' : risk.evaluationLevel || '—';
+        // Mismo criterio que renderNode: un riesgo creado desde "+" (ver openCreateChildModal)
+        // nace sin TEF/Vulnerabilidad — su ale de $0 es "nadie lo ha simulado todavía", no un
+        // resultado real. "Tratar" tampoco tiene sentido sin un ALE real que reducir — se ofrece
+        // "Continuar en FAIR" en su lugar, que retoma exactamente donde el "+" lo dejó.
+        const neverSimulated = !risk.tef && !risk.vuln;
+        const badgeClasses = neverSimulated
+            ? 'bg-gray-50 border-gray-400 text-gray-700'
+            : isOpportunity
+              ? 'bg-blue-50 border-blue-500 text-blue-800'
+              : risk.evaluationClasses || severityToClasses(risk.severity);
+        const badgeLabel = neverSimulated
+            ? 'Sin analizar'
+            : isOpportunity
+              ? 'Oportunidad'
+              : risk.evaluationLevel || '—';
 
         Modal.title.textContent = risk.riskName;
         Modal.body.innerHTML = `
@@ -203,6 +317,10 @@ export const RiskCascadeTree = {
                 <span class="px-2 py-1 rounded text-xs border-l-4 ${badgeClasses}">${sanitizeHTML(badgeLabel)}</span>
             </div>
             <p class="description-text mb-3">${sanitizeHTML(risk.description || 'Sin descripción.')}</p>
+            ${
+                neverSimulated
+                    ? `<p class="description-text mb-3">Todavía no se ha corrido un análisis FAIR completo para este riesgo — usa "Continuar en FAIR" para completarlo.</p>`
+                    : `
             <ul class="text-sm text-gray-700 space-y-1 mb-3">
                 <li><strong>Activo:</strong> ${sanitizeHTML(risk.asset || '—')}</li>
                 <li><strong>Agente de Amenaza:</strong> ${sanitizeHTML(risk.threat || '—')}</li>
@@ -212,16 +330,29 @@ export const RiskCascadeTree = {
                 <li><strong>P90:</strong> ${formatAle(risk.p90)}</li>
                 <li><strong>CVaR 95%:</strong> ${formatAle(risk.cvar95)}</li>
                 ${risk.evaluationJustification ? `<li><strong>Justificación:</strong> ${sanitizeHTML(risk.evaluationJustification)}</li>` : ''}
-            </ul>
+            </ul>`
+            }
         `;
         Modal.footer.innerHTML = `
             <button id="risktree-detail-close-btn" class="btn btn-secondary">Cerrar</button>
-            ${isOpportunity ? '' : '<button id="risktree-detail-tratar-btn" class="btn btn-primary">Tratar</button>'}
+            ${
+                neverSimulated
+                    ? '<button id="risktree-detail-continue-btn" class="btn btn-primary">Continuar en FAIR</button>'
+                    : isOpportunity
+                      ? ''
+                      : '<button id="risktree-detail-tratar-btn" class="btn btn-primary">Tratar</button>'
+            }
         `;
         Modal.modal.classList.remove('hidden');
 
         document.getElementById('risktree-detail-close-btn').addEventListener('click', () => Modal.hide());
-        if (!isOpportunity) {
+        if (neverSimulated) {
+            document.getElementById('risktree-detail-continue-btn').addEventListener('click', () => {
+                Modal.hide();
+                App.Navigation.switchPage('fair');
+                App.FairWizard.loadRegisteredRiskIntoForm(risk.riskName);
+            });
+        } else if (!isOpportunity) {
             document.getElementById('risktree-detail-tratar-btn').addEventListener('click', () => {
                 Modal.hide();
                 App.Navigation.switchPage('treatment');
@@ -240,15 +371,26 @@ export const RiskCascadeTree = {
         const children = isCycle ? [] : childrenOf.get(risk.riskName) || [];
         const nextVisited = new Set(visited).add(risk.riskName);
         const isOpportunity = risk.riskType === 'oportunidad';
-        const classes = isOpportunity ? 'bg-blue-50 border-blue-500 text-blue-800' : severityToClasses(risk.severity);
+        // Un riesgo creado desde el botón "+" (ver openCreateChildModal) nace como stub, sin
+        // TEF/Vulnerabilidad todavía — su ale es literalmente 0 porque nadie lo ha simulado, no
+        // porque de verdad valga $0. Mostrarlo como "Aceptable"/verde (o azul, si es Oportunidad)
+        // sería indistinguible de un riesgo YA evaluado — se fuerza gris (el mismo respaldo que
+        // ya usa severityToClasses para severidad desconocida) y "Sin analizar" en vez del ALE.
+        const neverSimulated = !risk.tef && !risk.vuln;
+        const classes = neverSimulated
+            ? 'bg-gray-50 border-gray-400 text-gray-700'
+            : isOpportunity
+              ? 'bg-blue-50 border-blue-500 text-blue-800'
+              : severityToClasses(risk.severity);
         const typeLabel = isOpportunity ? 'Oportunidad' : 'Amenaza';
+        const aleLabel = neverSimulated ? 'Sin analizar' : `${formatAle(risk.ale)}/año`;
         const hasChildren = children.length > 0;
 
         return `
             <li>
                 <div class="risk-tree-card cursor-pointer ${classes}" data-tree-card>
                     <p class="risk-tree-name">${sanitizeHTML(risk.riskName)}</p>
-                    <p class="risk-tree-meta">${typeLabel} · ${formatAle(risk.ale)}/año</p>
+                    <p class="risk-tree-meta">${typeLabel} · ${aleLabel}</p>
                     ${
                         orphanParentName
                             ? `<p class="risk-tree-orphan-note">⚠️ Vinculado a "${sanitizeHTML(orphanParentName)}", que ya no está en el Registro (renombrado o eliminado).</p>`
@@ -264,11 +406,14 @@ export const RiskCascadeTree = {
                             ? `<p class="risk-tree-orphan-note">⚠️ Ciclo detectado: este riesgo ya aparece más arriba en esta misma rama.</p>`
                             : ''
                     }
-                    ${
-                        hasChildren
-                            ? `<button type="button" class="risk-tree-toggle" data-tree-toggle aria-expanded="true" title="Colapsar/expandir">▾</button>`
-                            : ''
-                    }
+                    <div class="risk-tree-card-actions">
+                        ${
+                            hasChildren
+                                ? `<button type="button" class="risk-tree-toggle" data-tree-toggle aria-expanded="true" title="Colapsar/expandir">▾</button>`
+                                : ''
+                        }
+                        <button type="button" class="risk-tree-add-child" data-tree-add-child title="Crear riesgo desencadenado por este">+</button>
+                    </div>
                 </div>
                 ${hasChildren ? `<ul>${children.map((c) => this.renderNode(c, childrenOf, nextVisited)).join('')}</ul>` : ''}
             </li>
