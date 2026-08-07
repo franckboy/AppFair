@@ -16,16 +16,27 @@ const { lossFormsKeys, lossFormsLabels } = require('../data/profiles');
  * @param {number} params.iterations Número de escenarios a simular (ej. 10000)
  * @param {number} params.seed Semilla del generador pseudoaleatorio (0 = aleatoria real)
  * @param {{min:number, mode:number, max:number}} params.tef Frecuencia de Evento de Amenaza (contactos/año)
- * @param {{min:number, mode:number, max:number}} params.vuln Vulnerabilidad, en % (0-100)
+ * @param {{min:number, mode:number, max:number}} params.vuln Vulnerabilidad, en % (0-100) — se
+ *        usa para armar el muestreo PERT por defecto (ver sampleVuln); sigue siendo obligatorio
+ *        aunque se pase un sampleVuln propio, para no tener que tocar la validación de la ruta.
  * @param {Object<string,{min:number, mode:number, max:number}>} params.lossMagnitudes
  *        Un objeto con hasta 9 claves (una por categoría de pérdida), cada una con su rango
+ * @param {(rng: () => number) => number} [params.sampleVuln] Punto de enchufe opcional: por
+ *        defecto (sin pasar nada) es exactamente la PERT de siempre sobre `vuln` — mismo
+ *        comportamiento bit a bit que antes de que este parámetro existiera. Pensado para que,
+ *        en el futuro, un caller pase una función que muestree la Vulnerabilidad de una red
+ *        bayesiana (ver bayesianNetwork.js, todavía sin conectar aquí) en vez de un rango fijo,
+ *        sin tener que tocar el resto del motor. Debe devolver un decimal en [0,1] (no
+ *        porcentaje), y consumir el mismo `rng` que se le pasa (para que la corrida siga siendo
+ *        reproducible con una semilla).
  * @returns {{annualLosses:number[], usedSeed:number, sensitivity:Array}}
  */
-function runMonteCarloSimulation({ iterations, seed, tef, vuln, lossMagnitudes }) {
+function runMonteCarloSimulation({ iterations, seed, tef, vuln, lossMagnitudes, sampleVuln }) {
     const usedSeed = seed && seed > 0 ? seed : Math.floor(Math.random() * 2147483647);
     const rng = mulberry32(usedSeed);
 
     const vulnDecimal = { min: vuln.min / 100, mode: vuln.mode / 100, max: vuln.max / 100 };
+    const drawVuln = sampleVuln || ((r) => getPertRandom(vulnDecimal.min, vulnDecimal.mode, vulnDecimal.max, 4, r));
 
     const activeKeys = lossFormsKeys.filter((key) => lossMagnitudes[key]);
     const lmInputs = activeKeys.map((key) => lossMagnitudes[key]);
@@ -37,7 +48,7 @@ function runMonteCarloSimulation({ iterations, seed, tef, vuln, lossMagnitudes }
 
     for (let i = 0; i < iterations; i++) {
         const tef_i = getPertRandom(tef.min, tef.mode, tef.max, 4, rng);
-        const vuln_i = getPertRandom(vulnDecimal.min, vulnDecimal.mode, vulnDecimal.max, 4, rng);
+        const vuln_i = drawVuln(rng);
         const lef_i = tef_i * vuln_i;
 
         let lm_i = 0;
