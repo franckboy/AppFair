@@ -226,7 +226,11 @@ export const FairExport = {
             const chart = new Chart(canvas, {
                 type: 'bar',
                 data: {
-                    labels: pareto.risks.map((r) => r.riskName),
+                    // Números en vez del nombre completo — mismo motivo y mismo patrón que
+                    // App.FairRegister.renderParetoChart (ver ese comentario): el nombre completo
+                    // rotado 45° podía ocupar más alto que el gráfico mismo. El nombre de cada
+                    // número vive en paretoLegendHTML, debajo de esta imagen en el PDF.
+                    labels: pareto.risks.map((r, i) => String(i + 1)),
                     datasets: [
                         {
                             type: 'bar',
@@ -266,7 +270,7 @@ export const FairExport = {
                             title: { display: true, text: '% Acumulado' },
                             grid: { drawOnChartArea: false },
                         },
-                        x: { ticks: { maxRotation: 45, minRotation: 45 } },
+                        x: { title: { display: true, text: 'Riesgo #' } },
                     },
                     plugins: { legend: { position: 'bottom' } },
                 },
@@ -486,6 +490,11 @@ export const FairExport = {
         const heatmapLegendHTML = threatRegister
             .map((r, i) => `<li>${i + 1}. ${sanitizeHTML(r.riskName)}</li>`)
             .join('');
+        // Mismo criterio que arriba, pero en el orden del Pareto (mayor a menor ALE) — no
+        // necesariamente el mismo orden que threatRegister, así que es una lista aparte.
+        const paretoLegendHTML = pareto
+            ? pareto.risks.map((r, i) => `<li>${i + 1}. ${sanitizeHTML(r.riskName)}</li>`).join('')
+            : '';
 
         // El backend guarda ale/cvar95 como números crudos (no strings ya formateados) — el
         // formateo es presentación, se hace aquí por entrada.
@@ -571,6 +580,11 @@ export const FairExport = {
                 <h2>Análisis 80-20 (Pareto)</h2>
                 <p style="font-size:12px;">${paretoSummaryText}</p>
                 ${paretoImg ? `<img src="${paretoImg}" alt="Análisis de Pareto" style="max-width:100%; height:auto; display:block;">` : ''}
+                ${
+                    paretoLegendHTML
+                        ? `<strong style="font-size:12px;">Riesgos:</strong><ol style="margin:4px 0 0 16px; padding:0; font-size:11px;">${paretoLegendHTML}</ol>`
+                        : ''
+                }
             </div>
             <div class="print-section">
                 <h2>Sensibilidad Consolidada</h2>
