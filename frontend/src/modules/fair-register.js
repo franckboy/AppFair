@@ -469,6 +469,11 @@ export const FairRegister = {
         // el `chartArea` ya confirmado y final para ese dibujo — no puede quedar desactualizado
         // por un reacomodo posterior. El DATO real (tooltip, eje) no cambia, solo dónde se
         // dibuja el punto.
+        // +4px de margen (además del radio) para que el punto NUNCA quede tocando la línea del
+        // eje/borde del cuadro — un punto justo tangente a esa línea se veía como si la
+        // "cortara" visualmente (la línea desaparece detrás del círculo justo en la esquina).
+        // Con este margen siempre queda un huequito visible entre el punto y el borde.
+        const POINT_EDGE_MARGIN = 4;
         const clampPointsToChartAreaPlugin = {
             id: 'fairRegisterClampPoints',
             beforeDatasetsDraw(chart) {
@@ -476,7 +481,7 @@ export const FairRegister = {
                 if (!meta || !meta.data) return;
                 const area = chart.chartArea;
                 meta.data.forEach((point) => {
-                    const r = (point.options && point.options.radius) || 10;
+                    const r = ((point.options && point.options.radius) || 10) + POINT_EDGE_MARGIN;
                     point.x = Math.min(Math.max(point.x, area.left + r), area.right - r);
                     point.y = Math.min(Math.max(point.y, area.top + r), area.bottom - r);
                 });
@@ -565,14 +570,18 @@ export const FairRegister = {
                     padding: { top: 14, right: 14, bottom: 4, left: 4 },
                 },
                 scales: {
+                    // Título corto y grande en vez del nombre técnico completo — el detalle
+                    // (qué % de qué exactamente) ya vive en el tooltip y en la descripción de
+                    // arriba de este gráfico; el eje solo necesita decir de qué se trata, no
+                    // explicarlo.
                     x: {
-                        title: { display: true, text: 'Impacto (ALE como % del umbral Crítico)' },
+                        title: { display: true, text: 'IMPACTO', font: { size: 16, weight: 'bold' } },
                         min: 0,
                         max: 100,
                         ticks: { stepSize: 25 },
                     },
                     y: {
-                        title: { display: true, text: 'Probabilidad de superar el umbral de excedencia (%)' },
+                        title: { display: true, text: 'PROBABILIDAD', font: { size: 16, weight: 'bold' } },
                         min: 0,
                         max: 100,
                         ticks: { stepSize: 25 },
