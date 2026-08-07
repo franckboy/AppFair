@@ -133,6 +133,10 @@ export const FairExport = {
             // del área de dibujo, así que la mitad del círculo se ve "saliendo" del cuadro —
             // beforeDatasetsDraw (no afterDatasetsUpdate) porque corre justo antes de pintar,
             // usando siempre el chartArea ya confirmado y final para ese dibujo.
+            // +4px de margen (además del radio) — mismo motivo que en
+            // App.FairRegister.renderRiskRegister: un punto tangente a la línea del eje se veía
+            // como si la "cortara" visualmente en la esquina.
+            const POINT_EDGE_MARGIN = 4;
             const clampPointsToChartAreaPlugin = {
                 id: 'fairExportClampPoints',
                 beforeDatasetsDraw(chart) {
@@ -140,7 +144,7 @@ export const FairExport = {
                     if (!meta || !meta.data) return;
                     const area = chart.chartArea;
                     meta.data.forEach((point) => {
-                        const r = (point.options && point.options.radius) || 10;
+                        const r = ((point.options && point.options.radius) || 10) + POINT_EDGE_MARGIN;
                         point.x = Math.min(Math.max(point.x, area.left + r), area.right - r);
                         point.y = Math.min(Math.max(point.y, area.top + r), area.bottom - r);
                     });
@@ -197,14 +201,16 @@ export const FairExport = {
                         padding: { top: 14, right: 14, bottom: 4, left: 4 },
                     },
                     scales: {
+                        // Mismo criterio que App.FairRegister.renderRiskRegister: título corto y
+                        // grande, el detalle ya vive en el texto de arriba del reporte.
                         x: {
-                            title: { display: true, text: 'Impacto (ALE como % del umbral Crítico)' },
+                            title: { display: true, text: 'IMPACTO', font: { size: 16, weight: 'bold' } },
                             min: 0,
                             max: 100,
                             ticks: { stepSize: 25 },
                         },
                         y: {
-                            title: { display: true, text: 'Probabilidad de superar el umbral de excedencia (%)' },
+                            title: { display: true, text: 'PROBABILIDAD', font: { size: 16, weight: 'bold' } },
                             min: 0,
                             max: 100,
                             ticks: { stepSize: 25 },
