@@ -4,6 +4,7 @@ import {
     LOSS_FORMS_KEYS,
     LOSS_FORM_LABELS,
     buildHistogramBins,
+    classifyPointSeverity,
     getSafeNumber,
     sanitizeHTML,
     sensitivityLabel,
@@ -512,10 +513,17 @@ export const FairRegister = {
                 ctx.restore();
             },
         };
+        // El color del punto/la leyenda ya NO viene de r.severity (evaluateFairThreat, que
+        // compara el ALE en dólares contra aleAceptable/aleCritico y nunca devuelve 'medio') —
+        // viene de classifyPointSeverity, el MISMO criterio que ya pintó la zona de fondo donde
+        // cae ese punto (posición Impacto%/Probabilidad% contra rrtBands). Antes podían no
+        // coincidir (un punto "crítico" por su ALE, parado sobre una zona "Medio" por su
+        // posición) — ver el comentario de classifyPointSeverity en utils.js.
+        const zones = state.fair.registerHeatmapZones || [];
         document.getElementById('fair-register-legend').innerHTML = `
             <p class="font-semibold text-gray-700 mb-2">Riesgos en el mapa</p>
             <ol class="space-y-1">
-                ${threatRegister.map((r, i) => `<li><span style="display:inline-block;width:8px;height:8px;border-radius:9999px;margin-right:4px;background-color:${severityToHex(r.severity)}"></span><strong>${i + 1}.</strong> ${sanitizeHTML(r.riskName)}</li>`).join('')}
+                ${threatRegister.map((r, i) => `<li><span style="display:inline-block;width:8px;height:8px;border-radius:9999px;margin-right:4px;background-color:${severityToHex(classifyPointSeverity(r.impactPercent, r.probabilityPercent, zones))}"></span><strong>${i + 1}.</strong> ${sanitizeHTML(r.riskName)}</li>`).join('')}
             </ol>
             ${opportunityCount > 0 ? `<p class="text-xs text-gray-500 mt-2">${opportunityCount} oportunidad${opportunityCount === 1 ? '' : 'es'} no se muestra${opportunityCount === 1 ? '' : 'n'} aquí — un beneficio esperado no es un riesgo a tratar. Están en la tabla de abajo.</p>` : ''}`;
 
@@ -528,15 +536,19 @@ export const FairRegister = {
                         label: 'Riesgos FAIR',
                         // Antes cada punto era del mismo morado fijo sin importar qué tan grave
                         // fuera el riesgo — el color solo venía del fondo por cuadrante (zona),
-                        // no del punto en sí. Ahora cada punto usa el mismo color que ya tiene su
-                        // badge de Evaluación en la tabla/PDF (severity: crítico/alto/medio/bajo).
+                        // no del punto en sí. Ahora cada punto se colorea con classifyPointSeverity
+                        // (el mismo criterio que ya pintó la zona donde cae — ver el comentario en
+                        // utils.js), no con `r.severity` — evita que un punto salga de un color y
+                        // la zona debajo de otro.
                         data: threatRegister.map((r) => ({
                             x: r.impactPercent,
                             y: r.probabilityPercent,
                             name: r.riskName,
                             level: r.evaluationLevel,
                         })),
-                        pointBackgroundColor: threatRegister.map((r) => severityToHex(r.severity)),
+                        pointBackgroundColor: threatRegister.map((r) =>
+                            severityToHex(classifyPointSeverity(r.impactPercent, r.probabilityPercent, zones)),
+                        ),
                         pointBorderColor: 'white',
                         // Los colores de severidad (severityToHex) son parecidos en tono a los
                         // colores de fondo de su propia zona (ej. "Medio" es dorado sobre dorado,
@@ -915,7 +927,7 @@ export const FairRegister = {
         // nombre largo, la etiqueta terminaba ocupando más alto que el gráfico mismo. Ahora
         // cada barra lleva solo su número (1 = mayor ALE, igual que el orden del Pareto) y la
         // lista de abajo (#fair-pareto-legend) dice qué riesgo es cada uno — mismo patrón que
-        // ya usa el Mapa de Calor Consolidado. También resuelve una ambigüedad real: dos
+        // ya usa la Matriz de Riesgos. También resuelve una ambigüedad real: dos
         // riesgos legítimamente pueden compartir nombre (ver registerIdentity.js), y con solo
         // el nombre como etiqueta no había forma de distinguir cuál barra era cuál.
         document.getElementById('fair-pareto-legend').innerHTML = `
