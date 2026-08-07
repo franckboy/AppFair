@@ -196,7 +196,7 @@ const isoProcessClauses = {
     },
     '6.4.3': {
         title: 'Análisis del riesgo',
-        summary: 'Entender el riesgo en profundidad — en esta app, el modelo cuantitativo FAIR (TEF, Vulnerabilidad, Magnitud de Pérdida) y la simulación Monte Carlo.',
+        summary: 'Entender el riesgo en profundidad: estimar su frecuencia y el impacto que tendría si ocurre.',
     },
     '6.4.4': {
         title: 'Evaluación del riesgo',
