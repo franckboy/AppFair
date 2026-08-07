@@ -94,42 +94,63 @@ export const Criteria = {
         saveBtn.addEventListener('click', saveHandler);
     },
 
+    // Reorganizado en 2 secciones con función DISTINTA y explícita (antes eran 2 <h4> genéricos
+    // que no dejaban claro qué mueve cada cosa en la app real — el usuario lo señaló viendo esta
+    // misma pantalla). Ninguno de los 2 grupos es sobra: los dos siguen en uso hoy.
     openEditor() {
         const c = state.config.riskCriteria;
         const formHTML = `
             <p class="description-text mb-4">
                 Estos criterios definen qué se considera un riesgo Aceptable, Alto o Crítico para tu organización
-                (Contexto, ISO 31000). Se guardan en este navegador y aplican a todos tus análisis.
+                (Contexto, ISO 31000). Se guardan en el servidor y aplican a todos tus análisis.
             </p>
             <p id="criteria-form-error" class="text-red-600 text-sm mb-3 hidden"></p>
-            <h4 class="font-semibold text-gray-700 mb-2">Bandas de Riesgo Residual (%) — Matriz de Riesgos</h4>
-            <div class="grid grid-cols-3 gap-3 mb-4">
-                <div class="input-group">
-                    <label for="crit-rrt-medio">Medio, desde:</label>
-                    <input type="number" id="crit-rrt-medio" class="form-input" value="${c.rrtBands.medio}" min="0" max="100">
-                </div>
-                <div class="input-group">
-                    <label for="crit-rrt-alto">Alto, desde:</label>
-                    <input type="number" id="crit-rrt-alto" class="form-input" value="${c.rrtBands.alto}" min="0" max="100">
-                </div>
-                <div class="input-group">
-                    <label for="crit-rrt-critico">Crítico, desde:</label>
-                    <input type="number" id="crit-rrt-critico" class="form-input" value="${c.rrtBands.critico}" min="0" max="100">
+
+            <div class="border border-blue-200 bg-blue-50 rounded-lg p-4 mb-4">
+                <h4 class="font-semibold text-gray-800 mb-1">1. Apetito de Riesgo (global)</h4>
+                <p class="description-text mb-3">
+                    Tu 100% (cuánto puedes perder al año antes de que sea catastrófico) y qué % de eso aceptas.
+                    <strong>Esto afecta:</strong> la clasificación Bajo/Medio/Alto/Crítico de "Evaluación" y "Riesgo
+                    Inherente/Residual" de CADA riesgo del portafolio, y también el eje Impacto (X) de la Matriz de
+                    Riesgos. Cada riesgo puede tener su propio Apetito individual (más restrictivo que este, ver el
+                    botón en el Paso 1 del wizard) — esto de aquí es el que usan todos los que no tengan uno propio.
+                </p>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div class="input-group">
+                        <label for="crit-ale-critico">ALE Crítico — tu 100% (USD):</label>
+                        <input type="number" id="crit-ale-critico" class="form-input" value="${c.aleCritico}" min="1">
+                    </div>
+                    <div class="input-group">
+                        <label for="crit-ale-aceptable-percent">Pérdida Anual Aceptable (%):</label>
+                        <input type="number" id="crit-ale-aceptable-percent" class="form-input" value="${c.aleAceptablePercent}" min="1" max="99">
+                    </div>
                 </div>
             </div>
-            <h4 class="font-semibold text-gray-700 mb-2">Pérdida Anual Esperada (ALE) — Análisis FAIR</h4>
-            <p class="description-text mb-2">Aceptable/Crítico clasifican "Evaluación" y "Riesgo Inherente/Residual" de cada riesgo (Bajo/Medio/Alto/Crítico) — el Umbral de excedencia define la Probabilidad (eje Y) de la Matriz de Riesgos.</p>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div class="input-group">
-                    <label for="crit-ale-aceptable-percent">Pérdida Anual Aceptable (%):</label>
-                    <input type="number" id="crit-ale-aceptable-percent" class="form-input" value="${c.aleAceptablePercent}" min="1" max="99">
+
+            <div class="border border-gray-200 bg-gray-50 rounded-lg p-4">
+                <h4 class="font-semibold text-gray-800 mb-1">2. Matriz de Riesgos — zonas y eje de Probabilidad</h4>
+                <p class="description-text mb-3">
+                    <strong>Esto afecta</strong> solo cómo se ve la Matriz de Riesgos: las Bandas pintan los colores
+                    de fondo (Medio/Alto/Crítico) según dónde cae cada punto por posición, y el Umbral define el eje
+                    Probabilidad (Y). No cambian la Evaluación de ningún riesgo — eso lo define la sección 1.
+                </p>
+                <p class="text-sm font-medium text-gray-600 mb-2">Bandas de Riesgo Residual (%):</p>
+                <div class="grid grid-cols-3 gap-3 mb-3">
+                    <div class="input-group">
+                        <label for="crit-rrt-medio">Medio, desde:</label>
+                        <input type="number" id="crit-rrt-medio" class="form-input" value="${c.rrtBands.medio}" min="0" max="100">
+                    </div>
+                    <div class="input-group">
+                        <label for="crit-rrt-alto">Alto, desde:</label>
+                        <input type="number" id="crit-rrt-alto" class="form-input" value="${c.rrtBands.alto}" min="0" max="100">
+                    </div>
+                    <div class="input-group">
+                        <label for="crit-rrt-critico">Crítico, desde:</label>
+                        <input type="number" id="crit-rrt-critico" class="form-input" value="${c.rrtBands.critico}" min="0" max="100">
+                    </div>
                 </div>
                 <div class="input-group">
-                    <label for="crit-ale-critico">ALE Crítico (desde):</label>
-                    <input type="number" id="crit-ale-critico" class="form-input" value="${c.aleCritico}" min="0">
-                </div>
-                <div class="input-group">
-                    <label for="crit-ale-umbral">Umbral "Prob. de superar $X/año":</label>
+                    <label for="crit-ale-umbral">Umbral "Prob. de superar $X/año" (eje Y de la Matriz):</label>
                     <input type="number" id="crit-ale-umbral" class="form-input" value="${c.aleUmbralExcedencia}" min="0">
                 </div>
             </div>
