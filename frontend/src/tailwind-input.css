@@ -388,6 +388,17 @@ body.modo-tecnico .simple-only {
   vertical-align: top;
   margin: 0 4px 4px 0;
 }
+/* Rotula a qué norma/estándar pertenece cada fila de chips (ej. "ISO 31000 — Proceso de
+   gestión de riesgos (cláusula 6):") — sin esto los códigos de cláusula (6.4.2, 6.4.3...)
+   aparecían sueltos, sin decir de qué norma vienen. */
+.marco-normativo-group-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: #6b7280;
+  margin: 0 0 4px 0;
+}
 .marco-normativo-chip {
   display: inline-block;
   background: #f3f4f6;
