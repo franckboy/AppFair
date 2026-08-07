@@ -4,6 +4,7 @@ const express = require('express');
 const { runMonteCarloSimulation, summarizeLosses } = require('../lib/simulation');
 const { evaluateFairThreat, evaluateFairOpportunity } = require('../lib/evaluation');
 const { defaultRiskCriteria, lossFormsKeys } = require('../data/profiles');
+const { normalizeRiskCriteria, validateRiskCriteriaOverride } = require('../lib/riskCriteria');
 const { validateTriangularRange, validateIterations, validateSeed } = require('../lib/validate');
 const { asyncHandler } = require('../middleware/asyncHandler');
 
@@ -70,7 +71,18 @@ function createSimulateRouter(store) {
                 if (lmError) return res.status(400).json({ error: lmError });
             }
 
-            const criteria = riskCriteria || (await store.get('riskCriteria')) || defaultRiskCriteria;
+            // riskCriteria (si viene) es un override explícito para ESTA corrida — se valida
+            // antes de usarlo porque, a diferencia de PUT /api/config/criteria, nada más lo
+            // revisa (ver validateRiskCriteriaOverride). normalizeRiskCriteria además migra
+            // cualquier criterio guardado ANTES de que existiera aleAceptablePercent (formato
+            // viejo, en dólares) — sin eso, aleAceptable sale NaN y todo se clasifica como
+            // "Aceptable" en silencio, sin importar la severidad real.
+            const overrideError = validateRiskCriteriaOverride(riskCriteria);
+            if (overrideError) return res.status(400).json({ error: overrideError });
+
+            const criteria = normalizeRiskCriteria(
+                riskCriteria || (await store.get('riskCriteria')) || defaultRiskCriteria,
+            );
             const formatCurrency = makeCurrencyFormatter();
 
             const { annualLosses, usedSeed, sensitivity } = runMonteCarloSimulation({

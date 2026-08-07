@@ -3,6 +3,7 @@
 const express = require('express');
 const { getRiskMatrixZones, calculateParetoAnalysis, calculateConsolidatedSensitivity } = require('../lib/register');
 const { defaultRiskCriteria } = require('../data/profiles');
+const { normalizeRiskCriteria, validateRiskCriteriaOverride } = require('../lib/riskCriteria');
 const { asyncHandler } = require('../middleware/asyncHandler');
 
 function createRegisterRouter(store) {
@@ -47,7 +48,9 @@ function createRegisterRouter(store) {
         '/:riskName',
         asyncHandler(async (req, res) => {
             const riskName = req.params.riskName;
-            const criteria = (await store.get('riskCriteria')) || defaultRiskCriteria;
+            // normalizeRiskCriteria migra cualquier criterio guardado ANTES de que existiera
+            // aleAceptablePercent (formato viejo, en dólares) — ver backend/src/lib/riskCriteria.js.
+            const criteria = normalizeRiskCriteria((await store.get('riskCriteria')) || defaultRiskCriteria);
             const {
                 asset = '—',
                 // Vínculo real hacia el Catálogo de Activos (/api/assets), a diferencia de
@@ -157,6 +160,9 @@ function createRegisterRouter(store) {
             if (typeof ale !== 'number') {
                 return res.status(400).json({ error: 'ale (número) es requerido.' });
             }
+
+            const overrideError = validateRiskCriteriaOverride(riskCriteriaOverride);
+            if (overrideError) return res.status(400).json({ error: overrideError });
 
             const effectiveCriteria = riskCriteriaOverride ? { ...criteria, ...riskCriteriaOverride } : criteria;
             const impactPercent = Math.max(0, Math.min(100, (ale / (effectiveCriteria.aleCritico || 1)) * 100));

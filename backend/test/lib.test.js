@@ -22,6 +22,7 @@ const {
     evaluateTreatmentStrategies,
 } = require('../src/lib/treatment');
 const { evaluateFairThreat } = require('../src/lib/evaluation');
+const { normalizeRiskCriteria, validateRiskCriteriaOverride } = require('../src/lib/riskCriteria');
 const { calculateParetoAnalysis } = require('../src/lib/register');
 const { sampleActivatedTransitions, walkMarkovChain } = require('../src/lib/markov');
 const {
@@ -752,6 +753,56 @@ test('evaluateFairThreat: el riesgo de cola (CVaR95) sigue escalando a Crítico 
     const result = evaluateFairThreat(100000, 300000, criteria, fmt); // ale cae en "Medio", cvar95 no
     assert.strictEqual(result.severity, 'critico');
     assert.ok(result.level.includes('cola'));
+});
+
+// --- normalizeRiskCriteria/validateRiskCriteriaOverride (migración del ALE Aceptable en
+// dólares a Pérdida Anual Aceptable %, ver backend/src/lib/riskCriteria.js) ---
+
+test('normalizeRiskCriteria: deja intacto un criterio que ya trae aleAceptablePercent', () => {
+    const criteria = { rrtBands: { medio: 25, alto: 50, critico: 75 }, aleAceptablePercent: 30, aleCritico: 100000 };
+    assert.deepStrictEqual(normalizeRiskCriteria(criteria), criteria);
+});
+
+test('normalizeRiskCriteria: migra un criterio guardado en el formato viejo (aleAceptable en dólares)', () => {
+    // Bug real: sin esto, un criterio guardado ANTES de que existiera aleAceptablePercent
+    // llega con ese campo undefined -> evaluateFairThreat calcula aleAceptable = NaN, y
+    // CUALQUIER comparación contra NaN es false en JS: todo se clasifica como "Aceptable".
+    const legacy = { rrtBands: { medio: 25, alto: 50, critico: 75 }, aleAceptable: 50000, aleCritico: 250000 };
+    const normalized = normalizeRiskCriteria(legacy);
+    assert.strictEqual(normalized.aleAceptablePercent, 20); // 50000/250000*100
+    assert.strictEqual(normalized.aleCritico, 250000);
+});
+
+test('normalizeRiskCriteria: sin aleAceptable ni aleAceptablePercent, cae a un 20% por defecto', () => {
+    const bare = { rrtBands: { medio: 25, alto: 50, critico: 75 }, aleCritico: 250000 };
+    assert.strictEqual(normalizeRiskCriteria(bare).aleAceptablePercent, 20);
+});
+
+test('normalizeRiskCriteria: acota el % derivado a 1-99 (nunca 0 ni >=100, aunque el monto viejo lo fuera)', () => {
+    const zero = normalizeRiskCriteria({ aleAceptable: 0, aleCritico: 100000 });
+    assert.strictEqual(zero.aleAceptablePercent, 1);
+    const overCritico = normalizeRiskCriteria({ aleAceptable: 500000, aleCritico: 100000 });
+    assert.strictEqual(overCritico.aleAceptablePercent, 99);
+});
+
+test('validateRiskCriteriaOverride: null/undefined (sin override) es válido', () => {
+    assert.strictEqual(validateRiskCriteriaOverride(null), null);
+    assert.strictEqual(validateRiskCriteriaOverride(undefined), null);
+});
+
+test('validateRiskCriteriaOverride: acepta un override parcial dentro de rango', () => {
+    assert.strictEqual(validateRiskCriteriaOverride({ aleAceptablePercent: 20, aleCritico: 250000 }), null);
+});
+
+test('validateRiskCriteriaOverride: rechaza aleAceptablePercent fuera de 0-100', () => {
+    assert.ok(validateRiskCriteriaOverride({ aleAceptablePercent: 150, aleCritico: 1000 }));
+    assert.ok(validateRiskCriteriaOverride({ aleAceptablePercent: 0, aleCritico: 1000 }));
+    assert.ok(validateRiskCriteriaOverride({ aleAceptablePercent: 100, aleCritico: 1000 }));
+});
+
+test('validateRiskCriteriaOverride: rechaza aleCritico <= 0', () => {
+    assert.ok(validateRiskCriteriaOverride({ aleCritico: 0 }));
+    assert.ok(validateRiskCriteriaOverride({ aleCritico: -500 }));
 });
 
 test('calculateParetoAnalysis: excluye riesgos tipo "oportunidad" de la exposición total', () => {
