@@ -81,10 +81,17 @@ export const FairRegister = {
     // Mismo criterio que evaluateFairThreat (backend/src/lib/evaluation.js) — el tramo entre
     // Aceptable y Crítico se parte a la mitad exacta en Medio/Alto, sin un tercer umbral
     // configurado aparte (decisión del usuario). Bajo/Crítico no se mueven.
-    classifyAleAgainstCriteria(ale) {
-        const criteria = state.config.riskCriteria;
+    // criteriaOverride (opcional): el Apetito de Riesgo propio de un riesgo en particular (ver
+    // App.FairWizard.openCriteriaOverrideEditor) — mismo mecanismo que ya usa /api/simulate,
+    // para que "Riesgo Inherente" se clasifique contra el MISMO criterio que se usó de verdad
+    // para evaluar ese riesgo, no siempre el global.
+    classifyAleAgainstCriteria(ale, criteriaOverride = null) {
+        const criteria = criteriaOverride
+            ? { ...state.config.riskCriteria, ...criteriaOverride }
+            : state.config.riskCriteria;
         if (!criteria || typeof ale !== 'number') return null;
-        const { aleAceptable, aleCritico } = criteria;
+        const { aleAceptablePercent, aleCritico } = criteria;
+        const aleAceptable = aleCritico * (aleAceptablePercent / 100);
         const aleMedio = aleAceptable + (aleCritico - aleAceptable) / 2;
         if (ale > aleCritico) return 'critico';
         if (ale > aleMedio) return 'alto';
@@ -122,7 +129,10 @@ export const FairRegister = {
             residualMoney: fmt(entry.ale),
             residualSeverity: entry.severity || null,
             inherentMoney: inherentAle != null ? fmt(inherentAle) : null,
-            inherentSeverity: inherentAle != null ? this.classifyAleAgainstCriteria(inherentAle) : null,
+            inherentSeverity:
+                inherentAle != null
+                    ? this.classifyAleAgainstCriteria(inherentAle, entry.riskCriteriaOverride || null)
+                    : null,
             controlEffectiveness: vulnMean != null ? `${(100 - vulnMean).toFixed(1)}%` : null,
         };
     },
@@ -302,6 +312,10 @@ export const FairRegister = {
                     // que salió (si vino de ahí) — ver App.FairWizard.loadRiskIntoForm y
                     // App.FairRegister.buildConcentratedList.
                     sourceRiskId: state.fair.sourceRiskId || null,
+                    // Apetito de Riesgo (Pérdida Anual Aceptable %/ALE Crítico) propio de este
+                    // riesgo, si se definió uno — ver App.FairWizard.openCriteriaOverrideEditor.
+                    // null usa los criterios globales, igual que antes de que existiera esto.
+                    riskCriteriaOverride: state.fair.riskCriteriaOverride || null,
                     // Riesgo en cascada (Paso 1, "Riesgo Desencadenante") — solo organizativo
                     // por ahora, ver el campo en el HTML para el detalle.
                     triggeredByRiskName: document.getElementById('fair-triggered-by').value || null,

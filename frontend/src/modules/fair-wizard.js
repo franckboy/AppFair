@@ -103,6 +103,83 @@ export const FairWizard = {
         );
     },
 
+    // Apetito de Riesgo por riesgo (state.fair.riskCriteriaOverride, null = usa los criterios
+    // globales de state.config.riskCriteria) — mismo patrón que los botones "Elegir del
+    // Catálogo de..." de este mismo paso: abre un modal prellenado en vez de mandar al usuario
+    // a la pantalla aparte de "Criterios de Riesgo" y forzarlo a volver. Se envía como
+    // riskCriteria a /api/simulate (que YA soportaba sobreescribir los criterios guardados para
+    // una sola corrida, ver runMonteCarloSimulation) y se persiste junto con el resto del
+    // análisis (ver saveToRiskRegister/saveDraftToRisksList/persistFairAnalysis) para que
+    // sobreviva a un re-simulado posterior de este mismo riesgo.
+    openCriteriaOverrideEditor() {
+        const global = state.config.riskCriteria || {};
+        const current = state.fair.riskCriteriaOverride;
+        const percentValue = current ? current.aleAceptablePercent : global.aleAceptablePercent;
+        const criticoValue = current ? current.aleCritico : global.aleCritico;
+        const formHTML = `
+            <p class="description-text mb-4">
+                Por defecto este riesgo usa los criterios globales de la organización (Pérdida Anual
+                Aceptable ${global.aleAceptablePercent}% de un ALE Crítico de $${(global.aleCritico || 0).toLocaleString('en-US')}).
+                Aquí puedes definir un Apetito de Riesgo distinto SOLO para este riesgo.
+            </p>
+            <p id="criteria-override-form-error" class="text-red-600 text-sm mb-3 hidden"></p>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div class="input-group">
+                    <label for="crit-override-percent">Pérdida Anual Aceptable (%):</label>
+                    <input type="number" id="crit-override-percent" class="form-input" value="${percentValue}" min="1" max="99">
+                </div>
+                <div class="input-group">
+                    <label for="crit-override-critico">ALE Crítico (desde):</label>
+                    <input type="number" id="crit-override-critico" class="form-input" value="${criticoValue}" min="0">
+                </div>
+            </div>
+        `;
+        Modal.title.textContent = 'Criterios de Riesgo — Solo para este riesgo';
+        Modal.body.innerHTML = formHTML;
+        Modal.footer.innerHTML = `
+            ${current ? '<button id="criteria-override-reset-btn" class="btn btn-secondary">Usar Criterios Globales</button>' : ''}
+            <button id="criteria-override-cancel-btn" class="btn btn-secondary">Cancelar</button>
+            <button id="criteria-override-save-btn" class="btn btn-primary">Guardar para este Riesgo</button>
+        `;
+        Modal.modal.classList.remove('hidden');
+
+        document.getElementById('criteria-override-cancel-btn').addEventListener('click', () => Modal.hide());
+        const resetBtn = document.getElementById('criteria-override-reset-btn');
+        if (resetBtn) {
+            resetBtn.addEventListener('click', () => {
+                state.fair.riskCriteriaOverride = null;
+                this.updateCriteriaOverrideStatus();
+                Modal.hide();
+                showToast('Este riesgo vuelve a usar los criterios globales de la organización.');
+            });
+        }
+        document.getElementById('criteria-override-save-btn').addEventListener('click', () => {
+            const percent = getSafeNumber(document.getElementById('crit-override-percent'));
+            const critico = getSafeNumber(document.getElementById('crit-override-critico'));
+            const errorEl = document.getElementById('criteria-override-form-error');
+            if (!(percent > 0 && percent < 100) || !(critico > 0)) {
+                errorEl.textContent =
+                    'La Pérdida Anual Aceptable (%) debe estar entre 0 y 100, y el ALE Crítico debe ser mayor que 0.';
+                errorEl.classList.remove('hidden');
+                return;
+            }
+            state.fair.riskCriteriaOverride = { aleAceptablePercent: percent, aleCritico: critico };
+            this.updateCriteriaOverrideStatus();
+            Modal.hide();
+            showToast('Criterios personalizados guardados para este riesgo.');
+        });
+    },
+
+    updateCriteriaOverrideStatus() {
+        const el = document.getElementById('fair-criteria-override-status');
+        const override = state.fair.riskCriteriaOverride;
+        if (override) {
+            el.textContent = `Usa criterios propios: Pérdida Anual Aceptable ${override.aleAceptablePercent}% de un ALE Crítico de $${override.aleCritico.toLocaleString('en-US')}.`;
+        } else {
+            el.textContent = 'Usa los criterios globales (Pérdida Anual Aceptable/ALE Crítico) de la organización.';
+        }
+    },
+
     // Guarda lo que ya se llenó en el Paso 1 en /api/risks, SIN pasar por TEF/Vulnerabilidad/
     // Magnitud/Simulación — permite dejar un riesgo anotado y volver después a completarlo,
     // en vez de obligar a terminar los 4 pasos en una sola sesión (antes esto lo cubría
@@ -127,6 +204,7 @@ export const FairWizard = {
             riskType: document.getElementById('fair-risk-type').value,
             timeHorizon: document.getElementById('fair-time-horizon').value,
             triggeredByRiskName: document.getElementById('fair-triggered-by').value || null,
+            riskCriteriaOverride: state.fair.riskCriteriaOverride || null,
         };
 
         const btn = document.getElementById('fair-save-draft-btn');
@@ -158,6 +236,9 @@ export const FairWizard = {
     bindEvents() {
         document.getElementById('fair-step1-next').addEventListener('click', () => this.navigateWizard(2));
         document.getElementById('fair-save-draft-btn').addEventListener('click', () => this.saveDraftToRisksList());
+        document
+            .getElementById('open-criteria-override-btn-fair')
+            .addEventListener('click', () => this.openCriteriaOverrideEditor());
         document.getElementById('fair-step2-back').addEventListener('click', () => this.navigateWizard(1));
         document.getElementById('fair-step2-next').addEventListener('click', () => this.navigateWizard(3));
         document.getElementById('fair-step3-back').addEventListener('click', () => this.navigateWizard(2));
@@ -444,6 +525,8 @@ export const FairWizard = {
         // sourceRiskId, y este análisis sí necesita quedar vinculado al riesgo de origen
         // (ver App.FairRegister.saveToRiskRegister y buildConcentratedList).
         state.fair.sourceRiskId = data.quickRiskId || null;
+        state.fair.riskCriteriaOverride = data.riskCriteriaOverride || null;
+        this.updateCriteriaOverrideStatus();
         document.getElementById('fair-riskName').value = data.riskName || '';
         this.populateTriggeredByOptions();
         // Igual que la Descripción/norma de abajo: si el riesgo se armó eligiendo un activo
@@ -580,6 +663,8 @@ export const FairWizard = {
         // (aunque se renombre el riesgo mientras tanto) siga actualizando esta misma entrada
         // en vez de crear una nueva huérfana (ver findRegisterEntryIndex en el backend).
         state.fair.registerEntryId = entry.id || null;
+        state.fair.riskCriteriaOverride = entry.riskCriteriaOverride || null;
+        this.updateCriteriaOverrideStatus();
 
         document.getElementById('fair-riskName').value = entry.riskName || '';
         document.getElementById('fair-riskDescription').value = entry.description || '';
@@ -1053,6 +1138,8 @@ export const FairWizard = {
         const doReset = () => {
             state.fair.sourceRiskId = null;
             state.fair.registerEntryId = null;
+            state.fair.riskCriteriaOverride = null;
+            this.updateCriteriaOverrideStatus();
             document.getElementById('fair-riskName').value = '';
             document.getElementById('fair-riskDescription').value = '';
             document.getElementById('fair-asset').value = '';
@@ -1177,7 +1264,13 @@ export const FairWizard = {
                     lossMagnitudes,
                     riskType,
                     currency,
-                    riskCriteria: state.config.riskCriteria,
+                    // Sin override, se manda igual el criterio global — /api/simulate lo trata
+                    // como una sobreescritura explícita para ESTA corrida en cualquier caso (ver
+                    // POST /api/simulate), así que enviarlo siempre es consistente y no cambia
+                    // nada cuando no hay override por riesgo.
+                    riskCriteria: state.fair.riskCriteriaOverride
+                        ? { ...state.config.riskCriteria, ...state.fair.riskCriteriaOverride }
+                        : state.config.riskCriteria,
                 },
             });
             await this.displaySimulationResults(result);
@@ -1374,6 +1467,7 @@ export const FairWizard = {
                 // "Analizar" de la tabla — aquí faltaba para el botón "Reanudar".
                 registerEntryId: state.fair.registerEntryId || null,
                 sourceRiskId: state.fair.sourceRiskId || null,
+                riskCriteriaOverride: state.fair.riskCriteriaOverride || null,
                 riskName: document.getElementById('fair-riskName').value,
                 riskDescription: document.getElementById('fair-riskDescription').value,
                 asset: document.getElementById('fair-asset').value,
@@ -1465,6 +1559,8 @@ export const FairWizard = {
             // una segunda con el mismo nombre.
             state.fair.registerEntryId = data.registerEntryId || null;
             state.fair.sourceRiskId = data.sourceRiskId || null;
+            state.fair.riskCriteriaOverride = data.riskCriteriaOverride || null;
+            this.updateCriteriaOverrideStatus();
 
             document.getElementById('fair-riskName').value = data.riskName || '';
             document.getElementById('fair-riskDescription').value = data.riskDescription || '';

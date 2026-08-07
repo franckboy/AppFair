@@ -1128,7 +1128,10 @@ const riskCatalog = {
 // Un cliente del API normalmente los sobreescribe con los suyos.
 const defaultRiskCriteria = {
     rrtBands: { medio: 25, alto: 50, critico: 75 },
-    aleAceptable: 50000,
+    // Pérdida Anual Aceptable, como % del ALE Crítico (Apetito de Riesgo: cuánto de esa
+    // pérdida máxima estoy dispuesto a asumir sin que se considere un problema). El ALE
+    // Aceptable en dinero se deriva de esto: aleCritico * aleAceptablePercent / 100.
+    aleAceptablePercent: 20,
     aleCritico: 250000,
     aleUmbralExcedencia: 100000,
 };
