@@ -34,6 +34,8 @@ const {
     inferPosterior,
 } = require('../src/lib/bayesianNetwork');
 const { expectedValue, evaluateDecisionTree } = require('../src/lib/decisionTree');
+const { riskCatalog } = require('../src/data/profiles');
+const { hazardStandards, isoProcessClauses, rimsClauses } = require('../src/data/standardsReference');
 
 test('mulberry32 es determinista: misma semilla -> misma secuencia', () => {
     const rngA = mulberry32(42);
@@ -1163,4 +1165,40 @@ test('pearsonCorrelation: dos variables independientes dan una correlación cerc
     const y = Array.from({ length: n }, () => rngY());
     const r = pearsonCorrelation(x, y);
     assert.ok(Math.abs(r) < 0.02, `correlación entre variables independientes debería ser ~0, dio ${r.toFixed(4)}`);
+});
+
+// --- standardsReference.js (catálogo curado de normas/marcos, base para las tarjetas de riesgo) ---
+
+test('hazardStandards: cubre TODOS los tokens de `standard` usados en riskCatalog, sin ninguno huérfano', () => {
+    // El campo `standard` de cada amenaza puede traer varios separados por ", " (ej. "ASIS,
+    // ISO 27001 Anexo A (Seguridad Física)") — cada token debe tener su propia entrada en
+    // hazardStandards, o el catálogo de normas queda incompleto en silencio la próxima vez que
+    // alguien agregue una amenaza citando una norma nueva.
+    const usedTokens = new Set();
+    Object.values(riskCatalog).forEach((domain) => {
+        Object.values(domain.categories).forEach((category) => {
+            category.threats.forEach((threat) => {
+                threat.standard.split(',').forEach((token) => usedTokens.add(token.trim()));
+            });
+        });
+    });
+
+    const missing = [...usedTokens].filter((token) => !hazardStandards[token]);
+    assert.deepStrictEqual(missing, [], `Tokens de \`standard\` sin entrada en hazardStandards: ${missing.join(', ')}`);
+});
+
+test('hazardStandards: cada entrada trae name y description no vacíos', () => {
+    Object.entries(hazardStandards).forEach(([key, entry]) => {
+        assert.ok(typeof entry.name === 'string' && entry.name.length > 0, `${key}.name`);
+        assert.ok(typeof entry.description === 'string' && entry.description.length > 0, `${key}.description`);
+    });
+});
+
+test('isoProcessClauses/rimsClauses: cada entrada trae title y summary no vacíos', () => {
+    [isoProcessClauses, rimsClauses].forEach((clauses) => {
+        Object.entries(clauses).forEach(([code, entry]) => {
+            assert.ok(typeof entry.title === 'string' && entry.title.length > 0, `${code}.title`);
+            assert.ok(typeof entry.summary === 'string' && entry.summary.length > 0, `${code}.summary`);
+        });
+    });
 });
