@@ -211,6 +211,7 @@ export const RiskCascadeTree = {
             <div class="input-group">
                 <label for="tree-child-name">Nombre del riesgo:</label>
                 <input type="text" id="tree-child-name" class="form-input" placeholder="Ej. Daño reputacional">
+                <button type="button" id="tree-child-open-catalog-btn" class="btn btn-secondary text-sm mt-2">📋 Elegir del Catálogo de Riesgos</button>
             </div>
             <div class="input-group">
                 <label for="tree-child-description">Descripción (opcional):</label>
@@ -236,6 +237,30 @@ export const RiskCascadeTree = {
         `;
         Modal.modal.classList.remove('hidden');
 
+        document.getElementById('tree-child-open-catalog-btn').addEventListener('click', () => {
+            // openPicker reemplaza Modal.body/footer por completo (mismo modal compartido) para
+            // mostrar el catálogo — eso destruye tree-child-name/tree-child-description mientras
+            // el catálogo está abierto, así que el picker no puede escribirles directo (a
+            // diferencia de fair-riskName en el Paso 1, que vive FUERA del modal). Por eso se usa
+            // el modo callback de openPicker: reabrimos "Crear riesgo desencadenado" desde cero y
+            // ahí sí volvemos a rellenar todo, incluyendo lo que ya tenía Tipo/Probabilidad.
+            const previousName = document.getElementById('tree-child-name').value;
+            const previousDescription = document.getElementById('tree-child-description').value;
+            const previousType = document.getElementById('tree-child-type').value;
+            const previousProbability = document.getElementById('tree-child-probability').value;
+            const reopenWith = (name, description) => {
+                this.openCreateChildModal(parentRiskName);
+                document.getElementById('tree-child-name').value = name;
+                document.getElementById('tree-child-description').value = description;
+                document.getElementById('tree-child-type').value = previousType;
+                document.getElementById('tree-child-probability').value = previousProbability;
+            };
+            App.RiskCatalog.openPicker('tree-child-name', 'tree-child-description', {
+                onSelect: (threat) =>
+                    reopenWith(threat.name, previousDescription.trim() ? previousDescription : threat.description),
+                onCancel: () => reopenWith(previousName, previousDescription),
+            });
+        });
         document.getElementById('tree-create-child-cancel-btn').addEventListener('click', () => Modal.hide());
         document.getElementById('tree-create-child-save-btn').addEventListener('click', async (e) => {
             const name = document.getElementById('tree-child-name').value.trim();
