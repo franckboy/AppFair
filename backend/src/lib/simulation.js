@@ -29,7 +29,7 @@ const { lossFormsKeys, lossFormsLabels } = require('../data/profiles');
  *        sin tener que tocar el resto del motor. Debe devolver un decimal en [0,1] (no
  *        porcentaje), y consumir el mismo `rng` que se le pasa (para que la corrida siga siendo
  *        reproducible con una semilla).
- * @returns {{annualLosses:number[], usedSeed:number, sensitivity:Array}}
+ * @returns {{annualLosses:number[], usedSeed:number, sensitivity:Array, lefSamples:number[]}}
  */
 function runMonteCarloSimulation({ iterations, seed, tef, vuln, lossMagnitudes, sampleVuln }) {
     const usedSeed = seed && seed > 0 ? seed : Math.floor(Math.random() * 2147483647);
@@ -44,6 +44,12 @@ function runMonteCarloSimulation({ iterations, seed, tef, vuln, lossMagnitudes, 
     const annualLosses = new Array(iterations);
     const tefSamples = new Array(iterations);
     const vulnSamples = new Array(iterations);
+    // LEF (TEF × Vulnerabilidad) por iteración — no se usa para nada dentro de esta función
+    // (annualLosses ya lo consume internamente), se expone tal cual porque cascadeSimulation.js
+    // lo necesita para derivar, iteración por iteración, si ESTE riesgo se activó "este año"
+    // (ver runFamilyCascadeSimulation: P(activado) = 1 − e^(−LEF)). No cambia ningún resultado
+    // existente — es la misma variable que ya se calculaba, solo que antes se descartaba.
+    const lefSamples = new Array(iterations);
     const lmSamples = activeKeys.map(() => new Array(iterations));
 
     for (let i = 0; i < iterations; i++) {
@@ -60,12 +66,13 @@ function runMonteCarloSimulation({ iterations, seed, tef, vuln, lossMagnitudes, 
 
         tefSamples[i] = tef_i;
         vulnSamples[i] = vuln_i;
+        lefSamples[i] = lef_i;
         annualLosses[i] = lef_i * lm_i;
     }
 
     const sensitivity = calculateSensitivity(annualLosses, tefSamples, vulnSamples, lmSamples, activeKeys);
 
-    return { annualLosses, usedSeed, sensitivity };
+    return { annualLosses, usedSeed, sensitivity, lefSamples };
 }
 
 /** Correlación de Pearson entre dos arreglos numéricos del mismo largo. */

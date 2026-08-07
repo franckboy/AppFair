@@ -69,4 +69,57 @@ test.describe('Árbol de Riesgos en Cascada', () => {
         await expect(page.locator('#treatmentPage')).toBeVisible();
         await expect(page.locator('#treatment-risk-select')).toHaveValue('E2E Árbol — Detalle');
     });
+
+    test('Simular Familia: un hijo creado con "+" conserva su triggeredByProbability al completar su FAIR, y la simulación combinada incluye a ambos', async ({
+        page,
+    }) => {
+        await connectAndBoot(page);
+        await runFullFairAnalysis(page, 'E2E Familia — Padre');
+
+        await page.click('#nav-risk-tree');
+        await page.waitForSelector('#risk-cascade-tree-container');
+        await page.waitForTimeout(300);
+
+        const parentCard = page.locator('.risk-tree-card', { hasText: 'E2E Familia — Padre' });
+        await parentCard.locator('[data-tree-add-child]').click();
+        await page.waitForSelector('#tree-child-name');
+        await page.fill('#tree-child-name', 'E2E Familia — Hijo');
+        await page.fill('#tree-child-probability', '90');
+        await page.click('#tree-create-child-save-btn');
+        await page.waitForTimeout(300);
+
+        // El hijo nace "Sin analizar" — se completa su FAIR desde su propia tarjeta.
+        await page.locator('.risk-tree-card', { hasText: 'E2E Familia — Hijo' }).click();
+        await page.waitForSelector('#risktree-detail-continue-btn');
+        await page.click('#risktree-detail-continue-btn');
+        await page.waitForSelector('#fair-riskName');
+
+        // Regresión: antes de esta tarea, saveToRiskRegister() nunca reenviaba
+        // triggeredByProbability — completar el FAIR de un hijo creado con "+" lo borraba en
+        // silencio (quedaba null) justo cuando runFamilyCascadeSimulation empieza a necesitarlo.
+        const [putRes] = await Promise.all([
+            page.waitForResponse((r) => r.url().includes('/api/register/') && r.request().method() === 'PUT', {
+                timeout: 15000,
+            }),
+            runFullFairAnalysis(page, 'E2E Familia — Hijo'),
+        ]);
+        const putBody = await putRes.json();
+        expect(putBody.entry.triggeredByProbability).toBe(90);
+
+        await page.click('#nav-risk-tree');
+        await page.waitForTimeout(300);
+        await page.locator('.risk-tree-card', { hasText: 'E2E Familia — Padre' }).click();
+        await page.waitForSelector('#risktree-detail-simulate-family-btn');
+
+        await Promise.all([
+            page.waitForResponse((r) => r.url().includes('/simulate-family'), { timeout: 15000 }),
+            page.click('#risktree-detail-simulate-family-btn'),
+        ]);
+        await expect(page.locator('#risk-tree-family-sim-body')).toBeVisible({ timeout: 15000 });
+
+        const membersText = await page.locator('#risk-tree-family-sim-members').textContent();
+        expect(membersText).toContain('E2E Familia — Padre');
+        expect(membersText).toContain('E2E Familia — Hijo');
+        await expect(page.locator('#risk-tree-family-sim-ale')).not.toHaveText('');
+    });
 });

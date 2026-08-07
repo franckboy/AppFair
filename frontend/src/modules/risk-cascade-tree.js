@@ -1,7 +1,7 @@
 import { App } from './app-namespace.js';
 import { state } from './state.js';
 import { Modal } from './modal.js';
-import { getSafeNumber, sanitizeHTML, severityToClasses, showToast } from './utils.js';
+import { buildHistogramBins, getSafeNumber, sanitizeHTML, severityToClasses, showToast } from './utils.js';
 
 // ============================================================
 // App.RiskCascadeTree — vista de árbol del vínculo "Riesgo Desencadenante" (Paso 1, opcional,
@@ -43,6 +43,9 @@ export const RiskCascadeTree = {
             .getElementById('risk-tree-zoom-out-btn')
             .addEventListener('click', () => this.setZoom(this._zoom - ZOOM_STEP));
         document.getElementById('risk-tree-zoom-reset-btn').addEventListener('click', () => this.setZoom(1));
+        document.getElementById('risk-tree-family-sim-close').addEventListener('click', () => {
+            document.getElementById('risk-tree-family-simulation').classList.add('hidden');
+        });
     },
 
     setZoom(value) {
@@ -358,8 +361,15 @@ export const RiskCascadeTree = {
             </ul>`
             }
         `;
+        // "Simular Familia" solo tiene sentido para un riesgo YA analizado (necesita su propio
+        // tef/vuln para poder re-simularse) y de tipo Amenaza (ver runFamilyCascadeSimulation en
+        // el backend: una Oportunidad se excluye de la suma de familia, así que ofrecer el botón
+        // en una no llevaría a nada útil). No depende de tener hijos — simular la "familia" de un
+        // riesgo sin descendientes es válido, da el mismo resultado que simularlo solo.
+        const canSimulateFamily = !neverSimulated && !isOpportunity;
         Modal.footer.innerHTML = `
             <button id="risktree-detail-close-btn" class="btn btn-secondary">Cerrar</button>
+            ${canSimulateFamily ? '<button id="risktree-detail-simulate-family-btn" class="btn btn-secondary">Simular Familia</button>' : ''}
             ${
                 neverSimulated
                     ? '<button id="risktree-detail-continue-btn" class="btn btn-primary">Continuar en FAIR</button>'
@@ -371,6 +381,12 @@ export const RiskCascadeTree = {
         Modal.modal.classList.remove('hidden');
 
         document.getElementById('risktree-detail-close-btn').addEventListener('click', () => Modal.hide());
+        if (canSimulateFamily) {
+            document.getElementById('risktree-detail-simulate-family-btn').addEventListener('click', () => {
+                Modal.hide();
+                this.simulateFamily(risk.riskName);
+            });
+        }
         if (neverSimulated) {
             document.getElementById('risktree-detail-continue-btn').addEventListener('click', () => {
                 Modal.hide();
@@ -384,6 +400,94 @@ export const RiskCascadeTree = {
                 App.Treatment.load(risk.riskName);
             });
         }
+    },
+
+    // Simula, de forma correlacionada, la pérdida anual combinada de `riskName` y todos sus
+    // descendientes en el Árbol de Riesgos (POST /api/cascade/:riskName/simulate-family, ver
+    // runFamilyCascadeSimulation en el backend) — mismo patrón visual que
+    // App.FairRegister.simulateRegisteredRisk (loader/body/histograma/Chart.js), pero en su
+    // propia sección de esta página (#risk-tree-family-simulation), no en un modal: un
+    // <canvas> de Chart.js necesita vivir en el DOM de forma persistente, no dentro del Modal
+    // compartido (que se reemplaza por completo cada vez que se abre otra cosa).
+    async simulateFamily(riskName) {
+        const section = document.getElementById('risk-tree-family-simulation');
+        const loading = document.getElementById('risk-tree-family-sim-loading');
+        const body = document.getElementById('risk-tree-family-sim-body');
+        document.getElementById('risk-tree-family-sim-title').textContent = `Simulación de Familia: ${riskName}`;
+        section.classList.remove('hidden');
+        loading.classList.remove('hidden');
+        loading.textContent = 'Simulando la familia completa (10,000 escenarios)…';
+        body.classList.add('hidden');
+        section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+        let result;
+        try {
+            result = await App.Api.request(`/api/cascade/${encodeURIComponent(riskName)}/simulate-family`, {
+                method: 'POST',
+                body: { iterations: 10000, seed: 0 },
+            });
+        } catch (err) {
+            loading.textContent = err.userMessage || 'No se pudo simular la familia de este riesgo.';
+            return;
+        }
+
+        loading.classList.add('hidden');
+        body.classList.remove('hidden');
+
+        const formatCurrency = (v) => `$${Math.round(v).toLocaleString('en-US')}`;
+        document.getElementById('risk-tree-family-sim-ale').textContent = formatCurrency(result.summary.average);
+        document.getElementById('risk-tree-family-sim-median').textContent = formatCurrency(result.summary.median);
+        document.getElementById('risk-tree-family-sim-p90').textContent = formatCurrency(result.summary.p90);
+        document.getElementById('risk-tree-family-sim-cvar').textContent = formatCurrency(result.summary.cvar95);
+
+        const banner = document.getElementById('risk-tree-family-sim-evaluation');
+        banner.className = `p-4 rounded-lg mb-4 border-l-4 ${severityToClasses(result.evaluation.severity)}`;
+        banner.innerHTML = `
+            <p class="font-bold">Evaluación de familia: ${sanitizeHTML(result.evaluation.level)}</p>
+            <p class="text-sm mt-1">${sanitizeHTML(result.evaluation.justification)}</p>
+        `;
+
+        const membersEl = document.getElementById('risk-tree-family-sim-members');
+        const includedItems = (result.includedRiskNames || [])
+            .map(
+                (name) =>
+                    `<li>✅ ${sanitizeHTML(name)} — se activó en el ${Math.round(result.activationRates[name] || 0)}% de los escenarios</li>`,
+            )
+            .join('');
+        const excludedItems = (result.excludedRiskNames || [])
+            .map((e) => `<li>⚪ ${sanitizeHTML(e.riskName)} — excluido: ${sanitizeHTML(e.reason)}</li>`)
+            .join('');
+        membersEl.innerHTML = `<ul class="text-sm space-y-1">${includedItems}${excludedItems}</ul>`;
+
+        const ctx = document.getElementById('risk-tree-family-sim-chart').getContext('2d');
+        const { labels, binCounts } = buildHistogramBins(result.annualLosses, result.summary.max);
+        if (state.fair.familyCascadeChart) state.fair.familyCascadeChart.destroy();
+        state.fair.familyCascadeChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels,
+                datasets: [
+                    {
+                        label: 'Frecuencia de Pérdida Anual (familia)',
+                        data: binCounts,
+                        backgroundColor: 'rgba(147, 51, 234, 0.6)',
+                        borderColor: 'rgba(147, 51, 234, 1)',
+                        borderWidth: 1,
+                    },
+                ],
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: { beginAtZero: true, title: { display: true, text: 'Nº de Simulaciones' } },
+                    x: {
+                        title: { display: true, text: 'Pérdida Anual Estimada (miles de USD)' },
+                        ticks: { autoSkip: true, maxRotation: 45, minRotation: 45 },
+                    },
+                },
+            },
+        });
     },
 
     // `visited`: nombres ya recorridos en esta rama — corta cualquier ciclo (A desencadena B,
