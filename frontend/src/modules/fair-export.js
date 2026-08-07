@@ -127,24 +127,38 @@ export const FairExport = {
                     ctx.restore();
                 },
             };
+            // Mismo criterio y misma técnica que App.FairRegister.renderRiskRegister (ver ese
+            // comentario para el detalle completo): un riesgo en el borde (impacto y/o
+            // probabilidad en 0 o 100) queda con el centro del punto exactamente sobre el borde
+            // del área de dibujo, así que la mitad del círculo se ve "saliendo" del cuadro —
+            // beforeDatasetsDraw (no afterDatasetsUpdate) porque corre justo antes de pintar,
+            // usando siempre el chartArea ya confirmado y final para ese dibujo.
+            const clampPointsToChartAreaPlugin = {
+                id: 'fairExportClampPoints',
+                beforeDatasetsDraw(chart) {
+                    const meta = chart.getDatasetMeta(0);
+                    if (!meta || !meta.data) return;
+                    const area = chart.chartArea;
+                    meta.data.forEach((point) => {
+                        const r = (point.options && point.options.radius) || 10;
+                        point.x = Math.min(Math.max(point.x, area.left + r), area.right - r);
+                        point.y = Math.min(Math.max(point.y, area.top + r), area.bottom - r);
+                    });
+                },
+            };
             const pointNumberPlugin = {
                 id: 'fairExportPointNumbers',
                 afterDatasetsDraw(chart) {
-                    const {
-                        ctx,
-                        scales: { x, y },
-                    } = chart;
+                    const meta = chart.getDatasetMeta(0);
+                    if (!meta || !meta.data) return;
+                    const { ctx } = chart;
                     ctx.save();
                     ctx.font = 'bold 11px Arial';
                     ctx.textAlign = 'center';
                     ctx.textBaseline = 'middle';
                     ctx.fillStyle = '#fff';
-                    threatRegister.forEach((r, i) => {
-                        ctx.fillText(
-                            String(i + 1),
-                            x.getPixelForValue(r.impactPercent),
-                            y.getPixelForValue(r.probabilityPercent),
-                        );
+                    meta.data.forEach((point, i) => {
+                        ctx.fillText(String(i + 1), point.x, point.y);
                     });
                     ctx.restore();
                 },
@@ -164,6 +178,10 @@ export const FairExport = {
                             })),
                             pointBackgroundColor: threatRegister.map((r) => severityToHex(r.severity)),
                             pointBorderColor: 'white',
+                            // Mismo motivo que en App.FairRegister.renderRiskRegister: colores de
+                            // severidad parecidos al fondo de su propia zona — un borde más grueso
+                            // separa el punto del fondo sin importar el tono.
+                            pointBorderWidth: 3,
                             pointRadius: 10,
                             // Mismo motivo que en App.FairRegister.renderRiskRegister: un riesgo en
                             // x=100 o y=100 (ALE que ya iguala/supera el umbral Crítico) cae exacto
@@ -194,7 +212,7 @@ export const FairExport = {
                     },
                     plugins: { legend: { display: false } },
                 },
-                plugins: [matrixBackgroundPlugin, pointNumberPlugin],
+                plugins: [matrixBackgroundPlugin, clampPointsToChartAreaPlugin, pointNumberPlugin],
             });
             requestAnimationFrame(() => {
                 const img = canvas.toDataURL('image/png');

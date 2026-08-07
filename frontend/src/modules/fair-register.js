@@ -457,14 +457,21 @@ export const FairRegister = {
         // backend) queda con el CENTRO del punto exactamente sobre el borde del área de
         // dibujo — Chart.js lo posiciona ahí tal cual, así que la mitad del círculo (radio 10,
         // hasta 13 al pasar el mouse) se dibuja visualmente "saliendo" del cuadro del gráfico,
-        // aunque `clip` (ver el dataset) evite que se vea cortado. Este plugin corre justo
-        // después de que Chart.js calcula la posición en píxeles de cada punto (antes de que
-        // se dibuje nada) y la ajusta hacia adentro lo mínimo necesario para que el círculo
-        // completo quede dentro del área — el DATO real (tooltip, eje) no cambia, solo dónde
-        // se dibuja el punto.
+        // aunque `clip` (ver el dataset) evite que se vea cortado.
+        //
+        // Bug real encontrado (no en `afterDatasetsUpdate`, donde vivía esto antes): en un
+        // contenedor angosto (pantallas chicas/móvil), el navegador puede reacomodar el tamaño
+        // real del gráfico DESPUÉS de que Chart.js ya calculó la posición de los puntos para
+        // ese ciclo de actualización — así que un punto en una esquina (ej. impacto Y
+        // probabilidad ambos en 100%) se ajustaba contra un `chartArea` que ya había quedado
+        // desactualizado, y el círculo volvía a quedar cortado. `beforeDatasetsDraw` corre
+        // justo antes de PINTAR cada cuadro (no al actualizar los datos), así que siempre usa
+        // el `chartArea` ya confirmado y final para ese dibujo — no puede quedar desactualizado
+        // por un reacomodo posterior. El DATO real (tooltip, eje) no cambia, solo dónde se
+        // dibuja el punto.
         const clampPointsToChartAreaPlugin = {
             id: 'fairRegisterClampPoints',
-            afterDatasetsUpdate(chart) {
+            beforeDatasetsDraw(chart) {
                 const meta = chart.getDatasetMeta(0);
                 if (!meta || !meta.data) return;
                 const area = chart.chartArea;
