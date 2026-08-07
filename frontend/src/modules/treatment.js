@@ -16,6 +16,14 @@ export const Treatment = {
     // Guardados pendientes de disparar (debounce) — selectRisk() los vacía ANTES de cambiar de
     // riesgo (ver _flushPendingSaves), para no perder una edición en curso silenciosamente.
     _pendingSaves: [],
+    // Guardián contra condición de carrera de red (mismo patrón que App.FairWizard, ver el
+    // comentario junto a _attackerDefenseRequestId ahí): si el usuario cambia el "Nivel de
+    // Defensa Objetivo" dos veces rápido, no hay garantía de que las respuestas HTTP lleguen en
+    // el mismo orden en que se pidieron. Sin esto, una respuesta vieja podía llegar después y
+    // pisar en silencio el % de Reducción de ALE correcto — y como updateReduccionALEAuto
+    // termina llamando a updateTreatmentView(true) (que persiste en el Registro), el dato
+    // incorrecto no se quedaba solo en pantalla: se guardaba.
+    _reduccionALERequestId: 0,
 
     init() {
         this._pendingSaves = [];
@@ -178,6 +186,7 @@ export const Treatment = {
         const explanationEl = document.getElementById('fair-reduccionALE-explanation');
         explanationEl.textContent = 'Calculando…';
 
+        const requestId = ++this._reduccionALERequestId;
         let data;
         try {
             data = await App.Api.request('/api/autocalc/reduccion-ale', {
@@ -185,9 +194,16 @@ export const Treatment = {
                 body: { currentDefenseKey: entry.defenseKey, targetDefenseKey: objetivoKey },
             });
         } catch (err) {
+            if (requestId !== this._reduccionALERequestId) return; // ver el guardián documentado arriba, junto a Treatment
             explanationEl.textContent = 'No se pudo calcular automáticamente. Verifica tu conexión.';
             return;
         }
+        // Respuesta vieja, ya superada por otra más nueva, o "Ajustar manualmente" se activó
+        // mientras esta petición estaba en vuelo — en cualquiera de los dos casos, escribirla
+        // (y de paso persistirla, ver updateTreatmentView(true) más abajo) sería el mismo bug
+        // real ya documentado y arreglado para Vulnerabilidad/Magnitud de Pérdida en el wizard.
+        if (requestId !== this._reduccionALERequestId) return;
+        if (document.getElementById('fair-reduccionALE-manual-override').checked) return;
 
         document.getElementById('fair-reduccionALE').value = data.reductionPercent;
         explanationEl.textContent = `Calculado como: pasar de tu defensa actual (${data.currentScore.toFixed(0)}%) a "${state.quick.defenseProfiles[objetivoKey].name}" (${data.targetScore.toFixed(0)}%) = ${data.reductionPercent}% de reducción estimada.`;

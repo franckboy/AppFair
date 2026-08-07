@@ -26,6 +26,23 @@ import {
 // está aquí.
 // ============================================================
 export const FairWizard = {
+    // Guardianes contra condición de carrera de red: si el usuario dispara dos autocálculos
+    // seguidos para el MISMO cómputo (ej. cambia el Perfil de Atacante dos veces rápido, o
+    // edita "Modo" de una categoría de pérdida dos veces antes de que responda la primera), no
+    // hay garantía de que las respuestas HTTP lleguen en el mismo orden en que se pidieron — la
+    // más vieja puede llegar DESPUÉS que la más nueva y pisar en silencio un resultado ya
+    // correcto con uno desactualizado. Cada función de autocálculo de abajo captura un id antes
+    // de pedir la red y, al volver, solo escribe si su id sigue siendo el más reciente para ese
+    // mismo cómputo — si no, la respuesta es vieja y se descarta sin avisar (una llamada más
+    // nueva ya se está encargando, o ya terminó). _lossMagnitudeRequestIds es por CLAVE (una
+    // por cada una de las 9 categorías de pérdida) en vez de un solo id global, porque editar
+    // dos categorías DISTINTAS casi al mismo tiempo son cómputos independientes — descartar la
+    // respuesta de una por culpa de la otra sería un bug nuevo, no el arreglo de uno viejo.
+    _attackerDefenseRequestId: 0,
+    _vulnRequestId: 0,
+    _nextLossMagnitudeRequestId: 0,
+    _lossMagnitudeRequestIds: {},
+
     applyOrgDefaults() {
         document.getElementById('fair-defense-profile').value = App.OrgDefaults.defaults.defenseKey;
         document.getElementById('fair-data-source').value = App.OrgDefaults.defaults.dataSource;
@@ -389,6 +406,7 @@ export const FairWizard = {
         const summaryEl = document.getElementById('fair-attacker-defense-summary');
         summaryEl.innerHTML = '<p class="text-gray-500">Calculando…</p>';
 
+        const requestId = ++this._attackerDefenseRequestId;
         let data;
         try {
             data = await App.Api.request('/api/autocalc/attacker-defense-summary', {
@@ -396,10 +414,12 @@ export const FairWizard = {
                 body: { attackerKey, defenseKey },
             });
         } catch (err) {
+            if (requestId !== this._attackerDefenseRequestId) return; // ver el guardián documentado arriba, junto a FairWizard
             summaryEl.innerHTML = '<p class="text-red-600">No se pudo calcular. Verifica tu conexión.</p>';
             showToast(err.userMessage || 'No se pudo calcular el resumen de atacante/defensa.');
             return;
         }
+        if (requestId !== this._attackerDefenseRequestId) return; // respuesta vieja, ya superada por otra más nueva
         const { attackerProfile, defenseProfile, attackerScore, defenseScore, differential } = data;
 
         // Guardar para trazabilidad (qué supuestos se usaron) y para la sugerencia de rango
@@ -454,6 +474,7 @@ export const FairWizard = {
         const explanationEl = document.getElementById('vuln-auto-explanation');
         explanationEl.textContent = 'Calculando…';
 
+        const requestId = ++this._vulnRequestId;
         let data;
         try {
             data = await App.Api.request('/api/autocalc/vulnerability', {
@@ -461,9 +482,16 @@ export const FairWizard = {
                 body: { attackerKey: state.fair.attackerKey, defenseKey: state.fair.defenseKey, confidence },
             });
         } catch (err) {
+            if (requestId !== this._vulnRequestId) return; // ver el guardián documentado arriba, junto a FairWizard
             explanationEl.textContent = 'No se pudo calcular automáticamente. Verifica tu conexión.';
             return;
         }
+        // Respuesta vieja, ya superada por otra más nueva, o "Ajustar manualmente" se activó
+        // mientras esta petición estaba en vuelo (mismo bug real ya documentado y arreglado
+        // para Magnitud de Pérdida — ver _applyLossMagnitudeAuto) — en cualquiera de los dos
+        // casos, escribir esta respuesta pisaría en silencio un valor que ya no debería tocarse.
+        if (requestId !== this._vulnRequestId) return;
+        if (document.getElementById('vuln-manual-override').checked) return;
 
         document.getElementById('vuln-min').value = data.min;
         document.getElementById('vuln-mode').value = data.mode;
@@ -1116,6 +1144,17 @@ export const FairWizard = {
             if (summaryEl && !summaryEl.classList.contains('hidden')) summaryEl.textContent = 'Calculando…';
         });
 
+        // Un id nuevo, marcado como "el vigente" para CADA clave de esta llamada — ver el
+        // guardián documentado junto a FairWizard. Si otra llamada (esta misma función, para
+        // alguna de estas claves) se dispara mientras esta sigue en vuelo, esa otra llamada
+        // vuelve a marcar esa clave con SU propio id más nuevo, y esta respuesta (cuando
+        // llegue) ya no podrá escribirla — pero sí puede seguir escribiendo cualquier otra
+        // clave de este mismo lote que nadie más haya vuelto a pedir mientras tanto.
+        const requestId = ++this._nextLossMagnitudeRequestId;
+        items.forEach(({ key }) => {
+            this._lossMagnitudeRequestIds[key] = requestId;
+        });
+
         let data;
         try {
             data = await App.Api.request('/api/autocalc/loss-magnitude', {
@@ -1123,8 +1162,10 @@ export const FairWizard = {
                 body: { items, confidence },
             });
         } catch (err) {
+            const stillCurrentKeys = items.filter(({ key }) => this._lossMagnitudeRequestIds[key] === requestId);
+            if (stillCurrentKeys.length === 0) return true; // ninguna de estas claves sigue siendo la más reciente
             showToast(err.userMessage || 'No se pudo calcular la Magnitud de Pérdida automáticamente.');
-            items.forEach(({ key }) => {
+            stillCurrentKeys.forEach(({ key }) => {
                 const summaryEl = document.getElementById(`lm-${key}-compact-summary`);
                 if (summaryEl && !summaryEl.classList.contains('hidden')) {
                     summaryEl.innerHTML =
@@ -1143,6 +1184,7 @@ export const FairWizard = {
         // propio override antes de escribir (ver updateVulnerabilityAuto/suggestTefRange).
         if (document.getElementById('lm-manual-override').checked) return true;
         Object.entries(data).forEach(([key, range]) => {
+            if (this._lossMagnitudeRequestIds[key] !== requestId) return; // respuesta vieja para esta clave, ya superada
             const minEl = document.getElementById(`lm-${key}-min`);
             const maxEl = document.getElementById(`lm-${key}-max`);
             if (minEl) minEl.value = range.min;

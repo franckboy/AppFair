@@ -84,6 +84,7 @@ module.exports = [
                 __dirname: 'readonly',
                 process: 'readonly',
                 console: 'readonly',
+                setTimeout: 'readonly',
                 // Los specs de Playwright corren en Node, pero varios pasan funciones que se
                 // ejecutan DENTRO del navegador (page.evaluate/addInitScript) — esos globals de
                 // navegador son legítimos ahí, aunque el archivo en sí sea CommonJS/Node.
