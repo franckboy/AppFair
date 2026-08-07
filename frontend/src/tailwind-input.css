@@ -315,6 +315,30 @@ body.modo-tecnico .simple-only {
   cursor: pointer;
 }
 
+/* Visor del árbol: espacio de trabajo grande y propio (antes vivía sin alto definido, mezclado
+   en el flujo normal de la página — se sentía chico con pocos nodos). overflow: auto en los DOS
+   ejes (antes solo overflow-x) porque un árbol con varias generaciones puede crecer más alto que
+   el visor, no solo más ancho. El pellizco para zoom en móvil ya lo da el navegador gratis (el
+   <meta name="viewport"> de la app no lo bloquea) — esto solo agrega un zoom con botones para
+   desktop/casos donde el gesto no es cómodo. */
+.risk-tree-viewport {
+  height: 70vh;
+  min-height: 420px;
+  overflow: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fafafa;
+}
+/* transform-origin en la esquina, no al centro — con scale > 1 el contenido crece hacia abajo/
+   derecha, que es hacia donde el visor ya tiene scroll (overflow: auto de arriba), en vez de
+   crecer también hacia arriba/izquierda y salirse por un lado sin forma de alcanzarlo. */
+.risk-tree-zoom-wrap {
+  transform-origin: top left;
+  transition: transform 0.15s ease;
+  width: fit-content;
+  padding: 16px;
+}
+
 #fair-print-report {
   display: none;
 }
