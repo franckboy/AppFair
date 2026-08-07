@@ -184,6 +184,14 @@
                                     <label for="fair-riskDescription">Descripción (opcional):</label>
                                     <textarea id="fair-riskDescription" class="form-textarea" rows="2" placeholder="Describe el riesgo con tus palabras — contexto adicional que no cabe en el nombre."></textarea>
                                 </div>
+                                <!-- Override por riesgo de Pérdida Anual Aceptable (%)/ALE Crítico (ver App.FairWizard.
+                                     openCriteriaOverrideEditor) — mismo patrón que los botones de catálogo de arriba:
+                                     abre un modal prellenado, en vez de forzar a ir a "Criterios de Riesgo" y volver. -->
+                                <div class="input-group md:col-span-2">
+                                    <label>Criterios de este riesgo:</label>
+                                    <p id="fair-criteria-override-status" class="description-text mb-2">Usa los criterios globales (Pérdida Anual Aceptable/ALE Crítico) de la organización.</p>
+                                    <button type="button" id="open-criteria-override-btn-fair" class="btn btn-secondary text-sm">⚙️ Ajustar para este riesgo</button>
+                                </div>
                                 <div class="input-group">
                                     <label for="fair-asset">Activo Afectado:</label>
                                     <input type="text" id="fair-asset" class="form-input" list="datalist-assets" placeholder="Ej. Bodega de mercancía (Bodega 3)">

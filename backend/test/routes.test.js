@@ -112,22 +112,22 @@ test('PUT /api/config/criteria rechaza bandas no crecientes con 400', async () =
     const res = await request(app)
         .put('/api/config/criteria')
         .set('X-API-Key', TEST_API_KEY)
-        .send({ rrtBands: { medio: 50, alto: 25, critico: 75 }, aleAceptable: 1, aleCritico: 2 });
+        .send({ rrtBands: { medio: 50, alto: 25, critico: 75 }, aleAceptablePercent: 20, aleCritico: 2 });
     assert.strictEqual(res.status, 400);
 });
 
-test('PUT /api/config/criteria rechaza aleAceptable >= aleCritico con 400', async () => {
+test('PUT /api/config/criteria rechaza aleAceptablePercent fuera de 0-100 con 400', async () => {
     const res = await request(app)
         .put('/api/config/criteria')
         .set('X-API-Key', TEST_API_KEY)
-        .send({ rrtBands: { medio: 25, alto: 50, critico: 75 }, aleAceptable: 5000, aleCritico: 1000 });
+        .send({ rrtBands: { medio: 25, alto: 50, critico: 75 }, aleAceptablePercent: 150, aleCritico: 1000 });
     assert.strictEqual(res.status, 400);
 });
 
 test('PUT /api/config/criteria guarda y un GET posterior refleja el cambio', async () => {
     const body = {
         rrtBands: { medio: 20, alto: 40, critico: 60 },
-        aleAceptable: 1000,
+        aleAceptablePercent: 20,
         aleCritico: 5000,
         aleUmbralExcedencia: 2000,
     };

@@ -14,8 +14,9 @@ export const state = {
         riskCriteria: {
             // Bandas para clasificar el Riesgo Residual (%) del módulo de Análisis Rápido.
             rrtBands: { medio: 25, alto: 50, critico: 75 },
-            // Pérdida Anual Esperada (ALE) del módulo FAIR, en USD.
-            aleAceptable: 50000,
+            // Pérdida Anual Aceptable, como % del ALE Crítico (Apetito de Riesgo). El ALE
+            // Aceptable en USD se deriva de esto: aleCritico * aleAceptablePercent / 100.
+            aleAceptablePercent: 20,
             aleCritico: 250000,
             // Umbral usado para "Probabilidad de superar $X/año" en los resultados FAIR.
             aleUmbralExcedencia: 100000,
@@ -84,6 +85,11 @@ export const state = {
         // no bloquear "Siguiente" con datos todavía en 0 mientras la llamada al backend
         // sigue en camino (ver bindEvents()).
         pendingAutocalc: null,
+        // Apetito de Riesgo (Pérdida Anual Aceptable %/ALE Crítico) solo para el riesgo que se
+        // está armando ahora mismo — null usa los criterios globales de config.riskCriteria (ver
+        // App.FairWizard.openCriteriaOverrideEditor). Se limpia al empezar un riesgo nuevo
+        // (resetForm) y se restaura al reanudar/cargar uno ya guardado que lo tenía.
+        riskCriteriaOverride: null,
         // true en cuanto el usuario teclea directamente en TEF (ver bindEvents) — a partir de
         // ahí suggestTefRange() deja de tocar esos campos, para no pisar un dato real.
         tefManuallyEdited: false,

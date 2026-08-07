@@ -158,13 +158,15 @@ de Magnitud de Pérdida. Son constantes del código, de solo lectura.
 
 ### `GET /api/config/criteria` · `PUT /api/config/criteria`
 Los Criterios de Riesgo de la organización (Contexto, ISO 31000 6.3.4). `PUT` valida que
-`rrtBands.medio < alto < critico` y que `aleAceptable < aleCritico`; si no, responde `400`.
+`rrtBands.medio < alto < critico` y que `aleAceptablePercent` esté entre 0 y 100; si no,
+responde `400`. El ALE Aceptable en dólares ya no se guarda directo — se deriva como
+`aleCritico * aleAceptablePercent / 100` ("Pérdida Anual Aceptable (%)", el Apetito de Riesgo).
 
 ```json
 // PUT body
 {
   "rrtBands": { "medio": 25, "alto": 50, "critico": 75 },
-  "aleAceptable": 50000,
+  "aleAceptablePercent": 20,
   "aleCritico": 250000,
   "aleUmbralExcedencia": 100000
 }

@@ -718,7 +718,7 @@ test('evaluateTreatmentStrategies: la combinación Mitigar+Transferir puede gana
 });
 
 test('evaluateFairThreat: clasifica correctamente como Crítico por encima del umbral', () => {
-    const criteria = { aleAceptable: 50000, aleCritico: 250000 };
+    const criteria = { aleAceptablePercent: 20, aleCritico: 250000 };
     const fmt = (n) => `$${n}`;
     const result = evaluateFairThreat(300000, 100000, criteria, fmt);
     assert.strictEqual(result.severity, 'critico');
@@ -731,7 +731,7 @@ test('evaluateFairThreat: clasifica correctamente como Crítico por encima del u
 // (el límite superior de Crítico usa '>' estricto, igual que ya usaba el resto de la app —
 // ale === aleCritico exacto todavía NO cuenta como Crítico, mismo criterio que antes).
 test('evaluateFairThreat: parte el tramo Aceptable-Crítico a la mitad exacta (Medio/Alto)', () => {
-    const criteria = { aleAceptable: 50000, aleCritico: 250000 };
+    const criteria = { aleAceptablePercent: 20, aleCritico: 250000 };
     const fmt = (n) => `$${n}`;
     const cvarBajo = 0; // sin riesgo de cola en ninguno de estos casos
 
@@ -747,7 +747,7 @@ test('evaluateFairThreat: el riesgo de cola (CVaR95) sigue escalando a Crítico 
     // Bug que NO debía reaparecer al agregar el nivel Medio: el chequeo de CVaR95 va ANTES
     // que la nueva rama de Medio/Alto en el código — un promedio tranquilo con una cola gorda
     // debe seguir ganándole a cualquier clasificación por el promedio solo.
-    const criteria = { aleAceptable: 50000, aleCritico: 250000 };
+    const criteria = { aleAceptablePercent: 20, aleCritico: 250000 };
     const fmt = (n) => `$${n}`;
     const result = evaluateFairThreat(100000, 300000, criteria, fmt); // ale cae en "Medio", cvar95 no
     assert.strictEqual(result.severity, 'critico');

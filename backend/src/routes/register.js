@@ -92,6 +92,13 @@ function createRegisterRouter(store) {
                 // a la tabla concentrada del Registro reconocer que esta entrada FAIR es la
                 // continuación del mismo riesgo, en vez de mostrarlo como dos filas separadas.
                 sourceRiskId = null,
+                // Apetito de Riesgo (Pérdida Anual Aceptable %/ALE Crítico) propio de este riesgo,
+                // si el frontend definió uno para él (ver App.FairWizard.openCriteriaOverrideEditor)
+                // — null usa los criterios globales de la organización, igual que antes de que
+                // existiera esto. Afecta impactPercent (abajo), para que la posición de este riesgo
+                // en la Matriz de Riesgos sea consistente con el criterio que en verdad se usó para
+                // evaluarlo (ver POST /api/simulate, que ya acepta el mismo override para el cálculo).
+                riskCriteriaOverride = null,
                 // Riesgo en cascada: el nombre de OTRO riesgo del Registro que, de ocurrir,
                 // desencadena este — ej. un incendio que desencadena una interrupción operativa. Se
                 // referencia por riskName (no por id) porque el Registro mismo se identifica así en
@@ -151,7 +158,8 @@ function createRegisterRouter(store) {
                 return res.status(400).json({ error: 'ale (número) es requerido.' });
             }
 
-            const impactPercent = Math.max(0, Math.min(100, (ale / (criteria.aleCritico || 1)) * 100));
+            const effectiveCriteria = riskCriteriaOverride ? { ...criteria, ...riskCriteriaOverride } : criteria;
+            const impactPercent = Math.max(0, Math.min(100, (ale / (effectiveCriteria.aleCritico || 1)) * 100));
 
             const entry = {
                 // La app solo calcula en USD — no es un default, es fijo (ver la nota equivalente
@@ -183,6 +191,7 @@ function createRegisterRouter(store) {
                 lossMagnitudes,
                 seed,
                 sourceRiskId,
+                riskCriteriaOverride,
                 triggeredByRiskName,
                 description,
                 threat,

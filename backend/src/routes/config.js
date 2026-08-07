@@ -32,18 +32,28 @@ function createConfigRouter(store) {
     router.put(
         '/criteria',
         asyncHandler(async (req, res) => {
-            const { rrtBands, aleAceptable, aleCritico, aleUmbralExcedencia } = req.body;
+            const { rrtBands, aleAceptablePercent, aleCritico, aleUmbralExcedencia } = req.body;
 
             if (!rrtBands || !(rrtBands.medio < rrtBands.alto && rrtBands.alto < rrtBands.critico)) {
                 return res
                     .status(400)
                     .json({ error: 'Los umbrales de Riesgo Residual deben ser crecientes: Medio < Alto < Crítico.' });
             }
-            if (typeof aleAceptable !== 'number' || typeof aleCritico !== 'number' || !(aleAceptable < aleCritico)) {
-                return res.status(400).json({ error: 'El ALE Aceptable debe ser menor que el ALE Crítico.' });
+            if (
+                typeof aleAceptablePercent !== 'number' ||
+                aleAceptablePercent <= 0 ||
+                aleAceptablePercent >= 100 ||
+                typeof aleCritico !== 'number'
+            ) {
+                return res.status(400).json({ error: 'La Pérdida Anual Aceptable (%) debe estar entre 0 y 100.' });
             }
 
-            const criteria = { rrtBands, aleAceptable, aleCritico, aleUmbralExcedencia: aleUmbralExcedencia || 0 };
+            const criteria = {
+                rrtBands,
+                aleAceptablePercent,
+                aleCritico,
+                aleUmbralExcedencia: aleUmbralExcedencia || 0,
+            };
             await store.set('riskCriteria', criteria);
             res.json(criteria);
         }),

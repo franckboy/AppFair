@@ -42,8 +42,8 @@ export const Criteria = {
             <p class="description-text mb-2">Aceptable/Crítico clasifican "Evaluación" y "Riesgo Inherente/Residual" de cada riesgo (Bajo/Medio/Alto/Crítico) — el Umbral de excedencia define la Probabilidad (eje Y) de la Matriz de Riesgos.</p>
             <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div class="input-group">
-                    <label for="crit-ale-aceptable">ALE Aceptable (hasta):</label>
-                    <input type="number" id="crit-ale-aceptable" class="form-input" value="${c.aleAceptable}" min="0">
+                    <label for="crit-ale-aceptable-percent">Pérdida Anual Aceptable (%):</label>
+                    <input type="number" id="crit-ale-aceptable-percent" class="form-input" value="${c.aleAceptablePercent}" min="1" max="99">
                 </div>
                 <div class="input-group">
                     <label for="crit-ale-critico">ALE Crítico (desde):</label>
@@ -68,7 +68,7 @@ export const Criteria = {
             const medio = getSafeNumber(document.getElementById('crit-rrt-medio'));
             const alto = getSafeNumber(document.getElementById('crit-rrt-alto'));
             const critico = getSafeNumber(document.getElementById('crit-rrt-critico'));
-            const aleAceptable = getSafeNumber(document.getElementById('crit-ale-aceptable'));
+            const aleAceptablePercent = getSafeNumber(document.getElementById('crit-ale-aceptable-percent'));
             const aleCritico = getSafeNumber(document.getElementById('crit-ale-critico'));
             const errorEl = document.getElementById('criteria-form-error');
 
@@ -77,8 +77,8 @@ export const Criteria = {
                 errorEl.classList.remove('hidden');
                 return;
             }
-            if (!(aleAceptable < aleCritico)) {
-                errorEl.textContent = 'El ALE Aceptable debe ser menor que el ALE Crítico.';
+            if (!(aleAceptablePercent > 0 && aleAceptablePercent < 100)) {
+                errorEl.textContent = 'La Pérdida Anual Aceptable (%) debe estar entre 0 y 100.';
                 errorEl.classList.remove('hidden');
                 return;
             }
@@ -88,7 +88,7 @@ export const Criteria = {
             try {
                 await this.save({
                     rrtBands: { medio, alto, critico },
-                    aleAceptable: aleAceptable,
+                    aleAceptablePercent: aleAceptablePercent,
                     aleCritico: aleCritico,
                     aleUmbralExcedencia: getSafeNumber(document.getElementById('crit-ale-umbral')),
                 });

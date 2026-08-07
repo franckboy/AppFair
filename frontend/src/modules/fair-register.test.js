@@ -4,7 +4,7 @@ import { FairRegister } from './fair-register.js';
 
 describe('FairRegister.classifyAleAgainstCriteria', () => {
     beforeEach(() => {
-        state.config.riskCriteria = { aleAceptable: 50000, aleCritico: 250000 };
+        state.config.riskCriteria = { aleAceptablePercent: 20, aleCritico: 250000 };
     });
 
     it('clasifica como bajo un ALE por debajo del umbral aceptable', () => {
@@ -45,7 +45,7 @@ describe('FairRegister.classifyAleAgainstCriteria', () => {
 
 describe('FairRegister.computeFairRiskEquivalents', () => {
     beforeEach(() => {
-        state.config.riskCriteria = { aleAceptable: 50000, aleCritico: 250000 };
+        state.config.riskCriteria = { aleAceptablePercent: 20, aleCritico: 250000 };
     });
 
     it('devuelve null para una entrada de tipo oportunidad (es un beneficio, no una pérdida)', () => {
@@ -71,7 +71,7 @@ describe('FairRegister.computeFairRiskEquivalents', () => {
         expect(result.inherentMoney).toBe('$44,444');
         expect(result.controlEffectiveness).toBe('77.5%');
         expect(result.residualSeverity).toBe('bajo');
-        // 44,444 <= 50,000 (aleAceptable) → bajo
+        // 44,444 <= 50,000 (20% de aleCritico=250000 → aleAceptable derivado) → bajo
         expect(result.inherentSeverity).toBe('bajo');
     });
 
@@ -92,7 +92,7 @@ describe('FairRegister.computeFairRiskEquivalents', () => {
 
 describe('FairRegister.buildConcentratedList', () => {
     beforeEach(() => {
-        state.config.riskCriteria = { aleAceptable: 50000, aleCritico: 250000 };
+        state.config.riskCriteria = { aleAceptablePercent: 20, aleCritico: 250000 };
     });
 
     it('marca como "triage" un riesgo de Análisis Rápido sin entrada de FAIR vinculada', () => {

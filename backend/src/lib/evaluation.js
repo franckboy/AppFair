@@ -56,13 +56,19 @@ function evaluateResidualRisk(value, rrtBands, hardCap = null) {
  * clasificación deja de ser la única en la app sin nivel intermedio (la Matriz de Riesgos, ver
  * getRiskMatrixZones en register.js, ya tenía Bajo/Medio/Alto/Crítico). Bajo y Crítico NO se
  * mueven — siguen significando exactamente lo mismo que antes.
+ *
+ * El ALE Aceptable ya no se configura directo en dinero: se deriva de "Pérdida Anual Aceptable
+ * (%)" (aleAceptablePercent, el Apetito de Riesgo — cuánto de la pérdida Crítica estoy
+ * dispuesto a asumir) aplicado sobre aleCritico. Así el único ancla en dinero que hay que
+ * definir es aleCritico; aleAceptable se mantiene siempre por debajo de forma consistente.
  * @param {number} ale Pérdida Anual Esperada (promedio simulado)
  * @param {number} cvar95 CVaR 95% (cola de riesgo)
- * @param {{aleAceptable:number, aleCritico:number}} criteria
+ * @param {{aleAceptablePercent:number, aleCritico:number}} criteria
  * @param {(n:number) => string} formatCurrency
  */
 function evaluateFairThreat(ale, cvar95, criteria, formatCurrency) {
-    const { aleAceptable, aleCritico } = criteria;
+    const { aleAceptablePercent, aleCritico } = criteria;
+    const aleAceptable = aleCritico * (aleAceptablePercent / 100);
     const aleMedio = aleAceptable + (aleCritico - aleAceptable) / 2;
 
     if (ale > aleCritico) {
@@ -105,11 +111,12 @@ function evaluateFairThreat(ale, cvar95, criteria, formatCurrency) {
  * positivo): usa los mismos umbrales que Amenaza, pero invierte el
  * significado — un valor esperado alto es DESEABLE.
  * @param {number} benefit Beneficio Anual Esperado
- * @param {{aleAceptable:number, aleCritico:number}} criteria
+ * @param {{aleAceptablePercent:number, aleCritico:number}} criteria
  * @param {(n:number) => string} formatCurrency
  */
 function evaluateFairOpportunity(benefit, criteria, formatCurrency) {
-    const { aleAceptable, aleCritico } = criteria;
+    const { aleAceptablePercent, aleCritico } = criteria;
+    const aleAceptable = aleCritico * (aleAceptablePercent / 100);
 
     if (benefit > aleCritico) {
         return {
