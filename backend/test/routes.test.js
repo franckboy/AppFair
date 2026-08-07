@@ -464,6 +464,38 @@ test('PUT /api/register/:riskName con riskCriteriaOverride lo persiste y lo usa 
         .set('X-API-Key', TEST_API_KEY);
 });
 
+// Riesgo desencadenado creado desde el botón "+" del Árbol de Riesgos en Cascada (ver
+// App.RiskCascadeTree.openCreateChildModal) — nace como stub (ale: 0, sin tef/vuln) hasta que
+// alguien lo lleve al wizard y lo simule. triggeredByProbability es el dato que le falta a
+// walkMarkovChain (lib/markov.js) para simular la cascada correlacionada más adelante.
+test('PUT /api/register/:riskName persiste triggeredByRiskName y triggeredByProbability (riesgo en cascada)', async () => {
+    const riskName = 'Daño reputacional HTTP';
+    const putRes = await request(app)
+        .put(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            ale: 0,
+            cvar95: 0,
+            triggeredByRiskName: 'Incendio en bodega HTTP',
+            triggeredByProbability: 40,
+        });
+    assert.strictEqual(putRes.status, 200);
+    assert.strictEqual(putRes.body.entry.triggeredByRiskName, 'Incendio en bodega HTTP');
+    assert.strictEqual(putRes.body.entry.triggeredByProbability, 40);
+
+    await request(app)
+        .delete(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY);
+});
+
+test('PUT /api/register/:riskName rechaza triggeredByProbability fuera de 0-100 con 400', async () => {
+    const res = await request(app)
+        .put(`/api/register/${encodeURIComponent('Riesgo probabilidad inválida HTTP')}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ale: 0, triggeredByProbability: 150 });
+    assert.strictEqual(res.status, 400);
+});
+
 test('PUT /api/register/:riskName rechaza un riskCriteriaOverride fuera de rango con 400', async () => {
     const res = await request(app)
         .put(`/api/register/${encodeURIComponent('Riesgo override inválido HTTP')}`)

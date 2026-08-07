@@ -109,6 +109,14 @@ function createRegisterRouter(store) {
                 // alimenta ningún cálculo, así que una referencia por nombre es suficiente y
                 // consistente con el resto de este archivo.
                 triggeredByRiskName = null,
+                // Probabilidad condicional de la flecha padre→este riesgo ("si el padre ocurre,
+                // ¿qué tan probable es que esto TAMBIÉN ocurra ese mismo año?", 0-100) — el dato
+                // que le falta al Árbol de Riesgos en Cascada para poder simularse en cascada de
+                // verdad más adelante (ver walkMarkovChain en lib/markov.js, todavía sin
+                // conectar). Se captura ya desde ahora (ver App.RiskCascadeTree.
+                // openCreateChildModal) para no tener que volver flecha por flecha a rellenarla
+                // cuando esa simulación exista. null mientras nadie la haya definido.
+                triggeredByProbability = null,
                 description = null,
                 // Id propio de esta entrada del Registro, si el cliente ya la conoce (re-simular un
                 // riesgo cargado desde aquí — ver App.FairWizard.loadRegisteredRiskIntoForm). Junto
@@ -160,6 +168,14 @@ function createRegisterRouter(store) {
             if (typeof ale !== 'number') {
                 return res.status(400).json({ error: 'ale (número) es requerido.' });
             }
+            if (
+                triggeredByProbability !== null &&
+                (typeof triggeredByProbability !== 'number' ||
+                    triggeredByProbability < 0 ||
+                    triggeredByProbability > 100)
+            ) {
+                return res.status(400).json({ error: 'triggeredByProbability debe ser un número entre 0 y 100.' });
+            }
 
             const overrideError = validateRiskCriteriaOverride(riskCriteriaOverride, criteria);
             if (overrideError) return res.status(400).json({ error: overrideError });
@@ -199,6 +215,7 @@ function createRegisterRouter(store) {
                 sourceRiskId,
                 riskCriteriaOverride,
                 triggeredByRiskName,
+                triggeredByProbability,
                 description,
                 threat,
                 effect,
