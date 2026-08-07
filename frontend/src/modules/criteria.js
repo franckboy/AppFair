@@ -23,7 +23,7 @@ export const Criteria = {
                 (Contexto, ISO 31000). Se guardan en este navegador y aplican a todos tus análisis.
             </p>
             <p id="criteria-form-error" class="text-red-600 text-sm mb-3 hidden"></p>
-            <h4 class="font-semibold text-gray-700 mb-2">Bandas de Riesgo Residual (%) — Mapa de Calor</h4>
+            <h4 class="font-semibold text-gray-700 mb-2">Bandas de Riesgo Residual (%) — Matriz de Riesgos</h4>
             <div class="grid grid-cols-3 gap-3 mb-4">
                 <div class="input-group">
                     <label for="crit-rrt-medio">Medio, desde:</label>

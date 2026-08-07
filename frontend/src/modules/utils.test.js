@@ -3,6 +3,7 @@ import { App } from './app-namespace.js';
 import {
     LOSS_FORMS_KEYS,
     LOSS_FORM_LABELS,
+    classifyPointSeverity,
     debounce,
     getSafeNumber,
     sanitizeHTML,
@@ -105,6 +106,51 @@ describe('severityToClasses / severityToHex', () => {
     it('devuelven un valor de reserva para una severidad desconocida', () => {
         expect(severityToClasses('no-existe')).toContain('bg-gray-50');
         expect(severityToHex('no-existe')).toBe('#7C3AED');
+    });
+});
+
+describe('classifyPointSeverity', () => {
+    // Mismas zonas que devuelve getRiskMatrixZones (backend) con las bandas por defecto
+    // (alto:50, critico:75) — se copian aquí tal cual en vez de importar el backend, porque
+    // este archivo es 100% frontend y esas zonas ya le llegan calculadas desde /api/register.
+    const zones = [
+        { level: 'Bajo', x: [0, 50], y: [0, 50] },
+        { level: 'Medio', x: [50, 100], y: [0, 50] },
+        { level: 'Medio', x: [0, 50], y: [50, 100] },
+        { level: 'Alto', x: [50, 100], y: [50, 100] },
+        { level: 'Crítico', x: [75, 100], y: [75, 100] },
+        { level: 'Alto', x: [75, 100], y: [50, 75] },
+        { level: 'Alto', x: [50, 75], y: [75, 100] },
+    ];
+
+    it('clasifica un punto en cada esquina con la zona que le corresponde', () => {
+        expect(classifyPointSeverity(0, 0, zones)).toBe('bajo');
+        expect(classifyPointSeverity(100, 100, zones)).toBe('critico');
+    });
+
+    // Bug real reportado: un riesgo con impactPercent alto (ej. 90, cerca del umbral Crítico
+    // en dólares) pero probabilityPercent baja (ej. 5, rara vez supera el umbral de
+    // excedencia) cae en la zona "Medio" del mapa (mitad derecha, mitad inferior) — el punto
+    // debe pintarse 'medio' (amarillo), NO 'critico' (rojo) solo porque su ALE en dólares sea
+    // alto. Antes el punto se coloreaba con r.severity (evaluateFairThreat, un cálculo
+    // completamente distinto que ni siquiera puede devolver 'medio'), así que salía rojo
+    // sentado sobre una zona amarilla — visualmente contradictorio.
+    it('un punto de impacto alto pero probabilidad baja cae en la zona Medio, no Crítico', () => {
+        expect(classifyPointSeverity(90, 5, zones)).toBe('medio');
+    });
+
+    // Zonas cuyos rangos se tocan/solapan en el borde (ej. Alto x:[50,100] y Crítico
+    // x:[75,100], ambas dentro de la misma esquina) deben resolverse a favor de la que
+    // getRiskMatrixZones dibuja MÁS TARDE en el canvas (la más específica, que queda pintada
+    // encima) — no la primera que aparece en la lista.
+    it('en un borde compartido, gana la zona que se dibuja más tarde (la más específica)', () => {
+        expect(classifyPointSeverity(50, 50, zones)).toBe('alto'); // esquina de "Alto" x:[50,100] y:[50,100]
+        expect(classifyPointSeverity(75, 75, zones)).toBe('alto'); // esquina de "Crítico", pero justo en su propio borde inferior
+    });
+
+    it('sin zonas (aún no cargaron), no revienta y devuelve null', () => {
+        expect(classifyPointSeverity(50, 50, null)).toBeNull();
+        expect(classifyPointSeverity(50, 50, [])).toBeNull();
     });
 });
 

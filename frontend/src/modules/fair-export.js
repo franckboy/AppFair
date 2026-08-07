@@ -1,7 +1,7 @@
 import { App } from './app-namespace.js';
 import { state } from './state.js';
 import { Modal } from './modal.js';
-import { LOSS_FORMS_KEYS, LOSS_FORM_LABELS, sanitizeHTML, severityToHex } from './utils.js';
+import { LOSS_FORMS_KEYS, LOSS_FORM_LABELS, classifyPointSeverity, sanitizeHTML, severityToHex } from './utils.js';
 
 // ============================================================
 // App.FairExport — arma el HTML imprimible y dispara window.print() para el Informe
@@ -79,7 +79,7 @@ export const FairExport = {
         });
     },
 
-    // Redibuja, fuera de pantalla, el Mapa de Calor Consolidado (mismo diseño que
+    // Redibuja, fuera de pantalla, la Matriz de Riesgos (mismo diseño que
     // App.FairRegister.renderRiskRegister: zonas de fondo Bajo/Medio/Alto/Crítico + número por
     // punto) — a propósito NO se lee el <canvas> #fair-register-chart real, porque ese solo se
     // dibuja al visitar "Registro de Riesgos" (ver el comentario en loadRiskRegister sobre
@@ -180,7 +180,15 @@ export const FairExport = {
                                 name: r.riskName,
                                 level: r.evaluationLevel,
                             })),
-                            pointBackgroundColor: threatRegister.map((r) => severityToHex(r.severity)),
+                            // Mismo criterio que App.FairRegister.renderRiskRegister — ver
+                            // classifyPointSeverity en utils.js: colorea el punto con el MISMO
+                            // criterio que ya pintó la zona de fondo donde cae, en vez de
+                            // r.severity (un cálculo distinto que podía no coincidir con la zona).
+                            pointBackgroundColor: threatRegister.map((r) =>
+                                severityToHex(
+                                    classifyPointSeverity(r.impactPercent, r.probabilityPercent, heatmapZones),
+                                ),
+                            ),
                             pointBorderColor: 'white',
                             // Mismo motivo que en App.FairRegister.renderRiskRegister: colores de
                             // severidad parecidos al fondo de su propia zona — un borde más grueso
@@ -589,10 +597,10 @@ export const FairExport = {
                 </table>
             </div>
             <div class="print-section">
-                <h2>Mapa de Calor Consolidado</h2>
+                <h2>Matriz de Riesgos</h2>
                 <table style="border:none;">
                     <tr>
-                        <td style="width:65%; vertical-align:top; border:none; padding:0;"><img src="${heatmapImg}" alt="Mapa de calor consolidado" style="max-width:100%; height:auto; display:block;"></td>
+                        <td style="width:65%; vertical-align:top; border:none; padding:0;"><img src="${heatmapImg}" alt="Matriz de Riesgos" style="max-width:100%; height:auto; display:block;"></td>
                         <td style="width:35%; vertical-align:top; border:none; padding:0 0 0 12px;">
                             <strong style="font-size:12px;">Riesgos:</strong>
                             <ol style="margin:4px 0 0 16px; padding:0; font-size:11px;">${heatmapLegendHTML}</ol>

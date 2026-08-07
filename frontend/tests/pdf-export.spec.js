@@ -26,7 +26,7 @@ test.describe('Informe Consolidado (PDF único)', () => {
         const reportHTML = await page.locator('#fair-print-report').innerHTML();
         expect(reportHTML).toContain('Informe Consolidado de Riesgos');
         expect(reportHTML).toContain('Contexto Organizacional');
-        expect(reportHTML).toContain('Mapa de Calor Consolidado');
+        expect(reportHTML).toContain('Matriz de Riesgos');
         expect(reportHTML).toContain('Análisis 80-20');
         expect(reportHTML).toContain('Sensibilidad Consolidada');
 

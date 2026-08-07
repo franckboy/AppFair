@@ -266,3 +266,33 @@ export const severityToHex = (severity) =>
         medio: '#EAB308', // yellow-500
         bajo: '#22C55E', // green-500
     })[severity] || '#7C3AED'; // severidad desconocida/faltante: el morado que ya se usaba antes
+
+// Bug real encontrado: el punto de un riesgo en la Matriz de Riesgos se coloreaba con
+// `r.severity` (evaluateFairThreat en el backend — compara el ALE en dólares contra
+// aleAceptable/aleCritico, y SOLO puede devolver 'critico'/'alto'/'bajo', nunca 'medio'), un
+// criterio totalmente distinto al que colorea el fondo de las zonas de la matriz misma
+// (posición x/y del punto — Impacto%/Probabilidad% — contra las bandas rrtBands, ver
+// getRiskMatrixZones en el backend). Como son dos cálculos independientes, un punto podía
+// salir rojo ("crítico" por su ALE en dólares) parado sobre una zona amarilla ("Medio" por su
+// posición) — visualmente contradictorio en un mapa que se supone que el color del punto
+// significa "en qué zona cae". Esta función clasifica al punto con el MISMO criterio que ya
+// pintó la zona debajo de él (las `zones` que ya trae la respuesta de /api/register), así el
+// punto SIEMPRE es del mismo color que el cuadrante donde está parado, por construcción.
+// getRiskMatrixZones (backend) lista la 'Alto' que cubre TODO el cuadrante superior derecho
+// ANTES que la 'Crítico' más chica que va adentro de esa misma esquina — al pintar en el
+// canvas eso funciona bien (Crítico se dibuja despues, tapando/encima de Alto ahí), pero con
+// el primer match de un .find() normal (de adelante hacia atrás) un punto en la esquina
+// (100,100) encontraba 'Alto' primero y nunca llegaba a 'Crítico'. Se recorre de ATRÁS hacia
+// ADELANTE para que la zona que "gana" sea la misma que se ve pintada encima en el canvas
+// (la dibujada más tarde), no la primera que aparece en la lista.
+export const classifyPointSeverity = (x, y, zones) => {
+    const levelToSeverityKey = { Bajo: 'bajo', Medio: 'medio', Alto: 'alto', Crítico: 'critico' };
+    const list = zones || [];
+    for (let i = list.length - 1; i >= 0; i--) {
+        const z = list[i];
+        if (x >= z.x[0] && x <= z.x[1] && y >= z.y[0] && y <= z.y[1]) {
+            return levelToSeverityKey[z.level];
+        }
+    }
+    return null;
+};
