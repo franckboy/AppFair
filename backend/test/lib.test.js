@@ -351,6 +351,61 @@ test('runMonteCarloSimulation es reproducible con la misma semilla', () => {
     assert.deepStrictEqual(runA.annualLosses, runB.annualLosses);
 });
 
+test('runMonteCarloSimulation: sin sampleVuln, el comportamiento es idéntico bit a bit al de antes de que ese parámetro existiera', () => {
+    // Punto de enchufe para una futura red bayesiana (ver el comentario de la función) — sin
+    // pasarlo, drawVuln debe caer exactamente en la misma PERT de siempre sobre `vuln`, mismo
+    // consumo de rng por iteración. Se compara contra una corrida con la MISMA semilla que no
+    // pasa sampleVuln en absoluto (undefined, como hacían todos los callers antes de este
+    // cambio) — si el resultado no es idéntico, el punto de enchufe alteró el comportamiento
+    // por defecto, que es justo lo que no debía pasar.
+    const params = {
+        iterations: 2000,
+        seed: 4242,
+        tef: { min: 5, mode: 10, max: 20 },
+        vuln: { min: 20, mode: 30, max: 40 },
+        lossMagnitudes: { productividad: { min: 30000, mode: 50000, max: 70000 } },
+    };
+    const sinSampleVuln = runMonteCarloSimulation(params);
+    const conSampleVulnExplicitoUndefined = runMonteCarloSimulation({ ...params, sampleVuln: undefined });
+    assert.deepStrictEqual(sinSampleVuln.annualLosses, conSampleVulnExplicitoUndefined.annualLosses);
+});
+
+test('runMonteCarloSimulation: sampleVuln personalizado reemplaza la PERT por defecto', () => {
+    // Un sampleVuln que siempre devuelve 0 (vulnerabilidad nula) debe anular la pérdida
+    // completa en TODAS las iteraciones (LEF = TEF * 0 = 0), sin importar qué traiga `vuln` —
+    // confirma que el punto de enchufe realmente reemplaza el muestreo, no que solo se ignora.
+    const params = {
+        iterations: 500,
+        seed: 7,
+        tef: { min: 5, mode: 10, max: 20 },
+        vuln: { min: 20, mode: 30, max: 40 }, // se ignora: sampleVuln manda
+        lossMagnitudes: { productividad: { min: 30000, mode: 50000, max: 70000 } },
+        sampleVuln: () => 0,
+    };
+    const result = runMonteCarloSimulation(params);
+    assert.ok(result.annualLosses.every((loss) => loss === 0));
+});
+
+test('runMonteCarloSimulation: sampleVuln personalizado consume el mismo rng (la corrida sigue siendo reproducible con semilla)', () => {
+    const params = {
+        iterations: 500,
+        seed: 55,
+        tef: { min: 5, mode: 10, max: 20 },
+        vuln: { min: 20, mode: 30, max: 40 },
+        lossMagnitudes: { productividad: { min: 30000, mode: 50000, max: 70000 } },
+        // Consume el rng (como debe hacerlo un sampleVuln real) pero devuelve un valor fijo —
+        // el punto es confirmar que dos corridas con la misma semilla siguen dando exactamente
+        // lo mismo, no que el valor en sí sea realista.
+        sampleVuln: (rng) => {
+            rng();
+            return 0.3;
+        },
+    };
+    const runA = runMonteCarloSimulation(params);
+    const runB = runMonteCarloSimulation(params);
+    assert.deepStrictEqual(runA.annualLosses, runB.annualLosses);
+});
+
 test('summarizeLosses: mediana par calcula bien el promedio de los dos centrales', () => {
     const losses = [10, 20, 30, 40]; // par -> mediana = (20+30)/2 = 25
     const summary = summarizeLosses(losses);
