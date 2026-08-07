@@ -61,6 +61,11 @@ export const state = {
         // nombre) — evita tener que volver a buscarla en state.fair.riskRegister en cada
         // función; se reemplaza por la respuesta del backend después de cada guardado.
         currentEntry: null,
+        // Lista de trabajo de controles nombrados de Mitigar (ver App.Treatment.
+        // openControlsModal/applyControlsAggregation) para el riesgo actualmente elegido —
+        // [] si el riesgo no usa controles nombrados (sigue con el costo/fiabilidad/retraso
+        // manuales de siempre).
+        controls: [],
     },
     // Gestión de Riesgos (Gobernanza/Revisión + Plan de Seguridad) — página aparte (ver
     // App.RiskManagement), mismo criterio que treatment de arriba: separada del wizard porque

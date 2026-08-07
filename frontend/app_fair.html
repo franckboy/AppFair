@@ -676,7 +676,11 @@
                             </p>
 
                             <div class="fair-section bg-white">
-                                <h4 id="fair-mitigar-title">1. Mitigar (reducir probabilidad o impacto)</h4>
+                                <div class="flex items-center justify-between flex-wrap gap-2">
+                                    <h4 id="fair-mitigar-title">1. Mitigar (reducir probabilidad o impacto)</h4>
+                                    <button type="button" id="treatment-manage-controls-btn" class="btn btn-secondary text-sm">🔧 Gestionar Controles</button>
+                                </div>
+                                <p id="treatment-controls-note" class="description-text mb-2 hidden"></p>
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div class="input-group">
                                         <label for="fair-costoControlAnual" id="fair-costoControlAnual-label">Costo Anual del Control:</label>
