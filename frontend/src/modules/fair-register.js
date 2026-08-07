@@ -453,28 +453,49 @@ export const FairRegister = {
             },
         };
 
+        // Un riesgo con impactPercent/probabilityPercent en 0 o 100 (recortado ahí, ver el
+        // backend) queda con el CENTRO del punto exactamente sobre el borde del área de
+        // dibujo — Chart.js lo posiciona ahí tal cual, así que la mitad del círculo (radio 10,
+        // hasta 13 al pasar el mouse) se dibuja visualmente "saliendo" del cuadro del gráfico,
+        // aunque `clip` (ver el dataset) evite que se vea cortado. Este plugin corre justo
+        // después de que Chart.js calcula la posición en píxeles de cada punto (antes de que
+        // se dibuje nada) y la ajusta hacia adentro lo mínimo necesario para que el círculo
+        // completo quede dentro del área — el DATO real (tooltip, eje) no cambia, solo dónde
+        // se dibuja el punto.
+        const clampPointsToChartAreaPlugin = {
+            id: 'fairRegisterClampPoints',
+            afterDatasetsUpdate(chart) {
+                const meta = chart.getDatasetMeta(0);
+                if (!meta || !meta.data) return;
+                const area = chart.chartArea;
+                meta.data.forEach((point) => {
+                    const r = (point.options && point.options.radius) || 10;
+                    point.x = Math.min(Math.max(point.x, area.left + r), area.right - r);
+                    point.y = Math.min(Math.max(point.y, area.top + r), area.bottom - r);
+                });
+            },
+        };
+
         // Cada punto lleva su número (1, 2, 3...) encima, en el mismo orden que el registro
         // — así se puede identificar cuál riesgo es cuál sin adivinar por posición o color.
         // Se dibuja después de los puntos (afterDatasetsDraw) para que quede legible arriba,
-        // no debajo del círculo morado.
+        // no debajo del círculo. Reusa la posición YA ajustada por clampPointsToChartAreaPlugin
+        // (en vez de recalcularla desde el valor del dato) para que el número quede centrado
+        // sobre el círculo tal como se dibujó, no sobre dónde el círculo "debería" estar si no
+        // se hubiera ajustado.
         const pointNumberPlugin = {
             id: 'fairRegisterPointNumbers',
             afterDatasetsDraw(chart) {
-                const {
-                    ctx,
-                    scales: { x, y },
-                } = chart;
+                const meta = chart.getDatasetMeta(0);
+                if (!meta || !meta.data) return;
+                const { ctx } = chart;
                 ctx.save();
                 ctx.font = 'bold 11px Arial';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
                 ctx.fillStyle = '#fff';
-                threatRegister.forEach((r, i) => {
-                    ctx.fillText(
-                        String(i + 1),
-                        x.getPixelForValue(r.impactPercent),
-                        y.getPixelForValue(r.probabilityPercent),
-                    );
+                meta.data.forEach((point, i) => {
+                    ctx.fillText(String(i + 1), point.x, point.y);
                 });
                 ctx.restore();
             },
@@ -505,6 +526,14 @@ export const FairRegister = {
                         })),
                         pointBackgroundColor: threatRegister.map((r) => severityToHex(r.severity)),
                         pointBorderColor: 'white',
+                        // Los colores de severidad (severityToHex) son parecidos en tono a los
+                        // colores de fondo de su propia zona (ej. "Medio" es dorado sobre dorado,
+                        // "Crítico" es rojo sobre granate) — con el borde de 1px por defecto de
+                        // Chart.js, el punto casi desaparecía contra su propio fondo. Un borde
+                        // blanco más grueso separa el punto del fondo sin importar qué tan
+                        // parecido sea el tono, en vez de tener que elegir colores de punto
+                        // distintos a los que ya usan los badges de severidad en el resto de la app.
+                        pointBorderWidth: 3,
                         pointRadius: 10,
                         pointHoverRadius: 13,
                         // impactPercent/probabilityPercent se recortan a [0,100] (ver el backend) —
@@ -512,8 +541,9 @@ export const FairRegister = {
                         // x=100, con el centro del punto sobre el borde del eje. Chart.js por
                         // defecto recorta cada punto al área del gráfico, así que ese punto se veía
                         // cortado a la mitad (mismo problema en y=0/100). clip amplía esa zona de
-                        // recorte más allá del área del gráfico, para que el círculo completo (radio
-                        // 10, hasta 13 al pasar el mouse) siempre quepa sin cortarse.
+                        // recorte más allá del área del gráfico, así el círculo completo (radio 10,
+                        // hasta 13 al pasar el mouse) no se corta — y clampPointsToChartAreaPlugin
+                        // (abajo) además reubica su centro para que no se vea saliendo del cuadro.
                         clip: 16,
                     },
                 ],
@@ -551,7 +581,7 @@ export const FairRegister = {
                     },
                 },
             },
-            plugins: [matrixBackgroundPlugin, pointNumberPlugin],
+            plugins: [matrixBackgroundPlugin, clampPointsToChartAreaPlugin, pointNumberPlugin],
         });
 
         this.renderParetoChart();
