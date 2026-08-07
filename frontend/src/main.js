@@ -35,7 +35,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 // RIMS RA.1-2015 (5.2): entender la organización es un paso previo obligatorio,
                 // no una configuración opcional más — bloquea el resto de la inicialización
                 // hasta que se complete una vez (ver #orgcontext-gate).
-                this.OrgContext.showGate(() => this.continueInit());
+                this.OrgContext.showGate(() => this.afterOrgContextGate());
+                return;
+            }
+            this.afterOrgContextGate();
+        },
+
+        afterOrgContextGate() {
+            if (!this.Criteria.isComplete()) {
+                // Segundo candado obligatorio, justo después del de Contexto: sin un ALE Crítico
+                // (el 100% de pérdida que la organización tolera) declarado por el propio
+                // usuario, ningún riesgo se puede clasificar contra un criterio real — ver
+                // #criteria-gate y App.Criteria.showGate.
+                this.Criteria.showGate(() => this.continueInit());
                 return;
             }
             this.continueInit();

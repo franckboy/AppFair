@@ -25,8 +25,13 @@ function createConfigRouter(store) {
     router.get(
         '/criteria',
         asyncHandler(async (req, res) => {
-            const criteria = normalizeRiskCriteria((await store.get('riskCriteria')) || defaultRiskCriteria);
-            res.json(criteria);
+            const stored = await store.get('riskCriteria');
+            const criteria = normalizeRiskCriteria(stored || defaultRiskCriteria);
+            // declared: false mientras nadie haya guardado sus propios criterios (todavía
+            // corriendo sobre defaultRiskCriteria, un número de código que nadie eligió) — lo usa
+            // el candado obligatorio de primer uso (ver App.Criteria.isComplete() en el frontend)
+            // para no dejar clasificar riesgos contra un ALE Crítico que nadie declaró.
+            res.json({ ...criteria, declared: !!stored });
         }),
     );
 
@@ -56,7 +61,9 @@ function createConfigRouter(store) {
                 aleUmbralExcedencia: aleUmbralExcedencia || 0,
             };
             await store.set('riskCriteria', criteria);
-            res.json(criteria);
+            // declared: true — igual que en el GET (ver ahí), para que el frontend sepa de
+            // inmediato que ya no está corriendo sobre el default sin necesidad de otra llamada.
+            res.json({ ...criteria, declared: true });
         }),
     );
 

@@ -129,8 +129,8 @@ export const FairWizard = {
                     <input type="number" id="crit-override-percent" class="form-input" value="${percentValue}" min="1" max="99">
                 </div>
                 <div class="input-group">
-                    <label for="crit-override-critico">ALE Crítico (desde):</label>
-                    <input type="number" id="crit-override-critico" class="form-input" value="${criticoValue}" min="0">
+                    <label for="crit-override-critico">ALE Crítico (desde) — no puede superar el global ($${(global.aleCritico || 0).toLocaleString('en-US')}):</label>
+                    <input type="number" id="crit-override-critico" class="form-input" value="${criticoValue}" min="0" max="${global.aleCritico || ''}">
                 </div>
             </div>
         `;
@@ -160,6 +160,16 @@ export const FairWizard = {
             if (!(percent > 0 && percent < 100) || !(critico > 0)) {
                 errorEl.textContent =
                     'La Pérdida Anual Aceptable (%) debe estar entre 0 y 100, y el ALE Crítico debe ser mayor que 0.';
+                errorEl.classList.remove('hidden');
+                return;
+            }
+            // El override individual puede ser más restrictivo que el global (menos tolerancia
+            // para este riesgo en particular), pero nunca más permisivo — "mi máximo global es
+            // $1M, pero para este riesgo mi máximo es $2M" se contradice a sí mismo, porque el
+            // global YA es el techo absoluto de lo que la organización está dispuesta a perder
+            // (el backend valida lo mismo, ver validateRiskCriteriaOverride).
+            if (typeof global.aleCritico === 'number' && critico > global.aleCritico) {
+                errorEl.textContent = `El ALE Crítico de este riesgo no puede superar el ALE Crítico global ($${global.aleCritico.toLocaleString('en-US')}).`;
                 errorEl.classList.remove('hidden');
                 return;
             }

@@ -71,18 +71,22 @@ function createSimulateRouter(store) {
                 if (lmError) return res.status(400).json({ error: lmError });
             }
 
+            // El global se resuelve SIEMPRE (haya o no override) porque validateRiskCriteriaOverride
+            // necesita el ALE Crítico global real para exigir que un override individual nunca lo
+            // supere ("mi máximo global es $1M, pero para este riesgo mi máximo es $2M" se
+            // contradice a sí mismo — el override solo puede ser igual o más restrictivo).
+            // normalizeRiskCriteria migra cualquier criterio guardado ANTES de que existiera
+            // aleAceptablePercent (formato viejo, en dólares) — sin eso, aleAceptable sale NaN y
+            // todo se clasifica como "Aceptable" en silencio, sin importar la severidad real.
+            const globalCriteria = normalizeRiskCriteria((await store.get('riskCriteria')) || defaultRiskCriteria);
+
             // riskCriteria (si viene) es un override explícito para ESTA corrida — se valida
             // antes de usarlo porque, a diferencia de PUT /api/config/criteria, nada más lo
-            // revisa (ver validateRiskCriteriaOverride). normalizeRiskCriteria además migra
-            // cualquier criterio guardado ANTES de que existiera aleAceptablePercent (formato
-            // viejo, en dólares) — sin eso, aleAceptable sale NaN y todo se clasifica como
-            // "Aceptable" en silencio, sin importar la severidad real.
-            const overrideError = validateRiskCriteriaOverride(riskCriteria);
+            // revisa (ver validateRiskCriteriaOverride).
+            const overrideError = validateRiskCriteriaOverride(riskCriteria, globalCriteria);
             if (overrideError) return res.status(400).json({ error: overrideError });
 
-            const criteria = normalizeRiskCriteria(
-                riskCriteria || (await store.get('riskCriteria')) || defaultRiskCriteria,
-            );
+            const criteria = normalizeRiskCriteria(riskCriteria || globalCriteria);
             const formatCurrency = makeCurrencyFormatter();
 
             const { annualLosses, usedSeed, sensitivity } = runMonteCarloSimulation({

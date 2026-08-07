@@ -49,6 +49,21 @@ async function connectAndBoot(page, { apiKey = 'test-e2e-key', baseUrl = 'http:/
         ]);
         await page.waitForTimeout(500);
     }
+
+    // Segundo candado obligatorio, justo después del de Contexto (ver App.Criteria.showGate) —
+    // mismo criterio que arriba: solo el primer test que llega hasta acá lo ve realmente vacío.
+    const criteriaGateVisible = await page.evaluate(
+        () => !document.getElementById('criteria-gate').classList.contains('hidden'),
+    );
+    if (criteriaGateVisible) {
+        await page.fill('#criteria-gate-critico', '250000');
+        await page.fill('#criteria-gate-percent', '20');
+        await Promise.all([
+            page.waitForResponse((r) => r.url().includes('/api/config/criteria'), { timeout: 10000 }),
+            page.click('#criteria-gate-save-btn'),
+        ]);
+        await page.waitForTimeout(500);
+    }
 }
 
 // Corre el wizard de FAIR completo (Pasos 1→4, con perfiles por defecto) para un riesgo NUEVO,

@@ -805,6 +805,24 @@ test('validateRiskCriteriaOverride: rechaza aleCritico <= 0', () => {
     assert.ok(validateRiskCriteriaOverride({ aleCritico: -500 }));
 });
 
+// El override individual puede ser más restrictivo que el global (menos tolerancia para un
+// riesgo en particular), pero nunca más permisivo — "mi máximo global es $1M, pero para este
+// riesgo mi máximo es $2M" se contradice a sí mismo, porque el global YA es el techo absoluto.
+test('validateRiskCriteriaOverride: acepta un aleCritico individual igual o menor al global', () => {
+    const global = { aleCritico: 1000000 };
+    assert.strictEqual(validateRiskCriteriaOverride({ aleCritico: 1000000 }, global), null);
+    assert.strictEqual(validateRiskCriteriaOverride({ aleCritico: 500000 }, global), null);
+});
+
+test('validateRiskCriteriaOverride: rechaza un aleCritico individual mayor al global', () => {
+    const global = { aleCritico: 1000000 };
+    assert.ok(validateRiskCriteriaOverride({ aleCritico: 2000000 }, global));
+});
+
+test('validateRiskCriteriaOverride: sin globalCriteria, no valida el tope (solo el rango propio)', () => {
+    assert.strictEqual(validateRiskCriteriaOverride({ aleCritico: 2000000 }), null);
+});
+
 test('calculateParetoAnalysis: excluye riesgos tipo "oportunidad" de la exposición total', () => {
     // Bug real: el "ale" de una oportunidad es un BENEFICIO esperado, no una pérdida — antes
     // de este chequeo, un beneficio grande se sumaba a la "exposición total" y competía por el

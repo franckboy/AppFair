@@ -133,6 +133,27 @@
             </div>
         </div>
 
+        <!-- Segundo gate obligatorio de primer uso, justo después del de Contexto Organizacional:
+             sin un ALE Crítico (el 100% de pérdida que la organización tolera) declarado por el
+             propio usuario, no hay ninguna clasificación de riesgo (Bajo/Medio/Alto/Crítico) que
+             tenga sentido — antes de esto, la app podía simular en silencio contra un ALE Crítico
+             heredado del código ($250,000) que nadie eligió. Una vez completado, no se vuelve a
+             mostrar (ver App.Criteria.isComplete()); para editarlo después, sigue disponible desde
+             "Criterios de Riesgo" en Configuración. -->
+        <div id="criteria-gate" class="page-content hidden">
+            <h2 class="text-2xl font-bold text-gray-800 mb-2"><i class="fas fa-scale-balanced mr-2"></i>Antes de empezar: tu Apetito de Riesgo</h2>
+            <p class="description-text mb-4">
+                Nadie puede perder más del 100% de lo que está dispuesto a perder — y ese 100% lo define tu
+                organización, no la aplicación. Declara primero cuánto dinero representa una pérdida crítica
+                para ti; a partir de ahí AppFair puede clasificar todos tus riesgos. Puedes ajustar esto
+                después desde "Criterios de Riesgo" en Configuración.
+            </p>
+            <div id="criteria-gate-form"></div>
+            <div class="mt-6 flex justify-end">
+                <button id="criteria-gate-save-btn" class="btn btn-primary">Guardar y Comenzar <i class="fas fa-arrow-right ml-2"></i></button>
+            </div>
+        </div>
+
         <div id="boot-gate" class="page-content hidden text-center py-12">
             <i id="boot-gate-icon" class="fas fa-plug text-4xl text-gray-400 mb-4"></i>
             <p id="boot-gate-message" class="text-gray-700 max-w-lg mx-auto mb-6"></p>
