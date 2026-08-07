@@ -138,6 +138,98 @@ test('PUT /api/config/criteria guarda y un GET posterior refleja el cambio', asy
     assert.strictEqual(getRes.body.rrtBands.alto, 40);
 });
 
+// Un criterio guardado ANTES de que existiera "Pérdida Anual Aceptable (%)" (formato viejo, con
+// aleAceptable en dólares) sigue en Postgres si el despliegue ya lo había guardado — sin migrar,
+// aleAceptablePercent llega undefined y evaluateFairThreat clasifica TODO como "Aceptable" en
+// silencio (comparar contra NaN siempre da false en JS). Manipula el store directo (no hay forma
+// de crear ese formato viejo a través de PUT, que ya exige aleAceptablePercent) para simular una
+// instalación que se actualizó con datos previos.
+test('GET /api/config/criteria migra un criterio guardado en formato viejo (aleAceptable en dólares) a aleAceptablePercent', async () => {
+    const { JsonStore } = require('../src/store/jsonStore');
+    const rawStore = new JsonStore();
+    await rawStore.set('riskCriteria', {
+        rrtBands: { medio: 25, alto: 50, critico: 75 },
+        aleAceptable: 50000,
+        aleCritico: 250000,
+        aleUmbralExcedencia: 100000,
+    });
+
+    const res = await request(app).get('/api/config/criteria').set('X-API-Key', TEST_API_KEY);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.aleAceptablePercent, 20); // 50000/250000*100
+
+    // Restaura un estado válido (formato nuevo) para no dejar el store en un estado raro para
+    // las pruebas que corren después de esta.
+    await rawStore.set('riskCriteria', {
+        rrtBands: { medio: 20, alto: 40, critico: 60 },
+        aleAceptablePercent: 20,
+        aleCritico: 5000,
+        aleUmbralExcedencia: 2000,
+    });
+});
+
+test('POST /api/simulate con criterios guardados en formato viejo NO clasifica todo como Aceptable (regresión NaN)', async () => {
+    const { JsonStore } = require('../src/store/jsonStore');
+    const rawStore = new JsonStore();
+    await rawStore.set('riskCriteria', {
+        rrtBands: { medio: 25, alto: 50, critico: 75 },
+        aleAceptable: 50000,
+        aleCritico: 250000,
+        aleUmbralExcedencia: 100000,
+    });
+
+    const res = await request(app)
+        .post('/api/simulate')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            iterations: 200,
+            seed: 1,
+            tef: { min: 10, mode: 15, max: 20 },
+            vuln: { min: 80, mode: 90, max: 100 },
+            lossMagnitudes: { respuesta: { min: 900000, mode: 1000000, max: 1100000 } },
+        });
+    assert.strictEqual(res.status, 200);
+    assert.notStrictEqual(res.body.evaluation.level, 'Aceptable');
+    assert.notStrictEqual(res.body.evaluation.severity, 'bajo');
+
+    await rawStore.set('riskCriteria', {
+        rrtBands: { medio: 20, alto: 40, critico: 60 },
+        aleAceptablePercent: 20,
+        aleCritico: 5000,
+        aleUmbralExcedencia: 2000,
+    });
+});
+
+test('POST /api/simulate rechaza un riskCriteria override con aleAceptablePercent fuera de rango con 400', async () => {
+    const res = await request(app)
+        .post('/api/simulate')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            iterations: 50,
+            tef: { min: 1, mode: 2, max: 3 },
+            vuln: { min: 1, mode: 2, max: 3 },
+            riskCriteria: {
+                rrtBands: { medio: 25, alto: 50, critico: 75 },
+                aleAceptablePercent: 200,
+                aleCritico: 1000,
+            },
+        });
+    assert.strictEqual(res.status, 400);
+});
+
+test('POST /api/simulate rechaza un riskCriteria override con aleCritico <= 0 con 400', async () => {
+    const res = await request(app)
+        .post('/api/simulate')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            iterations: 50,
+            tef: { min: 1, mode: 2, max: 3 },
+            vuln: { min: 1, mode: 2, max: 3 },
+            riskCriteria: { rrtBands: { medio: 25, alto: 50, critico: 75 }, aleAceptablePercent: 20, aleCritico: -10 },
+        });
+    assert.strictEqual(res.status, 400);
+});
+
 test('PUT /api/config/org-defaults guarda solo los campos enviados, conserva el resto', async () => {
     const putRes = await request(app)
         .put('/api/config/org-defaults')
@@ -293,6 +385,34 @@ test('flujo completo del Registro: PUT crea, GET lo lista, DELETE lo quita', asy
 
     const getRes2 = await request(app).get('/api/register').set('X-API-Key', TEST_API_KEY);
     assert.ok(!getRes2.body.risks.some((r) => r.riskName === riskName));
+});
+
+test('PUT /api/register/:riskName con riskCriteriaOverride lo persiste y lo usa para impactPercent', async () => {
+    const riskName = 'Riesgo con criterio propio HTTP';
+    const putRes = await request(app)
+        .put(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            ale: 500,
+            cvar95: 800,
+            evaluationLevel: 'Aceptable',
+            riskCriteriaOverride: { aleAceptablePercent: 5, aleCritico: 1000 },
+        });
+    assert.strictEqual(putRes.status, 200);
+    assert.deepStrictEqual(putRes.body.entry.riskCriteriaOverride, { aleAceptablePercent: 5, aleCritico: 1000 });
+    assert.strictEqual(putRes.body.entry.impactPercent, 50); // 500/1000*100, no contra el aleCritico global
+
+    await request(app)
+        .delete(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY);
+});
+
+test('PUT /api/register/:riskName rechaza un riskCriteriaOverride fuera de rango con 400', async () => {
+    const res = await request(app)
+        .put(`/api/register/${encodeURIComponent('Riesgo override inválido HTTP')}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ale: 500, cvar95: 800, riskCriteriaOverride: { aleAceptablePercent: 20, aleCritico: -5 } });
+    assert.strictEqual(res.status, 400);
 });
 
 test('PUT /api/register/:riskName sin ale (número) responde 400', async () => {

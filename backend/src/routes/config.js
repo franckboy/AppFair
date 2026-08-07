@@ -10,6 +10,7 @@ const {
     lossFormsLabels,
     defaultRiskCriteria,
 } = require('../data/profiles');
+const { normalizeRiskCriteria } = require('../lib/riskCriteria');
 const { asyncHandler } = require('../middleware/asyncHandler');
 
 function createConfigRouter(store) {
@@ -24,7 +25,7 @@ function createConfigRouter(store) {
     router.get(
         '/criteria',
         asyncHandler(async (req, res) => {
-            const criteria = (await store.get('riskCriteria')) || defaultRiskCriteria;
+            const criteria = normalizeRiskCriteria((await store.get('riskCriteria')) || defaultRiskCriteria);
             res.json(criteria);
         }),
     );
