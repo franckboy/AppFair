@@ -172,6 +172,14 @@ function createRegisterRouter(store) {
                 transferir = null,
                 evitar = null,
                 aceptarJustificacion = null,
+                // Decisión de tratamiento: cuál de las 4 estrategias de arriba se ADOPTÓ de
+                // verdad (a diferencia de mitigar/transferir/evitar/aceptarJustificacion, que
+                // son solo los INSUMOS de las 4 hipótesis comparadas en paralelo) + el ALE
+                // residual que de ahí resulta — ver App.Treatment.adoptStrategy. null mientras
+                // nadie haya decidido nada todavía; es un estado real y distinto de "aceptar"
+                // (ISO 31000 exige que aceptar sea una decisión documentada y deliberada, no la
+                // ausencia de una decisión).
+                treatmentDecision = null,
                 // El histograma ya viene agrupado en barras (~20 valores) desde el frontend — no se
                 // guardan los 10,000 resultados crudos de la simulación, solo lo necesario para
                 // volver a dibujar el mismo gráfico en un reporte futuro.
@@ -189,6 +197,23 @@ function createRegisterRouter(store) {
                     triggeredByProbability > 100)
             ) {
                 return res.status(400).json({ error: 'triggeredByProbability debe ser un número entre 0 y 100.' });
+            }
+            if (treatmentDecision !== null) {
+                const validStrategies = ['mitigar', 'transferir', 'evitar', 'aceptar'];
+                if (!validStrategies.includes(treatmentDecision.strategy)) {
+                    return res
+                        .status(400)
+                        .json({ error: 'treatmentDecision.strategy debe ser mitigar, transferir, evitar o aceptar.' });
+                }
+                if (
+                    typeof treatmentDecision.residualALE !== 'number' ||
+                    !Number.isFinite(treatmentDecision.residualALE) ||
+                    treatmentDecision.residualALE < 0
+                ) {
+                    return res
+                        .status(400)
+                        .json({ error: 'treatmentDecision.residualALE debe ser un número mayor o igual a 0.' });
+                }
             }
 
             const overrideError = validateRiskCriteriaOverride(riskCriteriaOverride, criteria);
@@ -254,6 +279,7 @@ function createRegisterRouter(store) {
                 transferir,
                 evitar,
                 aceptarJustificacion,
+                treatmentDecision,
                 chartLabels,
                 chartData,
                 date: new Date().toISOString(),

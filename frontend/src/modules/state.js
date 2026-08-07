@@ -66,6 +66,10 @@ export const state = {
         // [] si el riesgo no usa controles nombrados (sigue con el costo/fiabilidad/retraso
         // manuales de siempre).
         controls: [],
+        // Última respuesta completa de POST /api/treatment/evaluate (ver updateTreatmentView) —
+        // adoptStrategy() lee de aquí el residualALE ya calculado de la estrategia elegida, sin
+        // volver a pedirlo. null hasta la primera evaluación del riesgo actual.
+        lastResult: null,
     },
     // Gestión de Riesgos (Gobernanza/Revisión + Plan de Seguridad) — página aparte (ver
     // App.RiskManagement), mismo criterio que treatment de arriba: separada del wizard porque
