@@ -12,7 +12,11 @@ const {
     solveLognormalSigmaSquared,
 } = require('../src/lib/random');
 const { runMonteCarloSimulation, summarizeLosses, pearsonCorrelation } = require('../src/lib/simulation');
-const { calculateVulnerability, calculateReduccionALE } = require('../src/lib/autocalc');
+const {
+    sampleVulnerabilityFromProfiles,
+    summarizeVulnerabilitySamples,
+    calculateReduccionALEFromProfiles,
+} = require('../src/lib/autocalc');
 const {
     calculateInsuranceRetainedALE,
     calculateROSI,
@@ -34,7 +38,7 @@ const {
     inferPosterior,
 } = require('../src/lib/bayesianNetwork');
 const { expectedValue, evaluateDecisionTree } = require('../src/lib/decisionTree');
-const { riskCatalog } = require('../src/data/profiles');
+const { riskCatalog, attackerProfiles, defenseProfiles } = require('../src/data/profiles');
 const { hazardStandards, isoProcessClauses, rimsClauses } = require('../src/data/standardsReference');
 
 test('mulberry32 es determinista: misma semilla -> misma secuencia', () => {
@@ -555,22 +559,107 @@ test('summarizeLosses: mediana par calcula bien el promedio de los dos centrales
     assert.strictEqual(summary.median, 25);
 });
 
-test('calculateVulnerability: atacante fuerte + defensa débil = vulnerabilidad alta', () => {
-    const result = calculateVulnerability(90, 27, 'bajo');
-    assert.ok(result.mode > 50, `esperaba vulnerabilidad alta, dio ${result.mode}`);
+// Vulnerabilidad = P(Capacidad de Amenaza > Fuerza de Resistencia), simulada (ver
+// sampleVulnerabilityFromProfiles, backend/src/lib/autocalc.js) — reemplaza la vieja fórmula
+// determinista `attackerScore * (1 - defenseScore/100)`. Ya no hay un solo `mode` exacto por
+// llamada (es estocástico), así que estos tests son direccionales/estadísticos sobre muchas
+// muestras, no igualdades exactas.
+function averageVulnerability(attackerProfile, defenseProfile, confidence, iterations = 5000, rng = Math.random) {
+    const sampler = sampleVulnerabilityFromProfiles(attackerProfile, defenseProfile, confidence);
+    let sum = 0;
+    for (let i = 0; i < iterations; i++) sum += sampler(rng);
+    return (sum / iterations) * 100;
+}
+
+test('sampleVulnerabilityFromProfiles: atacante fuerte + defensa débil = vulnerabilidad promedio alta', () => {
+    const avg = averageVulnerability(attackerProfiles['estado-nacion'], defenseProfiles.basica, 'medio');
+    assert.ok(avg > 60, `esperaba vulnerabilidad promedio alta, dio ${avg.toFixed(1)}`);
 });
 
-test('calculateVulnerability: atacante débil + defensa élite = vulnerabilidad casi nula', () => {
-    const result = calculateVulnerability(18, 92, 'alto');
-    assert.ok(result.mode <= 5, `esperaba vulnerabilidad casi nula, dio ${result.mode}`);
+test('sampleVulnerabilityFromProfiles: atacante débil + defensa élite = vulnerabilidad promedio baja', () => {
+    const avg = averageVulnerability(attackerProfiles.oportunista, defenseProfiles.elite, 'medio');
+    assert.ok(avg < 25, `esperaba vulnerabilidad promedio baja, dio ${avg.toFixed(1)}`);
 });
 
-test('calculateReduccionALE: mejorar la defensa da reducción positiva', () => {
-    assert.strictEqual(calculateReduccionALE(26, 75) > 0, true);
+test('sampleVulnerabilityFromProfiles: subir el Nivel de Defensa (mismo atacante) baja la vulnerabilidad promedio de forma monótona', () => {
+    // Prueba indirecta de que la defensa nunca "descuenta" al atacante: si lo hiciera de forma
+    // extraña (no monótona), este orden no se mantendría de forma consistente en las 4 bandas.
+    // Números aleatorios comunes (misma semilla en las 4 corridas) para aislar el efecto
+    // estructural del ruido de muestreo.
+    const attacker = attackerProfiles['empleado-desleal'];
+    const seeds = () => mulberry32(777);
+    const avgBasica = averageVulnerability(attacker, defenseProfiles.basica, 'medio', 5000, seeds());
+    const avgEstandar = averageVulnerability(attacker, defenseProfiles.estandar, 'medio', 5000, seeds());
+    const avgAvanzada = averageVulnerability(attacker, defenseProfiles.avanzada, 'medio', 5000, seeds());
+    const avgElite = averageVulnerability(attacker, defenseProfiles.elite, 'medio', 5000, seeds());
+    assert.ok(avgBasica >= avgEstandar, `${avgBasica} debería ser >= ${avgEstandar}`);
+    assert.ok(avgEstandar >= avgAvanzada, `${avgEstandar} debería ser >= ${avgAvanzada}`);
+    assert.ok(avgAvanzada >= avgElite, `${avgAvanzada} debería ser >= ${avgElite}`);
 });
 
-test('calculateReduccionALE: degradar la defensa NO da reducción (protección contra mal uso)', () => {
-    assert.strictEqual(calculateReduccionALE(75, 26), 0);
+test('sampleVulnerabilityFromProfiles: reproducible — misma semilla y mismos perfiles dan EXACTO el mismo resultado', () => {
+    const sampler1 = sampleVulnerabilityFromProfiles(attackerProfiles.organizado, defenseProfiles.estandar, 'medio');
+    const sampler2 = sampleVulnerabilityFromProfiles(attackerProfiles.organizado, defenseProfiles.estandar, 'medio');
+    const rng1 = mulberry32(42);
+    const rng2 = mulberry32(42);
+    const seq1 = Array.from({ length: 20 }, () => sampler1(rng1));
+    const seq2 = Array.from({ length: 20 }, () => sampler2(rng2));
+    assert.deepStrictEqual(seq1, seq2);
+});
+
+test('sampleVulnerabilityFromProfiles: un atacante persistente escala su Capacidad de Amenaza ante un desafío — la escalada tiene efecto real medible', () => {
+    // Mismo atacante en todo menos Persistencia — contra la MISMA defensa fuerte (RS gana seguido,
+    // dando muchas oportunidades de escalar) y la MISMA semilla (números aleatorios comunes), el
+    // de Persistencia alta debe dar vulnerabilidad promedio mayor: la escalada no determinista
+    // (ver el paso 3 del algoritmo) sí está cambiando el resultado, no solo existe en el código.
+    const base = { name: 'test', motivation: 60, resources: 60, capacity: 60, sophistication: 60 };
+    const lowPersistence = { ...base, persistence: 0 };
+    const highPersistence = { ...base, persistence: 100 };
+    const defense = defenseProfiles.avanzada;
+
+    const avgLow = averageVulnerability(lowPersistence, defense, 'medio', 5000, mulberry32(99));
+    const avgHigh = averageVulnerability(highPersistence, defense, 'medio', 5000, mulberry32(99));
+    assert.ok(
+        avgHigh > avgLow,
+        `esperaba que Persistencia alta (${avgHigh.toFixed(1)}) diera más vulnerabilidad que baja (${avgLow.toFixed(1)})`,
+    );
+});
+
+test('summarizeVulnerabilitySamples: min <= mode <= max, en escala 0-100', () => {
+    const sampler = sampleVulnerabilityFromProfiles(attackerProfiles.organizado, defenseProfiles.basica, 'bajo');
+    const summary = summarizeVulnerabilitySamples(sampler, 2000, mulberry32(5));
+    assert.ok(summary.min <= summary.mode && summary.mode <= summary.max, JSON.stringify(summary));
+    assert.ok(summary.min >= 0 && summary.max <= 100, JSON.stringify(summary));
+});
+
+test('calculateReduccionALEFromProfiles: mejorar la defensa (mismo atacante) da reducción positiva', () => {
+    const { reductionPercent } = calculateReduccionALEFromProfiles(
+        attackerProfiles.organizado,
+        defenseProfiles.basica,
+        defenseProfiles.elite,
+        'medio',
+    );
+    assert.ok(reductionPercent > 0, `esperaba reducción positiva, dio ${reductionPercent}`);
+});
+
+test('calculateReduccionALEFromProfiles: degradar la defensa NO da reducción (protección contra mal uso)', () => {
+    const { reductionPercent } = calculateReduccionALEFromProfiles(
+        attackerProfiles.organizado,
+        defenseProfiles.elite,
+        defenseProfiles.basica,
+        'medio',
+    );
+    assert.strictEqual(reductionPercent, 0);
+});
+
+test('calculateReduccionALEFromProfiles: mismo objetivo que el actual da 0% exacto (números aleatorios comunes cancelan el ruido)', () => {
+    const { reductionPercent } = calculateReduccionALEFromProfiles(
+        attackerProfiles.organizado,
+        defenseProfiles.estandar,
+        defenseProfiles.estandar,
+        'medio',
+    );
+    assert.strictEqual(reductionPercent, 0);
 });
 
 test('calculateInsuranceRetainedALE: límite=0 significa CERO cobertura extra, no ilimitada', () => {
@@ -717,7 +806,7 @@ test('evaluateTreatmentStrategies: sin currentCVaR, residualCVaR queda en null (
     assert.strictEqual(result.aceptar.residualCVaR, null);
 });
 
-// Mitigar reduce Vulnerabilidad de forma proporcional (ver calculateReduccionALE en
+// Mitigar reduce Vulnerabilidad de forma proporcional (ver calculateReduccionALEFromProfiles en
 // autocalc.js) — como cada pérdida simulada es LEF × Magnitud de Pérdida, escalar
 // Vulnerabilidad por X% escala TODA la distribución de pérdidas por X%, así que el CVaR
 // residual se calcula con la MISMA fórmula que el ALE residual, sin volver a simular.

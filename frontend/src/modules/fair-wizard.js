@@ -1359,6 +1359,14 @@ export const FairWizard = {
                     seed,
                     tef,
                     vuln,
+                    // La Vulnerabilidad simulada (TCap vs. RS, ver sampleVulnerabilityFromProfiles
+                    // en backend/src/lib/autocalc.js) necesita estos 4 campos — sin
+                    // attackerKey/defenseKey (Análisis Rápido, o riesgos previos a este cambio) el
+                    // backend cae solo al `vuln` de arriba, retrocompatible al 100%.
+                    attackerKey: state.fair.attackerKey,
+                    defenseKey: state.fair.defenseKey,
+                    confidence: document.getElementById('fair-data-confidence').value,
+                    vulnManualOverride: document.getElementById('vuln-manual-override').checked,
                     lossMagnitudes,
                     riskType,
                     currency,

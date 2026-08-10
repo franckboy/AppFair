@@ -3,7 +3,8 @@
 const express = require('express');
 const { runMonteCarloSimulation, summarizeLosses } = require('../lib/simulation');
 const { evaluateFairThreat, evaluateFairOpportunity } = require('../lib/evaluation');
-const { defaultRiskCriteria, lossFormsKeys } = require('../data/profiles');
+const { sampleVulnerabilityFromProfiles } = require('../lib/autocalc');
+const { defaultRiskCriteria, lossFormsKeys, attackerProfiles, defenseProfiles } = require('../data/profiles');
 const { normalizeRiskCriteria, validateRiskCriteriaOverride } = require('../lib/riskCriteria');
 const { validateTriangularRange, validateIterations, validateSeed } = require('../lib/validate');
 const { asyncHandler } = require('../middleware/asyncHandler');
@@ -30,7 +31,15 @@ function createSimulateRouter(store) {
      *  - iterations: number (default 10000)
      *  - seed: number (0 = aleatoria)
      *  - tef: { min, mode, max }
-     *  - vuln: { min, mode, max }  (en %, 0-100)
+     *  - vuln: { min, mode, max }  (en %, 0-100) — sigue siendo obligatorio (ver sampleVuln en
+     *    runMonteCarloSimulation) aunque no se use para muestrear cuando aplica el camino nuevo
+     *    de abajo, para no tener que tocar esta validación.
+     *  - attackerKey, defenseKey, confidence, vulnManualOverride: (opcionales) si vienen los
+     *    tres primeros Y vulnManualOverride no es true, la Vulnerabilidad se SIMULA por
+     *    iteración (Capacidad de Amenaza vs. Fuerza de Resistencia, ver
+     *    sampleVulnerabilityFromProfiles en lib/autocalc.js) en vez de muestrear del `vuln` fijo
+     *    de arriba. Sin ellos (riesgos guardados antes de este cambio, o con Vulnerabilidad
+     *    editada a mano), cae al camino de siempre — retrocompatible al 100%.
      *  - lossMagnitudes: { [key]: { min, mode, max } }  — claves de lossFormsKeys
      *  - riskType: 'amenaza' | 'oportunidad'
      *  - riskCriteria: (opcional) sobreescribe los criterios guardados para esta corrida
@@ -43,6 +52,10 @@ function createSimulateRouter(store) {
                 seed = 0,
                 tef,
                 vuln,
+                attackerKey,
+                defenseKey,
+                confidence = 'medio',
+                vulnManualOverride = false,
                 lossMagnitudes = {},
                 riskType = 'amenaza',
                 riskCriteria,
@@ -71,6 +84,21 @@ function createSimulateRouter(store) {
                 if (lmError) return res.status(400).json({ error: lmError });
             }
 
+            // Si vienen attackerKey/defenseKey, deben ser válidos (400 si no) — a diferencia de
+            // cuando faltan del todo (undefined), que es el caso normal de retrocompatibilidad y
+            // simplemente cae al camino legado, esto es un error real del cliente.
+            let sampleVuln;
+            if (attackerKey !== undefined || defenseKey !== undefined) {
+                const attackerProfile = attackerProfiles[attackerKey];
+                const defenseProfile = defenseProfiles[defenseKey];
+                if (!attackerProfile || !defenseProfile) {
+                    return res.status(400).json({ error: 'attackerKey o defenseKey inválido.' });
+                }
+                if (!vulnManualOverride) {
+                    sampleVuln = sampleVulnerabilityFromProfiles(attackerProfile, defenseProfile, confidence);
+                }
+            }
+
             // El global se resuelve SIEMPRE (haya o no override) porque validateRiskCriteriaOverride
             // necesita el ALE Crítico global real para exigir que un override individual nunca lo
             // supere ("mi máximo global es $1M, pero para este riesgo mi máximo es $2M" se
@@ -95,6 +123,7 @@ function createSimulateRouter(store) {
                 tef,
                 vuln,
                 lossMagnitudes,
+                sampleVuln,
             });
 
             const summary = summarizeLosses(annualLosses, criteria.aleUmbralExcedencia);

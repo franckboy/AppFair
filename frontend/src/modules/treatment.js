@@ -372,7 +372,7 @@ export const Treatment = {
     // defenseKey ya guardado en la entrada del Registro.
     async updateReduccionALEAuto() {
         const entry = state.treatment.currentEntry;
-        if (!entry || !entry.defenseKey) return;
+        if (!entry || !entry.defenseKey || !entry.attackerKey) return;
         if (document.getElementById('fair-reduccionALE-manual-override').checked) return;
 
         const objetivoKey = document.getElementById('fair-mitigar-defensa-objetivo').value;

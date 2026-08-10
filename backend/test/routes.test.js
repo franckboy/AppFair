@@ -392,9 +392,26 @@ test('POST /api/autocalc/reduccion-ale: degradar la defensa da 0% (protección c
     const res = await request(app)
         .post('/api/autocalc/reduccion-ale')
         .set('X-API-Key', TEST_API_KEY)
-        .send({ currentDefenseKey: 'avanzada', targetDefenseKey: 'basica' });
+        .send({ attackerKey: 'organizado', currentDefenseKey: 'avanzada', targetDefenseKey: 'basica' });
     assert.strictEqual(res.status, 200);
     assert.strictEqual(res.body.reductionPercent, 0);
+});
+
+test('POST /api/autocalc/reduccion-ale: mejorar la defensa (mismo atacante) da reducción positiva', async () => {
+    const res = await request(app)
+        .post('/api/autocalc/reduccion-ale')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ attackerKey: 'organizado', currentDefenseKey: 'basica', targetDefenseKey: 'elite' });
+    assert.strictEqual(res.status, 200);
+    assert.ok(res.body.reductionPercent > 0, `esperaba reducción positiva, dio ${res.body.reductionPercent}`);
+});
+
+test('POST /api/autocalc/reduccion-ale: sin attackerKey responde 400 (antes era opcional, ahora es obligatorio)', async () => {
+    const res = await request(app)
+        .post('/api/autocalc/reduccion-ale')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ currentDefenseKey: 'avanzada', targetDefenseKey: 'basica' });
+    assert.strictEqual(res.status, 400);
 });
 
 // --- Simulación ---
