@@ -772,7 +772,12 @@ export const FairWizard = {
             document.getElementById('vuln-min').value = entry.vuln.min;
             document.getElementById('vuln-mode').value = entry.vuln.mode;
             document.getElementById('vuln-max').value = entry.vuln.max;
-            this.setVulnManualOverride(true);
+            // Bug real: antes esto era `setVulnManualOverride(true)` incondicional — cualquier
+            // riesgo retomado quedaba marcado como "editado a mano" aunque nunca se hubiera
+            // tocado, así que el autocálculo dejaba de aplicarse para siempre desde el primer
+            // guardado. Ahora se restaura el estado REAL (ver vulnManualOverride, persistido
+            // desde saveToRiskRegister/PUT /api/register).
+            this.setVulnManualOverride(!!entry.vulnManualOverride);
         }
         if (entry.lossMagnitudes) {
             this.setLossMagnitudeManualOverride(true, true);

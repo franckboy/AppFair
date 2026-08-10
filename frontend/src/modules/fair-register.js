@@ -315,6 +315,12 @@ export const FairRegister = {
                     securityPlan,
                     tef: readRange('tef'),
                     vuln: readRange('vuln'),
+                    // Si el usuario de verdad tocó "Ajustar manualmente" para Vulnerabilidad, o
+                    // si es el resultado sin editar de calculateVulnerability (autocalc.js) —
+                    // antes solo vivía en el borrador de localStorage, nunca llegaba al
+                    // Registro (ver la corrección en loadRegisteredRiskIntoForm, que antes
+                    // asumía "manual" siempre al retomar un riesgo, sin este dato real).
+                    vulnManualOverride: document.getElementById('vuln-manual-override').checked,
                     lossMagnitudes,
                     seed: state.fair.lastSeed || null,
                     riskType: document.getElementById('fair-risk-type').value,
