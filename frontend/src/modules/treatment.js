@@ -10,10 +10,13 @@ import { debounce, getSafeNumber, sanitizeHTML, showToast } from './utils.js';
 const RELIABILITY_ORDER = ['baja', 'media', 'alta'];
 
 // Nombres para mostrar de cada estrategia — compartido entre la recomendación
-// (updateTreatmentView) y el resumen de la Decisión de Tratamiento adoptada
-// (renderTreatmentDecision). mitigarTransferir no es adoptable como decisión propia (ver
-// adoptStrategy) pero sí aparece como recomendación, por eso vive en el mismo mapa.
-const STRATEGY_LABELS = {
+// (updateTreatmentView), el resumen de la Decisión de Tratamiento adoptada
+// (renderTreatmentDecision) y App.RiskManagement.renderResidualStatus (Gestión de Riesgos, que
+// también necesita mostrar qué estrategia generó el Residual Canónico vigente). Exportado en vez
+// de duplicado, para no arriesgar que los dos mapas se desincronicen. mitigarTransferir no es
+// adoptable como decisión propia (ver adoptStrategy) pero sí aparece como recomendación, por eso
+// vive en el mismo mapa.
+export const STRATEGY_LABELS = {
     mitigar: 'Mitigar',
     transferir: 'Transferir (Seguro)',
     evitar: 'Evitar',

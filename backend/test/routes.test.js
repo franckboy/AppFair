@@ -295,6 +295,54 @@ test('POST /api/simulate acepta un riskCriteria override con aleCritico igual o 
     assert.strictEqual(res.status, 200);
 });
 
+// --- POST /api/simulate/evaluate (reclasifica un ALE/CVaR95 ya conocido, sin Monte Carlo —
+// usado por Gestión de Riesgos para reclasificar el Residual Canónico de un riesgo tratado) ---
+
+test('POST /api/simulate/evaluate clasifica contra los Criterios de Riesgo (Crítico vs. Aceptable)', async () => {
+    // Los Criterios globales son estado compartido entre tests de este archivo (sin
+    // aislamiento, ver la nota al inicio del archivo) — se fuerza un riskCriteriaOverride
+    // propio en vez de asumir el default, para que este test sea determinista sin importar qué
+    // haya guardado un test anterior.
+    const override = { aleAceptablePercent: 20, aleCritico: 1000 }; // aleAceptable=200
+    const critico = await request(app)
+        .post('/api/simulate/evaluate')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ale: 2000, cvar95: 2000, riskCriteriaOverride: override });
+    assert.strictEqual(critico.status, 200);
+    assert.strictEqual(critico.body.evaluation.severity, 'critico');
+
+    const aceptable = await request(app)
+        .post('/api/simulate/evaluate')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ale: 100, cvar95: 100, riskCriteriaOverride: override });
+    assert.strictEqual(aceptable.status, 200);
+    assert.strictEqual(aceptable.body.evaluation.level, 'Aceptable');
+});
+
+test('POST /api/simulate/evaluate combina un riskCriteriaOverride PARCIAL con el global, no lo reemplaza entero', async () => {
+    // Override solo trae aleCritico (1000) — aleAceptablePercent debe seguir siendo el global
+    // (20%): aleAceptable=200, aleMedio=600. ale=800 cae en la banda Alta.
+    const res = await request(app)
+        .post('/api/simulate/evaluate')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ale: 800, cvar95: 800, riskCriteriaOverride: { aleCritico: 1000 } });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.evaluation.severity, 'alto');
+});
+
+test('POST /api/simulate/evaluate rechaza un riskCriteriaOverride.aleCritico mayor al global con 400', async () => {
+    const res = await request(app)
+        .post('/api/simulate/evaluate')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ale: 800, cvar95: 800, riskCriteriaOverride: { aleCritico: 999999999 } });
+    assert.strictEqual(res.status, 400);
+});
+
+test('POST /api/simulate/evaluate sin ale/cvar95 numéricos responde 400', async () => {
+    const res = await request(app).post('/api/simulate/evaluate').set('X-API-Key', TEST_API_KEY).send({ ale: 100 });
+    assert.strictEqual(res.status, 400);
+});
+
 test('PUT /api/config/org-defaults guarda solo los campos enviados, conserva el resto', async () => {
     const putRes = await request(app)
         .put('/api/config/org-defaults')

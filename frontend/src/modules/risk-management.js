@@ -1,6 +1,7 @@
 import { App } from './app-namespace.js';
 import { state } from './state.js';
-import { debounce, showToast } from './utils.js';
+import { debounce, severityToClasses, showToast } from './utils.js';
+import { STRATEGY_LABELS } from './treatment.js';
 
 // ============================================================
 // App.RiskManagement — Gobernanza/Revisión y Plan de Seguridad de cualquier riesgo ya guardado,
@@ -60,6 +61,13 @@ export const RiskManagement = {
         const debouncedSecurityPlan = debounce(() => this.persist(), 600);
         this._pendingSaves.push(debouncedSecurityPlan);
         document.getElementById('fair-security-plan').addEventListener('input', debouncedSecurityPlan);
+
+        document.getElementById('riskmgmt-goto-treatment-btn').addEventListener('click', () => {
+            const entry = state.riskManagement.currentEntry;
+            if (!entry) return;
+            App.Navigation.switchPage('treatment');
+            App.Treatment.load(entry.riskName);
+        });
     },
 
     _flushPendingSaves() {
@@ -117,6 +125,106 @@ export const RiskManagement = {
         document.getElementById('fair-assessment-location').value = entry.assessmentLocation || '';
         document.getElementById('fair-security-plan').value =
             entry.securityPlan && entry.securityPlan !== '—' ? entry.securityPlan : '';
+
+        this.renderResidualStatus(entry);
+    },
+
+    // Muestra el Riesgo Residual VIGENTE (paso 2 del rediseño de Tratamiento, ver la
+    // conversación) — hasta ahora, Gestión de Riesgos no mostraba ningún número, solo
+    // gobernanza. Solo aplica a Amenazas ya analizadas: una Oportunidad no tiene Tratamiento (su
+    // "ale" es un beneficio, no una pérdida) y un stub "Sin analizar" (creado desde el árbol con
+    // "+") no tiene ninguna clasificación todavía.
+    //
+    // Sin treatmentDecision: el residual es igual al inherente — se reutiliza
+    // entry.evaluationLevel/severity YA guardados, sin ninguna llamada de red.
+    // Con treatmentDecision: se reclasifica el residualALE/residualCVaR contra los Criterios de
+    // Riesgo (POST /api/simulate/evaluate, misma lógica que ya clasifica el inherente) porque
+    // puede caer en una banda distinta — un riesgo Crítico que se trató puede haber bajado a
+    // Aceptable, y la cadencia de revisión (suggestedReviewDate) debe reflejar eso, no el
+    // inherente. requestId sigue el mismo patrón de guardián contra condición de carrera que
+    // App.Treatment.updateReduccionALEAuto (ver state.riskManagement.residualRequestId).
+    async renderResidualStatus(entry) {
+        const section = document.getElementById('riskmgmt-residual-section');
+        const gotoTreatmentBtn = document.getElementById('riskmgmt-goto-treatment-btn');
+
+        if (entry.riskType !== 'amenaza' || !entry.evaluationLevel) {
+            section.classList.add('hidden');
+            return;
+        }
+        section.classList.remove('hidden');
+
+        const formatCurrency = (value) =>
+            value === null || value === undefined
+                ? '—'
+                : new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
+        const applyBadge = (severity, label) => {
+            section.className = `p-4 rounded-lg mb-4 border-l-4 ${severityToClasses(severity)}`;
+            document.getElementById('riskmgmt-residual-badge').textContent = label;
+        };
+
+        const decision = entry.treatmentDecision;
+        if (!decision) {
+            document.getElementById('riskmgmt-residual-note').textContent =
+                'Sin tratamiento decidido — el riesgo vigente es igual al inherente:';
+            document.getElementById('riskmgmt-residual-ale').textContent = formatCurrency(entry.ale);
+            document.getElementById('riskmgmt-residual-cvar').textContent = formatCurrency(entry.cvar95);
+            applyBadge(entry.severity, entry.evaluationLevel);
+            gotoTreatmentBtn.classList.remove('hidden');
+            return;
+        }
+
+        gotoTreatmentBtn.classList.add('hidden');
+        const decidedAt = decision.decidedAt ? new Date(decision.decidedAt).toLocaleDateString('es-MX') : '—';
+        document.getElementById('riskmgmt-residual-note').textContent =
+            `Con tratamiento (${STRATEGY_LABELS[decision.strategy] || decision.strategy}) — decidido el ${decidedAt}:`;
+        document.getElementById('riskmgmt-residual-ale').textContent = formatCurrency(decision.residualALE);
+        document.getElementById('riskmgmt-residual-cvar').textContent = formatCurrency(decision.residualCVaR);
+
+        // Sin residualCVaR conocido (ej. Transferir — ver evaluateTreatmentStrategies, fuera de
+        // alcance a propósito) no se puede reclasificar de forma honesta: inventar un CVaR (ej.
+        // usando el ALE en su lugar) subestimaría sistemáticamente el riesgo de cola real, que
+        // casi siempre es mayor al promedio — mismo criterio conservador de toda la app, no
+        // afirmar una precisión que no se puede verificar. Se muestra el ALE residual solo, sin
+        // badge de clasificación ni cambio en la fecha de revisión sugerida.
+        if (typeof decision.residualCVaR !== 'number') {
+            section.className = 'p-4 rounded-lg mb-4 border-l-4 bg-gray-50 border-gray-400 text-gray-700';
+            document.getElementById('riskmgmt-residual-badge').textContent =
+                'Clasificación no disponible (esta estrategia no calcula CVaR residual)';
+            return;
+        }
+
+        document.getElementById('riskmgmt-residual-badge').textContent = 'Calculando…';
+        section.className = 'p-4 rounded-lg mb-4 border-l-4 bg-gray-50 border-gray-400 text-gray-700';
+
+        const requestId = ++state.riskManagement.residualRequestId;
+        let data;
+        try {
+            data = await App.Api.request('/api/simulate/evaluate', {
+                method: 'POST',
+                body: {
+                    ale: decision.residualALE,
+                    cvar95: decision.residualCVaR,
+                    riskCriteriaOverride: entry.riskCriteriaOverride,
+                },
+            });
+        } catch {
+            if (requestId !== state.riskManagement.residualRequestId) return; // ver el guardián documentado arriba
+            document.getElementById('riskmgmt-residual-badge').textContent = 'No se pudo reclasificar';
+            return;
+        }
+        // Respuesta vieja, ya superada por otra más nueva (ej. el usuario cambió de riesgo
+        // mientras esta petición estaba en vuelo) — mismo bug real ya documentado y arreglado
+        // para Vulnerabilidad/Magnitud de Pérdida en el wizard y Reducción de ALE en Tratamiento.
+        if (requestId !== state.riskManagement.residualRequestId) return;
+
+        applyBadge(data.evaluation.severity, data.evaluation.level);
+
+        // Solo actualiza la fecha sugerida si TODAVÍA está vacía (sin reviewDate ya guardado ni
+        // escrito mientras esta petición estaba en vuelo) — nunca pisa una fecha que ya exista.
+        const reviewDateInput = document.getElementById('fair-review-date');
+        if (!reviewDateInput.value) {
+            reviewDateInput.value = suggestedReviewDate(data.evaluation.level);
+        }
     },
 
     // Igual que App.Treatment.persistTreatment: PUT reemplaza la entrada completa (no es un PATCH

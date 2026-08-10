@@ -76,6 +76,10 @@ export const state = {
     // estos datos se actualizan durante toda la vida del riesgo, no solo al simular.
     riskManagement: {
         currentEntry: null,
+        // Guardián contra condición de carrera de red (mismo patrón que
+        // App.Treatment._reduccionALERequestId) para la reclasificación async del Riesgo
+        // Residual (ver App.RiskManagement.renderResidualStatus) al elegir un riesgo.
+        residualRequestId: 0,
     },
     fair: {
         fairResultsChart: null,
