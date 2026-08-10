@@ -214,6 +214,20 @@ function createRegisterRouter(store) {
                         .status(400)
                         .json({ error: 'treatmentDecision.residualALE debe ser un número mayor o igual a 0.' });
                 }
+                // residualCVaR es OPCIONAL — ausente o null es válido (decisiones de Transferir,
+                // que no tiene un CVaR residual calculado, o decisiones adoptadas antes de que
+                // este campo existiera). Solo se valida cuando SÍ viene un valor.
+                if (
+                    treatmentDecision.residualCVaR !== undefined &&
+                    treatmentDecision.residualCVaR !== null &&
+                    (typeof treatmentDecision.residualCVaR !== 'number' ||
+                        !Number.isFinite(treatmentDecision.residualCVaR) ||
+                        treatmentDecision.residualCVaR < 0)
+                ) {
+                    return res.status(400).json({
+                        error: 'treatmentDecision.residualCVaR debe ser un número mayor o igual a 0, o null.',
+                    });
+                }
             }
 
             const overrideError = validateRiskCriteriaOverride(riskCriteriaOverride, criteria);

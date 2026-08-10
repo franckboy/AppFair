@@ -205,14 +205,26 @@ function getInvestmentVerdict(cost, lossAvoided, formatCurrency) {
  *
  * @param {Object} params
  * @param {number} params.currentALE Pérdida Anual Esperada actual (simulada)
+ * @param {number} [params.currentCVaR] CVaR95 actual (simulado) — opcional; si no es un número,
+ *   los residualCVaR de abajo quedan en null en vez de calcularse. Mitigar reduce Vulnerabilidad
+ *   de forma proporcional (ver calculateReduccionALE/calculateVulnerability en autocalc.js: el
+ *   triángulo COMPLETO de Vulnerabilidad escala por reductionPercent), y como cada pérdida
+ *   simulada es LEF × Magnitud de Pérdida (ver simulation.js), escalar Vulnerabilidad por X%
+ *   escala TODA la distribución de pérdidas por X% — no solo el promedio (ALE), también
+ *   cualquier otra estadística de esa misma distribución, incluido el CVaR. Por eso
+ *   residualCVaR se calcula igual que residualALE, sin volver a correr Monte Carlo.
  * @param {number[]} [params.annualLosses] Arreglo de pérdidas simuladas (necesario para Transferir)
  * @param {Object} params.mitigar { cost, reductionPercent, reliability, delayDays }
  * @param {Object} params.transferir { premium, deductible, limit, unlimited, reliability, delayDays }
  * @param {Object} params.evitar { cost, reliability, delayDays }
  * @param {(n:number) => string} formatCurrency
  */
-function evaluateTreatmentStrategies({ currentALE, annualLosses, mitigar, transferir, evitar }, formatCurrency) {
+function evaluateTreatmentStrategies(
+    { currentALE, currentCVaR, annualLosses, mitigar, transferir, evitar },
+    formatCurrency,
+) {
     const results = {};
+    const hasCVaR = typeof currentCVaR === 'number';
 
     // 1. Mitigar
     const aleAfterMitigar = currentALE * (1 - (mitigar.reductionPercent || 0) / 100);
@@ -230,6 +242,7 @@ function evaluateTreatmentStrategies({ currentALE, annualLosses, mitigar, transf
     results.mitigar = {
         cost: mitigar.cost,
         residualALE: aleAfterMitigar,
+        residualCVaR: hasCVaR ? currentCVaR * (1 - (mitigar.reductionPercent || 0) / 100) : null,
         avoidedLoss: avoidedMitigar,
         netBenefit: netBenefitMitigar,
         reliability: mitigar.reliability,
@@ -298,6 +311,7 @@ function evaluateTreatmentStrategies({ currentALE, annualLosses, mitigar, transf
     results.evitar = {
         cost: evitar.cost,
         residualALE: 0,
+        residualCVaR: 0,
         avoidedLoss: currentALE,
         netBenefit: netBenefitEvitar,
         reliability: evitar.reliability,
@@ -331,7 +345,13 @@ function evaluateTreatmentStrategies({ currentALE, annualLosses, mitigar, transf
     }
 
     // 5. Aceptar / Retener (sin costo, sin cambio)
-    results.aceptar = { cost: 0, residualALE: currentALE, avoidedLoss: 0, netBenefit: 0 };
+    results.aceptar = {
+        cost: 0,
+        residualALE: currentALE,
+        residualCVaR: hasCVaR ? currentCVaR : null,
+        avoidedLoss: 0,
+        netBenefit: 0,
+    };
 
     // Recomendación: la estrategia activa (con un costo real capturado) con mayor beneficio neto,
     // incluyendo la combinación Mitigar+Transferir cuando ambas partes tienen costo capturado.

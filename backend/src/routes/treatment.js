@@ -22,6 +22,8 @@ function createTreatmentRouter() {
      * POST /api/treatment/evaluate
      * Body:
      *  - currentALE: number
+     *  - currentCVaR: number (opcional — habilita residualCVaR en Mitigar/Evitar/Aceptar, ver
+     *    evaluateTreatmentStrategies)
      *  - annualLosses: number[] (opcional pero recomendado — necesario para un cálculo
      *    preciso de Transferir/Seguro; si no viene, se usa el ALE promedio como aproximación)
      *  - mitigar: { cost, reductionPercent, reliability, delayDays }
@@ -29,7 +31,7 @@ function createTreatmentRouter() {
      *  - evitar: { cost, reliability, delayDays }
      */
     router.post('/evaluate', (req, res) => {
-        const { currentALE, annualLosses, mitigar = {}, transferir = {}, evitar = {} } = req.body;
+        const { currentALE, currentCVaR, annualLosses, mitigar = {}, transferir = {}, evitar = {} } = req.body;
 
         if (typeof currentALE !== 'number') {
             return res.status(400).json({
@@ -45,6 +47,7 @@ function createTreatmentRouter() {
         const result = evaluateTreatmentStrategies(
             {
                 currentALE,
+                currentCVaR,
                 annualLosses,
                 mitigar: {
                     cost: mitigar.cost || 0,
