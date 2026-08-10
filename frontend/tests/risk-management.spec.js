@@ -82,5 +82,82 @@ test.describe('Gestión de Riesgos (página aparte)', () => {
         await page.waitForTimeout(500);
         const options = await page.locator('#riskmgmt-risk-select option').allTextContents();
         expect(options).toContain('E2E Gestión — Oportunidad de Mercado');
+
+        // Una Oportunidad no tiene Tratamiento (su "ale" es un beneficio, no una pérdida) — la
+        // sección de Riesgo Residual (paso 2 del rediseño de Tratamiento) no debe aparecer.
+        await page.selectOption('#riskmgmt-risk-select', 'E2E Gestión — Oportunidad de Mercado');
+        await page.waitForTimeout(300);
+        await expect(page.locator('#riskmgmt-residual-section')).toBeHidden();
+    });
+
+    test('la sección de Riesgo Residual pasa del inherente al residual reclasificado al adoptar una estrategia en Tratamiento', async ({
+        page,
+    }) => {
+        await connectAndBoot(page);
+        await runFullFairAnalysis(page, 'E2E Gestión — Residual');
+
+        // riskCriteriaOverride PROPIO del riesgo (no el global, que es estado compartido entre
+        // specs sin aislamiento) — hace la reclasificación determinista sin importar qué haya
+        // guardado otro test: aleAceptable = 1000*0.2 = 200.
+        await page.evaluate(async () => {
+            const res = await fetch('http://localhost:3000/api/register', { headers: { 'X-API-Key': 'test-e2e-key' } });
+            const data = await res.json();
+            const entry = data.risks.find((r) => r.riskName === 'E2E Gestión — Residual');
+            await fetch(`http://localhost:3000/api/register/${encodeURIComponent(entry.riskName)}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', 'X-API-Key': 'test-e2e-key' },
+                body: JSON.stringify({
+                    ...entry,
+                    ale: 2000,
+                    cvar95: 2000,
+                    riskCriteriaOverride: { aleAceptablePercent: 20, aleCritico: 1000 },
+                }),
+            });
+        });
+        await page.reload({ waitUntil: 'networkidle' });
+
+        await page.click('#nav-risk-mgmt');
+        await page.waitForTimeout(500);
+        await page.selectOption('#riskmgmt-risk-select', 'E2E Gestión — Residual');
+        await page.waitForTimeout(500);
+
+        // Sin decisión: el residual mostrado es igual al inherente, con botón para ir a decidir.
+        await expect(page.locator('#riskmgmt-residual-section')).toBeVisible();
+        await expect(page.locator('#riskmgmt-residual-note')).toContainText('igual al inherente');
+        await expect(page.locator('#riskmgmt-residual-ale')).toHaveText('$2,000.00');
+        await expect(page.locator('#riskmgmt-goto-treatment-btn')).toBeVisible();
+
+        await page.click('#riskmgmt-goto-treatment-btn');
+        await page.waitForTimeout(500);
+        await expect(page.locator('#treatmentPage')).toBeVisible();
+        await expect(page.locator('#treatment-risk-select')).toHaveValue('E2E Gestión — Residual');
+
+        // ale=2000 > aleCritico(1000) del override → inherente Crítico. Mitigar al 95% deja
+        // residual = 100, bien por debajo de aleAceptable(200) → debe reclasificar a Aceptable.
+        await page.check('#fair-reduccionALE-manual-override');
+        await page.fill('#fair-reduccionALE', '95');
+        await page.waitForTimeout(1000);
+        await page.click('#treatment-adopt-mitigar-btn');
+        await page.waitForTimeout(800);
+
+        await page.click('#nav-risk-mgmt');
+        await page.waitForTimeout(500);
+        await page.selectOption('#riskmgmt-risk-select', 'E2E Gestión — Residual');
+        await page.waitForTimeout(1500);
+
+        await expect(page.locator('#riskmgmt-residual-note')).toContainText('Con tratamiento (Mitigar)');
+        await expect(page.locator('#riskmgmt-residual-ale')).toHaveText('$100.00');
+        await expect(page.locator('#riskmgmt-residual-cvar')).toHaveText('$100.00');
+        await expect(page.locator('#riskmgmt-residual-badge')).toHaveText('Aceptable');
+        await expect(page.locator('#riskmgmt-goto-treatment-btn')).toBeHidden();
+
+        // La fecha de revisión sugerida se actualiza a la cadencia de "Aceptable" (12 meses) —
+        // este riesgo nunca tuvo un reviewDate guardado, así que no hay regresión posible.
+        const reviewDate = new Date(await page.locator('#fair-review-date').inputValue());
+        const now = new Date();
+        const monthsAhead =
+            (reviewDate.getFullYear() - now.getFullYear()) * 12 + (reviewDate.getMonth() - now.getMonth());
+        expect(monthsAhead).toBeGreaterThanOrEqual(11);
+        expect(monthsAhead).toBeLessThanOrEqual(12);
     });
 });

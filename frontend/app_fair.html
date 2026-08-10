@@ -876,6 +876,18 @@
                             <select id="riskmgmt-risk-select" class="form-select"></select>
                         </div>
 
+                        <div id="riskmgmt-residual-section" class="p-4 rounded-lg mb-4 border-l-4 hidden">
+                            <p id="riskmgmt-residual-note" class="text-sm mb-1"></p>
+                            <p class="text-sm">
+                                ALE: <strong id="riskmgmt-residual-ale">$0.00</strong> · CVaR95:
+                                <strong id="riskmgmt-residual-cvar">$0.00</strong> ·
+                                <span id="riskmgmt-residual-badge" class="font-semibold"></span>
+                            </p>
+                            <button type="button" id="riskmgmt-goto-treatment-btn" class="btn btn-secondary text-sm mt-2 hidden">
+                                Ir a Tratamiento a decidir una estrategia
+                            </button>
+                        </div>
+
                         <div class="fair-section bg-gray-50">
                             <h4><span id="governance-section-title">Gobernanza y Revisión</span> <i class="fas fa-info-circle text-blue-500 cursor-pointer ml-1" title="ISO 31000, cláusula 6.6: el riesgo debe tener un responsable y una fecha de revisión definida, no quedar como un análisis estático."></i></h4>
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">

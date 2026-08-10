@@ -128,6 +128,37 @@ function createSimulateRouter(store) {
         }),
     );
 
+    /**
+     * POST /api/simulate/evaluate — clasifica un ALE/CVaR95 YA CONOCIDO contra los Criterios de
+     * Riesgo, sin volver a correr Monte Carlo. Pensado para reclasificar el Residual Canónico de
+     * un riesgo ya tratado (ver App.RiskManagement.renderResidualStatus, Gestión de Riesgos) —
+     * misma lógica de evaluateFairThreat que ya usa POST /api/simulate para el riesgo inherente,
+     * nunca reimplementada en el frontend (una sola fuente de verdad para los umbrales).
+     * Body: { ale: number, cvar95: number, riskCriteriaOverride: (opcional) }
+     */
+    router.post(
+        '/evaluate',
+        asyncHandler(async (req, res) => {
+            const { ale, cvar95, riskCriteriaOverride } = req.body;
+
+            if (typeof ale !== 'number' || typeof cvar95 !== 'number') {
+                return res.status(400).json({ error: 'ale y cvar95 (números) son requeridos.' });
+            }
+
+            const globalCriteria = normalizeRiskCriteria((await store.get('riskCriteria')) || defaultRiskCriteria);
+            const overrideError = validateRiskCriteriaOverride(riskCriteriaOverride, globalCriteria);
+            if (overrideError) return res.status(400).json({ error: overrideError });
+
+            // riskCriteriaOverride es PARCIAL (solo aleAceptablePercent/aleCritico propios de
+            // este riesgo, ver entry.riskCriteriaOverride en register.js) — se combina con el
+            // global igual que ya hace PUT /api/register, nunca se reemplaza entero.
+            const criteria = riskCriteriaOverride ? { ...globalCriteria, ...riskCriteriaOverride } : globalCriteria;
+            const formatCurrency = makeCurrencyFormatter();
+
+            res.json({ evaluation: evaluateFairThreat(ale, cvar95, criteria, formatCurrency) });
+        }),
+    );
+
     return router;
 }
 
