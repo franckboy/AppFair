@@ -468,7 +468,7 @@ export const Treatment = {
         try {
             result = await App.Api.request('/api/treatment/evaluate', {
                 method: 'POST',
-                body: { currentALE: aleActual, mitigar, transferir, evitar, currency },
+                body: { currentALE: aleActual, currentCVaR: entry.cvar95, mitigar, transferir, evitar, currency },
             });
         } catch (err) {
             showToast(err.userMessage || 'No se pudo calcular el tratamiento del riesgo.');
@@ -482,6 +482,10 @@ export const Treatment = {
 
         document.getElementById('fair-roi-costo').textContent = formatCurrency(result.mitigar.cost);
         document.getElementById('fair-roi-ale-despues').textContent = formatCurrency(result.mitigar.residualALE);
+        // residualCVaR es null si este riesgo no tiene un CVaR95 conocido (ver currentCVaR en
+        // evaluateTreatmentStrategies, backend/src/lib/treatment.js) — "—" en vez de "$NaN".
+        document.getElementById('fair-roi-cvar-despues').textContent =
+            result.mitigar.residualCVaR === null ? '—' : formatCurrency(result.mitigar.residualCVaR);
         document.getElementById('fair-roi-ale-evitada').textContent = formatCurrency(result.mitigar.avoidedLoss);
         const mitigarEl = document.getElementById('fair-roi-resultado');
         mitigarEl.textContent = formatCurrency(result.mitigar.netBenefit);
@@ -505,6 +509,10 @@ export const Treatment = {
 
         document.getElementById('fair-aceptar-residual').textContent =
             `${formatCurrency(result.aceptar.residualALE)} (= ALE actual)`;
+        document.getElementById('fair-aceptar-residual-cvar').textContent =
+            result.aceptar.residualCVaR === null
+                ? '—'
+                : `${formatCurrency(result.aceptar.residualCVaR)} (= CVaR actual)`;
 
         const recEl = document.getElementById('fair-treatment-recommendation');
         const rec = result.recommendation;
@@ -601,8 +609,12 @@ export const Treatment = {
         const formatCurrency = (value) =>
             new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
         const decidedAt = decision.decidedAt ? new Date(decision.decidedAt).toLocaleDateString('es-MX') : '—';
+        // decision.residualCVaR puede faltar del todo (Transferir, o una decisión adoptada antes
+        // de que este campo existiera) — `!= null` trata "ausente" y "null" igual, sin mostrar
+        // nada de CVaR en vez de "$NaN".
+        const cvarText = decision.residualCVaR != null ? ` / CVaR95: ${formatCurrency(decision.residualCVaR)}` : '';
         document.getElementById('treatment-decision-summary-text').textContent =
-            `Decisión de Tratamiento: ${STRATEGY_LABELS[decision.strategy]} — Residual: ${formatCurrency(decision.residualALE)} (adoptada el ${decidedAt}).`;
+            `Decisión de Tratamiento: ${STRATEGY_LABELS[decision.strategy]} — Residual ALE: ${formatCurrency(decision.residualALE)}${cvarText} (adoptada el ${decidedAt}).`;
         summaryEl.classList.remove('hidden');
     },
 
@@ -620,11 +632,18 @@ export const Treatment = {
         const entry = state.treatment.currentEntry;
         const result = state.treatment.lastResult;
         if (!entry || !result || !result[strategyKey]) return;
-        await this._persistDecision(entry, {
+        // residualCVaR es null para Transferir (fuera de alcance, ver evaluateTreatmentStrategies)
+        // o si este riesgo no tiene un CVaR95 conocido — se omite del todo en vez de mandar
+        // `null` explícito, así register.js no tiene que distinguir "nunca vino" de "vino null".
+        const decision = {
             strategy: strategyKey,
             residualALE: result[strategyKey].residualALE,
             decidedAt: new Date().toISOString(),
-        });
+        };
+        if (typeof result[strategyKey].residualCVaR === 'number') {
+            decision.residualCVaR = result[strategyKey].residualCVaR;
+        }
+        await this._persistDecision(entry, decision);
         showToast(`Se adoptó "${STRATEGY_LABELS[strategyKey]}" como la decisión de tratamiento de este riesgo.`);
     },
 

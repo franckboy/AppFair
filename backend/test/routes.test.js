@@ -604,6 +604,49 @@ test('PUT /api/register/:riskName rechaza treatmentDecision.residualALE negativo
     assert.strictEqual(res.status, 400);
 });
 
+test('PUT /api/register/:riskName acepta treatmentDecision.residualCVaR (opcional) y lo persiste', async () => {
+    const riskName = 'Robo en bodega HTTP (decisión con CVaR)';
+    const treatmentDecision = {
+        strategy: 'mitigar',
+        residualALE: 4200,
+        residualCVaR: 9800,
+        decidedAt: '2026-01-15T00:00:00.000Z',
+    };
+    const putRes = await request(app)
+        .put(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ale: 10000, cvar95: 25000, treatmentDecision });
+    assert.strictEqual(putRes.status, 200);
+    assert.deepStrictEqual(putRes.body.entry.treatmentDecision, treatmentDecision);
+
+    await request(app)
+        .delete(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY);
+});
+
+test('PUT /api/register/:riskName acepta treatmentDecision sin residualCVaR (Transferir, o decisiones previas a este campo)', async () => {
+    const riskName = 'Robo en bodega HTTP (decisión sin CVaR)';
+    const treatmentDecision = { strategy: 'transferir', residualALE: 6000, decidedAt: '2026-01-15T00:00:00.000Z' };
+    const putRes = await request(app)
+        .put(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ale: 10000, cvar95: 25000, treatmentDecision });
+    assert.strictEqual(putRes.status, 200);
+    assert.strictEqual(putRes.body.entry.treatmentDecision.residualCVaR, undefined);
+
+    await request(app)
+        .delete(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY);
+});
+
+test('PUT /api/register/:riskName rechaza treatmentDecision.residualCVaR negativo con 400', async () => {
+    const res = await request(app)
+        .put(`/api/register/${encodeURIComponent('Riesgo residual CVaR negativo HTTP')}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ale: 0, treatmentDecision: { strategy: 'aceptar', residualALE: 0, residualCVaR: -1 } });
+    assert.strictEqual(res.status, 400);
+});
+
 // --- POST /api/cascade/:riskName/simulate-family ("Simular Familia" — conecta markov.js) ---
 
 async function putAnalyzedRisk(riskName, overrides = {}) {

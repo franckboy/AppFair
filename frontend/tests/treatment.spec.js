@@ -212,6 +212,9 @@ test.describe('Tratamiento del Riesgo (página aparte)', () => {
         await expect(page.locator('#treatment-adopt-mitigar-btn')).toBeHidden();
         await expect(page.locator('#treatment-decision-summary')).toBeVisible();
         await expect(page.locator('#treatment-decision-summary-text')).toContainText('Mitigar');
+        // CVaR residual es válido para Mitigar (ver evaluateTreatmentStrategies) — debe verse en
+        // el banner y persistirse, no solo el ALE residual.
+        await expect(page.locator('#treatment-decision-summary-text')).toContainText('CVaR95');
 
         let register = await page.evaluate(async () => {
             const res = await fetch('http://localhost:3000/api/register', { headers: { 'X-API-Key': 'test-e2e-key' } });
@@ -220,6 +223,7 @@ test.describe('Tratamiento del Riesgo (página aparte)', () => {
         let entry = register.risks.find((r) => r.riskName === 'E2E Tratamiento — Decisión');
         expect(entry.treatmentDecision.strategy).toBe('mitigar');
         expect(typeof entry.treatmentDecision.residualALE).toBe('number');
+        expect(typeof entry.treatmentDecision.residualCVaR).toBe('number');
         const originalId = entry.id;
 
         // Regresión del fix crítico en fair-register.js: re-simular el MISMO riesgo (vía el
@@ -265,5 +269,52 @@ test.describe('Tratamiento del Riesgo (página aparte)', () => {
         });
         entry = register.risks.find((r) => r.riskName === 'E2E Tratamiento — Decisión');
         expect(entry.treatmentDecision).toBe(null);
+    });
+
+    test('CVaR residual escala igual que el ALE residual para Mitigar/Evitar/Aceptar (proporcional a la Vulnerabilidad reducida)', async ({
+        page,
+    }) => {
+        await connectAndBoot(page);
+        await runFullFairAnalysis(page, 'E2E Tratamiento — CVaR Residual');
+
+        // Fuerza ALE/CVaR95 conocidos para poder verificar la fórmula exacta (el wizard con
+        // perfiles default puede dar $0 si no se tocan Magnitudes de Pérdida en Paso 3).
+        await page.evaluate(async () => {
+            const res = await fetch('http://localhost:3000/api/register', { headers: { 'X-API-Key': 'test-e2e-key' } });
+            const data = await res.json();
+            const entry = data.risks.find((r) => r.riskName === 'E2E Tratamiento — CVaR Residual');
+            await fetch(`http://localhost:3000/api/register/${encodeURIComponent(entry.riskName)}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', 'X-API-Key': 'test-e2e-key' },
+                body: JSON.stringify({ ...entry, ale: 100000, cvar95: 250000 }),
+            });
+        });
+        await page.reload({ waitUntil: 'networkidle' });
+
+        await page.click('#nav-treatment');
+        await page.waitForTimeout(500);
+        await page.selectOption('#treatment-risk-select', 'E2E Tratamiento — CVaR Residual');
+        await page.waitForTimeout(500);
+
+        await page.check('#fair-reduccionALE-manual-override');
+        await page.fill('#fair-reduccionALE', '60');
+        await page.waitForTimeout(1000);
+
+        // Mitigar: residualALE = 100000*(1-0.6) = 40000, residualCVaR = 250000*(1-0.6) = 100000.
+        await expect(page.locator('#fair-roi-ale-despues')).toHaveText('$40,000.00');
+        await expect(page.locator('#fair-roi-cvar-despues')).toHaveText('$100,000.00');
+        // Aceptar: sin cambios — residual = el ALE/CVaR actual.
+        await expect(page.locator('#fair-aceptar-residual-cvar')).toContainText('$250,000.00');
+
+        await page.click('#treatment-adopt-mitigar-btn');
+        await page.waitForTimeout(800);
+
+        const register = await page.evaluate(async () => {
+            const res = await fetch('http://localhost:3000/api/register', { headers: { 'X-API-Key': 'test-e2e-key' } });
+            return res.json();
+        });
+        const entry = register.risks.find((r) => r.riskName === 'E2E Tratamiento — CVaR Residual');
+        expect(entry.treatmentDecision.residualALE).toBe(40000);
+        expect(entry.treatmentDecision.residualCVaR).toBe(100000);
     });
 });

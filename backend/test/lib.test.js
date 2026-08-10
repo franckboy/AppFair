@@ -700,6 +700,48 @@ test('evaluateTreatmentStrategies: SÍ recomienda "Mitigar" cuando tiene costo r
     assert.strictEqual(result.mitigar.verdict.verdict, 'conviene');
 });
 
+test('evaluateTreatmentStrategies: sin currentCVaR, residualCVaR queda en null (no revienta ni inventa un número)', () => {
+    const fmt = (n) => `$${n}`;
+    const result = evaluateTreatmentStrategies(
+        {
+            currentALE: 100000,
+            annualLosses: null,
+            mitigar: { cost: 10000, reductionPercent: 60, reliability: 'media', delayDays: 0 },
+            transferir: { premium: 0, deductible: 0, limit: 0, unlimited: false, reliability: 'media', delayDays: 0 },
+            evitar: { cost: 0, reliability: 'alta', delayDays: 0 },
+        },
+        fmt,
+    );
+    assert.strictEqual(result.mitigar.residualCVaR, null);
+    assert.strictEqual(result.evitar.residualCVaR, 0); // Evitar es 0 SIEMPRE, con o sin CVaR conocido.
+    assert.strictEqual(result.aceptar.residualCVaR, null);
+});
+
+// Mitigar reduce Vulnerabilidad de forma proporcional (ver calculateReduccionALE en
+// autocalc.js) — como cada pérdida simulada es LEF × Magnitud de Pérdida, escalar
+// Vulnerabilidad por X% escala TODA la distribución de pérdidas por X%, así que el CVaR
+// residual se calcula con la MISMA fórmula que el ALE residual, sin volver a simular.
+test('evaluateTreatmentStrategies: con currentCVaR, escala residualCVaR igual que residualALE (Mitigar/Evitar/Aceptar)', () => {
+    const fmt = (n) => `$${n}`;
+    const result = evaluateTreatmentStrategies(
+        {
+            currentALE: 100000,
+            currentCVaR: 250000,
+            annualLosses: null,
+            mitigar: { cost: 10000, reductionPercent: 60, reliability: 'media', delayDays: 0 },
+            transferir: { premium: 0, deductible: 0, limit: 0, unlimited: false, reliability: 'media', delayDays: 0 },
+            evitar: { cost: 0, reliability: 'alta', delayDays: 0 },
+        },
+        fmt,
+    );
+    assert.strictEqual(result.mitigar.residualALE, 40000); // 100000 * (1 - 0.6)
+    assert.strictEqual(result.mitigar.residualCVaR, 100000); // 250000 * (1 - 0.6)
+    assert.strictEqual(result.evitar.residualCVaR, 0);
+    assert.strictEqual(result.aceptar.residualALE, 100000);
+    assert.strictEqual(result.aceptar.residualCVaR, 250000);
+    assert.strictEqual(result.transferir.residualCVaR, undefined); // fuera de alcance a propósito
+});
+
 test('expectedNetBenefit: usa la probabilidad de RELIABILITY_TO_PROBABILITY para cada nivel de Fiabilidad', () => {
     // cost=10000, avoidedLoss=40000 (si funciona: 30000; si falla: -10000)
     Object.entries(RELIABILITY_TO_PROBABILITY).forEach(([reliability, p]) => {
