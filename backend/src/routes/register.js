@@ -81,6 +81,14 @@ function createRegisterRouter(store) {
                 // datos al usuario. La reproducibilidad exacta la da la semilla (ver /api/simulate).
                 tef = null,
                 vuln = null,
+                // Si `vuln` fue de verdad editado a mano (checkbox "Ajustar manualmente") o es
+                // el resultado sin tocar de calculateVulnerability (autocalc.js) — antes solo
+                // vivía en el borrador de localStorage (persistFairAnalysis), nunca llegaba
+                // aquí. Sin esto no hay forma de distinguir, desde el Registro, un dato con
+                // juicio real de un analista de uno puramente derivado de la fórmula — la
+                // diferencia importa para cualquier calibración futura que use el Registro como
+                // evidencia (ver tools/bayesian-calibration/).
+                vulnManualOverride = false,
                 lossMagnitudes = null,
                 seed = null,
                 // Antes no se guardaba nada: cada riesgo quedaba asumido como 'amenaza' para
@@ -263,6 +271,7 @@ function createRegisterRouter(store) {
                 securityPlan,
                 tef,
                 vuln,
+                vulnManualOverride,
                 lossMagnitudes,
                 seed,
                 sourceRiskId,

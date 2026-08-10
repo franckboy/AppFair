@@ -591,6 +591,38 @@ test('PUT /api/register/:riskName sin catalogStandard/reviewHistory guarda null/
         .set('X-API-Key', TEST_API_KEY);
 });
 
+test('PUT /api/register/:riskName persiste vulnManualOverride (true por defecto false, no se infiere)', async () => {
+    const riskName = 'Robo con Vulnerabilidad editada a mano HTTP';
+    const putRes = await request(app)
+        .put(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ale: 10000, cvar95: 15000, vulnManualOverride: true });
+    assert.strictEqual(putRes.status, 200);
+    assert.strictEqual(putRes.body.entry.vulnManualOverride, true);
+
+    const getRes = await request(app).get('/api/register').set('X-API-Key', TEST_API_KEY);
+    const saved = getRes.body.risks.find((r) => r.riskName === riskName);
+    assert.strictEqual(saved.vulnManualOverride, true);
+
+    await request(app)
+        .delete(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY);
+});
+
+test('PUT /api/register/:riskName sin vulnManualOverride guarda false por defecto (autocalculado, no evidencia)', async () => {
+    const riskName = 'Robo con Vulnerabilidad autocalculada HTTP';
+    const putRes = await request(app)
+        .put(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ale: 5000, cvar95: 8000 });
+    assert.strictEqual(putRes.status, 200);
+    assert.strictEqual(putRes.body.entry.vulnManualOverride, false);
+
+    await request(app)
+        .delete(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY);
+});
+
 test('PUT /api/register/:riskName rechaza triggeredByProbability fuera de 0-100 con 400', async () => {
     const res = await request(app)
         .put(`/api/register/${encodeURIComponent('Riesgo probabilidad inválida HTTP')}`)
