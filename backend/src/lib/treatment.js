@@ -206,15 +206,17 @@ function getInvestmentVerdict(cost, lossAvoided, formatCurrency) {
  * @param {Object} params
  * @param {number} params.currentALE Pérdida Anual Esperada actual (simulada)
  * @param {number} [params.currentCVaR] CVaR95 actual (simulado) — opcional; si no es un número,
- *   los residualCVaR de abajo quedan en null en vez de calcularse. Mitigar reduce Vulnerabilidad
- *   de forma proporcional (ver calculateReduccionALE/calculateVulnerability en autocalc.js: el
- *   triángulo COMPLETO de Vulnerabilidad escala por reductionPercent), y como cada pérdida
- *   simulada es LEF × Magnitud de Pérdida (ver simulation.js), escalar Vulnerabilidad por X%
- *   escala TODA la distribución de pérdidas por X% — no solo el promedio (ALE), también
- *   cualquier otra estadística de esa misma distribución, incluido el CVaR. Por eso
- *   residualCVaR se calcula igual que residualALE, sin volver a correr Monte Carlo.
+ *   los residualCVaR de abajo quedan en null en vez de calcularse.
  * @param {number[]} [params.annualLosses] Arreglo de pérdidas simuladas (necesario para Transferir)
- * @param {Object} params.mitigar { cost, reductionPercent, reliability, delayDays }
+ * @param {Object} params.mitigar { cost, reductionPercent, residualALE, residualCVaR, reliability,
+ *   delayDays } — `residualALE`/`residualCVaR` (opcionales) son el resultado REAL de re-simular
+ *   con el Nivel de Defensa Objetivo (ver calculateResidualFromSimulation, autocalc.js) — cuando
+ *   vienen como número, se usan TAL CUAL en vez de derivarlos de `reductionPercent` ×
+ *   `currentALE`/`currentCVaR`. Esa derivación por escalado proporcional era exacta bajo la vieja
+ *   Vulnerabilidad lineal (escalar Vulnerabilidad por X% escalaba TODA la distribución de
+ *   pérdidas por igual, ALE y CVaR incluidos) — con el modelo TCap vs. RS + Tullock ya no lo es,
+ *   así que sigue siendo solo la mejor aproximación disponible cuando no hay `residualALE`/
+ *   `residualCVaR` reales (modo manual, sin un Nivel de Defensa Objetivo que simular).
  * @param {Object} params.transferir { premium, deductible, limit, unlimited, reliability, delayDays }
  * @param {Object} params.evitar { cost, reliability, delayDays }
  * @param {(n:number) => string} formatCurrency
@@ -227,7 +229,10 @@ function evaluateTreatmentStrategies(
     const hasCVaR = typeof currentCVaR === 'number';
 
     // 1. Mitigar
-    const aleAfterMitigar = currentALE * (1 - (mitigar.reductionPercent || 0) / 100);
+    const hasRealResidualALE = typeof mitigar.residualALE === 'number';
+    const aleAfterMitigar = hasRealResidualALE
+        ? mitigar.residualALE
+        : currentALE * (1 - (mitigar.reductionPercent || 0) / 100);
     const avoidedMitigar = currentALE - aleAfterMitigar;
     // Bug real: reductionPercent se autocalcula solo (ver App.Treatment.updateReduccionALEAuto
     // en el frontend) en cuanto se elige un nivel de defensa objetivo, ANTES de que el usuario
@@ -239,10 +244,15 @@ function evaluateTreatmentStrategies(
         mitigar.cost > 0
             ? expectedNetBenefit(mitigar.cost, avoidedMitigar, mitigar.reliability)
             : avoidedMitigar - mitigar.cost;
+    const hasRealResidualCVaR = typeof mitigar.residualCVaR === 'number';
     results.mitigar = {
         cost: mitigar.cost,
         residualALE: aleAfterMitigar,
-        residualCVaR: hasCVaR ? currentCVaR * (1 - (mitigar.reductionPercent || 0) / 100) : null,
+        residualCVaR: hasCVaR
+            ? hasRealResidualCVaR
+                ? mitigar.residualCVaR
+                : currentCVaR * (1 - (mitigar.reductionPercent || 0) / 100)
+            : null,
         avoidedLoss: avoidedMitigar,
         netBenefit: netBenefitMitigar,
         reliability: mitigar.reliability,

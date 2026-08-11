@@ -2,6 +2,7 @@
 
 const { confidenceSpreadFactors } = require('../data/profiles');
 const { getPertRandom, mulberry32 } = require('./random');
+const { runMonteCarloSimulation, summarizeLosses } = require('./simulation');
 
 /**
  * Promedio simple de los atributos numéricos de un perfil (Atacante o Defensa).
@@ -188,6 +189,65 @@ function calculateReduccionALEFromProfiles(attackerProfile, currentDefenseProfil
     return { currentSummary, targetSummary, reductionPercent: Math.max(0, Math.min(100, reduccion)) };
 }
 
+// Semilla fija para calculateResidualFromSimulation — reproducible (mismo criterio que el resto
+// de la app: misma entrada, mismo resultado exacto), no necesita "números aleatorios comunes"
+// como calculateReduccionALEFromProfiles porque acá solo se corre UNA simulación fresca (la del
+// Nivel de Defensa Objetivo), no se comparan dos corridas entre sí.
+const RESIDUAL_SIMULATION_SEED = 20260811;
+const RESIDUAL_SIMULATION_ITERATIONS = 10000; // mismo rigor que POST /api/simulate
+// vuln nunca se muestrea de acá (sampleVuln la reemplaza por completo, ver simulation.js) — el
+// valor exacto no importa, runMonteCarloSimulation solo exige que sea un rango válido.
+const UNUSED_VULN_PLACEHOLDER = { min: 0, mode: 50, max: 100 };
+
+/**
+ * Residual REAL de Mitigar (ALE y CVaR), re-simulando con el Nivel de Defensa OBJETIVO — a
+ * diferencia de escalar `currentALE`/`currentCVaR` por un `reductionPercent` compartido (válido
+ * SOLO bajo la vieja Vulnerabilidad lineal, ver el comentario de `calculateReduccionALEFromProfiles`
+ * y el hallazgo que motivó esta función), esto corre el motor Monte Carlo completo con
+ * `sampleVuln = sampleVulnerabilityFromProfiles(attackerProfile, targetDefenseProfile, confidence)`
+ * — el mismo mecanismo que ya usa `POST /api/simulate` — y lee `residualALE`/`residualCVaR`
+ * directo de esa corrida real, sin asumir que ALE y CVaR se reducen en la misma proporción.
+ *
+ * `reductionPercent` se deriva de `residualALE` (no de comparar Vulnerabilidad por moda) para
+ * quedar consistente con el residual real que esta misma función devuelve. Se acota a [0,100]
+ * (no premia una mala decisión, mismo criterio que `calculateReduccionALEFromProfiles`) — pero
+ * SOLO el porcentaje mostrado se acota; `residualALE`/`residualCVaR` siempre son el número real
+ * simulado, aunque sea peor que el actual (degradar la defensa a propósito debe verse en dólares
+ * reales, no ocultarse detrás de un 0%).
+ *
+ * @param {Object} attackerProfile
+ * @param {Object} targetDefenseProfile
+ * @param {'alto'|'medio'|'bajo'} confidence
+ * @param {{min:number, mode:number, max:number}} tef
+ * @param {Object<string,{min:number, mode:number, max:number}>} lossMagnitudes
+ * @param {number} currentALE Pérdida Anual Esperada actual (ya simulada, ej. entry.ale) — el
+ *   punto de comparación para derivar reductionPercent; no hace falta volver a calcularla.
+ * @returns {{residualALE:number, residualCVaR:number, reductionPercent:number}}
+ */
+function calculateResidualFromSimulation(
+    attackerProfile,
+    targetDefenseProfile,
+    confidence,
+    tef,
+    lossMagnitudes,
+    currentALE,
+) {
+    const { annualLosses } = runMonteCarloSimulation({
+        iterations: RESIDUAL_SIMULATION_ITERATIONS,
+        seed: RESIDUAL_SIMULATION_SEED,
+        tef,
+        vuln: UNUSED_VULN_PLACEHOLDER,
+        lossMagnitudes,
+        sampleVuln: sampleVulnerabilityFromProfiles(attackerProfile, targetDefenseProfile, confidence),
+    });
+    const summary = summarizeLosses(annualLosses);
+    const residualALE = summary.average;
+    const residualCVaR = summary.cvar95;
+    const reductionPercent =
+        currentALE > 0 ? Math.max(0, Math.min(100, Math.round((1 - residualALE / currentALE) * 100))) : 0;
+    return { residualALE, residualCVaR, reductionPercent };
+}
+
 module.exports = {
     calculateProfileAverage,
     getConfidenceSpread,
@@ -196,4 +256,5 @@ module.exports = {
     summarizeVulnerabilitySamples,
     calculateLossMagnitudeRange,
     calculateReduccionALEFromProfiles,
+    calculateResidualFromSimulation,
 };

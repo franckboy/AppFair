@@ -317,4 +317,62 @@ test.describe('Tratamiento del Riesgo (página aparte)', () => {
         expect(entry.treatmentDecision.residualALE).toBe(40000);
         expect(entry.treatmentDecision.residualCVaR).toBe(100000);
     });
+
+    // Regresión: elegir un Nivel de Defensa Objetivo real (el camino AUTOMÁTICO, no manual)
+    // llamaba a POST /api/autocalc/reduccion-ale sin mandar attackerKey — la ruta lo exige desde
+    // el modelo TCap/RS y 400eaba en silencio, dejando el autocálculo roto para cualquier riesgo
+    // normal. Ningún test existente lo detectaba porque todos usan
+    // #fair-reduccionALE-manual-override en vez de este <select> — este test cierra ese hueco.
+    test('elegir un Nivel de Defensa Objetivo real (no manual) calcula la Reducción de ALE sin error, y el residual persiste al adoptar Mitigar', async ({
+        page,
+    }) => {
+        await connectAndBoot(page);
+        // No usa runFullFairAnalysis (deja Magnitud de Pérdida en $0 por defecto) — hace falta un
+        // ALE > 0 para poder afirmar que el residual baja respecto al actual.
+        await page.fill('#fair-riskName', 'E2E Tratamiento — Reducción ALE automática');
+        await page.click('#fair-step1-next');
+        await page.waitForTimeout(300);
+        await page.selectOption('#fair-attacker-profile', 'organizado');
+        await page.selectOption('#fair-defense-profile', 'basica');
+        await page.waitForTimeout(800);
+        await page.click('#fair-step2-next');
+        await page.waitForTimeout(500);
+        await page.fill('#lm-respuesta-mode', '50000');
+        await page.click('#fair-step3-next');
+        await page.waitForTimeout(500);
+        await Promise.all([
+            page.waitForResponse((r) => r.url().includes('/api/simulate'), { timeout: 15000 }),
+            page.click('#run-simulation-btn'),
+        ]);
+        await page.waitForTimeout(1500);
+
+        await page.click('#nav-treatment');
+        await page.waitForTimeout(500);
+        await page.selectOption('#treatment-risk-select', 'E2E Tratamiento — Reducción ALE automática');
+        await page.waitForTimeout(800);
+
+        await Promise.all([
+            page.waitForResponse((r) => r.url().includes('/api/autocalc/reduccion-ale'), { timeout: 15000 }),
+            page.selectOption('#fair-mitigar-defensa-objetivo', 'elite'),
+        ]);
+        await page.waitForTimeout(1000);
+
+        const explanation = await page.locator('#fair-reduccionALE-explanation').textContent();
+        expect(explanation).not.toContain('No se pudo calcular');
+        expect(explanation).toContain('Calculado como');
+
+        await page.fill('#fair-costoControlAnual', '15000');
+        await page.waitForTimeout(600);
+
+        await page.click('#treatment-adopt-mitigar-btn');
+        await page.waitForTimeout(800);
+
+        const register = await page.evaluate(async () => {
+            const res = await fetch('http://localhost:3000/api/register', { headers: { 'X-API-Key': 'test-e2e-key' } });
+            return res.json();
+        });
+        const entry = register.risks.find((r) => r.riskName === 'E2E Tratamiento — Reducción ALE automática');
+        expect(typeof entry.treatmentDecision.residualALE).toBe('number');
+        expect(entry.treatmentDecision.residualALE).toBeLessThan(entry.ale);
+    });
 });

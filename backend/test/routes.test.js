@@ -414,6 +414,98 @@ test('POST /api/autocalc/reduccion-ale: sin attackerKey responde 400 (antes era 
     assert.strictEqual(res.status, 400);
 });
 
+test('POST /api/autocalc/reduccion-ale: sin currentALE/tef/lossMagnitudes, residualALE/residualCVaR quedan en null (retrocompatible)', async () => {
+    const res = await request(app)
+        .post('/api/autocalc/reduccion-ale')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ attackerKey: 'organizado', currentDefenseKey: 'basica', targetDefenseKey: 'elite' });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.residualALE, null);
+    assert.strictEqual(res.body.residualCVaR, null);
+});
+
+test('POST /api/autocalc/reduccion-ale: con currentALE/tef/lossMagnitudes, responde con residualALE/residualCVaR numéricos y residualCVaR >= residualALE', async () => {
+    const res = await request(app)
+        .post('/api/autocalc/reduccion-ale')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            attackerKey: 'organizado',
+            currentDefenseKey: 'basica',
+            targetDefenseKey: 'elite',
+            currentALE: 200000,
+            tef: { min: 5, mode: 10, max: 18 },
+            lossMagnitudes: { respuesta: { min: 5000, mode: 20000, max: 50000 } },
+        });
+    assert.strictEqual(res.status, 200);
+    assert.ok(typeof res.body.residualALE === 'number');
+    assert.ok(typeof res.body.residualCVaR === 'number');
+    assert.ok(res.body.residualCVaR >= res.body.residualALE);
+    assert.ok(
+        res.body.residualALE < 200000,
+        `esperaba residualALE < 200000 (defensa élite), dio ${res.body.residualALE}`,
+    );
+});
+
+test('POST /api/autocalc/reduccion-ale: con tef inválido responde 400', async () => {
+    const res = await request(app)
+        .post('/api/autocalc/reduccion-ale')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            attackerKey: 'organizado',
+            currentDefenseKey: 'basica',
+            targetDefenseKey: 'elite',
+            currentALE: 200000,
+            tef: { min: 18, mode: 10, max: 5 }, // min > mode > max, inválido
+            lossMagnitudes: { respuesta: { min: 5000, mode: 20000, max: 50000 } },
+        });
+    assert.strictEqual(res.status, 400);
+});
+
+test('POST /api/treatment/evaluate: con mitigar.residualALE/residualCVaR directos, los usa tal cual (no los deriva de reductionPercent)', async () => {
+    const res = await request(app)
+        .post('/api/treatment/evaluate')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            currentALE: 100000,
+            currentCVaR: 250000,
+            mitigar: {
+                cost: 10000,
+                reductionPercent: 60,
+                residualALE: 45000,
+                residualCVaR: 130000,
+                reliability: 'media',
+            },
+            transferir: {},
+            evitar: {},
+        });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.mitigar.residualALE, 45000);
+    assert.strictEqual(res.body.mitigar.residualCVaR, 130000);
+});
+
+// Regresión real, encontrada por un test E2E: el frontend manda mitigar.residualALE/residualCVaR
+// como `null` EXPLÍCITO (no los omite) cuando no hay un residual real que simular (ver
+// Treatment.updateReduccionALEAuto) — validateTreatmentBody los rechazaba con 400 porque
+// `value !== undefined` no trata `null` igual que "ausente", aunque para esta validación
+// signifiquen lo mismo. El síntoma en el navegador era sutil: el ROI se quedaba congelado en el
+// último valor renderizado con éxito, sin ningún error visible más que un 400 silencioso en la
+// consola de red.
+test('POST /api/treatment/evaluate: con mitigar.residualALE/residualCVaR EXPLÍCITAMENTE null, responde 200 (null se trata igual que ausente)', async () => {
+    const res = await request(app)
+        .post('/api/treatment/evaluate')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            currentALE: 100000,
+            currentCVaR: 250000,
+            mitigar: { cost: 10000, reductionPercent: 60, residualALE: null, residualCVaR: null, reliability: 'media' },
+            transferir: {},
+            evitar: {},
+        });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.mitigar.residualALE, 40000); // cae al escalado proporcional, como antes
+    assert.strictEqual(res.body.mitigar.residualCVaR, 100000);
+});
+
 test('POST /api/autocalc/nash-equilibrium con datos válidos responde 200 con esfuerzos y vulnerabilidad en rango', async () => {
     const res = await request(app)
         .post('/api/autocalc/nash-equilibrium')
