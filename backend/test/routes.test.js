@@ -639,12 +639,13 @@ test('POST /api/treatment/evaluate con costo negativo responde 400', async () =>
 
 // --- Registro de Riesgos ---
 
-test('GET /api/register con el Registro vacío: pareto y residualPortfolio son null (aún no se guardó ningún riesgo en esta suite)', async () => {
+test('GET /api/register con el Registro vacío: pareto, residualPortfolio y residualPareto son null (aún no se guardó ningún riesgo en esta suite)', async () => {
     const getRes = await request(app).get('/api/register').set('X-API-Key', TEST_API_KEY);
     assert.strictEqual(getRes.status, 200);
     assert.deepStrictEqual(getRes.body.risks, []);
     assert.strictEqual(getRes.body.pareto, null);
     assert.strictEqual(getRes.body.residualPortfolio, null);
+    assert.strictEqual(getRes.body.residualPareto, null);
 });
 
 test('flujo completo del Registro: PUT crea, GET lo lista, DELETE lo quita', async () => {
@@ -715,6 +716,51 @@ test('GET /api/register: residualPortfolio agrega el residual vigente (tratado +
         .set('X-API-Key', TEST_API_KEY);
     await request(app)
         .delete(`/api/register/${encodeURIComponent(untreatedName)}`)
+        .set('X-API-Key', TEST_API_KEY);
+});
+
+test('GET /api/register: residualPareto ordena por el ALE RESIDUAL vigente, no por el inherente', async () => {
+    const bigTreatedName = 'Riesgo grande pero mitigado para Pareto residual';
+    const smallUntreatedName = 'Riesgo mediano sin tratar para Pareto residual';
+
+    await request(app)
+        .put(`/api/register/${encodeURIComponent(bigTreatedName)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            ale: 900000,
+            cvar95: 1500000,
+            evaluationLevel: 'Crítico',
+            treatmentDecision: { strategy: 'mitigar', residualALE: 10000, decidedAt: new Date().toISOString() },
+        });
+    await request(app)
+        .put(`/api/register/${encodeURIComponent(smallUntreatedName)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ale: 100000, cvar95: 180000, evaluationLevel: 'Riesgo Alto' });
+
+    const getRes = await request(app).get('/api/register').set('X-API-Key', TEST_API_KEY);
+    assert.strictEqual(getRes.status, 200);
+    const residualPareto = getRes.body.residualPareto;
+    assert.ok(residualPareto, 'con al menos un riesgo Amenaza guardado, debe venir el Pareto residual');
+
+    const idxBig = residualPareto.risks.findIndex((r) => r.riskName === bigTreatedName);
+    const idxSmall = residualPareto.risks.findIndex((r) => r.riskName === smallUntreatedName);
+    assert.ok(idxBig !== -1 && idxSmall !== -1);
+    assert.strictEqual(residualPareto.risks[idxBig].residualALE, 10000);
+    assert.strictEqual(residualPareto.risks[idxBig].treated, true);
+    assert.strictEqual(residualPareto.risks[idxSmall].residualALE, 100000);
+    assert.strictEqual(residualPareto.risks[idxSmall].treated, false);
+    // El grande pero mitigado (10,000 residual) debe rankear DESPUÉS del mediano sin tratar
+    // (100,000 residual) — lo contrario de lo que diría el Pareto INHERENTE (900,000 > 100,000).
+    assert.ok(
+        idxSmall < idxBig,
+        'el riesgo sin tratar (mayor ALE residual) debe rankear antes que el tratado (menor ALE residual)',
+    );
+
+    await request(app)
+        .delete(`/api/register/${encodeURIComponent(bigTreatedName)}`)
+        .set('X-API-Key', TEST_API_KEY);
+    await request(app)
+        .delete(`/api/register/${encodeURIComponent(smallUntreatedName)}`)
         .set('X-API-Key', TEST_API_KEY);
 });
 
