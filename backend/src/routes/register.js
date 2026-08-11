@@ -7,6 +7,7 @@ const {
     calculateConsolidatedSensitivity,
     calculateResidualPortfolio,
     calculateResidualParetoAnalysis,
+    calculateInherentPortfolio,
 } = require('../lib/register');
 const { evaluateFairThreat } = require('../lib/evaluation');
 const { defaultRiskCriteria } = require('../data/profiles');
@@ -46,6 +47,7 @@ function createRegisterRouter(store) {
                     heatmapZones: getRiskMatrixZones(criteria.rrtBands),
                     residualPortfolio: null,
                     residualPareto: null,
+                    inherentPortfolio: null,
                 });
             }
 
@@ -64,6 +66,18 @@ function createRegisterRouter(store) {
             }
             const residualPareto = calculateResidualParetoAnalysis(risks);
 
+            const inherentPortfolio = calculateInherentPortfolio(risks);
+            if (inherentPortfolio.inherentRiskCount > 0 && inherentPortfolio.totalInherentCVaR !== null) {
+                inherentPortfolio.evaluation = evaluateFairThreat(
+                    inherentPortfolio.totalInherentALE,
+                    inherentPortfolio.totalInherentCVaR,
+                    criteria,
+                    makeCurrencyFormatter(),
+                );
+            } else {
+                inherentPortfolio.evaluation = null;
+            }
+
             res.json({
                 risks,
                 pareto,
@@ -71,6 +85,7 @@ function createRegisterRouter(store) {
                 heatmapZones: getRiskMatrixZones(criteria.rrtBands),
                 residualPortfolio,
                 residualPareto,
+                inherentPortfolio,
             });
         }),
     );
@@ -112,6 +127,14 @@ function createRegisterRouter(store) {
                 min = null,
                 max = null,
                 p90 = null,
+                // Riesgo Inherente REAL (sin ningún control, Vulnerabilidad 100%) — ver
+                // calculateInherentRiskFromSimulation (lib/autocalc.js) y POST /api/simulate,
+                // que ya lo calcula y manda dentro de `summary`. null para Oportunidad, o para
+                // riesgos guardados ANTES de que existiera esto (se recalculan solos la próxima
+                // vez que se vuelvan a simular — sin migración/backfill, mismo criterio que
+                // vulnManualOverride).
+                inherentALE = null,
+                inherentCVaR = null,
                 securityPlan = '—',
                 // tef/vuln/lossMagnitudes/seed son opcionales (un riesgo guardado antes de que
                 // existiera esto no los trae) — se guardan tal cual para poder re-simular este
@@ -236,6 +259,22 @@ function createRegisterRouter(store) {
             if (typeof ale !== 'number') {
                 return res.status(400).json({ error: 'ale (número) es requerido.' });
             }
+            // inherentALE/inherentCVaR se validan (a diferencia de median/min/max/p90, que son
+            // puro dato histórico de display) porque SÍ se suman en un total de portafolio
+            // visible (ver calculateInherentPortfolio) — un valor negativo corrompería ese
+            // agregado en silencio.
+            if (
+                inherentALE !== null &&
+                (typeof inherentALE !== 'number' || !Number.isFinite(inherentALE) || inherentALE < 0)
+            ) {
+                return res.status(400).json({ error: 'inherentALE debe ser un número mayor o igual a 0, o null.' });
+            }
+            if (
+                inherentCVaR !== null &&
+                (typeof inherentCVaR !== 'number' || !Number.isFinite(inherentCVaR) || inherentCVaR < 0)
+            ) {
+                return res.status(400).json({ error: 'inherentCVaR debe ser un número mayor o igual a 0, o null.' });
+            }
             if (
                 triggeredByProbability !== null &&
                 (typeof triggeredByProbability !== 'number' ||
@@ -298,6 +337,8 @@ function createRegisterRouter(store) {
                 min,
                 max,
                 p90,
+                inherentALE,
+                inherentCVaR,
                 riskType,
                 evaluationLevel,
                 evaluationClasses,

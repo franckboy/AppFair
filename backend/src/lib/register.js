@@ -85,7 +85,9 @@ function calculateConsolidatedSensitivity(risks, topN = 8) {
  * Riesgo Residual del Portafolio: agrega el ALE/CVaR VIGENTE de cada riesgo tipo Amenaza —
  * el residual de su treatmentDecision si ya adoptó una estrategia (ver
  * App.RiskManagement.renderResidualStatus, mismo criterio aplicado ahí riesgo por riesgo), o el
- * ALE/CVaR inherente si todavía no decidió nada. Mismo filtro que calculateParetoAnalysis
+ * ALE/CVaR ACTUAL (con el Nivel de Defensa vigente, `r.ale`/`r.cvar95` — NO el Riesgo Inherente
+ * real sin controles, ver calculateInherentPortfolio más abajo) si todavía no decidió nada.
+ * Mismo filtro que calculateParetoAnalysis
  * (excluye 'oportunidad' — su ale es un beneficio, no una pérdida, no pertenece a un total de
  * exposición).
  *
@@ -138,8 +140,8 @@ function calculateResidualPortfolio(risks) {
 /**
  * Análisis 80-20 (Pareto) sobre el Riesgo RESIDUAL — mismo criterio que calculateParetoAnalysis
  * (ordena de mayor a menor, % acumulado, corte del 80%), pero sobre el ALE VIGENTE de cada
- * Amenaza (el residual de su treatmentDecision si ya adoptó una estrategia, o el inherente si
- * no — mismo criterio que calculateResidualPortfolio) en vez del inherente puro. Responde una
+ * Amenaza (el residual de su treatmentDecision si ya adoptó una estrategia, o el ACTUAL si
+ * no — mismo criterio que calculateResidualPortfolio) en vez del ACTUAL puro. Responde una
  * pregunta distinta a la de calculateParetoAnalysis: esa prioriza "dónde enfocar el esfuerzo de
  * análisis/tratamiento" ANTES de decidir nada; esta responde "qué riesgos siguen concentrando la
  * exposición DESPUÉS de tratar" — útil para notar una estrategia ya adoptada que resultó
@@ -179,10 +181,69 @@ function calculateResidualParetoAnalysis(risks) {
     };
 }
 
+/**
+ * Waterfall Inherente → Actual del Portafolio: agrega, por separado, el Riesgo Inherente REAL
+ * (sin ningún control, `r.inherentALE`/`r.inherentCVaR` — ver calculateInherentRiskFromSimulation,
+ * lib/autocalc.js) y el Riesgo Actual (con el Nivel de Defensa vigente, `r.ale`/`r.cvar95`) de
+ * cada Amenaza del Registro. La tercera etapa (Riesgo Residual, después de Tratamiento) ya la
+ * agrega calculateResidualPortfolio — esta función NO la duplica, el frontend combina ambos
+ * payloads para armar el waterfall completo de 3 etapas.
+ *
+ * `totalActualALE`/`totalActualCVaR` DUPLICAN a propósito la suma que ya hace
+ * calculateParetoAnalysis (mismo filtro) — es una decoupling deliberada, mismo criterio que ya
+ * usa calculateResidualParetoAnalysis frente a calculateParetoAnalysis (reimplementa en vez de
+ * reusar), para que este payload sea autocontenido y el frontend no dependa de que también haya
+ * pedido el Pareto. Si el filtro de "qué cuenta como Amenaza" cambia alguna vez, hay que
+ * actualizar las dos funciones — no es un descuido, es la misma duplicación ya aceptada arriba.
+ *
+ * `inherentRiskCount`/`inherentMissingCount`: no todo riesgo guardado tiene `inherentALE`
+ * persistido — los guardados ANTES de que existiera esta función no lo traen, y se recalculan
+ * solos la próxima vez que se vuelvan a simular (sin migración/backfill, mismo criterio ya usado
+ * con vulnManualOverride). `totalInherentALE`/`totalInherentCVaR` son `null` si NINGÚN riesgo
+ * tiene el dato todavía — no se muestra un total parcial disfrazado de completo.
+ * @param {Array<{riskType?:string, ale:number, cvar95?:number, inherentALE?:number|null, inherentCVaR?:number|null}>} risks
+ */
+function calculateInherentPortfolio(risks) {
+    const threats = risks.filter((r) => r.riskType !== 'oportunidad');
+
+    let totalInherentALE = 0;
+    let totalInherentCVaR = 0;
+    let inherentRiskCount = 0;
+    let totalActualALE = 0;
+    let totalActualCVaR = 0;
+    let actualCvarCount = 0;
+
+    threats.forEach((r) => {
+        totalActualALE += r.ale;
+        if (typeof r.cvar95 === 'number') {
+            totalActualCVaR += r.cvar95;
+            actualCvarCount += 1;
+        }
+        if (typeof r.inherentALE === 'number') {
+            totalInherentALE += r.inherentALE;
+            inherentRiskCount += 1;
+        }
+        if (typeof r.inherentCVaR === 'number') {
+            totalInherentCVaR += r.inherentCVaR;
+        }
+    });
+
+    return {
+        totalInherentALE: inherentRiskCount > 0 ? totalInherentALE : null,
+        totalInherentCVaR: inherentRiskCount > 0 ? totalInherentCVaR : null,
+        inherentRiskCount,
+        inherentMissingCount: threats.length - inherentRiskCount,
+        totalActualALE,
+        totalActualCVaR: actualCvarCount > 0 ? totalActualCVaR : null,
+        totalRiskCount: threats.length,
+    };
+}
+
 module.exports = {
     getRiskMatrixZones,
     calculateParetoAnalysis,
     calculateConsolidatedSensitivity,
     calculateResidualPortfolio,
     calculateResidualParetoAnalysis,
+    calculateInherentPortfolio,
 };

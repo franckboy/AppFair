@@ -121,9 +121,9 @@ test.describe('Gestión de Riesgos (página aparte)', () => {
         await page.selectOption('#riskmgmt-risk-select', 'E2E Gestión — Residual');
         await page.waitForTimeout(500);
 
-        // Sin decisión: el residual mostrado es igual al inherente, con botón para ir a decidir.
+        // Sin decisión: el residual mostrado es igual al actual, con botón para ir a decidir.
         await expect(page.locator('#riskmgmt-residual-section')).toBeVisible();
-        await expect(page.locator('#riskmgmt-residual-note')).toContainText('igual al inherente');
+        await expect(page.locator('#riskmgmt-residual-note')).toContainText('igual al actual');
         await expect(page.locator('#riskmgmt-residual-ale')).toHaveText('$2,000.00');
         await expect(page.locator('#riskmgmt-goto-treatment-btn')).toBeVisible();
 
@@ -301,5 +301,64 @@ test.describe('Gestión de Riesgos (página aparte)', () => {
 
         await expect(page.locator('#riskmgmt-residual-pareto-section')).toBeVisible();
         await expect(page.locator('#riskmgmt-residual-pareto-summary')).toHaveText(expectedSummary);
+    });
+
+    test('el Riesgo Inherente real (sin controles) se calcula, persiste, y arma el waterfall Inherente → Actual → Residual en Gestión de Riesgos', async ({
+        page,
+    }) => {
+        await connectAndBoot(page);
+        // runFullFairAnalysis no llena Magnitud de Pérdida (queda en 0) — se arma el flujo a mano
+        // acá para tener un ALE > 0 real y así poder comparar inherentALE contra él.
+        await page.fill('#fair-riskName', 'E2E Riesgo Inherente — Waterfall');
+        await page.click('#fair-step1-next');
+        await page.waitForTimeout(300);
+        await page.selectOption('#fair-attacker-profile', 'organizado');
+        await page.selectOption('#fair-defense-profile', 'basica');
+        await page.waitForTimeout(800);
+        await page.click('#fair-step2-next');
+        await page.waitForTimeout(500);
+        await page.fill('#lm-respuesta-mode', '50000');
+        await page.waitForTimeout(300);
+        await page.click('#fair-step3-next');
+        await page.waitForTimeout(500);
+        await Promise.all([
+            page.waitForResponse((r) => r.url().includes('/api/simulate'), { timeout: 15000 }),
+            page.click('#run-simulation-btn'),
+        ]);
+        await page.waitForTimeout(1500);
+
+        // Paso 4: la línea de Riesgo Inherente debe verse, con un monto mayor al ALE actual.
+        await expect(page.locator('#fair-inherente-line')).toBeVisible();
+
+        const entry = await page.evaluate(async () => {
+            const res = await fetch('http://localhost:3000/api/register', { headers: { 'X-API-Key': 'test-e2e-key' } });
+            const data = await res.json();
+            return data.risks.find((r) => r.riskName === 'E2E Riesgo Inherente — Waterfall');
+        });
+        expect(typeof entry.inherentALE).toBe('number');
+        expect(typeof entry.inherentCVaR).toBe('number');
+        // Sin ningún control es, por construcción, el peor caso posible — nunca puede dar un ALE
+        // menor que con la defensa "básica" que sí se eligió.
+        expect(entry.inherentALE).toBeGreaterThanOrEqual(entry.ale);
+        expect(entry.inherentCVaR).toBeGreaterThanOrEqual(entry.inherentALE);
+
+        // El waterfall del panel es un AGREGADO de TODO el Registro (compartido por la suite, sin
+        // aislamiento) — se compara contra inherentPortfolio.totalInherentALE (el mismo total que
+        // ya incluye esta entrada), no contra el inherentALE de un solo riesgo.
+        const inherentPortfolio = await page.evaluate(async () => {
+            const res = await fetch('http://localhost:3000/api/register', { headers: { 'X-API-Key': 'test-e2e-key' } });
+            return (await res.json()).inherentPortfolio;
+        });
+
+        await page.click('#nav-risk-mgmt');
+        await page.waitForTimeout(1000);
+
+        await expect(page.locator('#riskmgmt-portfolio-waterfall')).toBeVisible();
+        const formatCurrency = (value) =>
+            new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
+        await expect(page.locator('#riskmgmt-portfolio-waterfall')).toContainText(
+            `Riesgo Inherente: ${formatCurrency(inherentPortfolio.totalInherentALE)}`,
+        );
+        await expect(page.locator('#riskmgmt-portfolio-effectiveness')).toBeVisible();
     });
 });

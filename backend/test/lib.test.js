@@ -18,6 +18,7 @@ const {
     summarizeVulnerabilitySamples,
     calculateReduccionALEFromProfiles,
     calculateResidualFromSimulation,
+    calculateInherentRiskFromSimulation,
 } = require('../src/lib/autocalc');
 const { solveNashEquilibrium } = require('../src/lib/nashEquilibrium');
 const {
@@ -34,6 +35,7 @@ const {
     calculateParetoAnalysis,
     calculateResidualPortfolio,
     calculateResidualParetoAnalysis,
+    calculateInherentPortfolio,
 } = require('../src/lib/register');
 const { sampleActivatedTransitions, walkMarkovChain } = require('../src/lib/markov');
 const { buildFamilySubtree, runFamilyCascadeSimulation, MAX_FAMILY_SIZE } = require('../src/lib/cascadeSimulation');
@@ -733,6 +735,111 @@ test('calculateResidualFromSimulation: invariante residualCVaR >= residualALE (C
         200000,
     );
     assert.ok(residualCVaR >= residualALE, `esperaba residualCVaR (${residualCVaR}) >= residualALE (${residualALE})`);
+});
+
+// calculateInherentRiskFromSimulation: Riesgo Inherente REAL (sin ningún control, Vulnerabilidad
+// 100%) — re-simulado, no la aproximación algebraica que usaba computeFairRiskEquivalents en el
+// frontend (entry.ale * (100/vulnMean)).
+test('calculateInherentRiskFromSimulation: reproducible — misma entrada da EXACTO el mismo resultado', () => {
+    const r1 = calculateInherentRiskFromSimulation(RESIDUAL_TEF, RESIDUAL_LOSS_MAGNITUDES);
+    const r2 = calculateInherentRiskFromSimulation(RESIDUAL_TEF, RESIDUAL_LOSS_MAGNITUDES);
+    assert.deepStrictEqual(r1, r2);
+});
+
+test('calculateInherentRiskFromSimulation: sin ningún control (Vulnerabilidad 100%) da un ALE mayor o igual que con cualquier perfil de defensa real', () => {
+    const { inherentALE } = calculateInherentRiskFromSimulation(RESIDUAL_TEF, RESIDUAL_LOSS_MAGNITUDES);
+    const { residualALE: withElite } = calculateResidualFromSimulation(
+        attackerProfiles.organizado,
+        defenseProfiles.elite,
+        'medio',
+        RESIDUAL_TEF,
+        RESIDUAL_LOSS_MAGNITUDES,
+        inherentALE,
+    );
+    const { residualALE: withBasica } = calculateResidualFromSimulation(
+        attackerProfiles.organizado,
+        defenseProfiles.basica,
+        'medio',
+        RESIDUAL_TEF,
+        RESIDUAL_LOSS_MAGNITUDES,
+        inherentALE,
+    );
+    assert.ok(
+        inherentALE >= withElite,
+        `esperaba inherentALE (${inherentALE}) >= residual con defensa elite (${withElite})`,
+    );
+    assert.ok(
+        inherentALE >= withBasica,
+        `esperaba inherentALE (${inherentALE}) >= residual con defensa básica (${withBasica})`,
+    );
+});
+
+test('calculateInherentRiskFromSimulation: invariante inherentCVaR >= inherentALE', () => {
+    const { inherentALE, inherentCVaR } = calculateInherentRiskFromSimulation(RESIDUAL_TEF, RESIDUAL_LOSS_MAGNITUDES);
+    assert.ok(inherentCVaR >= inherentALE, `esperaba inherentCVaR (${inherentCVaR}) >= inherentALE (${inherentALE})`);
+});
+
+test('calculateInherentPortfolio: mezcla de riesgos con/sin inherentALE persistido — conteo y suma correctos', () => {
+    const risks = [
+        {
+            riskName: 'Con inherente',
+            riskType: 'amenaza',
+            ale: 50000,
+            cvar95: 90000,
+            inherentALE: 400000,
+            inherentCVaR: 700000,
+        },
+        { riskName: 'Sin inherente (guardado antes)', riskType: 'amenaza', ale: 30000, cvar95: 60000 },
+    ];
+    const portfolio = calculateInherentPortfolio(risks);
+    assert.strictEqual(portfolio.totalInherentALE, 400000);
+    assert.strictEqual(portfolio.totalInherentCVaR, 700000);
+    assert.strictEqual(portfolio.inherentRiskCount, 1);
+    assert.strictEqual(portfolio.inherentMissingCount, 1);
+    assert.strictEqual(portfolio.totalActualALE, 50000 + 30000);
+    assert.strictEqual(portfolio.totalActualCVaR, 90000 + 60000);
+    assert.strictEqual(portfolio.totalRiskCount, 2);
+});
+
+test('calculateInherentPortfolio: ningún riesgo tiene inherentALE — totales inherentes null, actuales siguen sumando', () => {
+    const risks = [{ riskName: 'Legado', riskType: 'amenaza', ale: 20000, cvar95: 35000 }];
+    const portfolio = calculateInherentPortfolio(risks);
+    assert.strictEqual(portfolio.totalInherentALE, null);
+    assert.strictEqual(portfolio.totalInherentCVaR, null);
+    assert.strictEqual(portfolio.inherentRiskCount, 0);
+    assert.strictEqual(portfolio.inherentMissingCount, 1);
+    assert.strictEqual(portfolio.totalActualALE, 20000);
+});
+
+test('calculateInherentPortfolio: excluye riesgos tipo "oportunidad"', () => {
+    const risks = [
+        {
+            riskName: 'Amenaza',
+            riskType: 'amenaza',
+            ale: 10000,
+            cvar95: 15000,
+            inherentALE: 100000,
+            inherentCVaR: 150000,
+        },
+        {
+            riskName: 'Oportunidad',
+            riskType: 'oportunidad',
+            ale: 900000,
+            cvar95: 1500000,
+            inherentALE: 900000,
+            inherentCVaR: 1500000,
+        },
+    ];
+    const portfolio = calculateInherentPortfolio(risks);
+    assert.strictEqual(portfolio.totalRiskCount, 1);
+    assert.strictEqual(portfolio.totalInherentALE, 100000);
+});
+
+test('calculateInherentPortfolio: portafolio vacío da totales en 0/null', () => {
+    const portfolio = calculateInherentPortfolio([]);
+    assert.strictEqual(portfolio.totalRiskCount, 0);
+    assert.strictEqual(portfolio.totalActualALE, 0);
+    assert.strictEqual(portfolio.totalInherentALE, null);
 });
 
 // Función de Éxito de Contienda de Tullock (ver tullockSuccessProbability, autocalc.js) —

@@ -44,6 +44,11 @@ export const FairRegister = {
             // Pareto sobre el Riesgo RESIDUAL (ver App.RiskManagement.renderResidualPareto) —
             // mismo criterio: ya viene calculado del lado del servidor.
             state.fair.registerResidualPareto = registerData.residualPareto || null;
+            // Waterfall Inherente (sin controles) → Actual del Portafolio (ver
+            // App.RiskManagement.renderResidualPortfolio, que combina esto con
+            // registerResidualPortfolio para armar las 3 etapas) — igual, ya calculado del lado
+            // del servidor.
+            state.fair.registerInherentPortfolio = registerData.inherentPortfolio || null;
             // Tabla concentrada: fusiona los riesgos de Análisis Rápido (/api/risks, pueden
             // no tener simulación FAIR todavía) con los ya simulados (state.fair.riskRegister)
             // — ver buildConcentratedList(). El resto (mapa de calor, Pareto, sensibilidad
@@ -119,17 +124,34 @@ export const FairRegister = {
                 minimumFractionDigits: 0,
                 maximumFractionDigits: 0,
             }).format(v);
-        // La media de la distribución Beta-PERT de Vulnerabilidad (la que realmente simula el
-        // backend, ver getPertRandom en random.js), NO su moda (ver pertMean en utils.js) — el
-        // ALE Residual que guarda el motor es un promedio de todas las iteraciones de Monte
-        // Carlo, así que "des-mitigarlo" para estimar el Riesgo Inherente debe dividir entre
-        // ese mismo tipo de promedio, no entre el valor "más probable" de un solo punto.
+        // Riesgo Inherente REAL (sin ningún control) — ver calculateInherentRiskFromSimulation,
+        // backend/src/lib/autocalc.js. Solo riesgos simulados DESPUÉS de que esto existiera lo
+        // traen persistido; para los guardados antes, se cae a la aproximación algebraica
+        // anterior ("des-mitigar" el ALE dividiendo entre la Vulnerabilidad media — válida bajo
+        // la vieja Vulnerabilidad lineal, aproximada bajo el modelo TCap/RS + Tullock actual) sin
+        // forzar una migración/re-simulación.
+        const hasRealInherent = typeof entry.inherentALE === 'number';
         const vuln = entry.vuln;
         const vulnMean =
             vuln && typeof vuln.min === 'number' && typeof vuln.mode === 'number' && typeof vuln.max === 'number'
                 ? pertMean(vuln.min, vuln.mode, vuln.max)
                 : null;
-        const inherentAle = vulnMean && vulnMean > 0 ? entry.ale * (100 / vulnMean) : null;
+        const inherentAle = hasRealInherent
+            ? entry.inherentALE
+            : vulnMean && vulnMean > 0
+              ? entry.ale * (100 / vulnMean)
+              : null;
+        // Efectividad de Controles en dólares reales: cuánto reduce la Vulnerabilidad actual el
+        // Riesgo Inherente — cuando hay dato real (hasRealInherent), reemplaza la aproximación
+        // vieja (100% - Vulnerabilidad media), que en el promedio da el mismo número (ALE es
+        // proporcional a la Vulnerabilidad media) pero ya no depende de esa proporcionalidad.
+        const controlEffectiveness = hasRealInherent
+            ? inherentAle > 0
+                ? `${(((inherentAle - entry.ale) / inherentAle) * 100).toFixed(1)}%`
+                : null
+            : vulnMean != null
+              ? `${(100 - vulnMean).toFixed(1)}%`
+              : null;
 
         return {
             residualMoney: fmt(entry.ale),
@@ -139,7 +161,7 @@ export const FairRegister = {
                 inherentAle != null
                     ? this.classifyAleAgainstCriteria(inherentAle, entry.riskCriteriaOverride || null)
                     : null,
-            controlEffectiveness: vulnMean != null ? `${(100 - vulnMean).toFixed(1)}%` : null,
+            controlEffectiveness,
         };
     },
 
@@ -306,6 +328,12 @@ export const FairRegister = {
                     min: summary.min,
                     max: summary.max,
                     p90: summary.p90,
+                    // Riesgo Inherente REAL (sin ningún control, ver
+                    // calculateInherentRiskFromSimulation en el backend) — null para Oportunidad.
+                    // Recalculado en CADA simulación, mismo ciclo de vida que ale/cvar95 (no se
+                    // hereda de existingEntry como sí hace treatmentDecision).
+                    inherentALE: summary.inherentALE,
+                    inherentCVaR: summary.inherentCVaR,
                     evaluationLevel: evaluation.level,
                     evaluationClasses: severityToClasses(evaluation.severity),
                     // El texto de evaluationLevel no siempre contiene literalmente la

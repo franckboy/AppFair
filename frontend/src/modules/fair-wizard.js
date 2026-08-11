@@ -1510,6 +1510,17 @@ export const FairWizard = {
         document.getElementById('percentile-90-result').textContent = `> ${formatCurrency(summary.p90)}`;
         document.getElementById('cvar-95-result').textContent = formatCurrency(summary.cvar95);
 
+        // Riesgo Inherente REAL (sin ningún control) — null para Oportunidad (ver
+        // calculateInherentRiskFromSimulation, backend). Se oculta la línea entera en vez de
+        // mostrar "$NaN"/"—", mismo criterio que el resto de esta vista con datos ausentes.
+        const inherenteLine = document.getElementById('fair-inherente-line');
+        if (typeof summary.inherentALE === 'number') {
+            inherenteLine.classList.remove('hidden');
+            document.getElementById('fair-inherente-result').textContent = formatCurrency(summary.inherentALE);
+        } else {
+            inherenteLine.classList.add('hidden');
+        }
+
         // Evaluación del Riesgo (ISO 31000): ya viene calculada por el backend contra los
         // Criterios de Riesgo guardados — solo se traduce `severity` a clases Tailwind.
         const banner = document.getElementById('fair-evaluation-banner');

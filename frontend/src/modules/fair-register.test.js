@@ -88,6 +88,32 @@ describe('FairRegister.computeFairRiskEquivalents', () => {
         expect(result.inherentMoney).toBeNull();
         expect(result.controlEffectiveness).toBeNull();
     });
+
+    it('con entry.inherentALE real (post-resimulación), lo usa DIRECTO en vez de la aproximación algebraica', () => {
+        // vuln daría 44,444 por la aproximación algebraica (ver el test de arriba) — con
+        // inherentALE real persistido, debe ignorarse por completo esa aproximación y usar el
+        // número real de la simulación.
+        const result = FairRegister.computeFairRiskEquivalents({
+            ale: 10000,
+            severity: 'bajo',
+            vuln: { min: 10, mode: 20, max: 45 },
+            inherentALE: 60000,
+        });
+        expect(result.residualMoney).toBe('$10,000');
+        expect(result.inherentMoney).toBe('$60,000');
+        // Efectividad = (60000-10000)/60000 = 83.3%, NO el 77.5% que daría la aproximación vieja.
+        expect(result.controlEffectiveness).toBe('83.3%');
+    });
+
+    it('con entry.inherentALE === 0 (guard de división por cero), controlEffectiveness es null sin tronar', () => {
+        const result = FairRegister.computeFairRiskEquivalents({
+            ale: 0,
+            severity: 'bajo',
+            inherentALE: 0,
+        });
+        expect(result.inherentMoney).toBe('$0');
+        expect(result.controlEffectiveness).toBeNull();
+    });
 });
 
 describe('FairRegister.buildConcentratedList', () => {

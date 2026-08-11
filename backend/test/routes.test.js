@@ -295,6 +295,41 @@ test('POST /api/simulate acepta un riskCriteria override con aleCritico igual o 
     assert.strictEqual(res.status, 200);
 });
 
+test('POST /api/simulate: riskType amenaza incluye summary.inherentALE/inherentCVaR numéricos (Riesgo Inherente real, sin ningún control)', async () => {
+    const res = await request(app)
+        .post('/api/simulate')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            iterations: 200,
+            seed: 1,
+            tef: { min: 5, mode: 10, max: 18 },
+            vuln: { min: 20, mode: 40, max: 60 },
+            lossMagnitudes: { respuesta: { min: 5000, mode: 20000, max: 50000 } },
+            riskType: 'amenaza',
+        });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(typeof res.body.summary.inherentALE, 'number');
+    assert.strictEqual(typeof res.body.summary.inherentCVaR, 'number');
+    assert.ok(res.body.summary.inherentCVaR >= res.body.summary.inherentALE);
+});
+
+test('POST /api/simulate: riskType oportunidad da summary.inherentALE/inherentCVaR null (no es una pérdida)', async () => {
+    const res = await request(app)
+        .post('/api/simulate')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            iterations: 200,
+            seed: 1,
+            tef: { min: 5, mode: 10, max: 18 },
+            vuln: { min: 20, mode: 40, max: 60 },
+            lossMagnitudes: { respuesta: { min: 5000, mode: 20000, max: 50000 } },
+            riskType: 'oportunidad',
+        });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.summary.inherentALE, null);
+    assert.strictEqual(res.body.summary.inherentCVaR, null);
+});
+
 // --- POST /api/simulate/evaluate (reclasifica un ALE/CVaR95 ya conocido, sin Monte Carlo —
 // usado por Gestión de Riesgos para reclasificar el Residual Canónico de un riesgo tratado) ---
 
@@ -639,13 +674,50 @@ test('POST /api/treatment/evaluate con costo negativo responde 400', async () =>
 
 // --- Registro de Riesgos ---
 
-test('GET /api/register con el Registro vacío: pareto, residualPortfolio y residualPareto son null (aún no se guardó ningún riesgo en esta suite)', async () => {
+test('GET /api/register con el Registro vacío: pareto, residualPortfolio, residualPareto e inherentPortfolio son null (aún no se guardó ningún riesgo en esta suite)', async () => {
     const getRes = await request(app).get('/api/register').set('X-API-Key', TEST_API_KEY);
     assert.strictEqual(getRes.status, 200);
     assert.deepStrictEqual(getRes.body.risks, []);
     assert.strictEqual(getRes.body.pareto, null);
     assert.strictEqual(getRes.body.residualPortfolio, null);
     assert.strictEqual(getRes.body.residualPareto, null);
+    assert.strictEqual(getRes.body.inherentPortfolio, null);
+});
+
+test('PUT /api/register/:riskName: inherentALE/inherentCVaR negativos responden 400, null se acepta, un valor válido persiste', async () => {
+    const riskName = 'Riesgo con inherentALE de prueba';
+
+    const negativeRes = await request(app)
+        .put(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ale: 10000, cvar95: 15000, evaluationLevel: 'Aceptable', inherentALE: -1 });
+    assert.strictEqual(negativeRes.status, 400);
+
+    const negativeCvarRes = await request(app)
+        .put(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ale: 10000, cvar95: 15000, evaluationLevel: 'Aceptable', inherentCVaR: -1 });
+    assert.strictEqual(negativeCvarRes.status, 400);
+
+    const nullRes = await request(app)
+        .put(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ale: 10000, cvar95: 15000, evaluationLevel: 'Aceptable' });
+    assert.strictEqual(nullRes.status, 200);
+    assert.strictEqual(nullRes.body.entry.inherentALE, null);
+    assert.strictEqual(nullRes.body.entry.inherentCVaR, null);
+
+    const validRes = await request(app)
+        .put(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ale: 10000, cvar95: 15000, evaluationLevel: 'Aceptable', inherentALE: 90000, inherentCVaR: 150000 });
+    assert.strictEqual(validRes.status, 200);
+    assert.strictEqual(validRes.body.entry.inherentALE, 90000);
+    assert.strictEqual(validRes.body.entry.inherentCVaR, 150000);
+
+    await request(app)
+        .delete(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY);
 });
 
 test('flujo completo del Registro: PUT crea, GET lo lista, DELETE lo quita', async () => {
@@ -761,6 +833,44 @@ test('GET /api/register: residualPareto ordena por el ALE RESIDUAL vigente, no p
         .set('X-API-Key', TEST_API_KEY);
     await request(app)
         .delete(`/api/register/${encodeURIComponent(smallUntreatedName)}`)
+        .set('X-API-Key', TEST_API_KEY);
+});
+
+test('GET /api/register: inherentPortfolio agrega el Riesgo Inherente real (sin controles) y el Actual por separado, con evaluation clasificada', async () => {
+    const withInherentName = 'Riesgo con inherentALE para portafolio';
+    const legacyName = 'Riesgo sin inherentALE (guardado antes) para portafolio';
+
+    await request(app)
+        .put(`/api/register/${encodeURIComponent(withInherentName)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            ale: 50000,
+            cvar95: 90000,
+            evaluationLevel: 'Riesgo Medio',
+            inherentALE: 400000,
+            inherentCVaR: 700000,
+        });
+    await request(app)
+        .put(`/api/register/${encodeURIComponent(legacyName)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ale: 30000, cvar95: 60000, evaluationLevel: 'Riesgo Medio' });
+
+    const getRes = await request(app).get('/api/register').set('X-API-Key', TEST_API_KEY);
+    assert.strictEqual(getRes.status, 200);
+    const inherentPortfolio = getRes.body.inherentPortfolio;
+    assert.ok(inherentPortfolio, 'con al menos un riesgo con inherentALE, debe venir el inherentPortfolio');
+    assert.strictEqual(inherentPortfolio.totalInherentALE, 400000);
+    assert.strictEqual(inherentPortfolio.totalInherentCVaR, 700000);
+    assert.strictEqual(inherentPortfolio.inherentRiskCount, 1);
+    assert.ok(inherentPortfolio.inherentMissingCount >= 1);
+    assert.ok(inherentPortfolio.evaluation, 'con datos de CVaR disponibles, debe venir clasificado');
+    assert.ok(inherentPortfolio.evaluation.level);
+
+    await request(app)
+        .delete(`/api/register/${encodeURIComponent(withInherentName)}`)
+        .set('X-API-Key', TEST_API_KEY);
+    await request(app)
+        .delete(`/api/register/${encodeURIComponent(legacyName)}`)
         .set('X-API-Key', TEST_API_KEY);
 });
 
