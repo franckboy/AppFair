@@ -301,6 +301,7 @@ export const FairWizard = {
         document.getElementById('fair-step3-next').addEventListener('click', () => this.navigateWizard(4));
         document.getElementById('fair-step4-back').addEventListener('click', () => this.navigateWizard(3));
         document.getElementById('run-simulation-btn').addEventListener('click', () => this.runMonteCarloSimulation());
+        document.getElementById('nash-calculate-btn').addEventListener('click', () => this.calculateNashEquilibrium());
         document.getElementById('fair-reset-btn').addEventListener('click', () => this.resetForm());
         document.getElementById('fair-duplicate-btn').addEventListener('click', () => this.duplicateFromTemplate());
         document.getElementById('fair-resume-banner-btn').addEventListener('click', () => this.restoreFairAnalysis());
@@ -1262,6 +1263,10 @@ export const FairWizard = {
             document.getElementById('fair-sensitivity-list').innerHTML = '';
             document.getElementById('fair-sensitivity-container').classList.add('hidden');
             state.fair.lastSensitivity = null;
+            document.getElementById('nash-results').classList.add('hidden');
+            document.getElementById('nash-m').value = '1';
+            document.getElementById('nash-cost-attacker').value = '';
+            document.getElementById('nash-cost-defense').value = '';
             document.getElementById('tef-min').value = '5';
             document.getElementById('tef-mode').value = '10';
             document.getElementById('tef-max').value = '18';
@@ -1309,6 +1314,21 @@ export const FairWizard = {
         }
     },
 
+    // Lee las 9 categorías de Magnitud de Pérdida directo del DOM del Paso 3 — reusado tanto por
+    // runMonteCarloSimulation como por calculateNashEquilibrium (que necesita el mismo objeto
+    // para sumar el Valor en Juego), en vez de duplicar este mismo forEach dos veces.
+    buildLossMagnitudesFromDom() {
+        const lossMagnitudes = {};
+        LOSS_FORMS_KEYS.forEach((key) => {
+            lossMagnitudes[key] = {
+                min: getSafeNumber(document.getElementById(`lm-${key}-min`)),
+                mode: getSafeNumber(document.getElementById(`lm-${key}-mode`)),
+                max: getSafeNumber(document.getElementById(`lm-${key}-max`)),
+            };
+        });
+        return lossMagnitudes;
+    },
+
     // La simulación Monte Carlo completa (10,000 escenarios, triangular, sensibilidad Pearson)
     // corre en el backend (POST /api/simulate) — antes se corría aquí mismo con mulberry32 +
     // muestreo triangular locales, duplicando el motor de cálculo del backend.
@@ -1340,14 +1360,7 @@ export const FairWizard = {
             mode: getSafeNumber(document.getElementById('vuln-mode')),
             max: getSafeNumber(document.getElementById('vuln-max')),
         };
-        const lossMagnitudes = {};
-        LOSS_FORMS_KEYS.forEach((key) => {
-            lossMagnitudes[key] = {
-                min: getSafeNumber(document.getElementById(`lm-${key}-min`)),
-                mode: getSafeNumber(document.getElementById(`lm-${key}-mode`)),
-                max: getSafeNumber(document.getElementById(`lm-${key}-max`)),
-            };
-        });
+        const lossMagnitudes = this.buildLossMagnitudesFromDom();
         const riskType = document.getElementById('fair-risk-type').value;
         const currency = 'USD';
 
@@ -1415,6 +1428,66 @@ export const FairWizard = {
         document.getElementById('fair-sensitivity-container').classList.remove('hidden');
     },
 
+    // Equilibrio de Nash del juego de contienda de Tullock (POST /api/autocalc/nash-equilibrium)
+    // — a diferencia de la Vulnerabilidad del Paso 2 (esfuerzo fijo, los perfiles curados), aquí
+    // Atacante y Defensa ELIGEN cuánto esfuerzo invertir dado el Valor en Juego (auto-sumado de
+    // Magnitud de Pérdida) y su propio costo por unidad de esfuerzo. Análisis exploratorio "qué
+    // pasaría si" — nunca alimenta la simulación real, botón explícito, no autocálculo.
+    async calculateNashEquilibrium() {
+        if (!state.fair.attackerKey || !state.fair.defenseKey) {
+            Modal.alert('Completa el Paso 1 (Perfil de Atacante y Defensa) antes de calcular el Equilibrio de Nash.');
+            return;
+        }
+        const m = getSafeNumber(document.getElementById('nash-m'));
+        const costAttacker = getSafeNumber(document.getElementById('nash-cost-attacker'));
+        const costDefense = getSafeNumber(document.getElementById('nash-cost-defense'));
+        if (m <= 0 || costAttacker <= 0 || costDefense <= 0) {
+            Modal.alert('Factor de Decisividad y ambos costos por unidad de esfuerzo deben ser mayores a 0.');
+            return;
+        }
+
+        const btn = document.getElementById('nash-calculate-btn');
+        btn.disabled = true;
+        try {
+            const result = await App.Api.request('/api/autocalc/nash-equilibrium', {
+                method: 'POST',
+                body: {
+                    attackerKey: state.fair.attackerKey,
+                    defenseKey: state.fair.defenseKey,
+                    m,
+                    costAttacker,
+                    costDefense,
+                    lossMagnitudes: this.buildLossMagnitudesFromDom(),
+                },
+            });
+            const formatCurrency = (value) =>
+                new Intl.NumberFormat('en-US', {
+                    style: 'currency',
+                    currency: 'USD',
+                    minimumFractionDigits: 0,
+                    maximumFractionDigits: 0,
+                }).format(value);
+
+            document.getElementById('nash-attacker-effort').textContent = result.attackerEffort.toFixed(1);
+            document.getElementById('nash-defense-effort').textContent = result.defenseEffort.toFixed(1);
+            document.getElementById('nash-equilibrium-vuln').textContent =
+                `${result.equilibriumVulnerability.toFixed(1)}%`;
+            document.getElementById('nash-fixed-vuln').textContent = `${result.fixedEffortVulnerability.toFixed(1)}%`;
+            document.getElementById('nash-value-at-stake').textContent = formatCurrency(result.valueAtStake);
+            document.getElementById('nash-attacker-payoff').textContent = formatCurrency(result.attackerPayoff);
+            document.getElementById('nash-defense-loss').textContent = formatCurrency(result.defenseLoss);
+            document.getElementById('nash-not-converged-warning').classList.toggle('hidden', result.converged);
+            document.getElementById('nash-results').classList.remove('hidden');
+        } catch (error) {
+            Modal.alert(
+                error.userMessage || 'Error al calcular el Equilibrio de Nash. Por favor, revise sus entradas.',
+                'Error de Cálculo',
+            );
+        } finally {
+            btn.disabled = false;
+        }
+    },
+
     async displaySimulationResults(result) {
         const { summary, evaluation, sensitivity, annualLosses } = result;
         state.fair.simulatedALE = summary.average;
@@ -1454,6 +1527,10 @@ export const FairWizard = {
         // Análisis de Sensibilidad (RIMS RA.1-2015, 6.3.4.3)
         state.fair.lastSensitivity = sensitivity;
         this.renderSensitivity(sensitivity);
+
+        // Un Equilibrio de Nash calculado antes de esta corrida quedó contra un Valor en Juego
+        // que puede haber cambiado — se oculta para no dejar un resultado obsoleto en pantalla.
+        document.getElementById('nash-results').classList.add('hidden');
 
         // Historial de Revisiones (ISO 31000, cláusula 6.6 — Monitoreo): cada corrida de
         // este mismo análisis queda registrada, para ver cómo cambió el riesgo entre revisiones.

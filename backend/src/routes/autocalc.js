@@ -1,14 +1,17 @@
 'use strict';
 
 const express = require('express');
-const { attackerProfiles, defenseProfiles } = require('../data/profiles');
+const { attackerProfiles, defenseProfiles, lossFormsKeys } = require('../data/profiles');
 const {
     calculateProfileAverage,
+    tullockSuccessProbability,
     sampleVulnerabilityFromProfiles,
     summarizeVulnerabilitySamples,
     calculateLossMagnitudeRange,
     calculateReduccionALEFromProfiles,
 } = require('../lib/autocalc');
+const { solveNashEquilibrium } = require('../lib/nashEquilibrium');
+const { validatePositiveNumber, validateLossMagnitudes } = require('../lib/validate');
 
 function createAutocalcRouter() {
     const router = express.Router();
@@ -86,6 +89,60 @@ function createAutocalcRouter() {
             attackerScore,
             defenseScore,
             differential: attackerScore - defenseScore,
+        });
+    });
+
+    // POST /api/autocalc/nash-equilibrium { attackerKey, defenseKey, m, costAttacker, costDefense, lossMagnitudes }
+    // Equilibrio de Nash del juego de contienda de Tullock (ver solveNashEquilibrium,
+    // backend/src/lib/nashEquilibrium.js): en vez de asumir un esfuerzo fijo (los perfiles
+    // curados), modela a Atacante y Defensa como jugadores racionales que ELIGEN cuánto esfuerzo
+    // invertir, dado el Valor en Juego y su propio costo por unidad de esfuerzo. Independiente
+    // del cálculo automático de Vulnerabilidad de arriba — es un análisis exploratorio "qué
+    // pasaría si", nunca alimenta la simulación en vivo.
+    router.post('/nash-equilibrium', (req, res) => {
+        const { attackerKey, defenseKey, m = 1, costAttacker, costDefense, lossMagnitudes = {} } = req.body;
+        const attackerProfile = attackerProfiles[attackerKey];
+        const defenseProfile = defenseProfiles[defenseKey];
+        if (!attackerProfile || !defenseProfile) {
+            return res.status(400).json({ error: 'attackerKey o defenseKey inválido.' });
+        }
+
+        const mError = validatePositiveNumber(m, 'm');
+        if (mError) return res.status(400).json({ error: mError });
+        const costAttackerError = validatePositiveNumber(costAttacker, 'costAttacker');
+        if (costAttackerError) return res.status(400).json({ error: costAttackerError });
+        const costDefenseError = validatePositiveNumber(costDefense, 'costDefense');
+        if (costDefenseError) return res.status(400).json({ error: costDefenseError });
+        const lossMagnitudesError = validateLossMagnitudes(lossMagnitudes, lossFormsKeys);
+        if (lossMagnitudesError) return res.status(400).json({ error: lossMagnitudesError });
+
+        // Valor en Juego (V): suma del valor "Más Probable" de las 9 categorías de Magnitud de
+        // Pérdida — no distingue qué parte de eso es realmente "el botín" que se llevaría el
+        // atacante (ej. Multas y Daño Reputacional son pérdidas para la organización, no un
+        // beneficio directo para él) — simplificación conocida, no resuelta aquí.
+        const valueAtStake = Object.values(lossMagnitudes).reduce((sum, range) => sum + range.mode, 0);
+
+        const attackerScore = calculateProfileAverage(attackerProfile);
+        const defenseScore = calculateProfileAverage(defenseProfile);
+        // Punto de comparación "esfuerzo fijo": los mismos perfiles de siempre, con el MISMO m
+        // que el usuario eligió para esta corrida — para no mezclar dos `m` distintos (este y el
+        // TULLOCK_M fijo que usa la Vulnerabilidad del Paso 2) en la misma comparación.
+        const fixedEffortVulnerability = tullockSuccessProbability(attackerScore, defenseScore, m) * 100;
+
+        const equilibrium = solveNashEquilibrium({ m, valueAtStake, costAttacker, costDefense });
+
+        res.json({
+            attackerEffort: equilibrium.attackerEffort,
+            defenseEffort: equilibrium.defenseEffort,
+            equilibriumVulnerability: equilibrium.equilibriumVulnerability * 100,
+            fixedEffortVulnerability,
+            attackerScore,
+            defenseScore,
+            valueAtStake,
+            attackerPayoff: equilibrium.attackerPayoff,
+            defenseLoss: equilibrium.defenseLoss,
+            converged: equilibrium.converged,
+            iterations: equilibrium.iterations,
         });
     });
 

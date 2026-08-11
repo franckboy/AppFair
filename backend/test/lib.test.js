@@ -13,10 +13,12 @@ const {
 } = require('../src/lib/random');
 const { runMonteCarloSimulation, summarizeLosses, pearsonCorrelation } = require('../src/lib/simulation');
 const {
+    tullockSuccessProbability,
     sampleVulnerabilityFromProfiles,
     summarizeVulnerabilitySamples,
     calculateReduccionALEFromProfiles,
 } = require('../src/lib/autocalc');
+const { solveNashEquilibrium } = require('../src/lib/nashEquilibrium');
 const {
     calculateInsuranceRetainedALE,
     calculateROSI,
@@ -660,6 +662,78 @@ test('calculateReduccionALEFromProfiles: mismo objetivo que el actual da 0% exac
         'medio',
     );
     assert.strictEqual(reductionPercent, 0);
+});
+
+// Función de Éxito de Contienda de Tullock (ver tullockSuccessProbability, autocalc.js) —
+// reemplaza la logística que combinaba TCap/RS en cada iteración de Monte Carlo.
+test('tullockSuccessProbability: un empate da 50% SIN IMPORTAR la escala absoluta — la prueba matemática que motiva Tullock', () => {
+    // Réplica directa del ejemplo del documento que motivó este cambio: la fórmula lineal vieja
+    // daba resultados distintos para empates a distinta escala (25%, 9%, 9%) — Tullock, al ser
+    // una RAZÓN en vez de una resta, da 50% siempre.
+    assert.strictEqual(tullockSuccessProbability(10, 10), 0.5);
+    assert.strictEqual(tullockSuccessProbability(50, 50), 0.5);
+    assert.strictEqual(tullockSuccessProbability(90, 90), 0.5);
+});
+
+test('tullockSuccessProbability: 0 contra 0 da 50% (evita 0/0 = NaN), no revienta', () => {
+    assert.strictEqual(tullockSuccessProbability(0, 0), 0.5);
+});
+
+test('tullockSuccessProbability: monótona — más Fuerza de Atacante (defensa fija) siempre da más probabilidad de éxito', () => {
+    const low = tullockSuccessProbability(30, 50);
+    const mid = tullockSuccessProbability(50, 50);
+    const high = tullockSuccessProbability(80, 50);
+    assert.ok(low < mid && mid < high, `esperaba ${low} < ${mid} < ${high}`);
+});
+
+test('tullockSuccessProbability: m mayor hace más decisiva una misma ventaja fija (se aleja más de 50%)', () => {
+    const marginAtM1 = Math.abs(tullockSuccessProbability(60, 40, 1) - 0.5);
+    const marginAtM2 = Math.abs(tullockSuccessProbability(60, 40, 2) - 0.5);
+    assert.ok(
+        marginAtM2 > marginAtM1,
+        `esperaba que m=2 (${marginAtM2}) se alejara más de 50% que m=1 (${marginAtM1})`,
+    );
+});
+
+// Equilibrio de Nash (ver solveNashEquilibrium, backend/src/lib/nashEquilibrium.js) — los mismos
+// 4 casos de control que se validaron manualmente antes de integrar esto a la app (ver
+// IMPLEMENTACION_TULLOCK2.txt, sección 2.5).
+test('solveNashEquilibrium: costos simétricos da un equilibrio simétrico, ~50% de vulnerabilidad', () => {
+    const result = solveNashEquilibrium({ m: 1, valueAtStake: 100000, costAttacker: 500, costDefense: 500 });
+    assert.ok(result.converged, 'se esperaba que convergiera');
+    assert.ok(
+        Math.abs(result.equilibriumVulnerability - 0.5) < 0.01,
+        `esperaba ~50%, dio ${(result.equilibriumVulnerability * 100).toFixed(1)}%`,
+    );
+    assert.ok(
+        Math.abs(result.attackerEffort - result.defenseEffort) < 0.1,
+        `esperaba esfuerzos simétricos, dio atacante=${result.attackerEffort}, defensa=${result.defenseEffort}`,
+    );
+});
+
+test('solveNashEquilibrium: costo más barato para el atacante sube la vulnerabilidad de equilibrio por encima de 50%', () => {
+    const result = solveNashEquilibrium({ m: 1, valueAtStake: 100000, costAttacker: 200, costDefense: 500 });
+    assert.ok(
+        result.equilibriumVulnerability > 0.5,
+        `esperaba > 50%, dio ${(result.equilibriumVulnerability * 100).toFixed(1)}%`,
+    );
+});
+
+test('solveNashEquilibrium: costo más barato para la defensa baja la vulnerabilidad de equilibrio por debajo de 50%', () => {
+    const result = solveNashEquilibrium({ m: 1, valueAtStake: 100000, costAttacker: 500, costDefense: 200 });
+    assert.ok(
+        result.equilibriumVulnerability < 0.5,
+        `esperaba < 50%, dio ${(result.equilibriumVulnerability * 100).toFixed(1)}%`,
+    );
+});
+
+test('solveNashEquilibrium: m mayor hace que ambos lados inviertan más esfuerzo total (contiendas más decisivas disipan más valor)', () => {
+    const params = { valueAtStake: 100000, costAttacker: 500, costDefense: 500 };
+    const atM1 = solveNashEquilibrium({ ...params, m: 1 });
+    const atM2 = solveNashEquilibrium({ ...params, m: 2 });
+    const totalM1 = atM1.attackerEffort + atM1.defenseEffort;
+    const totalM2 = atM2.attackerEffort + atM2.defenseEffort;
+    assert.ok(totalM2 > totalM1, `esperaba más esfuerzo total con m=2 (${totalM2}) que m=1 (${totalM1})`);
 });
 
 test('calculateInsuranceRetainedALE: límite=0 significa CERO cobertura extra, no ilimitada', () => {

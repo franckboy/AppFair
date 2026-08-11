@@ -414,6 +414,65 @@ test('POST /api/autocalc/reduccion-ale: sin attackerKey responde 400 (antes era 
     assert.strictEqual(res.status, 400);
 });
 
+test('POST /api/autocalc/nash-equilibrium con datos válidos responde 200 con esfuerzos y vulnerabilidad en rango', async () => {
+    const res = await request(app)
+        .post('/api/autocalc/nash-equilibrium')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            attackerKey: 'organizado',
+            defenseKey: 'estandar',
+            m: 1,
+            costAttacker: 500,
+            costDefense: 500,
+            lossMagnitudes: { respuesta: { min: 5000, mode: 20000, max: 50000 } },
+        });
+    assert.strictEqual(res.status, 200);
+    assert.ok(res.body.attackerEffort >= 0 && res.body.attackerEffort <= 100);
+    assert.ok(res.body.defenseEffort >= 0 && res.body.defenseEffort <= 100);
+    assert.ok(res.body.equilibriumVulnerability >= 0 && res.body.equilibriumVulnerability <= 100);
+    assert.ok(res.body.fixedEffortVulnerability >= 0 && res.body.fixedEffortVulnerability <= 100);
+    assert.strictEqual(res.body.valueAtStake, 20000);
+    assert.strictEqual(res.body.converged, true);
+});
+
+test('POST /api/autocalc/nash-equilibrium con attackerKey/defenseKey inválido responde 400', async () => {
+    const res = await request(app)
+        .post('/api/autocalc/nash-equilibrium')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ attackerKey: 'no-existe', defenseKey: 'estandar', costAttacker: 500, costDefense: 500 });
+    assert.strictEqual(res.status, 400);
+});
+
+test('POST /api/autocalc/nash-equilibrium con m <= 0 responde 400', async () => {
+    const res = await request(app)
+        .post('/api/autocalc/nash-equilibrium')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ attackerKey: 'organizado', defenseKey: 'estandar', m: 0, costAttacker: 500, costDefense: 500 });
+    assert.strictEqual(res.status, 400);
+});
+
+test('POST /api/autocalc/nash-equilibrium sin costAttacker/costDefense responde 400', async () => {
+    const res = await request(app)
+        .post('/api/autocalc/nash-equilibrium')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ attackerKey: 'organizado', defenseKey: 'estandar' });
+    assert.strictEqual(res.status, 400);
+});
+
+test('POST /api/autocalc/nash-equilibrium con una categoría de Magnitud de Pérdida no reconocida responde 400', async () => {
+    const res = await request(app)
+        .post('/api/autocalc/nash-equilibrium')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            attackerKey: 'organizado',
+            defenseKey: 'estandar',
+            costAttacker: 500,
+            costDefense: 500,
+            lossMagnitudes: { noExiste: { min: 1, mode: 2, max: 3 } },
+        });
+    assert.strictEqual(res.status, 400);
+});
+
 // --- Simulación ---
 
 test('POST /api/simulate con datos válidos responde con summary y annualLosses del tamaño pedido', async () => {
