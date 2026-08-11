@@ -3,7 +3,7 @@
 const express = require('express');
 const { runMonteCarloSimulation, summarizeLosses } = require('../lib/simulation');
 const { evaluateFairThreat, evaluateFairOpportunity } = require('../lib/evaluation');
-const { sampleVulnerabilityFromProfiles } = require('../lib/autocalc');
+const { sampleVulnerabilityFromProfiles, calculateInherentRiskFromSimulation } = require('../lib/autocalc');
 const { defaultRiskCriteria, lossFormsKeys, attackerProfiles, defenseProfiles } = require('../data/profiles');
 const { normalizeRiskCriteria, validateRiskCriteriaOverride } = require('../lib/riskCriteria');
 const {
@@ -48,6 +48,13 @@ function createSimulateRouter(store) {
      *  - lossMagnitudes: { [key]: { min, mode, max } }  — claves de lossFormsKeys
      *  - riskType: 'amenaza' | 'oportunidad'
      *  - riskCriteria: (opcional) sobreescribe los criterios guardados para esta corrida
+     *
+     * La respuesta incluye `summary.inherentALE`/`summary.inherentCVaR` — el Riesgo Inherente
+     * REAL (Vulnerabilidad 100%, sin ningún control), re-simulado con
+     * calculateInherentRiskFromSimulation (lib/autocalc.js), NO una aproximación algebraica.
+     * `null` para riskType 'oportunidad' (una Oportunidad es un beneficio esperado, no una
+     * pérdida — no tiene un "Riesgo Inherente" con el mismo sentido, mismo criterio que ya
+     * excluye 'oportunidad' de calculateParetoAnalysis/calculateResidualPortfolio).
      */
     router.post(
         '/',
@@ -130,6 +137,13 @@ function createSimulateRouter(store) {
                     ? evaluateFairOpportunity(summary.average, criteria, formatCurrency)
                     : evaluateFairThreat(summary.average, summary.cvar95, criteria, formatCurrency);
 
+            // Riesgo Inherente REAL (sin ningún control) — solo tiene sentido para Amenaza, mismo
+            // criterio que evaluateFairOpportunity/evaluateFairThreat de arriba.
+            const inherent =
+                riskType === 'oportunidad'
+                    ? { inherentALE: null, inherentCVaR: null }
+                    : calculateInherentRiskFromSimulation(tef, lossMagnitudes);
+
             res.json({
                 usedSeed,
                 iterations,
@@ -144,6 +158,8 @@ function createSimulateRouter(store) {
                     cvar95: summary.cvar95,
                     probExceedance: summary.probExceedance,
                     exceedanceThreshold: criteria.aleUmbralExcedencia,
+                    inherentALE: inherent.inherentALE,
+                    inherentCVaR: inherent.inherentCVaR,
                 },
                 evaluation,
                 sensitivity: sensitivity.slice(0, 10),

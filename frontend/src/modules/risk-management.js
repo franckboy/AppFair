@@ -133,16 +133,46 @@ export const RiskManagement = {
         document.getElementById('riskmgmt-portfolio-ale').textContent = formatCurrency(portfolio.totalResidualALE);
         document.getElementById('riskmgmt-portfolio-cvar').textContent = formatCurrency(portfolio.totalResidualCVaR);
 
-        const inherentTotal = state.fair.registerPareto ? state.fair.registerPareto.totalExposure : null;
-        const detailParts = [
-            `${portfolio.treatedCount} de ${portfolio.totalRiskCount} amenazas con tratamiento adoptado`,
-        ];
-        if (typeof inherentTotal === 'number') {
-            detailParts.push(
-                `Exposición inherente: ${formatCurrency(inherentTotal)} → Residual: ${formatCurrency(portfolio.totalResidualALE)}`,
-            );
+        document.getElementById('riskmgmt-portfolio-detail').textContent =
+            `${portfolio.treatedCount} de ${portfolio.totalRiskCount} amenazas con tratamiento adoptado`;
+
+        // Waterfall Inherente (sin controles) → Actual (con controles vigentes) → Residual
+        // (después de Tratamiento) — las 3 etapas, en dólares. inherentPortfolio ya trae también
+        // el total Actual (autocontenido, ver calculateInherentPortfolio en el backend) para no
+        // depender de que también se haya cargado el Pareto de Registro de Riesgos.
+        const inherent = state.fair.registerInherentPortfolio;
+        const waterfallEl = document.getElementById('riskmgmt-portfolio-waterfall');
+        const effectivenessEl = document.getElementById('riskmgmt-portfolio-effectiveness');
+        const inherentNote = document.getElementById('riskmgmt-portfolio-inherent-note');
+        if (inherent && inherent.inherentRiskCount > 0) {
+            const inherentLevel = inherent.evaluation ? ` (${inherent.evaluation.level})` : '';
+            const residualLevel = portfolio.evaluation ? ` (${portfolio.evaluation.level})` : '';
+            waterfallEl.textContent =
+                `Riesgo Inherente: ${formatCurrency(inherent.totalInherentALE)}${inherentLevel} → ` +
+                `Riesgo Actual: ${formatCurrency(inherent.totalActualALE)} → ` +
+                `Riesgo Residual: ${formatCurrency(portfolio.totalResidualALE)}${residualLevel}`;
+            waterfallEl.classList.remove('hidden');
+
+            if (inherent.totalInherentALE > 0) {
+                const effectiveness =
+                    ((inherent.totalInherentALE - inherent.totalActualALE) / inherent.totalInherentALE) * 100;
+                effectivenessEl.textContent = `Efectividad de Controles: ${effectiveness.toFixed(1)}%`;
+                effectivenessEl.classList.remove('hidden');
+            } else {
+                effectivenessEl.classList.add('hidden');
+            }
+
+            if (inherent.inherentMissingCount > 0) {
+                inherentNote.textContent = `Riesgo Inherente calculado para ${inherent.inherentRiskCount} de ${inherent.totalRiskCount} amenazas — el resto se estima la próxima vez que se vuelvan a simular.`;
+                inherentNote.classList.remove('hidden');
+            } else {
+                inherentNote.classList.add('hidden');
+            }
+        } else {
+            waterfallEl.classList.add('hidden');
+            effectivenessEl.classList.add('hidden');
+            inherentNote.classList.add('hidden');
         }
-        document.getElementById('riskmgmt-portfolio-detail').textContent = detailParts.join(' · ');
 
         const cvarNote = document.getElementById('riskmgmt-portfolio-cvar-note');
         if (portfolio.cvarSkippedCount > 0) {
@@ -162,7 +192,8 @@ export const RiskManagement = {
     },
 
     // Concentración del Riesgo RESIDUAL (Pareto) — a diferencia del Pareto de Registro de
-    // Riesgos (App.FairRegister.renderParetoChart, sobre el ALE INHERENTE), este ordena por el
+    // Riesgos (App.FairRegister.renderParetoChart, sobre el ALE ACTUAL — con el Nivel de Defensa
+    // vigente, NO el Riesgo Inherente sin controles), este ordena por el
     // ALE residual vigente de cada Amenaza (ver calculateResidualParetoAnalysis, backend). Mismo
     // criterio que renderResidualPortfolio: ya viene calculado del lado del servidor, se llama
     // una sola vez aquí (no depende de qué riesgo esté elegido abajo), sin llamada de red propia.
@@ -229,13 +260,14 @@ export const RiskManagement = {
     // "ale" es un beneficio, no una pérdida) y un stub "Sin analizar" (creado desde el árbol con
     // "+") no tiene ninguna clasificación todavía.
     //
-    // Sin treatmentDecision: el residual es igual al inherente — se reutiliza
-    // entry.evaluationLevel/severity YA guardados, sin ninguna llamada de red.
+    // Sin treatmentDecision: el residual es igual al ACTUAL (con el Nivel de Defensa vigente,
+    // entry.ale/cvar95 — NO el Riesgo Inherente sin controles, ver renderResidualPortfolio) — se
+    // reutiliza entry.evaluationLevel/severity YA guardados, sin ninguna llamada de red.
     // Con treatmentDecision: se reclasifica el residualALE/residualCVaR contra los Criterios de
-    // Riesgo (POST /api/simulate/evaluate, misma lógica que ya clasifica el inherente) porque
+    // Riesgo (POST /api/simulate/evaluate, misma lógica que ya clasifica el actual) porque
     // puede caer en una banda distinta — un riesgo Crítico que se trató puede haber bajado a
     // Aceptable, y la cadencia de revisión (suggestedReviewDate) debe reflejar eso, no el
-    // inherente. requestId sigue el mismo patrón de guardián contra condición de carrera que
+    // actual. requestId sigue el mismo patrón de guardián contra condición de carrera que
     // App.Treatment.updateReduccionALEAuto (ver state.riskManagement.residualRequestId).
     async renderResidualStatus(entry) {
         const section = document.getElementById('riskmgmt-residual-section');
@@ -259,7 +291,7 @@ export const RiskManagement = {
         const decision = entry.treatmentDecision;
         if (!decision) {
             document.getElementById('riskmgmt-residual-note').textContent =
-                'Sin tratamiento decidido — el riesgo vigente es igual al inherente:';
+                'Sin tratamiento decidido — el riesgo vigente es igual al actual (con el Nivel de Defensa vigente):';
             document.getElementById('riskmgmt-residual-ale').textContent = formatCurrency(entry.ale);
             document.getElementById('riskmgmt-residual-cvar').textContent = formatCurrency(entry.cvar95);
             applyBadge(entry.severity, entry.evaluationLevel);

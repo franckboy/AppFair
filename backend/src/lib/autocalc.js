@@ -248,6 +248,45 @@ function calculateResidualFromSimulation(
     return { residualALE, residualCVaR, reductionPercent };
 }
 
+// Semilla fija propia (distinta de RESIDUAL_SIMULATION_SEED) para
+// calculateInherentRiskFromSimulation — mismo criterio de reproducibilidad que el resto de la
+// app, sin compartir semilla con el residual (son corridas independientes, no se comparan entre
+// sí iteración por iteración, así que no hace falta "números aleatorios comunes").
+const INHERENT_SIMULATION_SEED = 20260812;
+const INHERENT_SIMULATION_ITERATIONS = 10000; // mismo rigor que el resto
+
+/**
+ * Riesgo Inherente REAL (ALE y CVaR) — la exposición SIN ningún control, Vulnerabilidad al 100%.
+ * Reemplaza la aproximación algebraica que usaba `computeFairRiskEquivalents`
+ * (frontend/src/modules/fair-register.js: `entry.ale * (100 / vulnMean)`, "des-mitigar" el ALE
+ * dividiendo entre la Vulnerabilidad media) — válida solo bajo la vieja Vulnerabilidad lineal,
+ * igual que la aproximación que ya se reemplazó una vez para el residual de Mitigar (ver
+ * calculateResidualFromSimulation arriba). Corre el motor Monte Carlo completo con
+ * `sampleVuln` fijo en 100% en vez de reescalar un resultado ya simulado.
+ *
+ * A diferencia de `calculateResidualFromSimulation`, no hace falta ningún perfil de Atacante/
+ * Defensa — "sin ningún control" no depende de a quién te enfrentas, es un escalar fijo.
+ *
+ * @param {{min:number, mode:number, max:number}} tef
+ * @param {Object<string,{min:number, mode:number, max:number}>} lossMagnitudes
+ * @returns {{inherentALE:number, inherentCVaR:number}}
+ */
+function calculateInherentRiskFromSimulation(tef, lossMagnitudes) {
+    const { annualLosses } = runMonteCarloSimulation({
+        iterations: INHERENT_SIMULATION_ITERATIONS,
+        seed: INHERENT_SIMULATION_SEED,
+        tef,
+        vuln: UNUSED_VULN_PLACEHOLDER,
+        lossMagnitudes,
+        // No consume rng: Vulnerabilidad=100% (sin ningún control) es un escalar fijo, no hace
+        // falta muestrearlo — el motor ya tolera un número variable de tiradas por iteración
+        // (rejection sampling en getPertRandom/sampleGamma), esto no rompe nada nuevo.
+        sampleVuln: () => 1,
+    });
+    const summary = summarizeLosses(annualLosses);
+    return { inherentALE: summary.average, inherentCVaR: summary.cvar95 };
+}
+
 module.exports = {
     calculateProfileAverage,
     getConfidenceSpread,
@@ -257,4 +296,5 @@ module.exports = {
     calculateLossMagnitudeRange,
     calculateReduccionALEFromProfiles,
     calculateResidualFromSimulation,
+    calculateInherentRiskFromSimulation,
 };
