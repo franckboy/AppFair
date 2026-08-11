@@ -65,6 +65,42 @@ function validateSeed(seed) {
 }
 
 /**
+ * Valida que un valor sea un número finito ESTRICTAMENTE positivo (> 0) — para campos donde 0
+ * no tiene un significado válido, ej. el factor de decisividad `m` de Tullock, o un costo por
+ * unidad de esfuerzo (un costo de 0 no es "gratis pero válido", es un input mal formado).
+ * @param {*} value
+ * @param {string} label
+ * @returns {string|null} mensaje de error, o null si es válido
+ */
+function validatePositiveNumber(value, label) {
+    if (!isFiniteNumber(value) || value <= 0) {
+        return `${label} debe ser un número mayor a 0.`;
+    }
+    return null;
+}
+
+/**
+ * Valida un objeto { [key]: {min, mode, max} } de Magnitud de Pérdida — cada clave debe estar
+ * en `lossFormsKeys` y cada rango debe pasar validateTriangularRange. Extraído de
+ * POST /api/simulate (donde vivía inline) porque POST /api/autocalc/nash-equilibrium necesita
+ * exactamente la misma validación para poder sumar el Valor en Juego con confianza.
+ * @param {Object} lossMagnitudes
+ * @param {string[]} lossFormsKeys
+ * @returns {string|null} mensaje de error, o null si es válido
+ */
+function validateLossMagnitudes(lossMagnitudes, lossFormsKeys) {
+    const invalidKeys = Object.keys(lossMagnitudes).filter((k) => !lossFormsKeys.includes(k));
+    if (invalidKeys.length > 0) {
+        return `Categorías de pérdida no reconocidas: ${invalidKeys.join(', ')}`;
+    }
+    for (const [key, range] of Object.entries(lossMagnitudes)) {
+        const lmError = validateTriangularRange(range, `lossMagnitudes.${key}`);
+        if (lmError) return lmError;
+    }
+    return null;
+}
+
+/**
  * Valida los campos numéricos del body de /api/treatment/evaluate. Antes de esto no había
  * ningún límite: un reductionPercent > 100 hacía que Mitigar "evitara" más pérdida de la que
  * existe (ALE residual negativo), y un costo/premium/deducible/límite negativo inflaba el
@@ -112,4 +148,6 @@ module.exports = {
     validateIterations,
     validateSeed,
     validateTreatmentBody,
+    validatePositiveNumber,
+    validateLossMagnitudes,
 };

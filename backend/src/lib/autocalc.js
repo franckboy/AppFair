@@ -20,22 +20,49 @@ function getConfidenceSpread(confidence) {
     return confidenceSpreadFactors[confidence] || confidenceSpreadFactors.medio;
 }
 
-// Escala de la logística que convierte el margen TCap-RS en probabilidad de éxito — 15 puntos
-// de margen ya inclinan bastante la balanza, sin techo/piso duro artificial. Valor curado a
-// mano, documentado como tal (no viene de evidencia real todavía) — el script de calibración en
-// tools/bayesian-calibration/ es el mecanismo para revisarlo con datos reales más adelante.
-const LOGISTIC_SCALE = 15;
+// "Factor de decisividad" de la Función de Éxito de Contienda de Tullock (ver
+// tullockSuccessProbability abajo) que usa el cálculo automático de Vulnerabilidad/Monte Carlo
+// en vivo — m=1 es el caso base de la literatura de economía de conflicto (la ventaja de fuerza
+// pesa de forma proporcional). Valor curado a mano, documentado como tal (no viene de evidencia
+// real todavía) — el script de calibración en tools/bayesian-calibration/ es el mecanismo para
+// revisarlo con datos reales más adelante. Deliberadamente INDEPENDIENTE del `m` que el usuario
+// puede elegir en la sección de Equilibrio de Nash (nashEquilibrium.js): ese es un análisis
+// exploratorio "qué pasaría si", nunca debe poder cambiar en silencio el resultado de la
+// simulación real.
+const TULLOCK_M = 1;
 // Cuánto puede escalar su sofisticación un atacante que decide no retirarse ante un desafío —
 // 0-30% de refuerzo sobre su Capacidad de Amenaza de esta iteración.
 const MAX_ESCALATION = 0.3;
 
 /**
+ * Función de Éxito de Contienda de Tullock — probabilidad de que el lado "atacante" gane un
+ * enfrentamiento contra el lado "defensa", en función de cuánta fuerza tiene cada uno. Fórmula
+ * estándar de la economía de conflicto/teoría de juegos: `Atacante^m / (Atacante^m + Defensa^m)`.
+ * A diferencia de una resta (`Atacante - Defensa`), es una RAZÓN — un empate a cualquier escala
+ * (10 vs 10, o 90 vs 90) da 50% siempre, nunca depende de qué tan grandes sean los números en
+ * juego. `m` controla qué tan decisiva es la diferencia: m=1 pesa la ventaja de forma
+ * proporcional (caso base); m>1 hace que hasta una ventaja pequeña incline la balanza casi por
+ * completo; m<1 deja al lado más débil con una probabilidad real de éxito incluso en desventaja.
+ * @param {number} attackerStrength
+ * @param {number} defenseStrength
+ * @param {number} [m=TULLOCK_M]
+ * @returns {number} decimal en [0,1]
+ */
+function tullockSuccessProbability(attackerStrength, defenseStrength, m = TULLOCK_M) {
+    const a = Math.pow(Math.max(0, attackerStrength), m);
+    const d = Math.pow(Math.max(0, defenseStrength), m);
+    if (a === 0 && d === 0) return 0.5; // ambos en 0: empate por definición, evita 0/0 = NaN
+    return a / (a + d);
+}
+
+/**
  * Vulnerabilidad (%) = P(Capacidad de Amenaza > Fuerza de Resistencia) — dos distribuciones
- * INDEPENDIENTES que se comparan, nunca una que descuenta a la otra. Reemplaza la fórmula vieja
- * (`attackerScore * (1 - defenseScore/100)`), que hacía que subir el Nivel de Defensa bajara
- * directamente el número que representa la Motivación/Recursos/Capacidad/Persistencia/
- * Sofisticación del atacante — conceptualmente equivocado: tu defensa no cambia quién es el
- * atacante ni qué tan decidido está, cambia qué tan probable es que te tenga éxito.
+ * INDEPENDIENTES que se comparan (vía Tullock, ver tullockSuccessProbability arriba), nunca una
+ * que descuenta a la otra. Reemplaza la fórmula vieja (`attackerScore * (1 - defenseScore/100)`),
+ * que hacía que subir el Nivel de Defensa bajara directamente el número que representa la
+ * Motivación/Recursos/Capacidad/Persistencia/Sofisticación del atacante — conceptualmente
+ * equivocado: tu defensa no cambia quién es el atacante ni qué tan decidido está, cambia qué tan
+ * probable es que te tenga éxito.
  *
  * Devuelve un SAMPLER, no un número — compatible directo con el parámetro `sampleVuln` que
  * `runMonteCarloSimulation` (simulation.js) ya acepta desde la Tarea #25 de esta sesión,
@@ -54,7 +81,11 @@ function sampleVulnerabilityFromProfiles(attackerProfile, defenseProfile, confid
     const spread = getConfidenceSpread(confidence);
     // Triángulos de Capacidad de Amenaza (TCap) y Fuerza de Resistencia (RS) — cada uno sale
     // SOLO de su propio perfil. Ninguno se calcula a partir del otro.
-    const tcap = { min: attackerScore * spread.min, mode: attackerScore, max: Math.min(100, attackerScore * spread.max) };
+    const tcap = {
+        min: attackerScore * spread.min,
+        mode: attackerScore,
+        max: Math.min(100, attackerScore * spread.max),
+    };
     const rs = { min: defenseScore * spread.min, mode: defenseScore, max: Math.min(100, defenseScore * spread.max) };
     const persistence = attackerProfile.persistence || 0;
 
@@ -73,9 +104,10 @@ function sampleVulnerabilityFromProfiles(attackerProfile, defenseProfile, confid
             effectiveTcap = Math.min(100, tcapSample * (1 + rng() * MAX_ESCALATION));
         }
 
-        // Probabilidad de éxito de ESTA iteración: función logística del margen final — 50%
-        // cuando están parejos, tiende a 0/1 en los extremos, sin techo/piso duro artificial.
-        return 1 / (1 + Math.exp(-(effectiveTcap - rsSample) / LOGISTIC_SCALE));
+        // Probabilidad de éxito de ESTA iteración: Función de Éxito de Contienda de Tullock
+        // sobre TCap final vs. RS — 50% cuando están parejos (a cualquier escala), sin techo/
+        // piso duro artificial.
+        return tullockSuccessProbability(effectiveTcap, rsSample);
     };
 }
 
@@ -159,6 +191,7 @@ function calculateReduccionALEFromProfiles(attackerProfile, currentDefenseProfil
 module.exports = {
     calculateProfileAverage,
     getConfidenceSpread,
+    tullockSuccessProbability,
     sampleVulnerabilityFromProfiles,
     summarizeVulnerabilitySamples,
     calculateLossMagnitudeRange,

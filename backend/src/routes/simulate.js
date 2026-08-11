@@ -6,7 +6,12 @@ const { evaluateFairThreat, evaluateFairOpportunity } = require('../lib/evaluati
 const { sampleVulnerabilityFromProfiles } = require('../lib/autocalc');
 const { defaultRiskCriteria, lossFormsKeys, attackerProfiles, defenseProfiles } = require('../data/profiles');
 const { normalizeRiskCriteria, validateRiskCriteriaOverride } = require('../lib/riskCriteria');
-const { validateTriangularRange, validateIterations, validateSeed } = require('../lib/validate');
+const {
+    validateTriangularRange,
+    validateIterations,
+    validateSeed,
+    validateLossMagnitudes,
+} = require('../lib/validate');
 const { asyncHandler } = require('../middleware/asyncHandler');
 
 // La app solo calcula en USD (ver la nota equivalente en register.js/assets.js) — no toma
@@ -73,16 +78,8 @@ function createSimulateRouter(store) {
             const vulnError = validateTriangularRange(vuln, 'vuln', { min: 0, max: 100 });
             if (vulnError) return res.status(400).json({ error: vulnError });
 
-            const invalidKeys = Object.keys(lossMagnitudes).filter((k) => !lossFormsKeys.includes(k));
-            if (invalidKeys.length > 0) {
-                return res
-                    .status(400)
-                    .json({ error: `Categorías de pérdida no reconocidas: ${invalidKeys.join(', ')}` });
-            }
-            for (const [key, range] of Object.entries(lossMagnitudes)) {
-                const lmError = validateTriangularRange(range, `lossMagnitudes.${key}`);
-                if (lmError) return res.status(400).json({ error: lmError });
-            }
+            const lossMagnitudesError = validateLossMagnitudes(lossMagnitudes, lossFormsKeys);
+            if (lossMagnitudesError) return res.status(400).json({ error: lossMagnitudesError });
 
             // Si vienen attackerKey/defenseKey, deben ser válidos (400 si no) — a diferencia de
             // cuando faltan del todo (undefined), que es el caso normal de retrocompatibilidad y
