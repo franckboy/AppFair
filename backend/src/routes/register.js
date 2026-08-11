@@ -1,10 +1,27 @@
 'use strict';
 
 const express = require('express');
-const { getRiskMatrixZones, calculateParetoAnalysis, calculateConsolidatedSensitivity } = require('../lib/register');
+const {
+    getRiskMatrixZones,
+    calculateParetoAnalysis,
+    calculateConsolidatedSensitivity,
+    calculateResidualPortfolio,
+} = require('../lib/register');
+const { evaluateFairThreat } = require('../lib/evaluation');
 const { defaultRiskCriteria } = require('../data/profiles');
 const { normalizeRiskCriteria, validateRiskCriteriaOverride } = require('../lib/riskCriteria');
 const { asyncHandler } = require('../middleware/asyncHandler');
+
+// La app solo calcula en USD (ver la nota equivalente en simulate.js/assets.js).
+function makeCurrencyFormatter() {
+    const fmt = new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: 'USD',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
+    });
+    return (value) => fmt.format(value);
+}
 
 function createRegisterRouter(store) {
     const router = express.Router();
@@ -14,7 +31,11 @@ function createRegisterRouter(store) {
         '/',
         asyncHandler(async (req, res) => {
             const risks = (await store.get('riskRegister')) || [];
-            const criteria = (await store.get('riskCriteria')) || defaultRiskCriteria;
+            // normalizeRiskCriteria migra cualquier criterio guardado ANTES de que existiera
+            // aleAceptablePercent (ver PUT abajo) — hace falta acá también para poder llamar
+            // evaluateFairThreat sobre el residual del portafolio con aleAceptablePercent/
+            // aleCritico garantizados.
+            const criteria = normalizeRiskCriteria((await store.get('riskCriteria')) || defaultRiskCriteria);
 
             if (risks.length === 0) {
                 return res.json({
@@ -22,17 +43,30 @@ function createRegisterRouter(store) {
                     pareto: null,
                     consolidatedSensitivity: [],
                     heatmapZones: getRiskMatrixZones(criteria.rrtBands),
+                    residualPortfolio: null,
                 });
             }
 
             const pareto = calculateParetoAnalysis(risks);
             const consolidatedSensitivity = calculateConsolidatedSensitivity(risks);
+            const residualPortfolio = calculateResidualPortfolio(risks);
+            if (residualPortfolio.cvarRiskCount > 0) {
+                residualPortfolio.evaluation = evaluateFairThreat(
+                    residualPortfolio.totalResidualALE,
+                    residualPortfolio.totalResidualCVaR,
+                    criteria,
+                    makeCurrencyFormatter(),
+                );
+            } else {
+                residualPortfolio.evaluation = null;
+            }
 
             res.json({
                 risks,
                 pareto,
                 consolidatedSensitivity,
                 heatmapZones: getRiskMatrixZones(criteria.rrtBands),
+                residualPortfolio,
             });
         }),
     );

@@ -98,6 +98,8 @@ export const RiskManagement = {
         empty.classList.add('hidden');
         content.classList.remove('hidden');
 
+        this.renderResidualPortfolio();
+
         const currentValue = riskNameToSelect || select.value;
         select.innerHTML = risks
             .map((r) => `<option value="${sanitizeOption(r.riskName)}">${sanitizeOption(r.riskName)}</option>`)
@@ -105,6 +107,57 @@ export const RiskManagement = {
         const toSelect = risks.some((r) => r.riskName === currentValue) ? currentValue : risks[0].riskName;
         select.value = toSelect;
         this.selectRisk(toSelect);
+    },
+
+    // Riesgo Residual del PORTAFOLIO — a diferencia de renderResidualStatus (un riesgo a la vez),
+    // esto agrega el residual vigente de TODOS los riesgos tipo Amenaza del Registro. Ya viene
+    // calculado del lado del servidor (ver GET /api/register, App.FairRegister.loadRiskRegister)
+    // — no depende de qué riesgo esté elegido abajo, así que se llama una sola vez aquí, no desde
+    // selectRisk(). Sin llamada de red propia.
+    renderResidualPortfolio() {
+        const section = document.getElementById('riskmgmt-portfolio-section');
+        const portfolio = state.fair.registerResidualPortfolio;
+
+        if (!portfolio || portfolio.totalRiskCount === 0) {
+            section.classList.add('hidden');
+            return;
+        }
+        section.classList.remove('hidden');
+
+        const formatCurrency = (value) =>
+            value === null || value === undefined
+                ? '—'
+                : new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
+
+        document.getElementById('riskmgmt-portfolio-ale').textContent = formatCurrency(portfolio.totalResidualALE);
+        document.getElementById('riskmgmt-portfolio-cvar').textContent = formatCurrency(portfolio.totalResidualCVaR);
+
+        const inherentTotal = state.fair.registerPareto ? state.fair.registerPareto.totalExposure : null;
+        const detailParts = [
+            `${portfolio.treatedCount} de ${portfolio.totalRiskCount} amenazas con tratamiento adoptado`,
+        ];
+        if (typeof inherentTotal === 'number') {
+            detailParts.push(
+                `Exposición inherente: ${formatCurrency(inherentTotal)} → Residual: ${formatCurrency(portfolio.totalResidualALE)}`,
+            );
+        }
+        document.getElementById('riskmgmt-portfolio-detail').textContent = detailParts.join(' · ');
+
+        const cvarNote = document.getElementById('riskmgmt-portfolio-cvar-note');
+        if (portfolio.cvarSkippedCount > 0) {
+            cvarNote.textContent = `Suma de CVaR95 de ${portfolio.cvarRiskCount} de ${portfolio.totalRiskCount} amenazas — ${portfolio.cvarSkippedCount} sin CVaR residual conocido (ej. Transferir).`;
+            cvarNote.classList.remove('hidden');
+        } else {
+            cvarNote.classList.add('hidden');
+        }
+
+        if (portfolio.evaluation) {
+            section.className = `p-4 rounded-lg mb-4 border-l-4 ${severityToClasses(portfolio.evaluation.severity)}`;
+            document.getElementById('riskmgmt-portfolio-badge').textContent = portfolio.evaluation.level;
+        } else {
+            section.className = 'p-4 rounded-lg mb-4 border-l-4 bg-gray-50 border-gray-400 text-gray-700';
+            document.getElementById('riskmgmt-portfolio-badge').textContent = 'Clasificación no disponible';
+        }
     },
 
     selectRisk(riskName) {
