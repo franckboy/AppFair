@@ -1055,6 +1055,7 @@ export const FairWizard = {
                     </div>
                 </div>
                 <span id="lm-warning-${key}" class="range-warning hidden">Advertencia: Min, Modo y Max son iguales. Esto elimina la incertidumbre para este factor.</span>
+                ${key === 'reemplazo' ? '<span id="lm-asset-warning" class="range-warning hidden"></span>' : ''}
             </div>`,
         ).join('');
         this.refreshAllLossMagnitudeCompactDisplays();
@@ -1105,10 +1106,33 @@ export const FairWizard = {
         const min = fmt(getSafeNumber(document.getElementById(`lm-${key}-min`)));
         const max = fmt(getSafeNumber(document.getElementById(`lm-${key}-max`)));
         summaryEl.textContent = `Mín: ${min} · Máx: ${max}`;
+        if (key === 'reemplazo') this.checkAssetReplacementCostWarning();
     },
 
     refreshAllLossMagnitudeCompactDisplays() {
         LOSS_FORMS_KEYS.forEach((key) => this.refreshLossMagnitudeCompactDisplay(key));
+    },
+
+    // Advertencia informativa (nunca bloquea el flujo): si el Costo de Reemplazo máximo
+    // capturado supera el valor declarado del activo vinculado en el Catálogo, puede ser un
+    // error de captura o un evento que también daña activos relacionados — el usuario decide.
+    checkAssetReplacementCostWarning() {
+        const warningEl = document.getElementById('lm-asset-warning');
+        if (!warningEl) return;
+        const assetRef = state.quick.selectedAssetRef;
+        const asset = assetRef ? (state.quick.assets || []).find((a) => a.id === assetRef.id) : null;
+        if (!asset) {
+            warningEl.classList.add('hidden');
+            return;
+        }
+        const max = getSafeNumber(document.getElementById('lm-reemplazo-max'));
+        if (max > asset.valorEstimado) {
+            const fmt = (v) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(v);
+            warningEl.textContent = `Advertencia: el Costo de Reemplazo máximo (${fmt(max)}) supera el valor declarado de "${asset.nombre}" (${fmt(asset.valorEstimado)}). Verifica que no sea un error de captura, o documenta si este evento también daña activos relacionados.`;
+            warningEl.classList.remove('hidden');
+        } else {
+            warningEl.classList.add('hidden');
+        }
     },
 
     // Mismo criterio que Vulnerabilidad: el usuario solo da el valor "Más Probable" y el
@@ -1656,6 +1680,10 @@ export const FairWizard = {
                 riskName: document.getElementById('fair-riskName').value,
                 riskDescription: document.getElementById('fair-riskDescription').value,
                 asset: document.getElementById('fair-asset').value,
+                // Mismo vínculo real que saveToRiskRegister/saveDraftToRisksList — sin esto, la
+                // advertencia de Costo de Reemplazo vs. valor del activo (ver
+                // checkAssetReplacementCostWarning) queda inactiva al reanudar un borrador.
+                assetId: state.quick.selectedAssetRef ? state.quick.selectedAssetRef.id : null,
                 threat: document.getElementById('fair-threat').value,
                 effect: document.getElementById('fair-effect').value,
                 riskType: document.getElementById('fair-risk-type').value,
@@ -1750,6 +1778,7 @@ export const FairWizard = {
             document.getElementById('fair-riskName').value = data.riskName || '';
             document.getElementById('fair-riskDescription').value = data.riskDescription || '';
             document.getElementById('fair-asset').value = data.asset || '';
+            state.quick.selectedAssetRef = data.assetId ? { id: data.assetId } : null;
             document.getElementById('fair-threat').value = data.threat || '';
             document.getElementById('fair-effect').value = data.effect || 'material';
             document.getElementById('fair-risk-type').value = data.riskType || 'amenaza';
