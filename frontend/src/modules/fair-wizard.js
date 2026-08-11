@@ -421,14 +421,13 @@ export const FairWizard = {
             return;
         }
         if (requestId !== this._attackerDefenseRequestId) return; // respuesta vieja, ya superada por otra más nueva
-        const { attackerProfile, defenseProfile, attackerScore, defenseScore, differential } = data;
+        const { attackerProfile, defenseProfile, attackerScore, defenseScore } = data;
 
         // Guardar para trazabilidad (qué supuestos se usaron) y para la sugerencia de rango
         state.fair.attackerKey = attackerKey;
         state.fair.defenseKey = defenseKey;
         state.fair.attackerScore = attackerScore;
         state.fair.defenseScore = defenseScore;
-        state.fair.FAD_raw = differential / 100;
 
         const rowsHTML = (profile) =>
             Object.entries(profile)
@@ -439,14 +438,13 @@ export const FairWizard = {
                 )
                 .join('');
 
-        const diffClass = differential >= 0 ? 'text-red-700' : 'text-green-700';
-        const diffText =
-            differential >= 0 ? 'el atacante supera a tu defensa actual' : 'tu defensa actual supera al atacante';
-
+        // Sin comparación numérica entre los dos (ej. una resta) a propósito — Vulnerabilidad no
+        // es una resta desde el modelo TCap vs. RS (ver updateVulnerabilityAuto abajo), así que
+        // mostrar aquí un "diferencial" invitaba a la misma lectura ingenua que ya se corrigió en
+        // el cálculo real. Esto es solo referencia de qué trae cada perfil elegido.
         summaryEl.innerHTML = `
             <p class="mb-1"><strong>Factor de Amenaza (FA):</strong> ${attackerScore.toFixed(1)}% — ${rowsHTML(attackerProfile)}</p>
             <p class="mb-1"><strong>Nivel de Defensa (ENC):</strong> ${defenseScore.toFixed(1)}% — ${rowsHTML(defenseProfile)}</p>
-            <p class="mt-2 ${diffClass}"><strong>Diferencial Atacante−Defensa:</strong> ${differential.toFixed(1)} puntos (${diffText})</p>
         `;
 
         this.suggestTefRange();

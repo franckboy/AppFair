@@ -72,8 +72,11 @@ function createAutocalcRouter() {
     });
 
     // POST /api/autocalc/attacker-defense-summary { attackerKey, defenseKey }
-    // Devuelve el Factor de Amenaza, Nivel de Defensa y su diferencial — usado
-    // para mostrar el resumen de perfiles sin tener que duplicar la lógica en el front.
+    // Devuelve el Factor de Amenaza y Nivel de Defensa — usado para mostrar el resumen de
+    // perfiles sin tener que duplicar la lógica en el front. Sin ningún diferencial (resta) entre
+    // los dos: Vulnerabilidad no es una resta desde el modelo TCap vs. RS (ver
+    // sampleVulnerabilityFromProfiles, lib/autocalc.js) — devolver esa resta invitaba a leerla
+    // como si lo fuera.
     router.post('/attacker-defense-summary', (req, res) => {
         const { attackerKey, defenseKey } = req.body;
         const attackerProfile = attackerProfiles[attackerKey];
@@ -83,13 +86,7 @@ function createAutocalcRouter() {
         }
         const attackerScore = calculateProfileAverage(attackerProfile);
         const defenseScore = calculateProfileAverage(defenseProfile);
-        res.json({
-            attackerProfile,
-            defenseProfile,
-            attackerScore,
-            defenseScore,
-            differential: attackerScore - defenseScore,
-        });
+        res.json({ attackerProfile, defenseProfile, attackerScore, defenseScore });
     });
 
     // POST /api/autocalc/nash-equilibrium { attackerKey, defenseKey, m, costAttacker, costDefense, lossMagnitudes }
