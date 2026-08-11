@@ -135,9 +135,54 @@ function calculateResidualPortfolio(risks) {
     };
 }
 
+/**
+ * Análisis 80-20 (Pareto) sobre el Riesgo RESIDUAL — mismo criterio que calculateParetoAnalysis
+ * (ordena de mayor a menor, % acumulado, corte del 80%), pero sobre el ALE VIGENTE de cada
+ * Amenaza (el residual de su treatmentDecision si ya adoptó una estrategia, o el inherente si
+ * no — mismo criterio que calculateResidualPortfolio) en vez del inherente puro. Responde una
+ * pregunta distinta a la de calculateParetoAnalysis: esa prioriza "dónde enfocar el esfuerzo de
+ * análisis/tratamiento" ANTES de decidir nada; esta responde "qué riesgos siguen concentrando la
+ * exposición DESPUÉS de tratar" — útil para notar una estrategia ya adoptada que resultó
+ * insuficiente frente al resto del portafolio, o qué riesgo sin tratar es ahora el más urgente.
+ * Mismo filtro que calculateParetoAnalysis (excluye 'oportunidad').
+ *
+ * Devuelve una lista más liviana que calculateParetoAnalysis (solo riskName/residualALE/treated/
+ * cumulativePercent, no el resto de cada entrada) — a propósito: mezclar el residualALE (el
+ * número que aquí importa) con el `ale` inherente de la misma entrada en un solo objeto invitaría
+ * a confundirlos en el frontend.
+ * @param {Array<{riskName:string, riskType?:string, ale:number, treatmentDecision?:{residualALE:number}|null}>} risks
+ */
+function calculateResidualParetoAnalysis(risks) {
+    const threats = risks.filter((r) => r.riskType !== 'oportunidad');
+    const withResidual = threats.map((r) => ({
+        riskName: r.riskName,
+        residualALE: r.treatmentDecision ? r.treatmentDecision.residualALE : r.ale,
+        treated: !!r.treatmentDecision,
+    }));
+    const sorted = [...withResidual].sort((a, b) => b.residualALE - a.residualALE);
+    const total = sorted.reduce((sum, r) => sum + r.residualALE, 0);
+
+    let running = 0;
+    const withCumulative = sorted.map((r) => {
+        running += r.residualALE;
+        return { ...r, cumulativePercent: total > 0 ? (running / total) * 100 : 0 };
+    });
+
+    const idx80 = withCumulative.findIndex((r) => r.cumulativePercent >= 80);
+    const count80 = idx80 === -1 ? sorted.length : idx80 + 1;
+
+    return {
+        risks: withCumulative,
+        totalExposure: total,
+        riskCountFor80Percent: count80,
+        totalRiskCount: sorted.length,
+    };
+}
+
 module.exports = {
     getRiskMatrixZones,
     calculateParetoAnalysis,
     calculateConsolidatedSensitivity,
     calculateResidualPortfolio,
+    calculateResidualParetoAnalysis,
 };

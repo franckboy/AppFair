@@ -41,6 +41,9 @@ export const FairRegister = {
             // Riesgo Residual del Portafolio (ver App.RiskManagement.renderResidualPortfolio) —
             // ya viene calculado del lado del servidor, sin llamada de red aparte.
             state.fair.registerResidualPortfolio = registerData.residualPortfolio || null;
+            // Pareto sobre el Riesgo RESIDUAL (ver App.RiskManagement.renderResidualPareto) —
+            // mismo criterio: ya viene calculado del lado del servidor.
+            state.fair.registerResidualPareto = registerData.residualPareto || null;
             // Tabla concentrada: fusiona los riesgos de Análisis Rápido (/api/risks, pueden
             // no tener simulación FAIR todavía) con los ya simulados (state.fair.riskRegister)
             // — ver buildConcentratedList(). El resto (mapa de calor, Pareto, sensibilidad

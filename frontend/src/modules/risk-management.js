@@ -1,6 +1,6 @@
 import { App } from './app-namespace.js';
 import { state } from './state.js';
-import { debounce, severityToClasses, showToast } from './utils.js';
+import { debounce, sanitizeHTML, severityToClasses, showToast } from './utils.js';
 import { STRATEGY_LABELS } from './treatment.js';
 
 // ============================================================
@@ -99,6 +99,7 @@ export const RiskManagement = {
         content.classList.remove('hidden');
 
         this.renderResidualPortfolio();
+        this.renderResidualPareto();
 
         const currentValue = riskNameToSelect || select.value;
         select.innerHTML = risks
@@ -158,6 +159,46 @@ export const RiskManagement = {
             section.className = 'p-4 rounded-lg mb-4 border-l-4 bg-gray-50 border-gray-400 text-gray-700';
             document.getElementById('riskmgmt-portfolio-badge').textContent = 'Clasificación no disponible';
         }
+    },
+
+    // Concentración del Riesgo RESIDUAL (Pareto) — a diferencia del Pareto de Registro de
+    // Riesgos (App.FairRegister.renderParetoChart, sobre el ALE INHERENTE), este ordena por el
+    // ALE residual vigente de cada Amenaza (ver calculateResidualParetoAnalysis, backend). Mismo
+    // criterio que renderResidualPortfolio: ya viene calculado del lado del servidor, se llama
+    // una sola vez aquí (no depende de qué riesgo esté elegido abajo), sin llamada de red propia.
+    // Se muestra como tabla (no un gráfico Chart.js como el de Registro) — proporcional al resto
+    // de esta página, que hasta ahora no usa gráficos.
+    renderResidualPareto() {
+        const section = document.getElementById('riskmgmt-residual-pareto-section');
+        const pareto = state.fair.registerResidualPareto;
+
+        if (!pareto || pareto.totalRiskCount === 0) {
+            section.classList.add('hidden');
+            return;
+        }
+        section.classList.remove('hidden');
+
+        const formatCurrency = (value) =>
+            new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
+
+        document.getElementById('riskmgmt-residual-pareto-summary').textContent =
+            `${pareto.riskCountFor80Percent} de ${pareto.totalRiskCount} riesgo(s) concentran el 80% de tu exposición residual (${formatCurrency(pareto.totalExposure)}/año).`;
+
+        // Solo hasta el corte del 80% (riskCountFor80Percent) — son los que de verdad importa
+        // priorizar; listar el resto no aporta a la pregunta que responde este Pareto.
+        const topRisks = pareto.risks.slice(0, pareto.riskCountFor80Percent);
+        document.getElementById('riskmgmt-residual-pareto-tbody').innerHTML = topRisks
+            .map(
+                (r, i) => `
+                <tr class="border-b last:border-0">
+                    <td class="py-1 pr-2">${i + 1}</td>
+                    <td class="py-1 pr-2">${sanitizeHTML(r.riskName)}</td>
+                    <td class="py-1 pr-2">${formatCurrency(r.residualALE)}</td>
+                    <td class="py-1 pr-2">${r.cumulativePercent.toFixed(1)}%</td>
+                    <td class="py-1 pr-2">${r.treated ? '<span class="text-green-700">Tratado</span>' : '<span class="text-amber-700">Sin tratar</span>'}</td>
+                </tr>`,
+            )
+            .join('');
     },
 
     selectRisk(riskName) {

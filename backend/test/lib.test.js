@@ -30,7 +30,11 @@ const {
 } = require('../src/lib/treatment');
 const { evaluateFairThreat } = require('../src/lib/evaluation');
 const { normalizeRiskCriteria, validateRiskCriteriaOverride } = require('../src/lib/riskCriteria');
-const { calculateParetoAnalysis, calculateResidualPortfolio } = require('../src/lib/register');
+const {
+    calculateParetoAnalysis,
+    calculateResidualPortfolio,
+    calculateResidualParetoAnalysis,
+} = require('../src/lib/register');
 const { sampleActivatedTransitions, walkMarkovChain } = require('../src/lib/markov');
 const { buildFamilySubtree, runFamilyCascadeSimulation, MAX_FAMILY_SIZE } = require('../src/lib/cascadeSimulation');
 const {
@@ -1367,6 +1371,46 @@ test('calculateResidualPortfolio: portafolio sin ninguna Amenaza da totalRiskCou
     assert.strictEqual(portfolio.totalResidualCVaR, null);
     assert.strictEqual(portfolio.treatedCount, 0);
     assert.strictEqual(portfolio.untreatedCount, 0);
+});
+
+test('calculateResidualParetoAnalysis: ordena por ALE RESIDUAL, no por el inherente — un riesgo tratado puede caer en el ranking', () => {
+    const risks = [
+        // Inherente más alto, pero mitigado a un residual chico — debe quedar SEGUNDO en el
+        // ranking residual, aunque calculateParetoAnalysis (inherente) lo pondría primero.
+        {
+            riskName: 'Grande pero tratado',
+            riskType: 'amenaza',
+            ale: 900000,
+            treatmentDecision: { strategy: 'mitigar', residualALE: 10000 },
+        },
+        { riskName: 'Mediano sin tratar', riskType: 'amenaza', ale: 100000, treatmentDecision: null },
+    ];
+    const residualPareto = calculateResidualParetoAnalysis(risks);
+    assert.strictEqual(residualPareto.risks[0].riskName, 'Mediano sin tratar');
+    assert.strictEqual(residualPareto.risks[0].residualALE, 100000);
+    assert.strictEqual(residualPareto.risks[0].treated, false);
+    assert.strictEqual(residualPareto.risks[1].riskName, 'Grande pero tratado');
+    assert.strictEqual(residualPareto.risks[1].residualALE, 10000);
+    assert.strictEqual(residualPareto.risks[1].treated, true);
+    assert.strictEqual(residualPareto.totalExposure, 110000);
+});
+
+test('calculateResidualParetoAnalysis: excluye riesgos tipo "oportunidad", igual que calculateParetoAnalysis', () => {
+    const risks = [
+        { riskName: 'Amenaza', riskType: 'amenaza', ale: 40000, treatmentDecision: null },
+        { riskName: 'Oportunidad', riskType: 'oportunidad', ale: 500000, treatmentDecision: null },
+    ];
+    const residualPareto = calculateResidualParetoAnalysis(risks);
+    assert.strictEqual(residualPareto.totalRiskCount, 1);
+    assert.ok(!residualPareto.risks.some((r) => r.riskName === 'Oportunidad'));
+});
+
+test('calculateResidualParetoAnalysis: portafolio sin ninguna Amenaza da totalRiskCount 0 y totalExposure 0', () => {
+    const risks = [{ riskName: 'Solo oportunidad', riskType: 'oportunidad', ale: 100000 }];
+    const residualPareto = calculateResidualParetoAnalysis(risks);
+    assert.strictEqual(residualPareto.totalRiskCount, 0);
+    assert.strictEqual(residualPareto.totalExposure, 0);
+    assert.deepStrictEqual(residualPareto.risks, []);
 });
 
 // --- Validación estadística del muestreador triangular ---

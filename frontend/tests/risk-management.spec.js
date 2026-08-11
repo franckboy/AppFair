@@ -230,4 +230,76 @@ test.describe('Gestión de Riesgos (página aparte)', () => {
             `${beforeTreated + 1} de ${beforeTotal + 2} amenazas con tratamiento adoptado`,
         );
     });
+
+    test('la Concentración del Riesgo Residual (Pareto) rankea un riesgo grande pero ya mitigado DEBAJO de uno mediano sin tratar', async ({
+        page,
+    }) => {
+        await connectAndBoot(page);
+        await runFullFairAnalysis(page, 'E2E Pareto Residual — Grande Mitigado');
+        await connectAndBoot(page);
+        await runFullFairAnalysis(page, 'E2E Pareto Residual — Mediano Sin Tratar');
+
+        // ale/cvar95 deterministas — el "grande" (900,000) vale casi 10x el "mediano" (100,000)
+        // en términos INHERENTES, así que el Pareto de Registro de Riesgos lo pondría primero.
+        await page.evaluate(async () => {
+            const res = await fetch('http://localhost:3000/api/register', { headers: { 'X-API-Key': 'test-e2e-key' } });
+            const data = await res.json();
+            const big = data.risks.find((r) => r.riskName === 'E2E Pareto Residual — Grande Mitigado');
+            const medium = data.risks.find((r) => r.riskName === 'E2E Pareto Residual — Mediano Sin Tratar');
+            await fetch(`http://localhost:3000/api/register/${encodeURIComponent(big.riskName)}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', 'X-API-Key': 'test-e2e-key' },
+                body: JSON.stringify({ ...big, ale: 900000, cvar95: 1500000 }),
+            });
+            await fetch(`http://localhost:3000/api/register/${encodeURIComponent(medium.riskName)}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', 'X-API-Key': 'test-e2e-key' },
+                body: JSON.stringify({ ...medium, ale: 100000, cvar95: 180000 }),
+            });
+        });
+        await page.reload({ waitUntil: 'networkidle' });
+
+        // Adoptar Mitigar en el "grande" (95% via override manual) — deja residualALE=45000,
+        // muy por debajo del residual del "mediano" (100,000, sin tratar) — el Pareto RESIDUAL
+        // debe invertir el orden que tendría el Pareto INHERENTE.
+        await page.click('#nav-treatment');
+        await page.waitForTimeout(500);
+        await page.selectOption('#treatment-risk-select', 'E2E Pareto Residual — Grande Mitigado');
+        await page.waitForTimeout(500);
+        await page.check('#fair-reduccionALE-manual-override');
+        await page.waitForTimeout(200);
+        await page.fill('#fair-reduccionALE', '95');
+        await page.waitForTimeout(1000);
+        await page.click('#treatment-adopt-mitigar-btn');
+        await page.waitForTimeout(800);
+
+        // El Registro es compartido por toda la suite (ver el test de arriba) — comparar por
+        // ÍNDICE relativo entre estas dos entradas dentro de residualPareto.risks, no por
+        // posición absoluta, es válido sin importar cuántos otros riesgos ya existan.
+        const residualPareto = await page.evaluate(async () => {
+            const res = await fetch('http://localhost:3000/api/register', { headers: { 'X-API-Key': 'test-e2e-key' } });
+            return (await res.json()).residualPareto;
+        });
+        const idxBig = residualPareto.risks.findIndex((r) => r.riskName === 'E2E Pareto Residual — Grande Mitigado');
+        const idxMedium = residualPareto.risks.findIndex(
+            (r) => r.riskName === 'E2E Pareto Residual — Mediano Sin Tratar',
+        );
+        expect(idxBig).toBeGreaterThanOrEqual(0);
+        expect(idxMedium).toBeGreaterThanOrEqual(0);
+        expect(residualPareto.risks[idxBig].residualALE).toBeCloseTo(45000, 0);
+        expect(residualPareto.risks[idxBig].treated).toBe(true);
+        expect(residualPareto.risks[idxMedium].residualALE).toBe(100000);
+        expect(residualPareto.risks[idxMedium].treated).toBe(false);
+        expect(idxMedium).toBeLessThan(idxBig);
+
+        // El resumen del panel de Gestión de Riesgos se deriva 1:1 de residualPareto, ya
+        // recalculado — se compara contra ese mismo dato en vez de un número fijo.
+        const expectedSummary = `${residualPareto.riskCountFor80Percent} de ${residualPareto.totalRiskCount} riesgo(s) concentran el 80% de tu exposición residual (${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(residualPareto.totalExposure)}/año).`;
+
+        await page.click('#nav-risk-mgmt');
+        await page.waitForTimeout(1000);
+
+        await expect(page.locator('#riskmgmt-residual-pareto-section')).toBeVisible();
+        await expect(page.locator('#riskmgmt-residual-pareto-summary')).toHaveText(expectedSummary);
+    });
 });

@@ -921,6 +921,28 @@
                             <p id="riskmgmt-portfolio-cvar-note" class="text-xs text-gray-500 mt-1 hidden"></p>
                         </div>
 
+                        <div id="riskmgmt-residual-pareto-section" class="p-4 rounded-lg mb-4 border bg-gray-50 hidden">
+                            <h4 class="font-semibold mb-1">
+                                Concentración del Riesgo Residual (Pareto)
+                                <i class="fas fa-info-circle text-blue-500 cursor-pointer ml-1" title="A diferencia del Pareto de Registro de Riesgos (sobre el ALE INHERENTE, antes de decidir nada), este ordena por el ALE RESIDUAL vigente de cada Amenaza — útil para notar una estrategia ya adoptada que resultó insuficiente, o qué riesgo sin tratar es ahora el más urgente."></i>
+                            </h4>
+                            <p id="riskmgmt-residual-pareto-summary" class="text-sm mb-2"></p>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-sm">
+                                    <thead>
+                                        <tr class="text-left text-gray-500 border-b">
+                                            <th class="py-1 pr-2">#</th>
+                                            <th class="py-1 pr-2">Riesgo</th>
+                                            <th class="py-1 pr-2">ALE Residual</th>
+                                            <th class="py-1 pr-2">% Acumulado</th>
+                                            <th class="py-1 pr-2">Estado</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="riskmgmt-residual-pareto-tbody"></tbody>
+                                </table>
+                            </div>
+                        </div>
+
                         <div class="input-group max-w-lg">
                             <label for="riskmgmt-risk-select">Riesgo a gestionar:</label>
                             <select id="riskmgmt-risk-select" class="form-select"></select>

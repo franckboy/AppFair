@@ -6,6 +6,7 @@ const {
     calculateParetoAnalysis,
     calculateConsolidatedSensitivity,
     calculateResidualPortfolio,
+    calculateResidualParetoAnalysis,
 } = require('../lib/register');
 const { evaluateFairThreat } = require('../lib/evaluation');
 const { defaultRiskCriteria } = require('../data/profiles');
@@ -44,6 +45,7 @@ function createRegisterRouter(store) {
                     consolidatedSensitivity: [],
                     heatmapZones: getRiskMatrixZones(criteria.rrtBands),
                     residualPortfolio: null,
+                    residualPareto: null,
                 });
             }
 
@@ -60,6 +62,7 @@ function createRegisterRouter(store) {
             } else {
                 residualPortfolio.evaluation = null;
             }
+            const residualPareto = calculateResidualParetoAnalysis(risks);
 
             res.json({
                 risks,
@@ -67,6 +70,7 @@ function createRegisterRouter(store) {
                 consolidatedSensitivity,
                 heatmapZones: getRiskMatrixZones(criteria.rrtBands),
                 residualPortfolio,
+                residualPareto,
             });
         }),
     );
