@@ -29,7 +29,7 @@ const { lossFormsKeys, lossFormsLabels } = require('../data/profiles');
  *        sin tener que tocar el resto del motor. Debe devolver un decimal en [0,1] (no
  *        porcentaje), y consumir el mismo `rng` que se le pasa (para que la corrida siga siendo
  *        reproducible con una semilla).
- * @returns {{annualLosses:number[], usedSeed:number, sensitivity:Array, lefSamples:number[]}}
+ * @returns {{annualLosses:number[], usedSeed:number, sensitivity:Array, lefSamples:number[], magnitudeSamples:number[]}}
  */
 function runMonteCarloSimulation({ iterations, seed, tef, vuln, lossMagnitudes, sampleVuln }) {
     const usedSeed = seed && seed > 0 ? seed : Math.floor(Math.random() * 2147483647);
@@ -50,6 +50,14 @@ function runMonteCarloSimulation({ iterations, seed, tef, vuln, lossMagnitudes, 
     // (ver runFamilyCascadeSimulation: P(activado) = 1 − e^(−LEF)). No cambia ningún resultado
     // existente — es la misma variable que ya se calculaba, solo que antes se descartaba.
     const lefSamples = new Array(iterations);
+    // Magnitud de pérdida total (lm_i) por iteración, ANTES de multiplicarla por lef_i — mismo
+    // criterio que lefSamples arriba: no se usa para nada dentro de esta función (annualLosses ya
+    // lo consume internamente), se expone porque cascadeSimulation.js la necesita para sumar SOLO
+    // la magnitud del evento cuando un riesgo hijo ya se activó (ver el comentario en
+    // runFamilyCascadeSimulation: sumar lef_i×lm_i otra vez ahí descontaría el LEF dos veces, una
+    // para decidir si el evento ocurrió y otra dentro del monto sumado). No cambia ningún
+    // resultado existente.
+    const magnitudeSamples = new Array(iterations);
     const lmSamples = activeKeys.map(() => new Array(iterations));
 
     for (let i = 0; i < iterations; i++) {
@@ -67,12 +75,13 @@ function runMonteCarloSimulation({ iterations, seed, tef, vuln, lossMagnitudes, 
         tefSamples[i] = tef_i;
         vulnSamples[i] = vuln_i;
         lefSamples[i] = lef_i;
+        magnitudeSamples[i] = lm_i;
         annualLosses[i] = lef_i * lm_i;
     }
 
     const sensitivity = calculateSensitivity(annualLosses, tefSamples, vulnSamples, lmSamples, activeKeys);
 
-    return { annualLosses, usedSeed, sensitivity, lefSamples };
+    return { annualLosses, usedSeed, sensitivity, lefSamples, magnitudeSamples };
 }
 
 /** Correlación de Pearson entre dos arreglos numéricos del mismo largo. */

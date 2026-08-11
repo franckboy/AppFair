@@ -260,6 +260,44 @@ test('runFamilyCascadeSimulation: la pérdida de familia (raíz + hijo forzado) 
     );
 });
 
+test('runFamilyCascadeSimulation: un hijo activado aporta su magnitud, no magnitud×LEF otra vez (regresión)', () => {
+    // Regresión del bug real: un riesgo hijo activado sumaba analyzed.annualLosses[i]
+    // (=lef_i×lm_i), el mismo lef_i que ya se había usado para decidir SI se activaba (pOwn =
+    // 1-e^(-lef_i)) — la frecuencia se descontaba dos veces. Se aísla el efecto con magnitudes
+    // FIJAS (min=mode=max, cero varianza — ver getLognormalRandom/getTriangularRandom en
+    // random.js, ambas devuelven exactamente `min` cuando min===max) y sin cascada forzada
+    // (triggeredByProbability: 0, el hijo se activa SOLO por su propio LEF): así
+    // familyAnnualLosses[i] es exactamente $0 (raíz, magnitud fija en 0) o $1,000,000 (hijo
+    // activado, magnitud fija en 1,000,000) cada iteración — el promedio DEBE ser exactamente
+    // activationRate × 1,000,000, sin margen estadístico. Antes del fix, el hijo aportaba
+    // lef_i×1,000,000 en vez de 1,000,000 completo al activarse — mucho menos que lo esperado.
+    const register = [
+        {
+            riskName: 'Raiz',
+            riskType: 'amenaza',
+            tef: { min: 5, mode: 8, max: 12 },
+            vuln: { min: 40, mode: 50, max: 60 },
+            lossMagnitudes: { productividad: { min: 0, mode: 0, max: 0 } },
+        },
+        {
+            riskName: 'Hijo',
+            riskType: 'amenaza',
+            triggeredByRiskName: 'Raiz',
+            triggeredByProbability: 0,
+            tef: { min: 0.05, mode: 0.1, max: 0.2 },
+            vuln: { min: 80, mode: 90, max: 100 },
+            lossMagnitudes: { productividad: { min: 1000000, mode: 1000000, max: 1000000 } },
+        },
+    ];
+    const result = runFamilyCascadeSimulation({ rootRiskName: 'Raiz', register, iterations: 20000, seed: 4242 });
+    const avgFamily = result.familyAnnualLosses.reduce((a, b) => a + b, 0) / result.familyAnnualLosses.length;
+    const expected = (result.activationRates['Hijo'] / 100) * 1000000;
+    assert.ok(
+        Math.abs(avgFamily - expected) < 1,
+        `avgFamily (${avgFamily}) debería ser activationRate × magnitud fija (${expected}) — no magnitud × LEF otra vez`,
+    );
+});
+
 test('runFamilyCascadeSimulation: es reproducible con la misma semilla', () => {
     const runA = runFamilyCascadeSimulation({
         rootRiskName: 'Incendio',
@@ -505,6 +543,26 @@ test('runMonteCarloSimulation es reproducible con la misma semilla', () => {
     const runA = runMonteCarloSimulation(params);
     const runB = runMonteCarloSimulation(params);
     assert.deepStrictEqual(runA.annualLosses, runB.annualLosses);
+});
+
+test('runMonteCarloSimulation: magnitudeSamples es lm_i sin escalar por LEF (annualLosses = lefSamples × magnitudeSamples)', () => {
+    // Ancla el split que cascadeSimulation.js necesita (ver runFamilyCascadeSimulation): sumar
+    // magnitudeSamples[i] en vez de annualLosses[i] para un riesgo hijo ya activado solo es
+    // correcto si de verdad se cumple esta identidad — que magnitudeSamples es lm_i SIN el lef_i
+    // ya aplicado (annualLosses ya lo trae adentro).
+    const result = runMonteCarloSimulation({
+        iterations: 2000,
+        seed: 4242,
+        tef: { min: 5, mode: 10, max: 20 },
+        vuln: { min: 20, mode: 30, max: 40 },
+        lossMagnitudes: { productividad: { min: 30000, mode: 50000, max: 70000 } },
+    });
+    result.annualLosses.forEach((loss, i) => {
+        assert.ok(
+            Math.abs(loss - result.lefSamples[i] * result.magnitudeSamples[i]) < 1e-6,
+            `iteración ${i}: annualLosses (${loss}) debería ser lefSamples×magnitudeSamples (${result.lefSamples[i] * result.magnitudeSamples[i]})`,
+        );
+    });
 });
 
 test('runMonteCarloSimulation: sin sampleVuln, el comportamiento es idéntico bit a bit al de antes de que ese parámetro existiera', () => {
