@@ -30,7 +30,7 @@ const {
 } = require('../src/lib/treatment');
 const { evaluateFairThreat } = require('../src/lib/evaluation');
 const { normalizeRiskCriteria, validateRiskCriteriaOverride } = require('../src/lib/riskCriteria');
-const { calculateParetoAnalysis } = require('../src/lib/register');
+const { calculateParetoAnalysis, calculateResidualPortfolio } = require('../src/lib/register');
 const { sampleActivatedTransitions, walkMarkovChain } = require('../src/lib/markov');
 const { buildFamilySubtree, runFamilyCascadeSimulation, MAX_FAMILY_SIZE } = require('../src/lib/cascadeSimulation');
 const {
@@ -1309,6 +1309,64 @@ test('calculateParetoAnalysis: un riesgo sin riskType (guardado antes de que exi
     const pareto = calculateParetoAnalysis(risks);
     assert.strictEqual(pareto.totalExposure, 80000);
     assert.strictEqual(pareto.totalRiskCount, 1);
+});
+
+test('calculateResidualPortfolio: mezcla de riesgos tratados/sin tratar usa el residual/inherente correcto', () => {
+    const risks = [
+        {
+            riskName: 'Tratado',
+            riskType: 'amenaza',
+            ale: 100000,
+            cvar95: 200000,
+            treatmentDecision: { strategy: 'mitigar', residualALE: 30000, residualCVaR: 60000 },
+        },
+        { riskName: 'Sin tratar', riskType: 'amenaza', ale: 50000, cvar95: 90000, treatmentDecision: null },
+    ];
+    const portfolio = calculateResidualPortfolio(risks);
+    assert.strictEqual(portfolio.totalResidualALE, 30000 + 50000);
+    assert.strictEqual(portfolio.totalResidualCVaR, 60000 + 90000);
+    assert.strictEqual(portfolio.cvarRiskCount, 2);
+    assert.strictEqual(portfolio.cvarSkippedCount, 0);
+    assert.strictEqual(portfolio.treatedCount, 1);
+    assert.strictEqual(portfolio.untreatedCount, 1);
+    assert.strictEqual(portfolio.totalRiskCount, 2);
+});
+
+test('calculateResidualPortfolio: una decisión Transferir (sin residualCVaR) se excluye de la suma de CVaR pero SÍ cuenta en la de ALE', () => {
+    const risks = [
+        {
+            riskName: 'Transferido',
+            riskType: 'amenaza',
+            ale: 80000,
+            cvar95: 150000,
+            treatmentDecision: { strategy: 'transferir', residualALE: 20000 },
+        },
+    ];
+    const portfolio = calculateResidualPortfolio(risks);
+    assert.strictEqual(portfolio.totalResidualALE, 20000);
+    assert.strictEqual(portfolio.totalResidualCVaR, null);
+    assert.strictEqual(portfolio.cvarRiskCount, 0);
+    assert.strictEqual(portfolio.cvarSkippedCount, 1);
+});
+
+test('calculateResidualPortfolio: excluye riesgos tipo "oportunidad", igual que calculateParetoAnalysis', () => {
+    const risks = [
+        { riskName: 'Amenaza', riskType: 'amenaza', ale: 40000, cvar95: 70000, treatmentDecision: null },
+        { riskName: 'Oportunidad', riskType: 'oportunidad', ale: 500000, cvar95: 900000, treatmentDecision: null },
+    ];
+    const portfolio = calculateResidualPortfolio(risks);
+    assert.strictEqual(portfolio.totalResidualALE, 40000);
+    assert.strictEqual(portfolio.totalRiskCount, 1);
+});
+
+test('calculateResidualPortfolio: portafolio sin ninguna Amenaza da totalRiskCount 0 y CVaR null', () => {
+    const risks = [{ riskName: 'Solo oportunidad', riskType: 'oportunidad', ale: 100000, cvar95: 150000 }];
+    const portfolio = calculateResidualPortfolio(risks);
+    assert.strictEqual(portfolio.totalRiskCount, 0);
+    assert.strictEqual(portfolio.totalResidualALE, 0);
+    assert.strictEqual(portfolio.totalResidualCVaR, null);
+    assert.strictEqual(portfolio.treatedCount, 0);
+    assert.strictEqual(portfolio.untreatedCount, 0);
 });
 
 // --- Validación estadística del muestreador triangular ---

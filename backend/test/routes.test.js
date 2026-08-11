@@ -639,6 +639,14 @@ test('POST /api/treatment/evaluate con costo negativo responde 400', async () =>
 
 // --- Registro de Riesgos ---
 
+test('GET /api/register con el Registro vacío: pareto y residualPortfolio son null (aún no se guardó ningún riesgo en esta suite)', async () => {
+    const getRes = await request(app).get('/api/register').set('X-API-Key', TEST_API_KEY);
+    assert.strictEqual(getRes.status, 200);
+    assert.deepStrictEqual(getRes.body.risks, []);
+    assert.strictEqual(getRes.body.pareto, null);
+    assert.strictEqual(getRes.body.residualPortfolio, null);
+});
+
 test('flujo completo del Registro: PUT crea, GET lo lista, DELETE lo quita', async () => {
     const riskName = 'Riesgo de prueba HTTP';
 
@@ -666,6 +674,48 @@ test('flujo completo del Registro: PUT crea, GET lo lista, DELETE lo quita', asy
 
     const getRes2 = await request(app).get('/api/register').set('X-API-Key', TEST_API_KEY);
     assert.ok(!getRes2.body.risks.some((r) => r.riskName === riskName));
+});
+
+test('GET /api/register: residualPortfolio agrega el residual vigente (tratado + inherente) y clasifica el agregado', async () => {
+    const treatedName = 'Riesgo tratado para portafolio';
+    const untreatedName = 'Riesgo sin tratar para portafolio';
+
+    await request(app)
+        .put(`/api/register/${encodeURIComponent(treatedName)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            ale: 100000,
+            cvar95: 200000,
+            evaluationLevel: 'Riesgo Alto',
+            treatmentDecision: {
+                strategy: 'mitigar',
+                residualALE: 30000,
+                residualCVaR: 60000,
+                decidedAt: new Date().toISOString(),
+            },
+        });
+    await request(app)
+        .put(`/api/register/${encodeURIComponent(untreatedName)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ale: 50000, cvar95: 90000, evaluationLevel: 'Riesgo Medio' });
+
+    const getRes = await request(app).get('/api/register').set('X-API-Key', TEST_API_KEY);
+    assert.strictEqual(getRes.status, 200);
+    const portfolio = getRes.body.residualPortfolio;
+    assert.ok(portfolio, 'con al menos un riesgo Amenaza guardado, debe venir el residual del portafolio');
+    assert.strictEqual(portfolio.totalResidualALE, 30000 + 50000);
+    assert.strictEqual(portfolio.totalResidualCVaR, 60000 + 90000);
+    assert.strictEqual(portfolio.treatedCount, 1);
+    assert.strictEqual(portfolio.untreatedCount, 1);
+    assert.ok(portfolio.evaluation, 'con datos de CVaR disponibles, debe venir clasificado');
+    assert.ok(portfolio.evaluation.level);
+
+    await request(app)
+        .delete(`/api/register/${encodeURIComponent(treatedName)}`)
+        .set('X-API-Key', TEST_API_KEY);
+    await request(app)
+        .delete(`/api/register/${encodeURIComponent(untreatedName)}`)
+        .set('X-API-Key', TEST_API_KEY);
 });
 
 test('PUT /api/register/:riskName con riskCriteriaOverride lo persiste y lo usa para impactPercent', async () => {

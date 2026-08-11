@@ -81,4 +81,63 @@ function calculateConsolidatedSensitivity(risks, topN = 8) {
         .slice(0, topN);
 }
 
-module.exports = { getRiskMatrixZones, calculateParetoAnalysis, calculateConsolidatedSensitivity };
+/**
+ * Riesgo Residual del Portafolio: agrega el ALE/CVaR VIGENTE de cada riesgo tipo Amenaza —
+ * el residual de su treatmentDecision si ya adoptó una estrategia (ver
+ * App.RiskManagement.renderResidualStatus, mismo criterio aplicado ahí riesgo por riesgo), o el
+ * ALE/CVaR inherente si todavía no decidió nada. Mismo filtro que calculateParetoAnalysis
+ * (excluye 'oportunidad' — su ale es un beneficio, no una pérdida, no pertenece a un total de
+ * exposición).
+ *
+ * El CVaR95 total es una aproximación CONSERVADORA, no un valor exacto: CVaR95 es una medida de
+ * riesgo coherente, por lo que es subaditiva (CVaR de la suma <= suma de los CVaR individuales)
+ * salvo en el caso especial de dependencia perfecta. Sumar los CVaR95 de riesgos independientes
+ * sobreestima la cola real del portafolio — nunca la subestima — así que sigue siendo seguro
+ * usarlo como cota superior, pero no se debe presentar como "el CVaR95 real del portafolio".
+ *
+ * No todas las decisiones tienen residualCVaR (ej. Transferir no lo calcula — ver
+ * evaluateTreatmentStrategies) — esos riesgos se excluyen de la suma de CVaR (cvarSkippedCount)
+ * pero SÍ entran en la suma de ALE, que sí está siempre disponible.
+ * @param {Array<{riskType?:string, ale:number, cvar95?:number, treatmentDecision?:{residualALE:number, residualCVaR?:number}|null}>} risks
+ */
+function calculateResidualPortfolio(risks) {
+    const threats = risks.filter((r) => r.riskType !== 'oportunidad');
+
+    let totalResidualALE = 0;
+    let totalResidualCVaR = 0;
+    let cvarRiskCount = 0;
+    let cvarSkippedCount = 0;
+    let treatedCount = 0;
+
+    threats.forEach((r) => {
+        const decision = r.treatmentDecision;
+        const residualALE = decision ? decision.residualALE : r.ale;
+        totalResidualALE += residualALE;
+        if (decision) treatedCount += 1;
+
+        const residualCVaR = decision ? decision.residualCVaR : r.cvar95;
+        if (typeof residualCVaR === 'number') {
+            totalResidualCVaR += residualCVaR;
+            cvarRiskCount += 1;
+        } else {
+            cvarSkippedCount += 1;
+        }
+    });
+
+    return {
+        totalResidualALE,
+        totalResidualCVaR: cvarRiskCount > 0 ? totalResidualCVaR : null,
+        cvarRiskCount,
+        cvarSkippedCount,
+        treatedCount,
+        untreatedCount: threats.length - treatedCount,
+        totalRiskCount: threats.length,
+    };
+}
+
+module.exports = {
+    getRiskMatrixZones,
+    calculateParetoAnalysis,
+    calculateConsolidatedSensitivity,
+    calculateResidualPortfolio,
+};

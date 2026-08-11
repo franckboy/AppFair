@@ -160,4 +160,74 @@ test.describe('Gestión de Riesgos (página aparte)', () => {
         expect(monthsAhead).toBeGreaterThanOrEqual(11);
         expect(monthsAhead).toBeLessThanOrEqual(12);
     });
+
+    test('el Riesgo Residual del Portafolio agrega el residual de un riesgo tratado con el inherente de uno sin tratar', async ({
+        page,
+    }) => {
+        // El Registro es compartido por TODA la suite E2E, sin aislamiento (ver playwright.config.js)
+        // — para cuando este test corre, ya puede haber otros riesgos guardados por specs
+        // anteriores. Se toma el total ANTES de agregar los 2 propios y se verifica el DELTA que
+        // deberían aportar, en vez de asumir que el total absoluto es solo el de este test.
+        const before = await page.evaluate(async () => {
+            const res = await fetch('http://localhost:3000/api/register', { headers: { 'X-API-Key': 'test-e2e-key' } });
+            return (await res.json()).residualPortfolio;
+        });
+        const beforeALE = before ? before.totalResidualALE : 0;
+        const beforeCVaR = before ? before.totalResidualCVaR || 0 : 0;
+        const beforeTreated = before ? before.treatedCount : 0;
+        const beforeTotal = before ? before.totalRiskCount : 0;
+
+        await connectAndBoot(page);
+        await runFullFairAnalysis(page, 'E2E Portafolio — Riesgo Tratado');
+        await connectAndBoot(page);
+        await runFullFairAnalysis(page, 'E2E Portafolio — Riesgo Sin Tratar');
+
+        // ale/cvar95 deterministas en ambos (mismo patrón que el test de residual de arriba).
+        await page.evaluate(async () => {
+            const res = await fetch('http://localhost:3000/api/register', { headers: { 'X-API-Key': 'test-e2e-key' } });
+            const data = await res.json();
+            const entry1 = data.risks.find((r) => r.riskName === 'E2E Portafolio — Riesgo Tratado');
+            const entry2 = data.risks.find((r) => r.riskName === 'E2E Portafolio — Riesgo Sin Tratar');
+            await fetch(`http://localhost:3000/api/register/${encodeURIComponent(entry1.riskName)}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', 'X-API-Key': 'test-e2e-key' },
+                body: JSON.stringify({ ...entry1, ale: 100000, cvar95: 200000 }),
+            });
+            await fetch(`http://localhost:3000/api/register/${encodeURIComponent(entry2.riskName)}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', 'X-API-Key': 'test-e2e-key' },
+                body: JSON.stringify({ ...entry2, ale: 50000, cvar95: 90000 }),
+            });
+        });
+        await page.reload({ waitUntil: 'networkidle' });
+
+        // Adoptar Mitigar en el primero (95% via override manual) — deja residualALE=5000,
+        // residualCVaR=10000. El segundo se queda sin decisión (residual = inherente).
+        await page.click('#nav-treatment');
+        await page.waitForTimeout(500);
+        await page.selectOption('#treatment-risk-select', 'E2E Portafolio — Riesgo Tratado');
+        await page.waitForTimeout(500);
+        await page.check('#fair-reduccionALE-manual-override');
+        await page.fill('#fair-reduccionALE', '95');
+        await page.waitForTimeout(1000);
+        await page.click('#treatment-adopt-mitigar-btn');
+        await page.waitForTimeout(800);
+
+        // ALE: 5000 (residual del tratado) + 50000 (inherente del sin tratar) = 55000 de aporte.
+        // CVaR95: 10000 (residual) + 90000 (inherente) = 100000 de aporte — cota conservadora.
+        const expectedALE = beforeALE + 55000;
+        const expectedCVaR = beforeCVaR + 100000;
+        const formatCurrency = (value) =>
+            new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
+
+        await page.click('#nav-risk-mgmt');
+        await page.waitForTimeout(1000);
+
+        await expect(page.locator('#riskmgmt-portfolio-section')).toBeVisible();
+        await expect(page.locator('#riskmgmt-portfolio-ale')).toHaveText(formatCurrency(expectedALE));
+        await expect(page.locator('#riskmgmt-portfolio-cvar')).toHaveText(formatCurrency(expectedCVaR));
+        await expect(page.locator('#riskmgmt-portfolio-detail')).toContainText(
+            `${beforeTreated + 1} de ${beforeTotal + 2} amenazas con tratamiento adoptado`,
+        );
+    });
 });
