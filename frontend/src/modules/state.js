@@ -70,6 +70,13 @@ export const state = {
         // adoptStrategy() lee de aquí el residualALE ya calculado de la estrategia elegida, sin
         // volver a pedirlo. null hasta la primera evaluación del riesgo actual.
         lastResult: null,
+        // Residual REAL de Mitigar (ALE/CVaR), obtenidos re-simulando con el Nivel de Defensa
+        // Objetivo (ver updateReduccionALEAuto/calculateResidualFromSimulation) — se mandan tal
+        // cual a /api/treatment/evaluate en vez de dejar que derive el residual de reductionPercent
+        // × currentALE/currentCVaR. null en modo manual (sin perfil objetivo que simular) o antes
+        // del primer autocálculo.
+        mitigarResidualALE: null,
+        mitigarResidualCVaR: null,
     },
     // Gestión de Riesgos (Gobernanza/Revisión + Plan de Seguridad) — página aparte (ver
     // App.RiskManagement), mismo criterio que treatment de arriba: separada del wizard porque

@@ -9,9 +9,10 @@ const {
     summarizeVulnerabilitySamples,
     calculateLossMagnitudeRange,
     calculateReduccionALEFromProfiles,
+    calculateResidualFromSimulation,
 } = require('../lib/autocalc');
 const { solveNashEquilibrium } = require('../lib/nashEquilibrium');
-const { validatePositiveNumber, validateLossMagnitudes } = require('../lib/validate');
+const { validatePositiveNumber, validateLossMagnitudes, validateTriangularRange } = require('../lib/validate');
 
 function createAutocalcRouter() {
     const router = express.Router();
@@ -48,12 +49,29 @@ function createAutocalcRouter() {
         res.json(result);
     });
 
-    // POST /api/autocalc/reduccion-ale { attackerKey, currentDefenseKey, targetDefenseKey, confidence }
-    // attackerKey es obligatorio ahora: con el modelo TCap vs. RS, la reducción real depende de
-    // CONTRA QUIÉN se compara la defensa (ver calculateReduccionALEFromProfiles) — la vieja
-    // fórmula cerrada solo dependía de los dos Niveles de Defensa porque era lineal; ya no lo es.
+    // POST /api/autocalc/reduccion-ale { attackerKey, currentDefenseKey, targetDefenseKey, confidence,
+    //   currentALE, tef, lossMagnitudes }
+    // attackerKey es obligatorio: con el modelo TCap vs. RS, la reducción real depende de CONTRA
+    // QUIÉN se compara la defensa (ver calculateReduccionALEFromProfiles) — la vieja fórmula
+    // cerrada solo dependía de los dos Niveles de Defensa porque era lineal; ya no lo es.
+    //
+    // currentALE/tef/lossMagnitudes son OPCIONALES: si los 3 vienen (y tef/lossMagnitudes son
+    // válidos), reductionPercent se deriva de una re-simulación REAL con el Nivel de Defensa
+    // Objetivo (ver calculateResidualFromSimulation) en vez de solo comparar la MODA de
+    // Vulnerabilidad entre los dos escenarios — y la respuesta incluye residualALE/residualCVaR,
+    // el resultado real de esa simulación (no una escala proporcional de un ALE/CVaR ya
+    // conocido). Sin ellos, cae al camino de siempre (comparación por moda, sin residualALE/
+    // residualCVaR) — retrocompatible con cualquier otro consumidor de esta ruta.
     router.post('/reduccion-ale', (req, res) => {
-        const { attackerKey, currentDefenseKey, targetDefenseKey, confidence = 'medio' } = req.body;
+        const {
+            attackerKey,
+            currentDefenseKey,
+            targetDefenseKey,
+            confidence = 'medio',
+            currentALE,
+            tef,
+            lossMagnitudes,
+        } = req.body;
         const attackerProfile = attackerProfiles[attackerKey];
         const currentProfile = defenseProfiles[currentDefenseKey];
         const targetProfile = defenseProfiles[targetDefenseKey];
@@ -62,13 +80,31 @@ function createAutocalcRouter() {
         }
         const currentScore = calculateProfileAverage(currentProfile);
         const targetScore = calculateProfileAverage(targetProfile);
+
+        if (typeof currentALE === 'number' && tef && lossMagnitudes) {
+            const tefError = validateTriangularRange(tef, 'tef');
+            if (tefError) return res.status(400).json({ error: tefError });
+            const lossMagnitudesError = validateLossMagnitudes(lossMagnitudes, lossFormsKeys);
+            if (lossMagnitudesError) return res.status(400).json({ error: lossMagnitudesError });
+
+            const { residualALE, residualCVaR, reductionPercent } = calculateResidualFromSimulation(
+                attackerProfile,
+                targetProfile,
+                confidence,
+                tef,
+                lossMagnitudes,
+                currentALE,
+            );
+            return res.json({ currentScore, targetScore, reductionPercent, residualALE, residualCVaR });
+        }
+
         const { reductionPercent } = calculateReduccionALEFromProfiles(
             attackerProfile,
             currentProfile,
             targetProfile,
             confidence,
         );
-        res.json({ currentScore, targetScore, reductionPercent });
+        res.json({ currentScore, targetScore, reductionPercent, residualALE: null, residualCVaR: null });
     });
 
     // POST /api/autocalc/attacker-defense-summary { attackerKey, defenseKey }

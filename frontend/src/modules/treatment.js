@@ -92,6 +92,11 @@ export const Treatment = {
             document.getElementById('fair-reduccionALE').classList.toggle('bg-gray-100', !manual);
             document.getElementById('fair-reduccionALE-explanation').classList.toggle('hidden', manual);
             if (manual) {
+                // Sin perfil de defensa objetivo que simular en modo manual — un residual real
+                // guardado de la ÚLTIMA corrida automática no debe seguir aplicándose contra el
+                // % que el usuario escriba ahora a mano.
+                state.treatment.mitigarResidualALE = null;
+                state.treatment.mitigarResidualCVaR = null;
                 showToast('Ahora puedes escribir la Reducción de ALE manualmente.');
             } else {
                 this.updateReduccionALEAuto();
@@ -160,6 +165,10 @@ export const Treatment = {
         this._flushPendingSaves();
         state.treatment.currentEntry = entry;
         state.treatment.lastResult = null;
+        // Residual de un riesgo distinto no aplica acá — se recalcula abajo (updateReduccionALEAuto)
+        // si corresponde, o se queda en null si este riesgo no tiene defenseKey/attackerKey.
+        state.treatment.mitigarResidualALE = null;
+        state.treatment.mitigarResidualCVaR = null;
         document.getElementById('treatment-risk-select').value = riskName;
         // Independiente de updateTreatmentView (más abajo) — el badge/banner de la decisión ya
         // adoptada debe verse de inmediato, sin esperar a la llamada async de evaluate.
@@ -384,10 +393,26 @@ export const Treatment = {
         try {
             data = await App.Api.request('/api/autocalc/reduccion-ale', {
                 method: 'POST',
-                body: { currentDefenseKey: entry.defenseKey, targetDefenseKey: objetivoKey },
+                // attackerKey era un bug real: la ruta lo exige desde el modelo TCap/RS (400 sin
+                // él) pero nunca se mandaba aquí — el autocálculo llevaba roto en silencio desde
+                // esa tarea, mostrando solo "No se pudo calcular automáticamente". currentALE/
+                // tef/lossMagnitudes/confidence son nuevos: le dan a la ruta lo que necesita para
+                // simular el residual REAL en vez de solo comparar Vulnerabilidad por moda (ver
+                // calculateResidualFromSimulation, backend/src/lib/autocalc.js).
+                body: {
+                    attackerKey: entry.attackerKey,
+                    currentDefenseKey: entry.defenseKey,
+                    targetDefenseKey: objetivoKey,
+                    confidence: entry.dataConfidence || 'medio',
+                    currentALE: entry.ale,
+                    tef: entry.tef,
+                    lossMagnitudes: entry.lossMagnitudes,
+                },
             });
         } catch (err) {
             if (requestId !== this._reduccionALERequestId) return; // ver el guardián documentado arriba, junto a Treatment
+            state.treatment.mitigarResidualALE = null;
+            state.treatment.mitigarResidualCVaR = null;
             explanationEl.textContent = 'No se pudo calcular automáticamente. Verifica tu conexión.';
             return;
         }
@@ -399,6 +424,13 @@ export const Treatment = {
         if (document.getElementById('fair-reduccionALE-manual-override').checked) return;
 
         document.getElementById('fair-reduccionALE').value = data.reductionPercent;
+        // residualALE/residualCVaR son el resultado REAL de re-simular con el Nivel de Defensa
+        // Objetivo (no una escala proporcional) — se guardan para que updateTreatmentView los
+        // mande tal cual a /api/treatment/evaluate, en vez de dejar que ese endpoint los derive
+        // de reductionPercent × currentALE/currentCVaR (aproximación que ya no es exacta con el
+        // modelo TCap/RS + Tullock, ver el plan de esta tarea).
+        state.treatment.mitigarResidualALE = data.residualALE;
+        state.treatment.mitigarResidualCVaR = data.residualCVaR;
         explanationEl.textContent = `Calculado como: pasar de tu defensa actual (${data.currentScore.toFixed(0)}%) a "${state.quick.defenseProfiles[objetivoKey].name}" (${data.targetScore.toFixed(0)}%) = ${data.reductionPercent}% de reducción estimada.`;
         this.updateTreatmentView(true);
     },
@@ -445,6 +477,12 @@ export const Treatment = {
         const mitigar = {
             cost: getSafeNumber(document.getElementById('fair-costoControlAnual')),
             reductionPercent: getSafeNumber(document.getElementById('fair-reduccionALE')),
+            // Residual REAL (re-simulado con el Nivel de Defensa Objetivo, ver
+            // updateReduccionALEAuto) — cuando existen, /api/treatment/evaluate los usa tal cual
+            // en vez de derivarlos de reductionPercent × currentALE/currentCVaR. null en modo
+            // manual o antes del primer autocálculo (ver evaluateTreatmentStrategies).
+            residualALE: state.treatment.mitigarResidualALE,
+            residualCVaR: state.treatment.mitigarResidualCVaR,
             reliability: document.getElementById('fair-mitigar-fiabilidad').value,
             delayDays: getSafeNumber(document.getElementById('fair-mitigar-retraso')),
             // Controles nombrados (ver openControlsModal/applyControlsAggregation) — [] si este

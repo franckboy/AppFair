@@ -17,6 +17,7 @@ const {
     sampleVulnerabilityFromProfiles,
     summarizeVulnerabilitySamples,
     calculateReduccionALEFromProfiles,
+    calculateResidualFromSimulation,
 } = require('../src/lib/autocalc');
 const { solveNashEquilibrium } = require('../src/lib/nashEquilibrium');
 const {
@@ -664,6 +665,72 @@ test('calculateReduccionALEFromProfiles: mismo objetivo que el actual da 0% exac
     assert.strictEqual(reductionPercent, 0);
 });
 
+// calculateResidualFromSimulation: residual REAL de Mitigar (ALE y CVaR), re-simulando con el
+// Nivel de Defensa Objetivo — reemplaza escalar currentALE/currentCVaR por el mismo
+// reductionPercent, aproximación que ya no es exacta con el modelo TCap vs. RS + Tullock (ver el
+// hallazgo de la auditoría que motivó esta función).
+const RESIDUAL_TEF = { min: 5, mode: 10, max: 18 };
+const RESIDUAL_LOSS_MAGNITUDES = { respuesta: { min: 5000, mode: 20000, max: 50000 } };
+
+test('calculateResidualFromSimulation: reproducible — misma entrada da EXACTO el mismo resultado', () => {
+    const r1 = calculateResidualFromSimulation(
+        attackerProfiles.organizado,
+        defenseProfiles.elite,
+        'medio',
+        RESIDUAL_TEF,
+        RESIDUAL_LOSS_MAGNITUDES,
+        200000,
+    );
+    const r2 = calculateResidualFromSimulation(
+        attackerProfiles.organizado,
+        defenseProfiles.elite,
+        'medio',
+        RESIDUAL_TEF,
+        RESIDUAL_LOSS_MAGNITUDES,
+        200000,
+    );
+    assert.deepStrictEqual(r1, r2);
+});
+
+test('calculateResidualFromSimulation: defensa objetivo más fuerte da residualALE menor que el actual', () => {
+    const { residualALE, reductionPercent } = calculateResidualFromSimulation(
+        attackerProfiles.organizado,
+        defenseProfiles.elite,
+        'medio',
+        RESIDUAL_TEF,
+        RESIDUAL_LOSS_MAGNITUDES,
+        200000,
+    );
+    assert.ok(residualALE < 200000, `esperaba residualALE < 200000, dio ${residualALE}`);
+    assert.ok(reductionPercent > 0, `esperaba reductionPercent > 0, dio ${reductionPercent}`);
+});
+
+test('calculateResidualFromSimulation: degradar la defensa da residualALE MAYOR que el actual, pero reductionPercent se acota a 0 (protección contra mal uso)', () => {
+    const { residualALE, residualCVaR, reductionPercent } = calculateResidualFromSimulation(
+        attackerProfiles.organizado,
+        defenseProfiles.basica,
+        'medio',
+        RESIDUAL_TEF,
+        RESIDUAL_LOSS_MAGNITUDES,
+        50000, // currentALE artificialmente bajo, para forzar que el residual real salga mayor
+    );
+    assert.ok(residualALE > 50000, `esperaba residualALE > 50000 (defensa débil), dio ${residualALE}`);
+    assert.ok(residualCVaR > 0, 'residualCVaR real no debe ocultarse ni salir 0 solo porque empeoró');
+    assert.strictEqual(reductionPercent, 0);
+});
+
+test('calculateResidualFromSimulation: invariante residualCVaR >= residualALE (CVaR95 es el promedio del peor 5%, nunca puede ser menor que el promedio completo)', () => {
+    const { residualALE, residualCVaR } = calculateResidualFromSimulation(
+        attackerProfiles.organizado,
+        defenseProfiles.avanzada,
+        'medio',
+        RESIDUAL_TEF,
+        RESIDUAL_LOSS_MAGNITUDES,
+        200000,
+    );
+    assert.ok(residualCVaR >= residualALE, `esperaba residualCVaR (${residualCVaR}) >= residualALE (${residualALE})`);
+});
+
 // Función de Éxito de Contienda de Tullock (ver tullockSuccessProbability, autocalc.js) —
 // reemplaza la logística que combinaba TCap/RS en cada iteración de Monte Carlo.
 test('tullockSuccessProbability: un empate da 50% SIN IMPORTAR la escala absoluta — la prueba matemática que motiva Tullock', () => {
@@ -880,11 +947,11 @@ test('evaluateTreatmentStrategies: sin currentCVaR, residualCVaR queda en null (
     assert.strictEqual(result.aceptar.residualCVaR, null);
 });
 
-// Mitigar reduce Vulnerabilidad de forma proporcional (ver calculateReduccionALEFromProfiles en
-// autocalc.js) — como cada pérdida simulada es LEF × Magnitud de Pérdida, escalar
-// Vulnerabilidad por X% escala TODA la distribución de pérdidas por X%, así que el CVaR
-// residual se calcula con la MISMA fórmula que el ALE residual, sin volver a simular.
-test('evaluateTreatmentStrategies: con currentCVaR, escala residualCVaR igual que residualALE (Mitigar/Evitar/Aceptar)', () => {
+// Camino de RESPALDO (sin mitigar.residualALE/residualCVaR reales, ver el test de más abajo que
+// SÍ los manda): escala proporcionalmente currentALE/currentCVaR por reductionPercent — la mejor
+// aproximación disponible cuando no hay un Nivel de Defensa Objetivo real que simular (modo
+// manual). Ya no es la ÚNICA fórmula (ver "usa residualALE/residualCVaR reales..." abajo).
+test('evaluateTreatmentStrategies: sin residualALE/residualCVaR reales (modo manual), escala proporcionalmente por reductionPercent', () => {
     const fmt = (n) => `$${n}`;
     const result = evaluateTreatmentStrategies(
         {
@@ -903,6 +970,59 @@ test('evaluateTreatmentStrategies: con currentCVaR, escala residualCVaR igual qu
     assert.strictEqual(result.aceptar.residualALE, 100000);
     assert.strictEqual(result.aceptar.residualCVaR, 250000);
     assert.strictEqual(result.transferir.residualCVaR, undefined); // fuera de alcance a propósito
+});
+
+// El arreglo real: con mitigar.residualALE/residualCVaR (ver calculateResidualFromSimulation),
+// se usan TAL CUAL — NO se derivan de reductionPercent × currentALE/currentCVaR. La prueba clave:
+// un residualCVaR que NO guarda la misma proporción que residualALE respecto a sus actuales
+// (algo que la fórmula de escalado proporcional NUNCA podría producir) debe pasar intacto.
+test('evaluateTreatmentStrategies: CON residualALE/residualCVaR reales, los usa tal cual — SIN forzar la misma proporción que reductionPercent', () => {
+    const fmt = (n) => `$${n}`;
+    const result = evaluateTreatmentStrategies(
+        {
+            currentALE: 100000,
+            currentCVaR: 250000,
+            annualLosses: null,
+            mitigar: {
+                cost: 10000,
+                reductionPercent: 60, // "60%" solo para mostrar — NO debe usarse para el cálculo
+                residualALE: 45000, // 55% de reducción real
+                residualCVaR: 130000, // 48% de reducción real — proporción DISTINTA a residualALE a propósito
+                reliability: 'media',
+                delayDays: 0,
+            },
+            transferir: { premium: 0, deductible: 0, limit: 0, unlimited: false, reliability: 'media', delayDays: 0 },
+            evitar: { cost: 0, reliability: 'alta', delayDays: 0 },
+        },
+        fmt,
+    );
+    assert.strictEqual(result.mitigar.residualALE, 45000);
+    assert.strictEqual(result.mitigar.residualCVaR, 130000);
+    assert.strictEqual(result.mitigar.avoidedLoss, 55000); // 100000 - 45000, no 40000 (el de reductionPercent)
+});
+
+test('evaluateTreatmentStrategies: residualALE=0 (defensa "perfecta") se respeta — 0 es válido, no cae al escalado por accidente', () => {
+    const fmt = (n) => `$${n}`;
+    const result = evaluateTreatmentStrategies(
+        {
+            currentALE: 100000,
+            currentCVaR: 250000,
+            annualLosses: null,
+            mitigar: {
+                cost: 10000,
+                reductionPercent: 60,
+                residualALE: 0,
+                residualCVaR: 0,
+                reliability: 'media',
+                delayDays: 0,
+            },
+            transferir: { premium: 0, deductible: 0, limit: 0, unlimited: false, reliability: 'media', delayDays: 0 },
+            evitar: { cost: 0, reliability: 'alta', delayDays: 0 },
+        },
+        fmt,
+    );
+    assert.strictEqual(result.mitigar.residualALE, 0);
+    assert.strictEqual(result.mitigar.residualCVaR, 0);
 });
 
 test('expectedNetBenefit: usa la probabilidad de RELIABILITY_TO_PROBABILITY para cada nivel de Fiabilidad', () => {

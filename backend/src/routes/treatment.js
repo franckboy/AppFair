@@ -52,6 +52,11 @@ function createTreatmentRouter() {
                 mitigar: {
                     cost: mitigar.cost || 0,
                     reductionPercent: mitigar.reductionPercent || 0,
+                    // Residual REAL (re-simulado con el Nivel de Defensa Objetivo) — opcional, ver
+                    // evaluateTreatmentStrategies. `typeof x === 'number'` en vez de `|| null`
+                    // porque 0 es un residualALE válido (defensa perfecta) y no debe caer al `||`.
+                    residualALE: typeof mitigar.residualALE === 'number' ? mitigar.residualALE : undefined,
+                    residualCVaR: typeof mitigar.residualCVaR === 'number' ? mitigar.residualCVaR : undefined,
                     reliability: mitigar.reliability || 'media',
                     delayDays: mitigar.delayDays || 0,
                 },

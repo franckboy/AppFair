@@ -126,6 +126,10 @@ function validateTreatmentBody(body) {
     const nonNegativeFields = [
         ['mitigar.cost', mitigar.cost],
         ['mitigar.delayDays', mitigar.delayDays],
+        // Residual REAL re-simulado (ver evaluateTreatmentStrategias/calculateResidualFromSimulation)
+        // — opcional, pero si viene debe ser un número válido ≥ 0 como cualquier otro monto.
+        ['mitigar.residualALE', mitigar.residualALE],
+        ['mitigar.residualCVaR', mitigar.residualCVaR],
         ['transferir.premium', transferir.premium],
         ['transferir.deductible', transferir.deductible],
         ['transferir.limit', transferir.limit],
@@ -134,7 +138,11 @@ function validateTreatmentBody(body) {
         ['evitar.delayDays', evitar.delayDays],
     ];
     for (const [label, value] of nonNegativeFields) {
-        if (value !== undefined && (!isFiniteNumber(value) || value < 0)) {
+        // null se trata igual que undefined ("no viene") — mitigar.residualALE/residualCVaR se
+        // mandan explícitamente como null (no se omiten) cuando no hay un residual real que
+        // simular (ver Treatment.updateReduccionALEAuto en el frontend), y JSON sí distingue los
+        // dos (`{"x":null}` !== `{}`) aunque para esta validación signifiquen lo mismo.
+        if (value !== undefined && value !== null && (!isFiniteNumber(value) || value < 0)) {
             return `${label} debe ser un número mayor o igual a 0.`;
         }
     }
