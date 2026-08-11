@@ -95,7 +95,7 @@ function runFamilyCascadeSimulation({ rootRiskName, register, iterations, seed }
     // un orden estable (el de `order`, que es determinista para un mismo Registro) — así toda la
     // corrida de familia es reproducible con `usedSeed`, sin que dos riesgos distintos compartan
     // el mismo stream de aleatoriedad (que los correlacionaría de una forma no intencional).
-    const perRisk = new Map(); // riskName -> { annualLosses, lefSamples }
+    const perRisk = new Map(); // riskName -> { annualLosses, lefSamples, magnitudeSamples }
     const excludedRiskNames = [];
 
     order.forEach((name) => {
@@ -116,7 +116,11 @@ function runFamilyCascadeSimulation({ rootRiskName, register, iterations, seed }
             vuln: risk.vuln,
             lossMagnitudes: risk.lossMagnitudes,
         });
-        perRisk.set(name, { annualLosses: sim.annualLosses, lefSamples: sim.lefSamples });
+        perRisk.set(name, {
+            annualLosses: sim.annualLosses,
+            lefSamples: sim.lefSamples,
+            magnitudeSamples: sim.magnitudeSamples,
+        });
     });
 
     const includedRiskNames = [...perRisk.keys()];
@@ -147,7 +151,20 @@ function runFamilyCascadeSimulation({ rootRiskName, register, iterations, seed }
         activatedNames.forEach((name) => {
             activationCounts.set(name, activationCounts.get(name) + 1);
             const analyzed = perRisk.get(name);
-            if (analyzed) total += analyzed.annualLosses[i];
+            if (!analyzed) return;
+            // La raíz nunca pasa por combinedProbability (walkMarkovChain siempre la incluye) —
+            // su annualLosses[i] (LEF×Magnitud, el mismo cálculo actuarial de siempre) es lo
+            // correcto tal cual. Un riesgo NO-raíz sí pasó por una compuerta que ya "gastó" su
+            // propio lef_i para decidir si el evento ocurrió este año (pOwn arriba); sumar
+            // analyzed.annualLosses[i] aquí volvería a multiplicar por ese mismo lef_i — la
+            // frecuencia se descontaría dos veces, y para un riesgo raro pero severo (lef_i chico,
+            // el perfil típico de un riesgo físico/patrimonial) el aporte queda subestimado en
+            // órdenes de magnitud (verificado: un hijo con LEF≈0.05-0.2 y magnitud fija de
+            // $1,000,000 aportaba ~$2,000/año en vez de los ~$43,000/año que le corresponden).
+            // Una vez que la compuerta ya decidió "sí ocurrió", lo que corresponde sumar es la
+            // magnitud de ESE evento (magnitudeSamples[i]), no la magnitud vuelta a escalar por
+            // la misma frecuencia que decidió que ocurriera.
+            total += name === rootRiskName ? analyzed.annualLosses[i] : analyzed.magnitudeSamples[i];
         });
         familyAnnualLosses[i] = total;
     }
