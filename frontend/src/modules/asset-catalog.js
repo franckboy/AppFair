@@ -43,14 +43,18 @@ export const AssetCatalog = {
     // Un activo puede estar referenciado por una entrada ya simulada del Registro (assetId,
     // ver App.FairRegister.saveToRiskRegister) o por un borrador de Análisis Rápido/Paso 1
     // todavía sin simular (fullData.assetId, ver saveDraftToRisksList) — se juntan ambas
-    // fuentes para no perder el vínculo de un riesgo que aún no llegó a FAIR.
+    // fuentes para no perder el vínculo de un riesgo que aún no llegó a FAIR. Se incluye el
+    // Costo de Reemplazo (por evento, ver checkAssetReplacementCostWarning) de cada riesgo del
+    // Registro para poder mostrarlo contra el valor declarado del activo — nunca se suman entre
+    // sí porque cada uno es un evento independiente, no un daño simultáneo.
     linkedRisksFor(assetId) {
         const fromRegister = (state.fair.riskRegister || [])
             .filter((r) => r.assetId === assetId)
-            .map((r) => r.riskName);
+            .map((r) => ({ riskName: r.riskName, reemplazoMax: r.lossMagnitudes?.reemplazo?.max ?? null }));
+        const registerNames = fromRegister.map((r) => r.riskName);
         const fromDrafts = (state.quick.history || [])
-            .filter((r) => r.fullData && r.fullData.assetId === assetId && !fromRegister.includes(r.name))
-            .map((r) => r.name);
+            .filter((r) => r.fullData && r.fullData.assetId === assetId && !registerNames.includes(r.name))
+            .map((r) => ({ riskName: r.name, reemplazoMax: null }));
         return [...fromRegister, ...fromDrafts];
     },
 
@@ -96,8 +100,18 @@ export const AssetCatalog = {
             btn.addEventListener('click', () => {
                 const asset = assets.find((a) => a.id === btn.dataset.linkedId);
                 const risks = this.linkedRisksFor(btn.dataset.linkedId);
+                const rows = risks
+                    .map(({ riskName, reemplazoMax }) => {
+                        let detail = '<span class="text-gray-400">(sin analizar con FAIR aún)</span>';
+                        if (typeof reemplazoMax === 'number') {
+                            const exceeds = asset && reemplazoMax > asset.valorEstimado;
+                            detail = `<span class="${exceeds ? 'text-red-600 font-semibold' : 'text-gray-600'}">Costo de Reemplazo: ${fmt(reemplazoMax)}${exceeds ? ' — supera el valor del activo' : ''}</span>`;
+                        }
+                        return `<li>${sanitizeHTML(riskName)} — ${detail}</li>`;
+                    })
+                    .join('');
                 Modal.alert(
-                    `<ul class="list-disc list-inside">${risks.map((name) => `<li>${sanitizeHTML(name)}</li>`).join('')}</ul>`,
+                    `<ul class="list-disc list-inside space-y-1">${rows}</ul>`,
                     `Riesgos vinculados a "${sanitizeHTML(asset ? asset.nombre : '')}"`,
                 );
             }),
