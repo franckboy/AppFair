@@ -7,14 +7,16 @@ ningún cambio de infraestructura, no se conecta a producción, no se integra a 
 
 ## Qué hace
 
-`backend/src/lib/autocalc.js` (`calculateVulnerability`) traduce Perfil de Atacante + Nivel de
-Defensa en una Vulnerabilidad estimada con una fórmula fija — mismos perfiles, mismo resultado
-siempre. Este script pregunta: si incorporamos el histórico real del Registro (riesgos donde un
-analista de verdad EDITÓ la Vulnerabilidad a mano, no el resultado sin tocar de la fórmula) como
-evidencia, ¿la calibración se movería?
+`backend/src/lib/autocalc.js` (`sampleVulnerabilityFromProfiles`) traduce Perfil de Atacante +
+Nivel de Defensa en una Vulnerabilidad simulada (Capacidad de Amenaza vs. Fuerza de Resistencia,
+vía la Función de Éxito de Contienda de Tullock) — mismos perfiles ya no dan siempre el mismo
+número, sino una distribución. Este script pregunta: si incorporamos el histórico real del
+Registro (riesgos donde un analista de verdad EDITÓ la Vulnerabilidad a mano, no el resultado sin
+tocar del modelo) como evidencia, ¿la calibración se movería?
 
 Para cada una de las 20 combinaciones Atacante × Defensa, compara:
-- **Fórmula (hoy):** el balde (baja/media/alta) que da `calculateVulnerability` tal cual existe hoy.
+- **Fórmula (hoy):** el balde (baja/media/alta) de la moda que da hoy el modelo TCap vs. RS
+  simulado (mismo algoritmo que `sampleVulnerabilityFromProfiles`, corrido varias veces).
 - **Calibrado (con evidencia):** una actualización Dirichlet-multinomial simple — la fórmula
   actúa como una creencia previa fuerte (`--prior-strength`, pseudo-observaciones), y cada
   riesgo con `vulnManualOverride: true` en el Registro suma una observación real. Sin evidencia,
