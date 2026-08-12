@@ -117,6 +117,10 @@ export const state = {
         // true en cuanto el usuario teclea directamente en TEF (ver bindEvents) — a partir de
         // ahí suggestTefRange() deja de tocar esos campos, para no pisar un dato real.
         tefManuallyEdited: false,
+        // Filas de trabajo de "Riesgos Desencadenantes" (Paso 1) — array vivo, mismo criterio
+        // que reviewHistory: { riskName, probability }[], sincronizado desde el DOM antes de
+        // guardar/re-pintar (ver App.FairWizard.renderTriggeredByRows/syncTriggeredByDraftFromDom).
+        triggeredByDraft: [],
         stepValidations: {
             1: () => document.getElementById('fair-riskName').value.trim() !== '',
             2: () => {

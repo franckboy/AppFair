@@ -2,6 +2,7 @@
 
 const express = require('express');
 const {
+    normalizeTriggeredBy,
     getRiskMatrixZones,
     calculateParetoAnalysis,
     calculateConsolidatedSensitivity,
@@ -32,7 +33,10 @@ function createRegisterRouter(store) {
     router.get(
         '/',
         asyncHandler(async (req, res) => {
-            const risks = (await store.get('riskRegister')) || [];
+            // normalizeTriggeredBy migra cualquier riesgo guardado ANTES de que triggeredBy
+            // fuera un array (ver lib/register.js) — necesario acá porque la app tiene
+            // despliegue real con riesgos ya guardados en la forma vieja.
+            const risks = normalizeTriggeredBy((await store.get('riskRegister')) || []);
             // normalizeRiskCriteria migra cualquier criterio guardado ANTES de que existiera
             // aleAceptablePercent (ver PUT abajo) — hace falta acá también para poder llamar
             // evaluateFairThreat sobre el residual del portafolio con aleAceptablePercent/
@@ -180,21 +184,17 @@ function createRegisterRouter(store) {
                 // en la Matriz de Riesgos sea consistente con el criterio que en verdad se usó para
                 // evaluarlo (ver POST /api/simulate, que ya acepta el mismo override para el cálculo).
                 riskCriteriaOverride = null,
-                // Riesgo en cascada: el nombre de OTRO riesgo del Registro que, de ocurrir,
-                // desencadena este — ej. un incendio que desencadena una interrupción operativa. Se
-                // referencia por riskName (no por id) porque el Registro mismo se identifica así en
-                // todos lados (ver PUT/DELETE por :riskName) — es solo organizativo por ahora, no
-                // alimenta ningún cálculo, así que una referencia por nombre es suficiente y
-                // consistente con el resto de este archivo.
-                triggeredByRiskName = null,
-                // Probabilidad condicional de la flecha padre→este riesgo ("si el padre ocurre,
-                // ¿qué tan probable es que esto TAMBIÉN ocurra ese mismo año?", 0-100) — el dato
-                // que le falta al Árbol de Riesgos en Cascada para poder simularse en cascada de
-                // verdad más adelante (ver walkMarkovChain en lib/markov.js, todavía sin
-                // conectar). Se captura ya desde ahora (ver App.RiskCascadeTree.
-                // openCreateChildModal) para no tener que volver flecha por flecha a rellenarla
-                // cuando esa simulación exista. null mientras nadie la haya definido.
-                triggeredByProbability = null,
+                // Riesgos en cascada: cada item es OTRO riesgo del Registro que, de ocurrir,
+                // puede desencadenar este (un riesgo puede tener MÁS de una causa a la vez — ej.
+                // un incendio en bodega puede venir de una falla eléctrica Y de mal
+                // almacenamiento de inflamables, dos causas independientes). Se referencia por
+                // riskName (no por id) porque el Registro mismo se identifica así en todos lados
+                // (ver PUT/DELETE por :riskName). `probability` (0-100, o null) es la
+                // probabilidad condicional de esa arista puntual ("si ESTE padre ocurre, ¿qué tan
+                // probable es que el hijo TAMBIÉN ocurra ese mismo año?") — la usa de verdad
+                // runFamilyCascadeSimulation (lib/cascadeSimulation.js, "Simular Familia"), no es
+                // solo organizativo.
+                triggeredBy = [],
                 description = null,
                 // Norma/marco de la amenaza elegida del Catálogo de Riesgos (ver
                 // App.RiskCatalog.useSelected), ej. "ISO 22301, NFPA 1600" + su código interno del
@@ -284,13 +284,30 @@ function createRegisterRouter(store) {
             ) {
                 return res.status(400).json({ error: 'inherentCVaR debe ser un número mayor o igual a 0, o null.' });
             }
-            if (
-                triggeredByProbability !== null &&
-                (typeof triggeredByProbability !== 'number' ||
-                    triggeredByProbability < 0 ||
-                    triggeredByProbability > 100)
-            ) {
-                return res.status(400).json({ error: 'triggeredByProbability debe ser un número entre 0 y 100.' });
+            if (!Array.isArray(triggeredBy)) {
+                return res.status(400).json({ error: 'triggeredBy debe ser un array.' });
+            }
+            const seenTriggerNames = new Set();
+            for (const t of triggeredBy) {
+                if (!t || typeof t.riskName !== 'string' || !t.riskName.trim()) {
+                    return res.status(400).json({ error: 'Cada causa en triggeredBy necesita un riskName no vacío.' });
+                }
+                if (t.riskName === riskName) {
+                    return res.status(400).json({ error: 'Un riesgo no puede ser su propia causa (triggeredBy).' });
+                }
+                if (seenTriggerNames.has(t.riskName)) {
+                    return res.status(400).json({ error: `"${t.riskName}" está repetido en triggeredBy.` });
+                }
+                seenTriggerNames.add(t.riskName);
+                if (
+                    t.probability !== null &&
+                    t.probability !== undefined &&
+                    (typeof t.probability !== 'number' || t.probability < 0 || t.probability > 100)
+                ) {
+                    return res.status(400).json({
+                        error: `triggeredBy.probability de "${t.riskName}" debe ser un número entre 0 y 100, o null.`,
+                    });
+                }
             }
             if (treatmentDecision !== null) {
                 const validStrategies = ['mitigar', 'transferir', 'evitar', 'aceptar'];
@@ -367,8 +384,10 @@ function createRegisterRouter(store) {
                 seed,
                 sourceRiskId,
                 riskCriteriaOverride,
-                triggeredByRiskName,
-                triggeredByProbability,
+                triggeredBy: triggeredBy.map((t) => ({
+                    riskName: t.riskName.trim(),
+                    probability: t.probability ?? null,
+                })),
                 description,
                 catalogStandard,
                 catalogCode,

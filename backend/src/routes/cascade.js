@@ -6,6 +6,7 @@ const { summarizeLosses } = require('../lib/simulation');
 const { evaluateFairThreat } = require('../lib/evaluation');
 const { defaultRiskCriteria } = require('../data/profiles');
 const { normalizeRiskCriteria } = require('../lib/riskCriteria');
+const { normalizeTriggeredBy } = require('../lib/register');
 const { validateIterations, validateSeed } = require('../lib/validate');
 const { asyncHandler } = require('../middleware/asyncHandler');
 
@@ -46,7 +47,9 @@ function createCascadeRouter(store) {
             const seedError = validateSeed(seed);
             if (seedError) return res.status(400).json({ error: seedError });
 
-            const register = (await store.get('riskRegister')) || [];
+            // normalizeTriggeredBy: mismo motivo que en routes/register.js (GET) — este endpoint
+            // hace su propio store.get('riskRegister') aparte, no reusa el del GET.
+            const register = normalizeTriggeredBy((await store.get('riskRegister')) || []);
             if (!register.some((r) => r.riskName === rootRiskName)) {
                 return res.status(404).json({ error: `No se encontró "${rootRiskName}" en el Registro.` });
             }

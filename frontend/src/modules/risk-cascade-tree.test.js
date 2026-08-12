@@ -2,47 +2,87 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { state } from './state.js';
 import { RiskCascadeTree } from './risk-cascade-tree.js';
 
-describe('RiskCascadeTree.buildForest', () => {
+describe('RiskCascadeTree.buildGraph', () => {
     beforeEach(() => {
         state.fair.riskRegister = [];
     });
 
-    it('un riesgo sin triggeredByRiskName es una raíz', () => {
-        const risk = { riskName: 'Pandemia', triggeredByRiskName: null };
+    it('un riesgo sin triggeredBy (o vacío) es un nodo sin aristas entrantes', () => {
+        const risk = { riskName: 'Pandemia', triggeredBy: [] };
         state.fair.riskRegister = [risk];
-        const { roots, childrenOf } = RiskCascadeTree.buildForest();
-        expect(roots).toEqual([{ risk, orphan: false }]);
-        expect(childrenOf.size).toBe(0);
+        const { nodes, edges } = RiskCascadeTree.buildGraph();
+        expect(nodes).toEqual([{ id: 'Pandemia', risk, broken: [] }]);
+        expect(edges).toEqual([]);
     });
 
-    it('un riesgo cuyo desencadenante existe en el Registro cuelga de él, no es raíz', () => {
-        const parent = { riskName: 'Pandemia', triggeredByRiskName: null };
-        const child = { riskName: 'Interrupción Operativa', triggeredByRiskName: 'Pandemia' };
+    it('un riesgo cuya causa existe en el Registro genera una arista causa→riesgo', () => {
+        const parent = { riskName: 'Pandemia', triggeredBy: [] };
+        const child = { riskName: 'Interrupción Operativa', triggeredBy: [{ riskName: 'Pandemia', probability: 70 }] };
         state.fair.riskRegister = [parent, child];
-        const { roots, childrenOf } = RiskCascadeTree.buildForest();
-        expect(roots).toEqual([{ risk: parent, orphan: false }]);
-        expect(childrenOf.get('Pandemia')).toEqual([child]);
+        const { edges } = RiskCascadeTree.buildGraph();
+        expect(edges).toEqual([{ source: 'Pandemia', target: 'Interrupción Operativa', probability: 70 }]);
     });
 
-    it('un vínculo hacia un riesgo que ya no existe en el Registro (renombrado/eliminado) se trata como raíz huérfana', () => {
-        const orphan = { riskName: 'Riesgo Huerfano', triggeredByRiskName: 'Incendio Inexistente' };
+    it('una causa declarada hacia un riesgo que ya no existe (renombrado/eliminado) no genera arista, se anota en broken', () => {
+        const orphan = {
+            riskName: 'Riesgo Huerfano',
+            triggeredBy: [{ riskName: 'Incendio Inexistente', probability: 50 }],
+        };
         state.fair.riskRegister = [orphan];
-        const { roots, childrenOf } = RiskCascadeTree.buildForest();
-        expect(roots).toEqual([{ risk: orphan, orphan: true, orphanParentName: 'Incendio Inexistente' }]);
-        expect(childrenOf.size).toBe(0);
+        const { nodes, edges } = RiskCascadeTree.buildGraph();
+        expect(edges).toEqual([]);
+        expect(nodes.find((n) => n.id === 'Riesgo Huerfano').broken).toEqual(['Incendio Inexistente']);
+    });
+
+    it('un riesgo con DOS causas válidas genera DOS aristas — la razón de ser de este cambio', () => {
+        const a = { riskName: 'Falla Eléctrica', triggeredBy: [] };
+        const b = { riskName: 'Mal Almacenamiento', triggeredBy: [] };
+        const c = {
+            riskName: 'Incendio en Bodega',
+            triggeredBy: [
+                { riskName: 'Falla Eléctrica', probability: 30 },
+                { riskName: 'Mal Almacenamiento', probability: 60 },
+            ],
+        };
+        state.fair.riskRegister = [a, b, c];
+        const { edges } = RiskCascadeTree.buildGraph();
+        expect(edges).toEqual([
+            { source: 'Falla Eléctrica', target: 'Incendio en Bodega', probability: 30 },
+            { source: 'Mal Almacenamiento', target: 'Incendio en Bodega', probability: 60 },
+        ]);
+    });
+
+    it('un riesgo con UNA causa válida y OTRA rota reporta ambas por separado (arista + broken)', () => {
+        const a = { riskName: 'Causa Real', triggeredBy: [] };
+        const b = {
+            riskName: 'Hijo Mixto',
+            triggeredBy: [
+                { riskName: 'Causa Real', probability: 40 },
+                { riskName: 'Causa Borrada', probability: 20 },
+            ],
+        };
+        state.fair.riskRegister = [a, b];
+        const { nodes, edges } = RiskCascadeTree.buildGraph();
+        expect(edges).toEqual([{ source: 'Causa Real', target: 'Hijo Mixto', probability: 40 }]);
+        expect(nodes.find((n) => n.id === 'Hijo Mixto').broken).toEqual(['Causa Borrada']);
+    });
+
+    it('un riesgo no puede ser su propia causa — se ignora silenciosamente, no genera arista ni broken', () => {
+        const risk = { riskName: 'Auto Referencia', triggeredBy: [{ riskName: 'Auto Referencia', probability: 100 }] };
+        state.fair.riskRegister = [risk];
+        const { edges, nodes } = RiskCascadeTree.buildGraph();
+        expect(edges).toEqual([]);
+        expect(nodes[0].broken).toEqual([]);
     });
 });
 
 describe('RiskCascadeTree.collectReachable', () => {
-    it('recorre todos los descendientes a partir de una lista de riesgos de entrada', () => {
-        const a = { riskName: 'A' };
-        const b = { riskName: 'B' };
-        const c = { riskName: 'C' };
-        const childrenOf = new Map([
-            ['A', [b]],
-            ['B', [c]],
-        ]);
-        expect(RiskCascadeTree.collectReachable([a], childrenOf)).toEqual(new Set(['A', 'B', 'C']));
+    it('recorre todos los descendientes a partir de una lista de nombres de entrada', () => {
+        const edges = [
+            { source: 'A', target: 'B' },
+            { source: 'B', target: 'C' },
+        ];
+        expect(RiskCascadeTree.collectReachable(['A'], edges)).toEqual(new Set(['A', 'B', 'C']));
     });
 
     // Regresión: un ciclo (Ciclo A desencadenado por Ciclo B, Ciclo B desencadenado por Ciclo
@@ -51,14 +91,27 @@ describe('RiskCascadeTree.collectReachable', () => {
     // raíz como su propio punto de entrada. Antes de ese paso, ambos riesgos desaparecían del
     // árbol en silencio.
     it('un ciclo sin ninguna raíz externa no es alcanzable desde otras raíces', () => {
-        const a = { riskName: 'Ciclo A' };
-        const b = { riskName: 'Ciclo B' };
-        const other = { riskName: 'Independiente' };
-        const childrenOf = new Map([
-            ['Ciclo B', [a]],
-            ['Ciclo A', [b]],
-        ]);
-        expect(RiskCascadeTree.collectReachable([other], childrenOf)).toEqual(new Set(['Independiente']));
-        expect(RiskCascadeTree.collectReachable([a], childrenOf)).toEqual(new Set(['Ciclo A', 'Ciclo B']));
+        const edges = [
+            { source: 'Ciclo B', target: 'Ciclo A' },
+            { source: 'Ciclo A', target: 'Ciclo B' },
+        ];
+        expect(RiskCascadeTree.collectReachable(['Independiente'], edges)).toEqual(new Set(['Independiente']));
+        expect(RiskCascadeTree.collectReachable(['Ciclo A'], edges)).toEqual(new Set(['Ciclo A', 'Ciclo B']));
+    });
+
+    // Multi-causa: un nodo con DOS padres es alcanzable recorriendo desde CUALQUIERA de los dos
+    // — la razón real por la que openChangeTriggerModal necesita esto: al elegir un nuevo padre
+    // para un riesgo, hay que excluir a TODOS sus descendientes sin importar por cuál de sus
+    // (posiblemente varias) causas se llegue a ellos.
+    it('un nodo con dos padres es alcanzable desde cualquiera de los dos', () => {
+        const edges = [
+            { source: 'Raiz', target: 'A' },
+            { source: 'Raiz', target: 'B' },
+            { source: 'A', target: 'C' },
+            { source: 'B', target: 'C' },
+        ];
+        expect(RiskCascadeTree.collectReachable(['A'], edges)).toEqual(new Set(['A', 'C']));
+        expect(RiskCascadeTree.collectReachable(['B'], edges)).toEqual(new Set(['B', 'C']));
+        expect(RiskCascadeTree.collectReachable(['Raiz'], edges)).toEqual(new Set(['Raiz', 'A', 'B', 'C']));
     });
 });

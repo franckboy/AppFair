@@ -1,6 +1,29 @@
 'use strict';
 
 /**
+ * Migra en LECTURA la forma vieja de "Riesgo Desencadenante" (`triggeredByRiskName`/
+ * `triggeredByProbability`, un solo valor suelto) a la nueva (`triggeredBy`, un array — un
+ * riesgo puede tener más de una causa) — mismo espíritu que normalizeRiskCriteria en
+ * riskCriteria.js. Necesaria porque la app tiene despliegue real (ver README.md) con riesgos
+ * ya guardados en la forma vieja; el PUT nunca necesita esto (las escrituras nuevas siempre
+ * llegan ya con `triggeredBy`, por validación — ver routes/register.js).
+ * @param {Array<Object>} register
+ * @returns {Array<Object>}
+ */
+function normalizeTriggeredBy(register) {
+    return register.map((r) => {
+        if (Array.isArray(r.triggeredBy)) return r;
+        if (r.triggeredByRiskName) {
+            return {
+                ...r,
+                triggeredBy: [{ riskName: r.triggeredByRiskName, probability: r.triggeredByProbability ?? null }],
+            };
+        }
+        return { ...r, triggeredBy: [] };
+    });
+}
+
+/**
  * Genera las zonas del mapa de calor 2D (Impacto x Probabilidad) a partir de
  * las bandas Alto/Crítico configuradas en los Criterios de Riesgo, en vez de
  * usar números fijos.
@@ -240,6 +263,7 @@ function calculateInherentPortfolio(risks) {
 }
 
 module.exports = {
+    normalizeTriggeredBy,
     getRiskMatrixZones,
     calculateParetoAnalysis,
     calculateConsolidatedSensitivity,

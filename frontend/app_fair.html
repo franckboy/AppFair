@@ -272,13 +272,23 @@
                                     </select>
                                 </div>
                                 <div class="input-group">
-                                    <label for="fair-triggered-by">
-                                        Riesgo Desencadenante (opcional)
-                                        <i class="fas fa-info-circle text-blue-500 cursor-pointer ml-1" title="Si este riesgo normalmente ocurre como consecuencia de otro riesgo ya registrado (ej. un incendio que desencadena una interrupción operativa), selecciónalo aquí. Es solo organizativo por ahora — no afecta ningún cálculo, solo deja registrada la relación."></i>
+                                    <label>
+                                        Riesgos Desencadenantes (opcional)
+                                        <i class="fas fa-info-circle text-blue-500 cursor-pointer ml-1" title="Si este riesgo normalmente ocurre como consecuencia de otro(s) riesgo(s) ya registrado(s) (ej. un incendio que desencadena una interrupción operativa), agrégalo(s) aquí — un riesgo puede tener más de una causa. La probabilidad la usa 'Simular Familia' en el Árbol de Riesgos en Cascada; sin ella, solo queda registrada la relación."></i>
                                     </label>
-                                    <select id="fair-triggered-by" class="form-select">
-                                        <option value="">— Ninguno (riesgo independiente) —</option>
-                                    </select>
+                                    <table class="w-full text-sm border" id="fair-triggered-by-table">
+                                        <thead>
+                                            <tr class="bg-gray-50">
+                                                <th class="px-2 py-1 text-left">Riesgo Causante</th>
+                                                <th class="px-2 py-1 text-left">Probabilidad % (opcional)</th>
+                                                <th></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="fair-triggered-by-body"></tbody>
+                                    </table>
+                                    <button type="button" id="fair-triggered-by-add-btn" class="btn btn-secondary text-sm mt-2">
+                                        + Agregar causa
+                                    </button>
                                 </div>
                                 <!-- Las 3 opciones originales eran Confidencialidad/Integridad/Disponibilidad (la tríada
                                      CIA de ciberseguridad) — se me pasaron en el barrido de "elimina toda referencia a
