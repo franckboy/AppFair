@@ -1,16 +1,6 @@
 import { App } from './app-namespace.js';
 import { state } from './state.js';
-import { severityToClasses } from './utils.js';
-
-const formatCurrency = (value) =>
-    typeof value === 'number'
-        ? new Intl.NumberFormat('en-US', {
-              style: 'currency',
-              currency: 'USD',
-              minimumFractionDigits: 0,
-              maximumFractionDigits: 0,
-          }).format(value)
-        : '—';
+import { formatCurrency, severityToClasses } from './utils.js';
 
 // ============================================================
 // App.RiskSummaryBar — mosaico persistente entre el header y el contenido de cada página

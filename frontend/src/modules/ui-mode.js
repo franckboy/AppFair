@@ -39,6 +39,9 @@ export const UIMode = {
             'fair-aceptar-description':
                 'ISO 31000 exige que aceptar un riesgo sea una decisión documentada y deliberada, no la ausencia de una decisión. Escribe la justificación.',
             'fair-aceptar-justificacion-label': 'Justificación de la aceptación:',
+            'fair-mitigar-transferir-title': '5. Mitigar + Transferir (combinado)',
+            'fair-mitigar-transferir-desc':
+                'Combina las dos estrategias de arriba en capas: primero se intenta mitigar, y lo que quede expuesto (funcione o no la mitigación) se decide aparte si conviene también transferir. Aparece solo cuando ya capturaste un costo real en Mitigar y una prima real en Transferir. La Pérdida Residual de acá es un promedio esperado entre los distintos caminos posibles del plan (no un número garantizado como en las 4 opciones de arriba).',
             'governance-section-title': 'Gobernanza y Revisión',
             'fair-owner-label': 'Dueño del Riesgo (responsable):',
             'fair-review-date-label': 'Próxima Fecha de Revisión:',
@@ -72,6 +75,9 @@ export const UIMode = {
             'fair-aceptar-description':
                 'Si decides no hacer nada, igual tienes que dejarlo por escrito y explicar por qué — no es lo mismo decidir aceptar el riesgo que simplemente no decidir nada.',
             'fair-aceptar-justificacion-label': '¿Por qué decides no hacer nada al respecto?',
+            'fair-mitigar-transferir-title': '5. Poner un control Y contratar un seguro (combinado)',
+            'fair-mitigar-transferir-desc':
+                'Combina las dos opciones de arriba en pasos: primero intentas el control, y lo que te quede expuesto (funcione o no el control) decides aparte si también lo cubres con el seguro. Aparece solo cuando ya escribiste cuánto cuesta el control Y cuánto pagarías por el seguro. Lo que "te quedaría expuesto" acá es un promedio entre los distintos caminos posibles del plan, no un número garantizado como en las 4 opciones de arriba.',
             'governance-section-title': '¿Quién es responsable, y cuándo se revisa esto?',
             'fair-owner-label': '¿Quién es el responsable de este riesgo?',
             'fair-review-date-label': '¿Cuándo deberíamos revisarlo de nuevo?',

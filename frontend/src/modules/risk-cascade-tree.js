@@ -4,6 +4,7 @@ import { Modal } from './modal.js';
 import {
     buildHistogramBins,
     computeCoveredIsoClauses,
+    formatCurrency,
     getSafeNumber,
     sanitizeHTML,
     severityToClasses,
@@ -1034,7 +1035,6 @@ export const RiskCascadeTree = {
         loading.classList.add('hidden');
         body.classList.remove('hidden');
 
-        const formatCurrency = (v) => `$${Math.round(v).toLocaleString('en-US')}`;
         document.getElementById('risk-tree-family-sim-ale').textContent = formatCurrency(result.summary.average);
         document.getElementById('risk-tree-family-sim-median').textContent = formatCurrency(result.summary.median);
         document.getElementById('risk-tree-family-sim-p90').textContent = formatCurrency(result.summary.p90);

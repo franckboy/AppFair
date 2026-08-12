@@ -7,6 +7,7 @@ import {
     LOSS_FIELD_LABELS,
     buildHistogramBins,
     computeSuggestedTef,
+    formatCurrency,
     getSafeNumber,
     sanitizeHTML,
     sensitivityLabel,
@@ -1581,13 +1582,6 @@ export const FairWizard = {
                     lossMagnitudes: this.buildLossMagnitudesFromDom(),
                 },
             });
-            const formatCurrency = (value) =>
-                new Intl.NumberFormat('en-US', {
-                    style: 'currency',
-                    currency: 'USD',
-                    minimumFractionDigits: 0,
-                    maximumFractionDigits: 0,
-                }).format(value);
 
             document.getElementById('nash-attacker-effort').textContent = result.attackerEffort.toFixed(1);
             document.getElementById('nash-defense-effort').textContent = result.defenseEffort.toFixed(1);
@@ -1616,16 +1610,6 @@ export const FairWizard = {
         state.fair.lastEvaluation = evaluation;
         state.fair.lastSeed = result.usedSeed;
         App.RiskSummaryBar.render();
-
-        const currency = 'USD';
-        const currencySymbol = '$';
-        const formatCurrency = (value) =>
-            new Intl.NumberFormat('en-US', {
-                style: 'currency',
-                currency: currency,
-                minimumFractionDigits: 0,
-                maximumFractionDigits: 0,
-            }).format(value);
 
         document.getElementById('ale-result').textContent = formatCurrency(summary.average);
         document.getElementById('median-loss-result').textContent = formatCurrency(summary.median);
@@ -1691,7 +1675,7 @@ export const FairWizard = {
         // Se guarda en state para que App.UIMode.applyLabels() pueda recalcular este texto
         // si el usuario cambia de Modo Simple/Técnico DESPUÉS de simular — si no, se
         // quedaría con la redacción de cuando corrió la simulación hasta la próxima corrida.
-        state.fair.lastThresholdK = `${currencySymbol}${summary.exceedanceThreshold / 1000}k`;
+        state.fair.lastThresholdK = `$${summary.exceedanceThreshold / 1000}k`;
         App.UIMode.applyProbThresholdLabel();
         document.getElementById('prob-threshold-result').textContent = `${summary.probExceedance.toFixed(1)}%`;
 
@@ -1730,7 +1714,7 @@ export const FairWizard = {
                         title: { display: true, text: 'Nº de Simulaciones' },
                     },
                     x: {
-                        title: { display: true, text: `Pérdida Anual Estimada (miles de ${currency})` },
+                        title: { display: true, text: 'Pérdida Anual Estimada (miles de USD)' },
                         ticks: { autoSkip: true, maxRotation: 45, minRotation: 45 },
                     },
                 },
