@@ -72,6 +72,12 @@ export const RiskCascadeTree = {
     // llamada (mismo espíritu que el innerHTML de siempre: reconstruir todo es más simple de
     // razonar que actualizar un grafo existente de forma incremental).
     _cy: null,
+    // Nombres de riesgo con su rama colapsada (ver toggleBranch/computeVisibility) — vive AQUÍ,
+    // fuera de Cytoscape, porque render() destruye y reconstruye la instancia de Cytoscape en
+    // cada toggle (ver el comentario de toggleBranch para el motivo real). Se reinicia solo al
+    // entrar a la página (ver load()) — un render() disparado por otra cosa (crear un hijo,
+    // cambiar un vínculo) conserva lo que ya estaba colapsado.
+    _collapsedNames: new Set(),
     // Guardián contra condición de carrera de red (mismo patrón que App.Treatment, ver el
     // comentario junto a _reduccionALERequestId ahí): si el usuario abre "Simular Familia" de un
     // riesgo, y antes de que llegue la respuesta abre el detalle de OTRO riesgo y también pide
@@ -144,8 +150,11 @@ export const RiskCascadeTree = {
     // visita anterior (ej. muy alejado) haría que el árbol se viera vacío/roto al volver, sin
     // ninguna pista de por qué. Si el Registro no está vacío, render() vuelve a ajustar el zoom
     // real al terminar (cy.fit(), ver más abajo) para que el árbol completo entre en el visor.
+    // Las ramas colapsadas también se reinician — mismo criterio, entrar a la página siempre
+    // arranca con el árbol completo expandido.
     async load() {
         this.setZoom(1);
+        this._collapsedNames = new Set();
         await App.FairRegister.loadRiskRegister(false);
         this.render();
     },
@@ -205,6 +214,17 @@ export const RiskCascadeTree = {
     // fuera forma parte de un ciclo), pero ahora se anota en TODOS los miembros del ciclo — ya no
     // hace falta elegir un único "punto de entrada" arbitrario como con el motor CSS anterior
     // (Cytoscape no recorre nada, solo dibuja lo que se le da).
+    //
+    // `visible` (ver computeVisibility) se calcula UNA vez aquí y se hornea directo en `data()` de
+    // cada nodo/arista (hiddenByCollapse) — nunca se pisa un valor ya existente después de crear
+    // los elementos. Motivo real, no preferencia de estilo: cytoscape-dagre, al correr layout()
+    // sobre un grafo que YA vivió un ciclo de ocultar/mostrar elementos, calculaba un espaciado
+    // vertical más chico que el mismo grafo recién construido (confirmado comparando ambos casos
+    // con los mismos datos) — un bug real de tarjetas pisándose entre sí después de colapsar y
+    // volver a expandir una rama. Por eso toggleBranch() ya no togglea `data()` sobre una
+    // instancia viva: destruye y reconstruye Cytoscape por completo en cada toggle (mismo camino,
+    // ya probado correcto, que el primer render() de la página) — el estado de colapso en sí vive
+    // en `this._collapsedNames` (fuera de Cytoscape), no en los nodos.
     buildCyElements() {
         const { nodes, edges } = this.buildGraph();
         const roots = nodes.filter((n) => !edges.some((e) => e.target === n.id));
@@ -213,10 +233,21 @@ export const RiskCascadeTree = {
             edges,
         );
         const cycleNodes = new Set(nodes.filter((n) => !handled.has(n.id)).map((n) => n.id));
+        const visible = this.computeVisibility();
 
-        const cyNodes = nodes.map((n) => ({ data: this.nodeData(n, edges, cycleNodes) }));
+        const cyNodes = nodes.map((n) => ({ data: this.nodeData(n, edges, cycleNodes, visible) }));
         const cyEdges = edges.map((e) => ({
-            data: { id: `${e.source}=>${e.target}`, source: e.source, target: e.target },
+            data: {
+                id: `${e.source}=>${e.target}`,
+                source: e.source,
+                target: e.target,
+                // Oculta si cualquiera de sus dos extremos no es visible, O si su ORIGEN está
+                // colapsado — esto último evita que un hijo con dos causas (una colapsada, otra
+                // no) se dibuje con una arista fantasma desde la causa colapsada, aunque el nodo
+                // en sí siga visible por la otra causa.
+                hiddenByCollapse:
+                    !visible.has(e.source) || !visible.has(e.target) || this._collapsedNames.has(e.source),
+            },
         }));
         return [...cyNodes, ...cyEdges];
     },
@@ -225,7 +256,7 @@ export const RiskCascadeTree = {
     // `height`: un bucket fijo (100px normal / 140px con alguna nota) que dagre necesita ANTES de
     // que exista DOM real que medir (cytoscape-node-html-label superpone el HTML DESPUÉS de que
     // el layout ya corrió).
-    nodeData(node, edges, cycleNodes) {
+    nodeData(node, edges, cycleNodes, visible) {
         const risk = node.risk;
         const isOpportunity = risk.riskType === 'oportunidad';
         // Un riesgo creado desde el botón "+" (ver openCreateChildModal) nace como stub, sin
@@ -255,17 +286,8 @@ export const RiskCascadeTree = {
             broken: node.broken,
             isCycle,
             height: hasNote ? 140 : 100,
-            // Estado de colapso — vive en `data()` (no en el DOM ni en una clase Cytoscape
-            // aparte) a propósito: cytoscape-node-html-label vuelve a pintar una tarjeta desde
-            // cero (tpl(data), ver cardHtml) cada vez que el nodo dispara un evento "style"/
-            // "data" — cosa que TAMBIÉN pasa por simples efectos colaterales del layout (dagre
-            // reposiciona nodos vecinos al colapsar una rama), no solo por los cambios que hace
-            // toggleBranch() a propósito. Cualquier cambio de DOM hecho por fuera de `data()` se
-            // pierde en la siguiente repintada — guardar el estado AQUÍ, para que cada repintada
-            // (sin importar qué la disparó) lo lea de la misma fuente y siempre salga correcto,
-            // en vez de perseguir el momento exacto en que ya no lo va a sobreescribir.
-            collapsed: false,
-            hiddenByCollapse: false,
+            collapsed: this._collapsedNames.has(node.id),
+            hiddenByCollapse: !visible.has(node.id),
         };
     },
 
@@ -303,11 +325,18 @@ export const RiskCascadeTree = {
             </div>`;
     },
 
-    render() {
+    // `preserveView`: true cuando el rebuild lo dispara un toggle de colapsar/expandir (ver
+    // toggleBranch) — conserva el pan/zoom que el usuario ya tenía en vez de reencuadrar todo,
+    // igual que hacía el toggle incremental de antes. false (el caso normal: entrar a la página,
+    // crear un hijo, cambiar un vínculo) reencuadra el árbol completo como siempre.
+    render({ preserveView = false } = {}) {
         const container = document.getElementById('risk-cascade-tree-container');
         const scrollWrap = document.getElementById('risk-cascade-tree-scroll');
         const empty = document.getElementById('risk-cascade-tree-empty');
         if (!container) return;
+
+        const savedPan = preserveView && this._cy ? this._cy.pan() : null;
+        const savedZoom = preserveView && this._cy ? this._cy.zoom() : null;
 
         if (this._cy) {
             this._cy.destroy();
@@ -384,23 +413,94 @@ export const RiskCascadeTree = {
             { enablePointerEvents: true },
         );
 
-        // Encuadra el árbol completo en el visor sin scroll manual — mejora real sobre el motor
-        // anterior, donde un árbol grande quedaba cortado hasta hacer scroll a mano. El zoom
-        // resultante puede caer fuera de [ZOOM_MIN, ZOOM_MAX] (esos límites solo aplican a los 3
-        // botones, ver setZoom) — se refleja tal cual en el botón "100%"/label.
-        this._cy.fit(this._cy.elements(), 40);
-        this._zoom = this._cy.zoom();
-        this._syncZoomLabel();
+        if (savedPan && savedZoom != null) {
+            // Restaura exactamente el pan/zoom que el usuario ya tenía — un toggle de colapsar/
+            // expandir no debe reencuadrar ni mover la vista.
+            this._cy.pan(savedPan);
+            this._cy.zoom(savedZoom);
+            this._zoom = savedZoom;
+            this._syncZoomLabel();
+        } else {
+            // Encuadra el árbol completo en el visor sin scroll manual — mejora real sobre el
+            // motor anterior, donde un árbol grande quedaba cortado hasta hacer scroll a mano. El
+            // zoom resultante puede caer fuera de [ZOOM_MIN, ZOOM_MAX] (esos límites solo aplican
+            // a los 3 botones, ver setZoom) — se refleja tal cual en el botón "100%"/label.
+            this._cy.fit(this._cy.elements(), 40);
+            this._zoom = this._cy.zoom();
+            this._syncZoomLabel();
+        }
+
+        // Un nombre de riesgo largo, envuelto a 2-3 líneas dentro del ancho fijo de la tarjeta
+        // (210px), puede medir más que el bucket fijo que nodeData() le asumió a dagre — el
+        // layout de arriba ya corrió con esa altura estimada, así que remedir y volver a
+        // correrlo (ver _remeasureAndRelayout) evita que las tarjetas queden pisadas unas sobre
+        // otras (bug real, reproducido con nombres como "Falla de Suministro Eléctrico
+        // Principal"). refit solo si esta llamada YA reencuadró arriba — un toggle preserva vista
+        // en los dos pasos, no solo en el primero.
+        this._remeasureAndRelayout({ refit: !savedPan });
     },
 
-    // Qué nodos deben verse AHORA MISMO, dado el estado de colapso de CADA rama (no solo la que
-    // se acaba de tocar) — un nodo con más de una causa puede seguir siendo alcanzable por un
-    // padre expandido aunque OTRO de sus padres esté colapsado (ej. "Incendio en Bodega" con dos
-    // causas: colapsar solo una de ellas no debe esconderlo, la otra sigue mostrándolo). Recorre
-    // desde las raíces reales + los mismos "puntos de entrada" de ciclos sin raíz externa que ya
-    // usa buildCyElements (esos nunca se ocultan, se muestran siempre con su advertencia), sin
-    // avanzar hacia los hijos de un nodo cuyo `collapsed` esté activo — así un nodo solo queda
-    // fuera de `visible` si TODOS los caminos hacia él pasan por alguna rama colapsada.
+    // Compara la altura REAL de cada tarjeta ya pintada (offsetHeight, disponible recién después
+    // de que cytoscape-node-html-label la superpuso) contra el bucket fijo que nodeData() le dio
+    // a dagre (100/140px, ver su comentario: es lo único que puede usarse ANTES de que exista DOM
+    // real que medir). Si alguna tarjeta mide más de lo asumido, actualiza esa altura en data() y
+    // vuelve a correr el layout — una sola pasada extra, no un bucle: la segunda vez ya usa la
+    // altura real, no puede quedar corta otra vez. Si ninguna cambió, no hace nada (caso común:
+    // nombres cortos que ya caben en el bucket).
+    _remeasureAndRelayout({ refit = false } = {}) {
+        if (!this._cy) return;
+        // setTimeout(fn, 0), NO requestAnimationFrame — mismo mecanismo que usa
+        // cytoscape-node-html-label para sus propias repinturas reactivas
+        // (updateDataOrStyleCyHandler, ver el comentario de toggleBranch): un cambio de
+        // data()/estilo (el de arriba: hiddenByCollapse, o el layout que recién corrió) deja SU
+        // PROPIO setTimeout(0) pendiente para recalcular la posición/tamaño real de la tarjeta
+        // superpuesta — programar el nuestro DESPUÉS (mismo truco de orden de ejecución) asegura
+        // que measuring corra sobre el DOM ya asentado, no a mitad de esa repintada (con
+        // requestAnimationFrame, que corre en un momento distinto del bucle de eventos, esta
+        // carrera se perdía: offsetHeight medía 0 justo después de expandir una rama).
+        setTimeout(() => {
+            if (!this._cy) return;
+            let changed = false;
+            document.querySelectorAll('#risk-cascade-tree-container .risk-tree-card').forEach((card) => {
+                const name = card.querySelector('.risk-tree-name').textContent;
+                const node = this._cy.getElementById(name);
+                if (node.empty() || node.data('hiddenByCollapse')) return;
+                const realHeight = card.offsetHeight;
+                if (realHeight > 0 && realHeight > node.data('height')) {
+                    node.data('height', realHeight);
+                    changed = true;
+                }
+            });
+            if (!changed) return;
+
+            // .style().update() antes del layout: la altura es un mapper de estilo
+            // (height: 'data(height)', ver render()) — fuerza a Cytoscape a resolverlo con el
+            // valor recién escrito antes de que dagre lo lea.
+            this._cy.style().update();
+            this._cy
+                .elements()
+                .filter((ele) => !ele.data('hiddenByCollapse'))
+                .layout(DAGRE_LAYOUT)
+                .run();
+            if (refit) {
+                this._cy.fit(this._cy.elements(), 40);
+                this._zoom = this._cy.zoom();
+                this._syncZoomLabel();
+            }
+        });
+    },
+
+    // Qué nodos deben verse AHORA MISMO, dado `this._collapsedNames` (el estado de colapso de
+    // CADA rama, no solo la que se acaba de tocar) — un nodo con más de una causa puede seguir
+    // siendo alcanzable por un padre expandido aunque OTRO de sus padres esté colapsado (ej.
+    // "Incendio en Bodega" con dos causas: colapsar solo una de ellas no debe esconderlo, la otra
+    // sigue mostrándolo). Recorre desde las raíces reales + los mismos "puntos de entrada" de
+    // ciclos sin raíz externa que ya usa buildCyElements (esos nunca se ocultan, se muestran
+    // siempre con su advertencia), sin avanzar hacia los hijos de un nodo colapsado — así un nodo
+    // solo queda fuera de `visible` si TODOS los caminos hacia él pasan por alguna rama colapsada.
+    // No depende de `this._cy` (se usa también para construir los elementos ANTES de que exista
+    // la instancia, ver buildCyElements) — el estado de colapso vive en `this._collapsedNames`,
+    // no en los nodos de Cytoscape.
     computeVisibility() {
         const { nodes, edges } = this.buildGraph();
         const roots = nodes.filter((n) => !edges.some((e) => e.target === n.id));
@@ -417,59 +517,29 @@ export const RiskCascadeTree = {
             const name = stack.pop();
             if (visible.has(name)) continue;
             visible.add(name);
-            if (this._cy.getElementById(name).data('collapsed')) continue;
+            if (this._collapsedNames.has(name)) continue;
             edges.filter((e) => e.source === name).forEach((e) => stack.push(e.target));
         }
         return visible;
     },
 
-    // Colapsa/expande la rama de `riskName` — persiste el nuevo estado en el propio nodo
-    // (`collapsed`) y recalcula la visibilidad de TODO el grafo con computeVisibility(), no solo
-    // de los descendientes de `riskName`: con múltiples causas, tocar solo esa rama podía
-    // esconder (o volver a mostrar) un nodo que en realidad sigue (o no) dependiendo de OTRO
-    // padre — ver el comentario de computeVisibility.
+    // Colapsa/expande la rama de `riskName` — actualiza `this._collapsedNames` (el estado de
+    // colapso vive AHÍ, no en Cytoscape) y llama a render({preserveView: true}) para reconstruir
+    // el árbol completo desde cero, conservando el pan/zoom actual.
     //
-    // Todo el estado se escribe en `data()` (`collapsed`/`hiddenByCollapse`) — nunca se parchea
-    // el DOM ya pintado. Motivo real, no preferencia de estilo: cytoscape-node-html-label vuelve
-    // a pintar una tarjeta desde cero (tpl(data), ver cardHtml) cada vez que su nodo dispara un
-    // evento "style"/"data" en Cytoscape — y layout(...).run() dispara justo esos eventos en
-    // CUALQUIER nodo que reposicione, no solo en los que se tocan a propósito (confirmado leyendo
-    // su fuente: updateDataOrStyleCyHandler, con su propio setTimeout(fn, 0), reacciona a ambos).
-    // Parchear el DOM directamente después de correr el layout es una carrera imposible de ganar
-    // de forma confiable (no hay forma de saber cuántas de esas repinturas quedan pendientes ni
-    // cuándo termina la última). Escribir el estado en `data()` la evita por completo: sin
-    // importar cuándo o por qué se repinte una tarjeta, cardHtml() siempre lee la verdad vigente.
+    // Por qué un rebuild completo y no un toggle incremental sobre la instancia viva (como se
+    // hacía antes): confirmado con datos reales que cytoscape-dagre, al correr layout() sobre un
+    // grafo que ya vivió un ciclo de ocultar/mostrar elementos (aunque las alturas de los nodos
+    // fueran las mismas de siempre), calculaba un espaciado vertical MENOR que el mismo grafo
+    // recién construido — un bug real de tarjetas pisándose entre sí después de colapsar y volver
+    // a expandir una rama. Reconstruir desde cero en cada toggle usa el MISMO camino que ya está
+    // probado correcto (el primer render() de la página), en vez de perseguir por qué el layout
+    // incremental de cytoscape-dagre no era determinista.
     toggleBranch(riskName, btnEl) {
-        if (!this._cy) return;
         const willCollapse = btnEl.getAttribute('aria-expanded') !== 'false';
-        this._cy.getElementById(riskName).data('collapsed', willCollapse);
-
-        const visible = this.computeVisibility();
-        this._cy.nodes().forEach((node) => {
-            node.data('hiddenByCollapse', !visible.has(node.id()));
-        });
-        this._cy.edges().forEach((edge) => {
-            const source = edge.data('source');
-            const target = edge.data('target');
-            // Una arista se oculta si cualquiera de sus dos extremos no es visible, O si su
-            // ORIGEN está colapsado — esto último es lo que evita que "Incendio en Bodega" (ver
-            // arriba) se dibuje con una arista fantasma desde la causa colapsada, aunque el nodo
-            // en sí siga visible por la otra causa.
-            const hidden =
-                !visible.has(source) || !visible.has(target) || this._cy.getElementById(source).data('collapsed');
-            edge.data('hiddenByCollapse', hidden);
-        });
-
-        // Corre el layout SOLO sobre lo que sigue visible — así los hermanos de la rama
-        // colapsada se reacomodan para llenar el espacio libre, en vez de que dagre siga
-        // reservando el hueco de nodos ocultos que ya no participan del layout. `.filter()` (no
-        // un selector de Cytoscape) para no depender de la sintaxis exacta de selectores sobre
-        // campos booleanos de `data()`.
-        this._cy
-            .elements()
-            .filter((ele) => !ele.data('hiddenByCollapse'))
-            .layout(DAGRE_LAYOUT)
-            .run();
+        if (willCollapse) this._collapsedNames.add(riskName);
+        else this._collapsedNames.delete(riskName);
+        this.render({ preserveView: true });
     },
 
     // Crea un riesgo NUEVO, ya vinculado como desencadenado por `parentRiskName` — a diferencia

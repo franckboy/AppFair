@@ -327,4 +327,56 @@ test.describe('Árbol de Riesgos en Cascada', () => {
         await page.waitForTimeout(300);
         await expect(hijo).toBeVisible();
     });
+
+    test('REGRESIÓN: las tarjetas no quedan pisadas unas sobre otras después de colapsar y volver a expandir una rama', async ({
+        page,
+    }) => {
+        // Bug real: con un nombre de riesgo largo (se envuelve a 2-3 líneas dentro del ancho fijo
+        // de la tarjeta), volver a correr el layout de dagre incrementalmente sobre una instancia
+        // de Cytoscape que ya vivió un ciclo de ocultar/mostrar elementos calculaba un espaciado
+        // vertical menor que el mismo grafo recién construido — las tarjetas terminaban
+        // superpuestas. Se corrigió haciendo que cada toggle reconstruya el árbol completo desde
+        // cero (mismo camino que el primer render, ya probado correcto) — ver toggleBranch.
+        await connectAndBoot(page);
+        await runFullFairAnalysis(page, 'E2E Overlap — Falla de Suministro Eléctrico Principal');
+        await connectAndBoot(page);
+
+        await page.fill('#fair-riskName', 'E2E Overlap — Falla de Sistema de Alarma de Intrusión');
+        await page.click('#fair-triggered-by-add-btn');
+        await page.selectOption(
+            '#fair-triggered-by-body [data-trigger-row] [data-field="riskName"]',
+            'E2E Overlap — Falla de Suministro Eléctrico Principal',
+        );
+        await runFullFairAnalysis(page, 'E2E Overlap — Falla de Sistema de Alarma de Intrusión');
+        await connectAndBoot(page);
+
+        await page.fill('#fair-riskName', 'E2E Overlap — Incendio en Bodega');
+        await page.click('#fair-triggered-by-add-btn');
+        await page.selectOption(
+            '#fair-triggered-by-body [data-trigger-row] [data-field="riskName"]',
+            'E2E Overlap — Falla de Sistema de Alarma de Intrusión',
+        );
+        await runFullFairAnalysis(page, 'E2E Overlap — Incendio en Bodega');
+
+        await page.click('#nav-risk-tree');
+        await page.waitForSelector('#risk-cascade-tree-container');
+        await page.waitForTimeout(300);
+
+        const middle = page.locator('.risk-tree-card', {
+            hasText: 'E2E Overlap — Falla de Sistema de Alarma de Intrusión',
+        });
+        const child = page.locator('.risk-tree-card', { hasText: 'E2E Overlap — Incendio en Bodega' });
+
+        // Colapsar y volver a expandir — el escenario exacto que reproducía el bug.
+        await middle.locator('[data-tree-toggle]').click();
+        await page.waitForTimeout(400);
+        await middle.locator('[data-tree-toggle]').click();
+        await page.waitForTimeout(400);
+
+        const middleBox = await middle.boundingBox();
+        const childBox = await child.boundingBox();
+        // Sin superposición vertical: el borde inferior de la tarjeta de arriba debe quedar por
+        // encima del borde superior de la de abajo.
+        expect(middleBox.y + middleBox.height).toBeLessThanOrEqual(childBox.y + 1);
+    });
 });
