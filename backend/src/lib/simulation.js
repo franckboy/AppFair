@@ -2,6 +2,7 @@
 
 const { mulberry32, getPertRandom, getLognormalRandom } = require('./random');
 const { lossFormsKeys, lossFormsLabels } = require('../data/profiles');
+const { sampleCorrelation } = require('simple-statistics');
 
 /**
  * Corre la simulación Monte Carlo completa de un riesgo FAIR. TEF y Vulnerabilidad se
@@ -84,29 +85,23 @@ function runMonteCarloSimulation({ iterations, seed, tef, vuln, lossMagnitudes, 
     return { annualLosses, usedSeed, sensitivity, lefSamples, magnitudeSamples };
 }
 
-/** Correlación de Pearson entre dos arreglos numéricos del mismo largo. */
+/**
+ * Correlación de Pearson entre dos arreglos numéricos del mismo largo. Envuelve
+ * sampleCorrelation de simple-statistics (misma fórmula, cov/std/std) en vez de mantener a mano
+ * la varianza + covarianza — pero simple-statistics NO protege dos casos que sí necesitamos:
+ *  - Con menos de 2 puntos, sampleCovariance revienta con un Error (nunca ocurría con la
+ *    fórmula manual, que devolvía 0). iterations=1 es un valor válido según validateIterations,
+ *    así que esto es alcanzable desde la API, no solo un caso de laboratorio.
+ *  - Con varianza cero en x o y (ej. vuln.min === vuln.max hace que getPertRandom devuelva
+ *    siempre el mismo valor — un arreglo constante), cov/std/std da 0/0 = NaN en vez del 0 que
+ *    calculateSensitivity necesita para que Math.abs(...) y .sort() no se rompan.
+ * En ambos casos se preserva el mismo comportamiento (devolver 0) que tenía la implementación
+ * anterior (ver el `den === 0 ? 0 : ...` que reemplaza esta versión).
+ */
 function pearsonCorrelation(x, y) {
-    const n = x.length;
-    let sumX = 0,
-        sumY = 0;
-    for (let i = 0; i < n; i++) {
-        sumX += x[i];
-        sumY += y[i];
-    }
-    const meanX = sumX / n,
-        meanY = sumY / n;
-    let num = 0,
-        denX = 0,
-        denY = 0;
-    for (let i = 0; i < n; i++) {
-        const dx = x[i] - meanX,
-            dy = y[i] - meanY;
-        num += dx * dy;
-        denX += dx * dx;
-        denY += dy * dy;
-    }
-    const den = Math.sqrt(denX * denY);
-    return den === 0 ? 0 : num / den;
+    if (x.length < 2) return 0;
+    const r = sampleCorrelation(x, y);
+    return Number.isNaN(r) ? 0 : r;
 }
 
 /**
