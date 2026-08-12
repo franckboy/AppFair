@@ -11,6 +11,8 @@ import {
     sensitivityLabel,
     severityToClasses,
     severityToHex,
+    shortMetricLabel,
+    simpleEvaluationMessage,
     buildHistogramBins,
     computeSuggestedTef,
     sortTriangularRange,
@@ -216,6 +218,81 @@ describe('sensitivityLabel', () => {
     it('usa el nombre técnico si la key no tiene etiqueta corta (o no hay key)', () => {
         expect(sensitivityLabel({ name: 'Algo sin key' })).toBe('Algo sin key');
         expect(sensitivityLabel({ key: 'no-existe', name: 'Fallback' })).toBe('Fallback');
+    });
+});
+
+describe('shortMetricLabel', () => {
+    beforeEach(() => {
+        App.UIMode = { mode: 'simple' };
+    });
+
+    it('en Modo Simple, usa la etiqueta corta para cada key conocida', () => {
+        expect(shortMetricLabel('ale', 'ALE')).toBe('Pérdida Promedio');
+        expect(shortMetricLabel('cvar95', 'CVaR 95%')).toBe('Peor Caso Típico (5%)');
+        expect(shortMetricLabel('p90', 'P90')).toBe('Peor 10% de los Casos');
+        expect(shortMetricLabel('pareto', 'Pareto')).toBe('Los Que Más Pesan');
+    });
+
+    it('en Modo Técnico, siempre devuelve el texto técnico pasado como fallback', () => {
+        App.UIMode.mode = 'tecnico';
+        expect(shortMetricLabel('ale', 'ALE')).toBe('ALE');
+        expect(shortMetricLabel('cvar95', 'CVaR 95%')).toBe('CVaR 95%');
+    });
+
+    it('con una key desconocida, devuelve el texto técnico aunque esté en Modo Simple', () => {
+        expect(shortMetricLabel('no-existe', 'Texto original')).toBe('Texto original');
+    });
+});
+
+describe('simpleEvaluationMessage', () => {
+    const fmt = (v) => `$${Math.round(v).toLocaleString('en-US')}`;
+
+    it('Amenaza crítica por ALE (no por cola): menciona el monto y que hay que actuar ya', () => {
+        const evaluation = { level: 'Crítico — Requiere Acción Inmediata', severity: 'critico' };
+        const msg = simpleEvaluationMessage(evaluation, 300000, 350000, 'amenaza', fmt);
+        expect(msg).toContain('$300,000');
+        expect(msg).not.toMatch(/CVaR|percentil/i);
+    });
+
+    it('Amenaza crítica por cola (CVaR): menciona AMBOS montos sin nombrar CVaR/percentiles', () => {
+        const evaluation = { level: 'Crítico (riesgo de cola) — Requiere Atención', severity: 'critico' };
+        const msg = simpleEvaluationMessage(evaluation, 50000, 400000, 'amenaza', fmt);
+        expect(msg).toContain('$50,000');
+        expect(msg).toContain('$400,000');
+        expect(msg).not.toMatch(/CVaR|percentil/i);
+    });
+
+    it('Amenaza alto/medio/aceptable: devuelve un mensaje distinto por banda', () => {
+        const alto = simpleEvaluationMessage(
+            { level: 'Alto — Requiere Tratamiento', severity: 'alto' },
+            100000,
+            100000,
+            'amenaza',
+            fmt,
+        );
+        const medio = simpleEvaluationMessage(
+            { level: 'Medio — Vigilar', severity: 'medio' },
+            50000,
+            50000,
+            'amenaza',
+            fmt,
+        );
+        const bajo = simpleEvaluationMessage({ level: 'Aceptable', severity: 'bajo' }, 10000, 10000, 'amenaza', fmt);
+        expect(alto).not.toBe(medio);
+        expect(medio).not.toBe(bajo);
+        [alto, medio, bajo].forEach((msg) => expect(msg).not.toMatch(/CVaR|percentil/i));
+    });
+
+    it('Oportunidad: usa un mensaje de beneficio, no de pérdida', () => {
+        const msg = simpleEvaluationMessage(
+            { level: 'Oportunidad Significativa — Recomendable Perseguir', severity: 'bajo' },
+            80000,
+            80000,
+            'oportunidad',
+            fmt,
+        );
+        expect(msg).toMatch(/beneficiar/);
+        expect(msg).not.toMatch(/costar|perder/);
     });
 });
 

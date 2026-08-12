@@ -1,7 +1,7 @@
 import { App } from './app-namespace.js';
 import { state } from './state.js';
 import { Modal } from './modal.js';
-import { debounce, getSafeNumber, sanitizeHTML, showToast } from './utils.js';
+import { debounce, getSafeNumber, sanitizeHTML, shortMetricLabel, showToast } from './utils.js';
 
 // Orden de fiabilidad de más débil a más fuerte — mismo orden que
 // RELIABILITY_TO_PROBABILITY en backend/src/lib/treatment.js (baja: 0.4 < media: 0.7 <
@@ -549,11 +549,11 @@ export const Treatment = {
         this.renderInvestmentVerdict('fair-evitar-rosi', 'fair-evitar-verdict', result.evitar.verdict);
 
         document.getElementById('fair-aceptar-residual').textContent =
-            `${formatCurrency(result.aceptar.residualALE)} (= ALE actual)`;
+            `${formatCurrency(result.aceptar.residualALE)} (= ${shortMetricLabel('ale', 'ALE')} actual)`;
         document.getElementById('fair-aceptar-residual-cvar').textContent =
             result.aceptar.residualCVaR === null
                 ? '—'
-                : `${formatCurrency(result.aceptar.residualCVaR)} (= CVaR actual)`;
+                : `${formatCurrency(result.aceptar.residualCVaR)} (= ${shortMetricLabel('cvar95', 'CVaR')} actual)`;
 
         const recEl = document.getElementById('fair-treatment-recommendation');
         const rec = result.recommendation;
@@ -653,9 +653,12 @@ export const Treatment = {
         // decision.residualCVaR puede faltar del todo (Transferir, o una decisión adoptada antes
         // de que este campo existiera) — `!= null` trata "ausente" y "null" igual, sin mostrar
         // nada de CVaR en vez de "$NaN".
-        const cvarText = decision.residualCVaR != null ? ` / CVaR95: ${formatCurrency(decision.residualCVaR)}` : '';
+        const cvarText =
+            decision.residualCVaR != null
+                ? ` / ${shortMetricLabel('cvar95', 'CVaR95')}: ${formatCurrency(decision.residualCVaR)}`
+                : '';
         document.getElementById('treatment-decision-summary-text').textContent =
-            `Decisión de Tratamiento: ${STRATEGY_LABELS[decision.strategy]} — Residual ALE: ${formatCurrency(decision.residualALE)}${cvarText} (adoptada el ${decidedAt}).`;
+            `Decisión de Tratamiento: ${STRATEGY_LABELS[decision.strategy]} — Residual ${shortMetricLabel('ale', 'ALE')}: ${formatCurrency(decision.residualALE)}${cvarText} (adoptada el ${decidedAt}).`;
         summaryEl.classList.remove('hidden');
     },
 

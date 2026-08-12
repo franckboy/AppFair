@@ -7,7 +7,9 @@ import {
     getSafeNumber,
     sanitizeHTML,
     severityToClasses,
+    shortMetricLabel,
     showToast,
+    simpleEvaluationMessage,
 } from './utils.js';
 
 // ============================================================
@@ -383,8 +385,8 @@ export const RiskCascadeTree = {
                 <li><strong>Responsable:</strong> ${sanitizeHTML(risk.owner || '—')}</li>
                 <li><strong>${isOpportunity ? 'Beneficio' : 'Pérdida'} Anual Esperada:</strong> ${formatAle(risk.ale)}</li>
                 <li><strong>Mediana:</strong> ${formatAle(risk.median)}</li>
-                <li><strong>P90:</strong> ${formatAle(risk.p90)}</li>
-                <li><strong>CVaR 95%:</strong> ${formatAle(risk.cvar95)}</li>
+                <li><strong>${shortMetricLabel('p90', 'P90')}:</strong> ${formatAle(risk.p90)}</li>
+                <li><strong>${shortMetricLabel('cvar95', 'CVaR 95%')}:</strong> ${formatAle(risk.cvar95)}</li>
                 ${risk.evaluationJustification ? `<li><strong>Justificación:</strong> ${sanitizeHTML(risk.evaluationJustification)}</li>` : ''}
             </ul>`
             }
@@ -531,17 +533,31 @@ export const RiskCascadeTree = {
 
         const banner = document.getElementById('risk-tree-family-sim-evaluation');
         banner.className = `p-4 rounded-lg mb-4 border-l-4 ${severityToClasses(result.evaluation.severity)}`;
+        const familyJustification =
+            App.UIMode.mode === 'simple'
+                ? simpleEvaluationMessage(
+                      result.evaluation,
+                      result.summary.average,
+                      result.summary.cvar95,
+                      'amenaza',
+                      formatCurrency,
+                  )
+                : result.evaluation.justification;
         banner.innerHTML = `
             <p class="font-bold">Evaluación de familia: ${sanitizeHTML(result.evaluation.level)}</p>
-            <p class="text-sm mt-1">${sanitizeHTML(result.evaluation.justification)}</p>
+            <p class="text-sm mt-1">${sanitizeHTML(familyJustification)}</p>
         `;
 
         const membersEl = document.getElementById('risk-tree-family-sim-members');
+        const isSimpleMode = App.UIMode.mode === 'simple';
         const includedItems = (result.includedRiskNames || [])
-            .map(
-                (name) =>
-                    `<li>✅ ${sanitizeHTML(name)} — se activó en el ${Math.round(result.activationRates[name] || 0)}% de los escenarios</li>`,
-            )
+            .map((name) => {
+                const rate = Math.round(result.activationRates[name] || 0);
+                const activationText = isSimpleMode
+                    ? `ocurrió en ${rate} de cada 100 años simulados`
+                    : `se activó en el ${rate}% de los escenarios`;
+                return `<li>✅ ${sanitizeHTML(name)} — ${activationText}</li>`;
+            })
             .join('');
         const excludedItems = (result.excludedRiskNames || [])
             .map((e) => `<li>⚪ ${sanitizeHTML(e.riskName)} — excluido: ${sanitizeHTML(e.reason)}</li>`)

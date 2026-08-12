@@ -38,12 +38,13 @@ test.describe('Condición de carrera en autocálculos', () => {
         await page.waitForTimeout(2500);
 
         // "estado-nacion" (Terrorista o Espía) tiene sus 5 factores en 90% -> Factor de Amenaza
-        // (el promedio) da exactamente 90.0%. "oportunista" (30/10/20/20/10) da 18.0%. Si el bug
+        // (el promedio) da exactamente 90%. "oportunista" (30/10/20/20/10) da 18%. Si el bug
         // siguiera presente, la respuesta demorada de "oportunista" llegaría al final y el
-        // resumen se quedaría mostrando 18.0%, no 90.0%.
+        // resumen se quedaría mostrando 18%, no 90% (Modo Simple, el default de la app, redondea
+        // sin decimales — ver updateAttackerDefenseSummary en fair-wizard.js).
         const summaryText = await page.locator('#fair-attacker-defense-summary').textContent();
-        expect(summaryText).toContain('90.0%');
-        expect(summaryText).not.toContain('18.0%');
+        expect(summaryText).toContain('90%');
+        expect(summaryText).not.toContain('18%');
 
         // El % de Vulnerabilidad automático (Paso 2) se deriva del Factor de Amenaza recién
         // calculado — con "estado-nacion" (90%) siempre da un número alto; con "oportunista"
