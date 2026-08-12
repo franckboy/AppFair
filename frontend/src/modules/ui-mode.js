@@ -134,6 +134,63 @@ export const UIMode = {
         },
     },
 
+    // Etiquetas estáticas FUERA del wizard FAIR (Tratamiento, Gestión de Riesgos, Registro de
+    // Riesgos, Árbol de Cascada) — mismo patrón que STEP_LABELS/RESULT_LABELS de arriba (un
+    // diccionario id→texto que applyLabels() aplica con textContent), pero para ids que viven en
+    // HTML estático de esas páginas (nunca se destruyen/reconstruyen), a diferencia de las tablas
+    // y paneles armados por JS (esos usan shortMetricLabel() en utils.js, adentro de su propia
+    // función de render, porque su HTML sí se reconstruye cada vez que cambia el riesgo elegido).
+    STATIC_LABELS: {
+        tecnico: {
+            'quick-concentrated-th-cvar': 'CVaR 95%',
+            'fair-register-sim-cvar-label': 'CVaR 95%:',
+            'fair-roi-cvar-label': 'Pérdida Residual (CVaR95):',
+            'fair-evitar-cvar-label': 'Pérdida Residual (CVaR95):',
+            'fair-aceptar-cvar-label': 'Pérdida Residual (CVaR95):',
+            'riskmgmt-portfolio-ale-label': 'ALE Residual:',
+            'riskmgmt-portfolio-cvar-label': 'CVaR95 Residual:',
+            'riskmgmt-residual-pareto-title': 'Concentración del Riesgo Residual (Pareto)',
+            'riskmgmt-residual-pareto-th-ale': 'ALE Residual',
+            'riskmgmt-residual-ale-label': 'ALE:',
+            'riskmgmt-residual-cvar-label': 'CVaR95:',
+            'fair-register-pareto-title': 'Análisis 80-20 (Pareto)',
+            'fair-sensitivity-title': 'Análisis de Sensibilidad',
+            'fair-sensitivity-desc':
+                'Qué tanto influye cada variable en el resultado final (correlación con la pérdida simulada). Enfoca tu esfuerzo de mejorar datos en las variables de arriba — son las que más mueven el resultado.',
+            'fair-inherente-label': 'Riesgo Inherente (sin ningún control):',
+            'risk-tree-family-sim-cvar-label': 'CVaR 95%:',
+            'fair-treat-ale-acronym': ' (ALE)',
+            'risk-tree-page-desc':
+                'Visualiza las relaciones entre riesgos. Cada riesgo conserva su propio cálculo ALE.',
+            'fair-register-sim-p90-label': 'Peor 10% de los casos (P90):',
+            'risk-tree-family-sim-p90-label': 'Peor 10% de los casos (P90):',
+        },
+        simple: {
+            'quick-concentrated-th-cvar': 'Peor Caso (5%)',
+            'fair-register-sim-cvar-label': 'Peor Caso Típico (5%):',
+            'fair-roi-cvar-label': 'Pérdida Residual en un Mal Año:',
+            'fair-evitar-cvar-label': 'Pérdida Residual en un Mal Año:',
+            'fair-aceptar-cvar-label': 'Pérdida Residual en un Mal Año:',
+            'riskmgmt-portfolio-ale-label': 'Pérdida Promedio Residual:',
+            'riskmgmt-portfolio-cvar-label': 'Peor Caso Típico Residual:',
+            'riskmgmt-residual-pareto-title': 'Los Riesgos Que Más Pesan (Residual)',
+            'riskmgmt-residual-pareto-th-ale': 'Pérdida Promedio Residual',
+            'riskmgmt-residual-ale-label': 'Pérdida Promedio:',
+            'riskmgmt-residual-cvar-label': 'Peor Caso Típico:',
+            'fair-register-pareto-title': 'Los Riesgos Que Más Pesan',
+            'fair-sensitivity-title': '¿Qué Es lo Que Más Cambia Tu Resultado?',
+            'fair-sensitivity-desc':
+                'Mejora primero la información de estos factores — son los que más mueven tu estimado.',
+            'fair-inherente-label': 'Si no hicieras NADA para protegerte, esto te costaría al año:',
+            'risk-tree-family-sim-cvar-label': 'Peor Caso Típico (5%):',
+            'fair-treat-ale-acronym': '',
+            'risk-tree-page-desc':
+                'Visualiza cómo un riesgo puede desencadenar a otro. Cada riesgo conserva su propio estimado de pérdida.',
+            'fair-register-sim-p90-label': 'De cada 10 años, en el peor:',
+            'risk-tree-family-sim-p90-label': 'De cada 10 años, en el peor:',
+        },
+    },
+
     init() {
         this.load();
         document.getElementById('mode-toggle-btn').addEventListener('click', () => this.toggle());
@@ -190,6 +247,15 @@ export const UIMode = {
         const riskType = (state.fair && state.fair.riskType) || 'amenaza';
         const resultSet = isSimple ? this.RESULT_LABELS[riskType].simple : this.RESULT_LABELS[riskType].tecnico;
         Object.entries(resultSet).forEach(([id, text]) => {
+            const el = document.getElementById(id);
+            if (el) el.textContent = text;
+        });
+
+        // Etiquetas estáticas fuera del wizard (Tratamiento/Gestión de Riesgos/Registro/Cascada)
+        // — se aplican SIEMPRE (no dependen de qué página esté visible ahora mismo), igual que
+        // las de arriba: si el id no existe en el DOM en este momento, simplemente no pasa nada.
+        const staticSet = isSimple ? this.STATIC_LABELS.simple : this.STATIC_LABELS.tecnico;
+        Object.entries(staticSet).forEach(([id, text]) => {
             const el = document.getElementById(id);
             if (el) el.textContent = text;
         });

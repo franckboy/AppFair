@@ -213,8 +213,11 @@ test.describe('Tratamiento del Riesgo (página aparte)', () => {
         await expect(page.locator('#treatment-decision-summary')).toBeVisible();
         await expect(page.locator('#treatment-decision-summary-text')).toContainText('Mitigar');
         // CVaR residual es válido para Mitigar (ver evaluateTreatmentStrategies) — debe verse en
-        // el banner y persistirse, no solo el ALE residual.
-        await expect(page.locator('#treatment-decision-summary-text')).toContainText('CVaR95');
+        // el banner y persistirse, no solo el ALE residual. El banner solo agrega el separador
+        // " / " cuando SÍ hay un segundo monto (CVaR) que mostrar (ver renderTreatmentDecision)
+        // — se verifica así, en vez de la palabra "CVaR95" literal, porque en Modo Simple (el
+        // default de la app) esa etiqueta se traduce a lenguaje llano.
+        await expect(page.locator('#treatment-decision-summary-text')).toContainText(' / ');
 
         let register = await page.evaluate(async () => {
             const res = await fetch('http://localhost:3000/api/register', { headers: { 'X-API-Key': 'test-e2e-key' } });

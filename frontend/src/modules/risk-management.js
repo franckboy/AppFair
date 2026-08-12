@@ -1,6 +1,6 @@
 import { App } from './app-namespace.js';
 import { state } from './state.js';
-import { debounce, sanitizeHTML, severityToClasses, showToast } from './utils.js';
+import { debounce, sanitizeHTML, severityToClasses, shortMetricLabel, showToast } from './utils.js';
 import { STRATEGY_LABELS } from './treatment.js';
 
 // ============================================================
@@ -176,7 +176,8 @@ export const RiskManagement = {
 
         const cvarNote = document.getElementById('riskmgmt-portfolio-cvar-note');
         if (portfolio.cvarSkippedCount > 0) {
-            cvarNote.textContent = `Suma de CVaR95 de ${portfolio.cvarRiskCount} de ${portfolio.totalRiskCount} amenazas — ${portfolio.cvarSkippedCount} sin CVaR residual conocido (ej. Transferir).`;
+            const cvarShort = shortMetricLabel('cvar95', 'CVaR95');
+            cvarNote.textContent = `Suma de ${cvarShort} de ${portfolio.cvarRiskCount} de ${portfolio.totalRiskCount} amenazas — ${portfolio.cvarSkippedCount} sin ${cvarShort} residual conocido (ej. Transferir).`;
             cvarNote.classList.remove('hidden');
         } else {
             cvarNote.classList.add('hidden');
@@ -315,7 +316,7 @@ export const RiskManagement = {
         if (typeof decision.residualCVaR !== 'number') {
             section.className = 'p-4 rounded-lg mb-4 border-l-4 bg-gray-50 border-gray-400 text-gray-700';
             document.getElementById('riskmgmt-residual-badge').textContent =
-                'Clasificación no disponible (esta estrategia no calcula CVaR residual)';
+                `Clasificación no disponible (esta estrategia no calcula ${shortMetricLabel('cvar95', 'CVaR residual')})`;
             return;
         }
 

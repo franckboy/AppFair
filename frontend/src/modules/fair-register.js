@@ -10,6 +10,7 @@ import {
     sensitivityLabel,
     severityToClasses,
     severityToHex,
+    shortMetricLabel,
     showToast,
     pertMean,
 } from './utils.js';
@@ -951,8 +952,8 @@ export const FairRegister = {
                 <ul class="text-sm text-gray-700 space-y-1 mb-3">
                     <li><strong>Activo:</strong> ${sanitizeHTML(entry.asset || '—')}</li>
                     <li><strong>Responsable:</strong> ${sanitizeHTML(entry.owner || '—')}</li>
-                    <li><strong>Pérdida Anual Esperada (ALE):</strong> ${fmt(entry.ale)}</li>
-                    <li><strong>CVaR 95%:</strong> ${fmt(entry.cvar95)}</li>
+                    <li><strong>${shortMetricLabel('ale', 'Pérdida Anual Esperada (ALE)')}:</strong> ${fmt(entry.ale)}</li>
+                    <li><strong>${shortMetricLabel('cvar95', 'CVaR 95%')}:</strong> ${fmt(entry.cvar95)}</li>
                     ${item.riesgoInherente ? `<li><strong>Riesgo Inherente (sin controles):</strong> ${item.riesgoInherente}</li>` : ''}
                     ${item.controlEffectiveness ? `<li><strong>Efectividad de Controles:</strong> ${item.controlEffectiveness}</li>` : ''}
                     <li><strong>Fecha del análisis:</strong> ${entry.date ? new Date(entry.date).toLocaleDateString('es-MX', { year: 'numeric', month: 'short', day: 'numeric' }) : '—'}</li>

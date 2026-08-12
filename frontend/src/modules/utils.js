@@ -84,6 +84,59 @@ export function sensitivityLabel(factor) {
     return factor.name;
 }
 
+// Etiquetas cortas (encabezado de tabla, <li> corto) para los términos técnicos que se repiten
+// en varias páginas fuera del wizard FAIR (Tratamiento, Gestión de Riesgos, Registro, Árbol de
+// Cascada) — mismo patrón que SENSITIVITY_LABELS_SIMPLE/sensitivityLabel arriba, pero como
+// función de un solo lugar en vez de duplicar la traducción en cada módulo que arma su propio
+// HTML por JS (esos módulos no pueden usar el swap posterior de App.UIMode.applyLabels() porque
+// reconstruyen su HTML — con innerHTML — cada vez que cambia el riesgo seleccionado).
+export const SHORT_METRIC_LABELS_SIMPLE = {
+    ale: 'Pérdida Promedio',
+    cvar95: 'Peor Caso Típico (5%)',
+    p90: 'Peor 10% de los Casos',
+    pareto: 'Los Que Más Pesan',
+};
+export function shortMetricLabel(key, fallbackTechnicalText) {
+    if (App.UIMode.mode === 'simple' && SHORT_METRIC_LABELS_SIMPLE[key]) {
+        return SHORT_METRIC_LABELS_SIMPLE[key];
+    }
+    return fallbackTechnicalText;
+}
+
+// `evaluation.justification` (calculado por evaluateFairThreat/evaluateFairOpportunity, ver
+// backend/src/lib/evaluation.js) menciona CVaR95/percentiles a propósito — sigue siendo la
+// prosa correcta para Modo Técnico y para el reporte PDF (ver fair-export.js, que se queda
+// siempre técnico). Modo Simple NO reusa ese texto: arma su propia frase, con los MISMOS
+// números (`ale`/`cvar95`) y el mismo nivel/severidad ya calculados, sin mencionar percentiles
+// ni el nombre de ninguna métrica. Se usa tanto en el banner del Paso 4 del wizard como en el
+// panel de "Simular Familia" del Árbol de Cascada — las dos pantallas que hoy insertan
+// `evaluation.justification` tal cual.
+export function simpleEvaluationMessage(evaluation, ale, cvar95, riskType, formatCurrency) {
+    if (riskType === 'oportunidad') {
+        if (evaluation.level.startsWith('Oportunidad Significativa')) {
+            return `En promedio, esto te podría beneficiar ${formatCurrency(ale)} al año — vale la pena invertir en perseguirlo.`;
+        }
+        if (evaluation.level.startsWith('Oportunidad Moderada')) {
+            return `En promedio, esto te podría beneficiar ${formatCurrency(ale)} al año — considera perseguirlo si tienes los recursos.`;
+        }
+        return `En promedio, esto te podría beneficiar ${formatCurrency(ale)} al año — probablemente no justifique un esfuerzo dedicado por sí solo.`;
+    }
+
+    const isTailDriven = evaluation.level.includes('cola');
+    if (evaluation.severity === 'critico') {
+        return isTailDriven
+            ? `En promedio parece manejable (${formatCurrency(ale)} al año), pero en un mal año podrías perder mucho más (${formatCurrency(cvar95)}) — vale la pena tratarlo ya.`
+            : `Esto te podría costar ${formatCurrency(ale)} al año en promedio — es más de lo que tu organización dijo estar dispuesta a perder. Hay que actuar ya.`;
+    }
+    if (evaluation.severity === 'alto') {
+        return `Esto te podría costar ${formatCurrency(ale)} al año en promedio — se acerca al límite de lo que estás dispuesto a perder. Conviene tratarlo.`;
+    }
+    if (evaluation.severity === 'medio') {
+        return `Esto te podría costar ${formatCurrency(ale)} al año en promedio — no es urgente, pero vale la pena vigilarlo.`;
+    }
+    return `Esto te podría costar ${formatCurrency(ale)} al año en promedio — está dentro de lo que tu organización está dispuesta a perder.`;
+}
+
 // --- Helper Functions ---
 export const sanitizeHTML = (str) => {
     const div = document.createElement('div');

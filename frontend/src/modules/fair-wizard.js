@@ -12,6 +12,7 @@ import {
     sensitivityLabel,
     severityToClasses,
     showToast,
+    simpleEvaluationMessage,
     sortTriangularRange,
     toggleErrorState,
     updateProgressBar,
@@ -200,10 +201,15 @@ export const FairWizard = {
     updateCriteriaOverrideStatus() {
         const el = document.getElementById('fair-criteria-override-status');
         const override = state.fair.riskCriteriaOverride;
+        const isSimple = App.UIMode.mode === 'simple';
         if (override) {
-            el.textContent = `Usa criterios propios: Pérdida Anual Aceptable ${override.aleAceptablePercent}% de un ALE Crítico de $${override.aleCritico.toLocaleString('en-US')}.`;
+            el.textContent = isSimple
+                ? `Usa criterios propios: aceptas hasta ${override.aleAceptablePercent}% de una pérdida crítica de $${override.aleCritico.toLocaleString('en-US')} al año.`
+                : `Usa criterios propios: Pérdida Anual Aceptable ${override.aleAceptablePercent}% de un ALE Crítico de $${override.aleCritico.toLocaleString('en-US')}.`;
         } else {
-            el.textContent = 'Usa los criterios globales (Pérdida Anual Aceptable/ALE Crítico) de la organización.';
+            el.textContent = isSimple
+                ? 'Usa el mismo criterio de riesgo de toda la organización.'
+                : 'Usa los criterios globales (Pérdida Anual Aceptable/ALE Crítico) de la organización.';
         }
     },
 
@@ -442,7 +448,13 @@ export const FairWizard = {
         // es una resta desde el modelo TCap vs. RS (ver updateVulnerabilityAuto abajo), así que
         // mostrar aquí un "diferencial" invitaba a la misma lectura ingenua que ya se corrigió en
         // el cálculo real. Esto es solo referencia de qué trae cada perfil elegido.
-        summaryEl.innerHTML = `
+        summaryEl.innerHTML =
+            App.UIMode.mode === 'simple'
+                ? `
+            <p class="mb-1"><strong>Qué tan motivado/capaz es el atacante:</strong> ${attackerScore.toFixed(0)}%</p>
+            <p class="mb-1"><strong>Qué tan preparada está tu defensa:</strong> ${defenseScore.toFixed(0)}%</p>
+        `
+                : `
             <p class="mb-1"><strong>Factor de Amenaza (FA):</strong> ${attackerScore.toFixed(1)}% — ${rowsHTML(attackerProfile)}</p>
             <p class="mb-1"><strong>Nivel de Defensa (ENC):</strong> ${defenseScore.toFixed(1)}% — ${rowsHTML(defenseProfile)}</p>
         `;
@@ -497,7 +509,10 @@ export const FairWizard = {
         document.getElementById('vuln-max').value = data.max;
 
         const confidenceLabel = { alto: 'Alta', medio: 'Media', bajo: 'Baja' }[confidence] || 'Media';
-        explanationEl.textContent = `Calculado como: Factor de Amenaza (${data.attackerScore.toFixed(0)}%) × [1 − Nivel de Defensa (${data.defenseScore.toFixed(0)}%)] = ${data.mode}%. Rango ±según tu Nivel de Confianza declarado (${confidenceLabel}).`;
+        explanationEl.textContent =
+            App.UIMode.mode === 'simple'
+                ? `Se calculó combinando qué tan motivado y capaz es el atacante con qué tan fuerte es tu defensa actual: ${data.mode}%. Puedes ajustarlo a mano si no te hace sentido.`
+                : `Calculado comparando la Capacidad de Amenaza (${data.attackerScore.toFixed(0)}%) contra tu Fuerza de Resistencia (${data.defenseScore.toFixed(0)}%) mediante la Función de Éxito de Contienda de Tullock (no una resta simple) → ${data.mode}%. Rango ±según tu Nivel de Confianza declarado (${confidenceLabel}).`;
     },
 
     toggleRiskTypeLabels() {
@@ -1549,9 +1564,19 @@ export const FairWizard = {
         // Criterios de Riesgo guardados — solo se traduce `severity` a clases Tailwind.
         const banner = document.getElementById('fair-evaluation-banner');
         banner.className = `p-4 rounded-lg mb-6 border-l-4 ${severityToClasses(evaluation.severity)}`;
+        const justificationText =
+            App.UIMode.mode === 'simple'
+                ? simpleEvaluationMessage(
+                      evaluation,
+                      summary.average,
+                      summary.cvar95,
+                      state.fair.riskType,
+                      formatCurrency,
+                  )
+                : evaluation.justification;
         banner.innerHTML = `
             <p class="font-bold text-lg">Evaluación: ${evaluation.level}</p>
-            <p class="text-sm mt-1">${evaluation.justification}</p>
+            <p class="text-sm mt-1">${justificationText}</p>
         `;
 
         document.getElementById('fair-seed-used').textContent =

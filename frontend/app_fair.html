@@ -490,8 +490,8 @@
                             </div>
                             
                             <div id="fair-sensitivity-container" class="hidden mt-6 p-4 bg-gray-50 rounded-lg">
-                                <h4 class="text-lg font-semibold text-gray-800 mb-1">Análisis de Sensibilidad</h4>
-                                <p class="description-text mb-3">Qué tanto influye cada variable en el resultado final (correlación con la pérdida simulada). Enfoca tu esfuerzo de mejorar datos en las variables de arriba — son las que más mueven el resultado.</p>
+                                <h4 class="text-lg font-semibold text-gray-800 mb-1" id="fair-sensitivity-title">Análisis de Sensibilidad</h4>
+                                <p class="description-text mb-3" id="fair-sensitivity-desc">Qué tanto influye cada variable en el resultado final (correlación con la pérdida simulada). Enfoca tu esfuerzo de mejorar datos en las variables de arriba — son las que más mueven el resultado.</p>
                                 <div id="fair-sensitivity-list"></div>
                             </div>
 
@@ -594,7 +594,7 @@
                                     <th scope="col" class="px-6 py-3">Riesgo Inherente</th><th scope="col" class="px-6 py-3">Efectividad de Controles</th>
                                     <th scope="col" class="px-6 py-3">Riesgo Residual</th>
                                     <th scope="col" class="px-6 py-3">Activo</th>
-                                    <th scope="col" class="px-6 py-3">Impacto</th><th scope="col" class="px-6 py-3">CVaR 95%</th>
+                                    <th scope="col" class="px-6 py-3">Impacto</th><th scope="col" class="px-6 py-3" id="quick-concentrated-th-cvar">CVaR 95%</th>
                                     <th scope="col" class="px-6 py-3">Evaluación</th><th scope="col" class="px-6 py-3">Fecha</th>
                                     <th scope="col" class="px-6 py-3">Acciones</th>
                                 </tr>
@@ -637,7 +637,7 @@
                             <div id="fair-register-legend" class="text-sm md:col-span-1"></div>
                         </div>
 
-                        <h3 class="text-lg font-semibold text-gray-800 mb-2">Análisis 80-20 (Pareto)</h3>
+                        <h3 class="text-lg font-semibold text-gray-800 mb-2" id="fair-register-pareto-title">Análisis 80-20 (Pareto)</h3>
                         <p class="description-text mb-2">Las barras son la Pérdida Anual Esperada de cada riesgo, de mayor a menor (1 = mayor). La línea es el % acumulado — te dice cuántos riesgos concentran el 80% de tu exposición total. Cada número lleva su nombre en la lista de abajo.</p>
                         <div style="height: 320px; max-width: 700px; margin: 0 auto;" class="mb-2">
                             <canvas id="fair-pareto-chart"></canvas>
@@ -665,8 +665,8 @@
                                         <ul class="space-y-2 text-gray-700 text-sm">
                                             <li class="flex justify-between"><span>Pérdida Anual Promedio:</span> <strong id="fair-register-sim-ale" class="text-blue-700"></strong></li>
                                             <li class="flex justify-between"><span>Pérdida Anual Mediana:</span> <strong id="fair-register-sim-median"></strong></li>
-                                            <li class="flex justify-between"><span>Peor 10% de los casos (P90):</span> <strong id="fair-register-sim-p90"></strong></li>
-                                            <li class="flex justify-between"><span>CVaR 95%:</span> <strong id="fair-register-sim-cvar" class="text-red-700"></strong></li>
+                                            <li class="flex justify-between"><span id="fair-register-sim-p90-label">Peor 10% de los casos (P90):</span> <strong id="fair-register-sim-p90"></strong></li>
+                                            <li class="flex justify-between"><span id="fair-register-sim-cvar-label">CVaR 95%:</span> <strong id="fair-register-sim-cvar" class="text-red-700"></strong></li>
                                         </ul>
                                     </div>
                                 </div>
@@ -709,7 +709,7 @@
 
                         <div id="fair-roi-content" class="mt-4 p-4 bg-green-50 border border-green-200 rounded-md">
                             <p class="description-text mb-4">
-                                Pérdida Anual Esperada (ALE) actual: <strong><span id="fair-treat-ale-base">$0.00</span></strong>
+                                Pérdida Anual Esperada<span id="fair-treat-ale-acronym"> (ALE)</span> actual: <strong><span id="fair-treat-ale-base">$0.00</span></strong>
                             </p>
 
                             <div id="treatment-decision-summary" class="mb-4 p-2 rounded-md bg-blue-50 border border-blue-200 text-sm hidden">
@@ -768,7 +768,7 @@
                                 <div class="mt-2 text-sm grid grid-cols-2 md:grid-cols-4 gap-2">
                                     <p>Costo Anual: <strong id="fair-roi-costo">$0.00</strong></p>
                                     <p>Pérdida Residual: <strong id="fair-roi-ale-despues">$0.00</strong></p>
-                                    <p>Pérdida Residual (CVaR95): <strong id="fair-roi-cvar-despues">$0.00</strong></p>
+                                    <p><span id="fair-roi-cvar-label">Pérdida Residual (CVaR95):</span> <strong id="fair-roi-cvar-despues">$0.00</strong></p>
                                     <p>Pérdida Evitada: <strong id="fair-roi-ale-evitada">$0.00</strong></p>
                                     <p id="fair-roi-label">Beneficio Neto: <strong id="fair-roi-resultado" class="font-bold">$0.00</strong></p>
                                     <p class="advanced-only">ROSI: <strong id="fair-roi-rosi">—</strong></p>
@@ -853,7 +853,7 @@
                                 <div class="mt-2 text-sm grid grid-cols-2 md:grid-cols-4 gap-2">
                                     <p>Costo Anual: <strong id="fair-evitar-costo-display">$0.00</strong></p>
                                     <p>Pérdida Residual: <strong>$0.00 (por definición)</strong></p>
-                                    <p>Pérdida Residual (CVaR95): <strong>$0.00 (por definición)</strong></p>
+                                    <p><span id="fair-evitar-cvar-label">Pérdida Residual (CVaR95):</span> <strong>$0.00 (por definición)</strong></p>
                                     <p>Pérdida Evitada: <strong id="fair-evitar-evitada">$0.00</strong></p>
                                     <p>Beneficio Neto: <strong id="fair-evitar-beneficio" class="font-bold">$0.00</strong></p>
                                     <p class="advanced-only">ROSI: <strong id="fair-evitar-rosi">—</strong></p>
@@ -875,7 +875,7 @@
                                 <div class="mt-2 text-sm grid grid-cols-2 md:grid-cols-4 gap-2">
                                     <p>Costo Anual: <strong>$0.00</strong></p>
                                     <p>Pérdida Residual: <strong id="fair-aceptar-residual">$0.00 (= ALE actual)</strong></p>
-                                    <p>Pérdida Residual (CVaR95): <strong id="fair-aceptar-residual-cvar">$0.00 (= CVaR actual)</strong></p>
+                                    <p><span id="fair-aceptar-cvar-label">Pérdida Residual (CVaR95):</span> <strong id="fair-aceptar-residual-cvar">$0.00 (= CVaR actual)</strong></p>
                                 </div>
                                 <div class="mt-2">
                                     <button type="button" id="treatment-adopt-aceptar-btn" class="btn btn-primary text-sm">✅ Adoptar esta estrategia</button>
@@ -917,7 +917,8 @@
                             <p id="riskmgmt-portfolio-waterfall" class="text-sm mb-1 hidden"></p>
                             <p id="riskmgmt-portfolio-effectiveness" class="text-sm mb-1 hidden"></p>
                             <p class="text-sm">
-                                ALE Residual: <strong id="riskmgmt-portfolio-ale">$0.00</strong> · CVaR95 Residual:
+                                <span id="riskmgmt-portfolio-ale-label">ALE Residual:</span> <strong id="riskmgmt-portfolio-ale">$0.00</strong> ·
+                                <span id="riskmgmt-portfolio-cvar-label">CVaR95 Residual:</span>
                                 <strong id="riskmgmt-portfolio-cvar">$0.00</strong> ·
                                 <span id="riskmgmt-portfolio-badge" class="font-semibold"></span>
                             </p>
@@ -927,7 +928,7 @@
 
                         <div id="riskmgmt-residual-pareto-section" class="p-4 rounded-lg mb-4 border bg-gray-50 hidden">
                             <h4 class="font-semibold mb-1">
-                                Concentración del Riesgo Residual (Pareto)
+                                <span id="riskmgmt-residual-pareto-title">Concentración del Riesgo Residual (Pareto)</span>
                                 <i class="fas fa-info-circle text-blue-500 cursor-pointer ml-1" title="A diferencia del Pareto de Registro de Riesgos (sobre el ALE ACTUAL, antes de decidir nada), este ordena por el ALE RESIDUAL vigente de cada Amenaza — útil para notar una estrategia ya adoptada que resultó insuficiente, o qué riesgo sin tratar es ahora el más urgente."></i>
                             </h4>
                             <p id="riskmgmt-residual-pareto-summary" class="text-sm mb-2"></p>
@@ -937,7 +938,7 @@
                                         <tr class="text-left text-gray-500 border-b">
                                             <th class="py-1 pr-2">#</th>
                                             <th class="py-1 pr-2">Riesgo</th>
-                                            <th class="py-1 pr-2">ALE Residual</th>
+                                            <th class="py-1 pr-2" id="riskmgmt-residual-pareto-th-ale">ALE Residual</th>
                                             <th class="py-1 pr-2">% Acumulado</th>
                                             <th class="py-1 pr-2">Estado</th>
                                         </tr>
@@ -955,7 +956,8 @@
                         <div id="riskmgmt-residual-section" class="p-4 rounded-lg mb-4 border-l-4 hidden">
                             <p id="riskmgmt-residual-note" class="text-sm mb-1"></p>
                             <p class="text-sm">
-                                ALE: <strong id="riskmgmt-residual-ale">$0.00</strong> · CVaR95:
+                                <span id="riskmgmt-residual-ale-label">ALE:</span> <strong id="riskmgmt-residual-ale">$0.00</strong> ·
+                                <span id="riskmgmt-residual-cvar-label">CVaR95:</span>
                                 <strong id="riskmgmt-residual-cvar">$0.00</strong> ·
                                 <span id="riskmgmt-residual-badge" class="font-semibold"></span>
                             </p>
@@ -1078,7 +1080,7 @@
                     <div class="flex flex-wrap items-start justify-between gap-3 mb-2">
                         <div>
                             <h2 class="text-2xl font-bold text-gray-800 mb-1">Árbol de Riesgos en Cascada</h2>
-                            <p class="description-text">
+                            <p class="description-text" id="risk-tree-page-desc">
                                 Visualiza las relaciones entre riesgos. Cada riesgo conserva su propio cálculo ALE.
                             </p>
                         </div>
@@ -1119,8 +1121,8 @@
                                     <ul class="space-y-2 text-gray-700 text-sm">
                                         <li class="flex justify-between"><span>Pérdida Anual Promedio:</span> <strong id="risk-tree-family-sim-ale" class="text-purple-700"></strong></li>
                                         <li class="flex justify-between"><span>Pérdida Anual Mediana:</span> <strong id="risk-tree-family-sim-median"></strong></li>
-                                        <li class="flex justify-between"><span>Peor 10% de los casos (P90):</span> <strong id="risk-tree-family-sim-p90"></strong></li>
-                                        <li class="flex justify-between"><span>CVaR 95%:</span> <strong id="risk-tree-family-sim-cvar" class="text-red-700"></strong></li>
+                                        <li class="flex justify-between"><span id="risk-tree-family-sim-p90-label">Peor 10% de los casos (P90):</span> <strong id="risk-tree-family-sim-p90"></strong></li>
+                                        <li class="flex justify-between"><span id="risk-tree-family-sim-cvar-label">CVaR 95%:</span> <strong id="risk-tree-family-sim-cvar" class="text-red-700"></strong></li>
                                     </ul>
                                 </div>
                             </div>
