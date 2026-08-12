@@ -705,9 +705,8 @@ export const FairRegister = {
     // se quitó esa copia (ver #registerPage en el HTML) para no tener la misma información
     // dos veces. Une lo que ya pasó por FAIR con lo que todavía está solo en Vista Rápida
     // (ver buildConcentratedList), e incluye tanto las columnas del viejo Historial (Riesgo
-    // Inherente/Residual/Categoría, por RRt%) como las del Registro (Etapa/Impacto/CVaR/
-    // Evaluación, por FAIR) — ningún dato se pierde al fusionar las dos tablas que existían
-    // antes por separado.
+    // Inherente/Residual/Categoría, por RRt%) como las del Registro (Etapa/CVaR/Evaluación, por
+    // FAIR) — ningún dato se pierde al fusionar las dos tablas que existían antes por separado.
     renderConcentratedTable(list) {
         const fmt = (v) =>
             new Intl.NumberFormat('en-US', {
@@ -723,7 +722,7 @@ export const FairRegister = {
         if (list.length === 0) {
             bodies.forEach((tb) => {
                 tb.innerHTML =
-                    '<tr><td colspan="13" class="text-center py-4 text-gray-500">No hay riesgos guardados.</td></tr>';
+                    '<tr><td colspan="12" class="text-center py-4 text-gray-500">No hay riesgos guardados.</td></tr>';
             });
             return;
         }
@@ -741,17 +740,20 @@ export const FairRegister = {
 
                 // Mismo Criterio ALE que ya usa "Evaluación" — cada monto se colorea según ESE
                 // mismo umbral (ver computeFairRiskEquivalents), para que un riesgo "Crítico" se
-                // vea igual de rojo en Inherente/Residual/Impacto que en Evaluación, no distinto.
+                // vea igual de rojo en Inherente/Actual que en Evaluación, no distinto.
                 const moneyBadge = (text, severity) =>
                     text && severity
                         ? `<span class="px-2 py-1 rounded text-xs border-l-4 ${severityToClasses(severity)}">${text}</span>`
                         : text || '—';
 
                 const inherenteCell = moneyBadge(item.riesgoInherente, item.riesgoInherenteSeverity);
+                // Columna "Riesgo Actual" (antes "Riesgo Residual" — renombrada para no chocar con
+                // el vocabulario de Gestión de Riesgos, donde "Residual" significa específicamente
+                // el resultado DESPUÉS de adoptar una decisión de Tratamiento; acá siempre es
+                // entry.ale, el ALE con los controles vigentes, sin importar si ya se decidió algo
+                // en Tratamiento). Antes existía además una columna "Impacto" que mostraba este
+                // MISMO número (fmt(entry.ale)) por separado — se quitó por ser un duplicado.
                 const residualCell = moneyBadge(item.riesgoResidual, item.riesgoResidualSeverity);
-                const impactCell = item.fairEntry
-                    ? moneyBadge(fmt(item.fairEntry.ale), item.fairEntry.severity)
-                    : item.quickAle || '—';
                 const cvarCell = item.fairEntry ? fmt(item.fairEntry.cvar95) : '—';
                 const dateCell = formatDate(item.fairEntry ? item.fairEntry.date : item.createdAt);
 
@@ -792,7 +794,6 @@ export const FairRegister = {
                     <td>${item.controlEffectiveness || '—'}</td>
                     <td>${residualCell}</td>
                     <td>${sanitizeHTML(item.asset)}</td>
-                    <td>${impactCell}</td>
                     <td>${cvarCell}</td>
                     <td>${evalCell}</td>
                     <td>${dateCell}</td>
