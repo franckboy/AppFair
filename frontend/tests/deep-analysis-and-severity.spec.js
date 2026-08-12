@@ -29,7 +29,11 @@ test.describe('Análisis Profundo', () => {
 });
 
 test.describe('Criterios de Riesgo aplicados de forma consistente', () => {
-    test('Impacto, Riesgo Residual y Evaluación comparten la misma clasificación de color', async ({ page }) => {
+    test('Riesgo Actual y Evaluación comparten la misma clasificación de color', async ({ page }) => {
+        // La columna "Impacto" (que mostraba fmt(entry.ale), el MISMO número que "Riesgo Actual")
+        // se quitó por ser un duplicado — antes este test comparaba las 3 columnas entre sí, ahora
+        // solo quedan las 2 que de verdad son fuentes independientes de esa clasificación:
+        // "Riesgo Actual" (entry.ale/severity) y "Evaluación" (evaluationLevel/evaluationClasses).
         await connectAndBoot(page);
         await runFullFairAnalysis(page, 'E2E — Vandalismo en Fachada Principal');
 
@@ -40,17 +44,15 @@ test.describe('Criterios de Riesgo aplicados de forma consistente', () => {
             hasText: 'E2E — Vandalismo en Fachada Principal',
         });
         const cells = row.locator('td');
-        // índices: 0 checkbox, 1 #, 2 riesgo, 3 etapa, 4 inherente, 5 efectividad, 6 residual,
-        // 7 activo, 8 impacto, 9 cvar, 10 evaluación.
+        // índices: 0 checkbox, 1 #, 2 riesgo, 3 etapa, 4 inherente, 5 efectividad, 6 actual,
+        // 7 activo, 8 cvar, 9 evaluación.
         const residualClass = await cells.nth(6).locator('span').getAttribute('class');
-        const impactoClass = await cells.nth(8).locator('span').getAttribute('class');
-        const evalClass = await cells.nth(10).locator('span').getAttribute('class');
+        const evalClass = await cells.nth(9).locator('span').getAttribute('class');
 
-        expect(residualClass).toBe(impactoClass);
-        expect(impactoClass).toBe(evalClass);
+        expect(residualClass).toBe(evalClass);
 
         // Riesgo Inherente debe tener SU PROPIA clasificación (siempre visible, puede coincidir
-        // o no con la de Residual dependiendo de la Vulnerabilidad).
+        // o no con la de Actual dependiendo de la Vulnerabilidad).
         const inherenteText = await cells.nth(4).textContent();
         expect(inherenteText.trim()).not.toBe('');
         expect(inherenteText.trim()).not.toBe('—');
