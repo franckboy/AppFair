@@ -14,7 +14,7 @@ servidor.
 npm install
 npm start          # arranca en http://localhost:3000
 npm run dev         # con recarga automática al guardar cambios
-npm test            # corre las 36 pruebas automatizadas (motor de cálculo + rutas HTTP)
+npm test            # corre las ~237 pruebas automatizadas (motor de cálculo + rutas HTTP + validación estadística)
 ```
 
 Variables de entorno (vía `.env` — copia `.env.example` — o el entorno del sistema):
@@ -116,14 +116,23 @@ server.js                        Arranca Express y monta las rutas
 src/
   lib/
     random.js                    Generador con semilla (mulberry32) + muestreo PERT/lognormal/triangular
-    simulation.js                Motor Monte Carlo + Análisis de Sensibilidad (Pearson)
+    simulation.js                Motor Monte Carlo + Análisis de Sensibilidad (Pearson, vía simple-statistics)
     evaluation.js                Evalúa un resultado contra los Criterios de Riesgo
-    treatment.js                 Las 4 estrategias de tratamiento + ROSI + veredicto
-    autocalc.js                  Vulnerabilidad, rangos de Magnitud, Reducción de ALE
-    register.js                  Mapa de calor, Pareto 80-20, sensibilidad consolidada
+    treatment.js                 Las 4 estrategias de tratamiento + Mitigar+Transferir + ROSI + veredicto
+    autocalc.js                  Vulnerabilidad simulada (TCap vs. RS + Tullock), rangos de Magnitud, Reducción de ALE
+    nashEquilibrium.js           Equilibrio de Nash del Juego de Contienda de Tullock (análisis exploratorio)
+    cascadeSimulation.js         Simulación combinada de una familia de riesgos en cascada ("Simular Familia")
+    markov.js                    Cadena de Markov para activación de riesgos encadenados (aún sin conectar a un endpoint)
+    bayesianNetwork.js           Red bayesiana por muestreo ponderado (aún sin conectar a un endpoint)
+    decisionTree.js              Evaluador genérico de árboles de decisión (usado por treatment.js)
+    riskCriteria.js              Normaliza/valida Criterios de Riesgo globales y overrides por riesgo
+    registerIdentity.js          Resuelve qué entrada del Registro corresponde a un guardado (id/nombre)
+    assetCascade.js              Efectos en cascada al eliminar/editar un Activo del catálogo
+    register.js                  Mapa de calor, Pareto 80-20, portafolios inherente/residual, sensibilidad consolidada
     validate.js                  Validación de rangos triangulares, iterations y seed
   data/
     profiles.js                  Perfiles de Atacante/Defensa/Riesgo (constantes)
+    standardsReference.js        Catálogo curado de normas/marcos + cláusulas ISO 31000/RIMS por riesgo
   store/
     index.js                     Factory: Postgres si hay DATABASE_URL, si no JSON local
     defaults.js                  Documento inicial, compartido por ambos stores
@@ -134,12 +143,16 @@ src/
   routes/
     config.js                    /api/config/*
     autocalc.js                  /api/autocalc/*
-    simulate.js                  /api/simulate
+    simulate.js                  /api/simulate, /api/simulate/evaluate
     treatment.js                 /api/treatment/*
     register.js                  /api/register/*
+    assets.js                    /api/assets/* (Catálogo de Activos)
+    risks.js                     /api/risks/* (Historial de Análisis Rápido)
+    cascade.js                   /api/cascade/:riskName/simulate-family
 test/
-  lib.test.js                    15 pruebas del motor de cálculo puro (node --test)
-  routes.test.js                 21 pruebas de integración HTTP (auth, validación, contratos)
+  lib.test.js                    ~130 pruebas del motor de cálculo puro (node --test)
+  routes.test.js                 ~105 pruebas de integración HTTP (auth, validación, contratos)
+  statisticalValidation.test.js  Validación estadística (Kolmogorov-Smirnov) de los muestreadores Beta-PERT/lognormal
 ```
 
 ## Endpoints
@@ -208,6 +221,11 @@ interesadas, entorno legal, alcance de la cadena de suministro cubierta.
 Devuelve el desglose completo de ambos perfiles y su diferencial — para mostrar el
 resumen "Factor de Amenaza vs. Nivel de Defensa" sin duplicar la lógica en el cliente.
 
+### `POST /api/autocalc/nash-equilibrium`
+Análisis exploratorio "qué pasaría si" (sección avanzada, oculta en Modo Simple): resuelve el
+Equilibrio de Nash del Juego de Contienda de Tullock entre atacante y defensa dados sus costos
+marginales — nunca cambia el resultado de la simulación real, es informativo.
+
 ### `POST /api/simulate`
 El endpoint principal — corre la simulación Monte Carlo completa y la evalúa.
 
@@ -258,16 +276,55 @@ ALE actual, con ROSI y un veredicto en texto para cada una, más una recomendaci
 }
 ```
 
+### `POST /api/simulate/evaluate`
+Reclasifica un ALE/CVaR95 ya conocido contra los Criterios de Riesgo, sin volver a correr
+Monte Carlo — misma lógica de `evaluateFairThreat` que ya usa `POST /api/simulate`. Se usa para
+reclasificar el Residual Canónico de un riesgo ya tratado (Gestión de Riesgos), nunca
+reimplementada en el frontend.
+
+```json
+// body
+{ "ale": 165000, "cvar95": 240000, "riskCriteriaOverride": null }
+```
+
 ### `GET /api/register`
-Lista todos los riesgos guardados + Mapa de Calor, Análisis 80-20 (Pareto), y Sensibilidad
-Consolidada.
+Lista todos los riesgos guardados + Mapa de Calor, Análisis 80-20 (Pareto), portafolio
+Inherente/Residual, y Sensibilidad Consolidada.
 
 ### `PUT /api/register/:riskName`
 Guarda o actualiza (si ya existe ese nombre) un riesgo en el registro — normalmente se
-llama justo después de un `/api/simulate` exitoso, con su resultado.
+llama justo después de un `/api/simulate` exitoso, con su resultado. `PUT` **reemplaza la
+entrada completa**: cualquier cliente que la llame debe reenviar todos los campos que quiere
+conservar (owner, `treatmentDecision`, `vulnManualOverride`, historial de revisiones, etc.), no
+solo los que está cambiando.
 
 ### `DELETE /api/register/:riskName`
 Quita un riesgo del registro.
+
+### `GET /api/assets` · `POST /api/assets` · `PUT /api/assets/:id` · `DELETE /api/assets/:id`
+Catálogo de Activos — activos con su valor estimado, categoría y ubicación, que un riesgo
+puede referenciar (`assetId`) desde el wizard FAIR. Borrar un activo referenciado no deja
+riesgos huérfanos (ver `lib/assetCascade.js`).
+
+### `GET /api/risks` · `POST /api/risks` · `PUT /api/risks/:id` · `DELETE /api/risks/:id`
+Historial de borradores del wizard FAIR (Paso 1, botón "Guardar") — un estimado ligero, sin
+Monte Carlo, que se promueve a un análisis FAIR completo más adelante. `POST` crea el borrador
+la primera vez que se guarda en una sesión de edición; `PUT` actualiza esa MISMA entrada si se
+vuelve a guardar antes de terminar el wizard (ver `App.FairWizard.saveDraftToRisksList`) — sin
+esto, cada "Guardar" crearía una fila duplicada. `GET`/`DELETE` alimentan la tabla concentrada de
+`quick-analysis.js` (que ya NO calcula ningún estimado propio — esa "Vista Rápida" standalone se
+eliminó por duplicar, con menos rigor, lo que FAIR ya calcula; este módulo solo lista/borra lo
+que ya existe en `/api/risks`).
+
+### `POST /api/cascade/:riskName/simulate-family`
+Simula, de forma correlacionada (misma iteración Monte Carlo), la pérdida anual combinada de
+`:riskName` y todos sus descendientes en el Árbol de Riesgos en Cascada ("Simular Familia") —
+ver `lib/cascadeSimulation.js`. No sustituye la simulación individual de cada riesgo.
+
+```json
+// body
+{ "iterations": 10000, "seed": 0 }
+```
 
 ## Notas de diseño importantes (para quien mantenga esto después)
 

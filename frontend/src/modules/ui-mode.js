@@ -191,6 +191,30 @@ export const UIMode = {
         },
     },
 
+    // Tooltips (atributo title=, no textContent) con jerga técnica cruda — hueco real que el
+    // "test de jerga" (simple-mode-no-jargon.spec.js) no puede detectar porque lee innerText,
+    // que nunca incluye el contenido de atributos title. Mismo patrón que STATIC_LABELS de
+    // arriba (diccionario id→texto, tecnico/simple), pero aplicado con el.title en vez de
+    // el.textContent — ver applyLabels().
+    STATIC_TITLES: {
+        tecnico: {
+            'fair-mitigar-defensa-objetivo-info':
+                'A qué nivel de defensa subirías con este control. La Reducción de ALE se calcula sola comparando tu nivel actual contra este objetivo.',
+            'riskmgmt-portfolio-info':
+                'Suma del ALE/CVaR95 VIGENTE de cada Amenaza del Registro: el residual de su decisión de Tratamiento si ya se adoptó una estrategia, o el ACTUAL (con el Nivel de Defensa vigente) si todavía no. También muestra el waterfall completo — Riesgo Inherente (sin ningún control) → Actual → Residual — y la Efectividad de Controles en dólares reales. El CVaR95 total es una cota conservadora (nunca subestima) — sumar los CVaR95 de riesgos independientes no es matemáticamente exacto.',
+            'riskmgmt-residual-pareto-info':
+                'A diferencia del Pareto de Registro de Riesgos (sobre el ALE ACTUAL, antes de decidir nada), este ordena por el ALE RESIDUAL vigente de cada Amenaza — útil para notar una estrategia ya adoptada que resultó insuficiente, o qué riesgo sin tratar es ahora el más urgente.',
+        },
+        simple: {
+            'fair-mitigar-defensa-objetivo-info':
+                'A qué nivel de defensa subirías con este control. La reducción de tu pérdida promedio se calcula sola comparando tu nivel actual contra este objetivo.',
+            'riskmgmt-portfolio-info':
+                'Suma de la pérdida VIGENTE de cada Amenaza del Registro: el resultado de su decisión de Tratamiento si ya se adoptó una estrategia, o el actual (con el Nivel de Defensa vigente) si todavía no. También muestra el camino completo — si no hicieras nada → actual → con tratamiento — y cuánto ayudan tus controles en dólares reales. El peor caso total es una cifra conservadora (nunca subestima) — sumar el peor caso de riesgos independientes no es matemáticamente exacto.',
+            'riskmgmt-residual-pareto-info':
+                'A diferencia de la vista de Registro de Riesgos (que ordena por la pérdida ACTUAL, antes de decidir nada), esto ordena por la pérdida VIGENTE de cada Amenaza (después de tratamiento, si ya se decidió uno) — útil para notar una estrategia ya adoptada que resultó insuficiente, o qué riesgo sin tratar es ahora el más urgente.',
+        },
+    },
+
     init() {
         this.load();
         document.getElementById('mode-toggle-btn').addEventListener('click', () => this.toggle());
@@ -258,6 +282,12 @@ export const UIMode = {
         Object.entries(staticSet).forEach(([id, text]) => {
             const el = document.getElementById(id);
             if (el) el.textContent = text;
+        });
+
+        const staticTitleSet = isSimple ? this.STATIC_TITLES.simple : this.STATIC_TITLES.tecnico;
+        Object.entries(staticTitleSet).forEach(([id, text]) => {
+            const el = document.getElementById(id);
+            if (el) el.title = text;
         });
 
         // Categorías de Magnitud de Pérdida (Paso 3): solo cambia el texto de sus

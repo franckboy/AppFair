@@ -7,7 +7,7 @@ autocálculo, tratamiento de riesgos, Registro de Riesgos) vive en el backend, y
 un cliente de su API REST.
 
 - `frontend/app_fair.html` — app de una sola página (el wizard de FAIR completo, 4 pasos). Su
-  lógica vive en `frontend/src/main.js` + `frontend/src/modules/*.js` (19 módulos ES — ver
+  lógica vive en `frontend/src/main.js` + `frontend/src/modules/*.js` (22 módulos ES — ver
   "Plan de migración" abajo); no hay build en producción todavía. El autocompletado de texto
   es 100% local; todo lo demás (Criterios de Riesgo, Valores por Defecto, Contexto
   Organizacional, simulación FAIR, tratamiento y Registro de Riesgos) se guarda y calcula en
@@ -203,8 +203,11 @@ actual — sin reescritura, sin framework nuevo.
   `App.FairWizard.x()`/`App.FairRegister.x()` sobre el namespace compartido (mismo patrón de la
   Fase 3a), así que no hay ciclo de imports ES que resolver. `main.js` quedó en ~40 líneas —
   solo el arranque (`App.init()`/`continueInit()`), sin lógica propia. Con esto termina la
-  división en módulos: los 19 módulos de `frontend/src/modules/` cubren toda la lógica que
-  antes vivía en un solo `<script>` de ~4500 líneas.
+  división en módulos: los 19 módulos de `frontend/src/modules/` cubrían toda la lógica que
+  antes vivía en un solo `<script>` de ~4500 líneas. Después de esta migración se agregaron 3
+  módulos nuevos con el mismo patrón — `treatment.js` y `risk-management.js` (Tratamiento y
+  Gestión de Riesgos, cada uno en su propia página) y `risk-cascade-tree.js` (Árbol de Riesgos
+  en Cascada) — llevando el total a los 22 módulos de hoy.
 
 ## Licencia
 

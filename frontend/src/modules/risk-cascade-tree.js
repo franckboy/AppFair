@@ -43,6 +43,13 @@ const ZOOM_STEP = 0.1;
 
 export const RiskCascadeTree = {
     _zoom: 1,
+    // Guardián contra condición de carrera de red (mismo patrón que App.Treatment, ver el
+    // comentario junto a _reduccionALERequestId ahí): si el usuario abre "Simular Familia" de un
+    // riesgo, y antes de que llegue la respuesta abre el detalle de OTRO riesgo y también pide
+    // "Simular Familia", no hay garantía de que las respuestas HTTP lleguen en el mismo orden en
+    // que se pidieron. Sin esto, una respuesta vieja podía llegar después y pintar los números
+    // de un riesgo bajo el título de otro.
+    _familySimRequestId: 0,
 
     init() {
         document
@@ -511,6 +518,7 @@ export const RiskCascadeTree = {
         body.classList.add('hidden');
         section.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
+        const requestId = ++this._familySimRequestId;
         let result;
         try {
             result = await App.Api.request(`/api/cascade/${encodeURIComponent(riskName)}/simulate-family`, {
@@ -518,9 +526,11 @@ export const RiskCascadeTree = {
                 body: { iterations: 10000, seed: 0 },
             });
         } catch (err) {
+            if (requestId !== this._familySimRequestId) return; // ver el guardián documentado arriba, junto a RiskCascadeTree
             loading.textContent = err.userMessage || 'No se pudo simular la familia de este riesgo.';
             return;
         }
+        if (requestId !== this._familySimRequestId) return; // respuesta vieja, ya superada por otra más nueva
 
         loading.classList.add('hidden');
         body.classList.remove('hidden');

@@ -132,13 +132,27 @@ function evaluateMitigarConTransferir({ currentALE, annualLosses, mitigar, trans
         };
     }
 
-    const reductionFraction = (mitigar.reductionPercent || 0) / 100;
-    const aleAfterMitigar = currentALE * (1 - reductionFraction);
+    // Bug real corregido: acá se derivaba aleAfterMitigar de reductionPercent (un entero
+    // REDONDEADO y ACOTADO a [0,100], ver calculateResidualFromSimulation en autocalc.js) en vez
+    // de usar mitigar.residualALE real cuando existe — igual que ya hace results.mitigar más
+    // abajo en evaluateTreatmentStrategies. Cuando el residual real es PEOR que currentALE (Nivel
+    // de Defensa Objetivo más débil), reductionPercent se acota a 0 y esta rama combinada asumía
+    // "sin cambio" en vez de reflejar la pérdida real — podía hacer que Mitigar+Transferir pareciera
+    // mejor que Mitigar solo (que sí usa el residual real) cuando en realidad es la peor opción.
+    const hasRealResidualALE = typeof mitigar.residualALE === 'number';
+    const aleAfterMitigar = hasRealResidualALE
+        ? mitigar.residualALE
+        : currentALE * (1 - (mitigar.reductionPercent || 0) / 100);
+    // Escala annualLosses proporcional al residual REAL (no a reductionPercent, que no puede
+    // representar un residual peor que el actual por estar acotado a [0,100]) — la mejor
+    // aproximación disponible sin volver a correr Monte Carlo con la Vulnerabilidad ya reducida
+    // (mismo criterio documentado arriba, en el JSDoc de evaluateTreatmentStrategies).
+    const scaleFactor = currentALE > 0 ? aleAfterMitigar / currentALE : 1;
     const tree = {
         type: 'chance',
         label: 'mitigar funciona',
         branches: [
-            { probability: pMitigar, node: residualDecisionNode(aleAfterMitigar, 1 - reductionFraction, mitigar.cost) },
+            { probability: pMitigar, node: residualDecisionNode(aleAfterMitigar, scaleFactor, mitigar.cost) },
             { probability: 1 - pMitigar, node: residualDecisionNode(currentALE, 1, mitigar.cost) },
         ],
     };
