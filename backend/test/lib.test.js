@@ -532,6 +532,25 @@ test('pearsonCorrelation detecta una correlación perfecta', () => {
     assert.ok(Math.abs(pearsonCorrelation(x, y) - 1) < 1e-9);
 });
 
+test('pearsonCorrelation devuelve 0 (no NaN) cuando uno de los arreglos tiene varianza cero', () => {
+    // Caso real: vuln.min === vuln.max hace que getPertRandom devuelva siempre el mismo valor
+    // (ver random.js), un arreglo constante — antes de simple-statistics, esto ya se manejaba
+    // con `den === 0 ? 0 : ...`; esta prueba ancla que el guard nuevo hace exactamente lo mismo.
+    const constant = [5, 5, 5, 5, 5];
+    const varying = [1, 2, 3, 4, 5];
+    assert.strictEqual(pearsonCorrelation(constant, varying), 0);
+    assert.strictEqual(pearsonCorrelation(varying, constant), 0);
+    assert.strictEqual(pearsonCorrelation(constant, constant), 0);
+});
+
+test('pearsonCorrelation devuelve 0 (no revienta) con menos de 2 puntos, ej. iterations=1', () => {
+    // simple-statistics.sampleCovariance revienta con "requires at least two data points" para
+    // arreglos de largo < 2 — iterations=1 es un valor válido según validateIterations, así que
+    // calculateSensitivity NO puede heredar ese throw.
+    assert.strictEqual(pearsonCorrelation([5], [7]), 0);
+    assert.strictEqual(pearsonCorrelation([], []), 0);
+});
+
 test('runMonteCarloSimulation es reproducible con la misma semilla', () => {
     const params = {
         iterations: 2000,
