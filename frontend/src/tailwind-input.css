@@ -352,6 +352,22 @@ body.modo-tecnico .simple-only {
   line-height: 1;
   cursor: pointer;
 }
+.risk-tree-change-trigger {
+  /* Mismo tamaño/forma que .risk-tree-toggle/.risk-tree-add-child (arriba) — un tercer
+     botón redondo chiquito en la misma fila de acciones, con su propio color para
+     distinguirlo de "colapsar" (gris) y "crear hijo" (verde). */
+  display: inline-block;
+  margin-top: 8px;
+  width: 20px;
+  height: 20px;
+  border-radius: 9999px;
+  background: #fff;
+  border: 1px solid #2563eb;
+  color: #2563eb;
+  font-size: 0.7rem;
+  line-height: 1;
+  cursor: pointer;
+}
 
 /* Visor del árbol: espacio de trabajo grande y propio (antes vivía sin alto definido, mezclado
    en el flujo normal de la página — se sentía chico con pocos nodos). overflow: auto en los DOS
