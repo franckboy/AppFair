@@ -33,10 +33,10 @@ export const FairRegister = {
                 App.Api.request('/api/risks'),
             ]);
             state.fair.riskRegister = registerData.risks || [];
-            // El selector "Riesgo Desencadenante" (Paso 1 de FAIR) vive fuera de esta
-            // página — se refresca aquí, no solo cuando se dibuja el Registro, para que
-            // tenga la lista al día sin importar por dónde haya entrado el usuario.
-            App.FairWizard.populateTriggeredByOptions();
+            // Las filas de "Riesgos Desencadenantes" (Paso 1 de FAIR) viven fuera de esta
+            // página — se refrescan aquí, no solo cuando se dibuja el Registro, para que
+            // tengan la lista al día sin importar por dónde haya entrado el usuario.
+            App.FairWizard.renderTriggeredByRows();
             state.fair.registerPareto = registerData.pareto || null;
             state.fair.registerConsolidatedSensitivity = registerData.consolidatedSensitivity || [];
             state.fair.registerHeatmapZones = registerData.heatmapZones || [];
@@ -66,7 +66,7 @@ export const FairRegister = {
         }
         // La barra persistente de riesgo (App.RiskSummaryBar) vive fuera de la página Registro —
         // se refresca aquí siempre, sin importar `render`, para que quede al día sin importar
-        // por dónde haya entrado el usuario (mismo criterio que populateTriggeredByOptions arriba).
+        // por dónde haya entrado el usuario (mismo criterio que renderTriggeredByRows arriba).
         App.RiskSummaryBar.render();
         if (render) this.renderRiskRegister();
     },
@@ -318,12 +318,6 @@ export const FairRegister = {
         const assessmentDate = existingEntry?.assessmentDate || null;
         const assessmentLocation = existingEntry?.assessmentLocation || null;
         const securityPlan = existingEntry?.securityPlan || '—';
-        // Probabilidad condicional de la flecha padre→este riesgo (Árbol de Riesgos en Cascada,
-        // ver App.RiskCascadeTree.openCreateChildModal) — el wizard no tiene ningún campo para
-        // editarla, así que sin conservarla aquí se perdería en silencio justo al completar el
-        // análisis FAIR de un riesgo hijo creado con el botón "+" (exactamente el momento en que
-        // runFamilyCascadeSimulation, en el backend, empieza a necesitarla).
-        const triggeredByProbability = existingEntry?.triggeredByProbability ?? null;
         const attackerProfile = state.quick.attackerProfiles[state.fair.attackerKey] || {};
         const defenseProfile = state.quick.defenseProfiles[state.fair.defenseKey] || {};
         const chart = state.fair.fairResultsChart;
@@ -399,10 +393,14 @@ export const FairRegister = {
                     // riesgo, si se definió uno — ver App.FairWizard.openCriteriaOverrideEditor.
                     // null usa los criterios globales, igual que antes de que existiera esto.
                     riskCriteriaOverride: state.fair.riskCriteriaOverride || null,
-                    // Riesgo en cascada (Paso 1, "Riesgo Desencadenante") — solo organizativo
-                    // por ahora, ver el campo en el HTML para el detalle.
-                    triggeredByRiskName: document.getElementById('fair-triggered-by').value || null,
-                    triggeredByProbability,
+                    // Riesgo(s) en cascada (Paso 1, "Riesgos Desencadenantes") — un riesgo puede
+                    // tener más de una causa, ver App.FairWizard.renderTriggeredByRows y
+                    // App.RiskCascadeTree.buildGraph. La probabilidad la usa "Simular Familia"
+                    // (runFamilyCascadeSimulation, backend).
+                    triggeredBy: (() => {
+                        App.FairWizard.syncTriggeredByDraftFromDom();
+                        return state.fair.triggeredByDraft.filter((t) => t.riskName);
+                    })(),
                     // Norma del catálogo elegida en el Paso 1 (ver App.RiskCatalog.useSelected) —
                     // ya viene correctamente hidratado tanto si se acaba de elegir como si se
                     // restauró al retomar este mismo riesgo (ver loadRegisteredRiskIntoForm), así

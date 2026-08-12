@@ -9,11 +9,16 @@ test.describe('Árbol de Riesgos en Cascada', () => {
         await runFullFairAnalysis(page, 'E2E Árbol — Riesgo Padre');
 
         // Riesgo hijo: página fresca (evita el modal de confirmación de "Nuevo Análisis") y
-        // esta vez sí se elige "Riesgo Desencadenante" en el Paso 1 antes de avanzar.
+        // esta vez sí se agrega "E2E Árbol — Riesgo Padre" como causa en el Paso 1 antes de
+        // avanzar (fila multi-causa, ver App.FairWizard.renderTriggeredByRows).
         await connectAndBoot(page);
         await page.waitForSelector('#fair-riskName');
         await page.fill('#fair-riskName', 'E2E Árbol — Riesgo Hijo');
-        await page.selectOption('#fair-triggered-by', 'E2E Árbol — Riesgo Padre');
+        await page.click('#fair-triggered-by-add-btn');
+        await page.selectOption(
+            '#fair-triggered-by-body [data-trigger-row] [data-field="riskName"]',
+            'E2E Árbol — Riesgo Padre',
+        );
         await page.click('#fair-step1-next');
         await page.waitForTimeout(300);
         await page.selectOption('#fair-attacker-profile', 'organizado');
@@ -29,22 +34,27 @@ test.describe('Árbol de Riesgos en Cascada', () => {
         ]);
         await page.waitForTimeout(1500);
 
+        // El vínculo real se verifica contra el backend (no existe window.App expuesto
+        // globalmente, mismo patrón que el resto de la suite E2E).
+        const register = await page.evaluate(async () => {
+            const res = await fetch('http://localhost:3000/api/register', { headers: { 'X-API-Key': 'test-e2e-key' } });
+            return res.json();
+        });
+        const childEntry = register.risks.find((r) => r.riskName === 'E2E Árbol — Riesgo Hijo');
+        expect(childEntry.triggeredBy).toEqual([{ riskName: 'E2E Árbol — Riesgo Padre', probability: null }]);
+
         await page.click('#nav-risk-tree');
         await page.waitForSelector('#risk-cascade-tree-container');
         await page.waitForTimeout(300);
 
         const parentCard = page.locator('.risk-tree-card', { hasText: 'E2E Árbol — Riesgo Padre' });
         await expect(parentCard).toBeVisible();
-
-        // El hijo debe estar DENTRO del <li> del padre (anidado en su <ul> de hijos), no solo
-        // presente en algún lugar de la página — así se confirma la relación, no solo que
-        // ambos nombres aparecen.
-        const parentLi = page.locator('li', { has: parentCard });
-        const childCard = parentLi.locator('.risk-tree-card', { hasText: 'E2E Árbol — Riesgo Hijo' });
+        const childCard = page.locator('.risk-tree-card', { hasText: 'E2E Árbol — Riesgo Hijo' });
         await expect(childCard).toBeVisible();
 
-        // Colapsar la rama del padre oculta al hijo sin quitarlo del DOM.
-        await parentLi.locator('[data-tree-toggle]').first().click();
+        // Colapsar la rama del padre oculta al hijo sin quitarlo del DOM — el botón vive en la
+        // misma tarjeta del padre, sin necesidad de buscar un <li> envolvente.
+        await parentCard.locator('[data-tree-toggle]').first().click();
         await page.waitForTimeout(200);
         await expect(childCard).toBeHidden();
     });
@@ -70,7 +80,7 @@ test.describe('Árbol de Riesgos en Cascada', () => {
         await expect(page.locator('#treatment-risk-select')).toHaveValue('E2E Árbol — Detalle');
     });
 
-    test('Simular Familia: un hijo creado con "+" conserva su triggeredByProbability al completar su FAIR, y la simulación combinada incluye a ambos', async ({
+    test('Simular Familia: un hijo creado con "+" conserva su causa (triggeredBy) al completar su FAIR, y la simulación combinada incluye a ambos', async ({
         page,
     }) => {
         await connectAndBoot(page);
@@ -94,9 +104,11 @@ test.describe('Árbol de Riesgos en Cascada', () => {
         await page.click('#risktree-detail-continue-btn');
         await page.waitForSelector('#fair-riskName');
 
-        // Regresión: antes de esta tarea, saveToRiskRegister() nunca reenviaba
-        // triggeredByProbability — completar el FAIR de un hijo creado con "+" lo borraba en
-        // silencio (quedaba null) justo cuando runFamilyCascadeSimulation empieza a necesitarlo.
+        // Regresión: antes de la tarea de multi-causa, saveToRiskRegister() nunca reenviaba la
+        // probabilidad del vínculo — completar el FAIR de un hijo creado con "+" la borraba en
+        // silencio justo cuando runFamilyCascadeSimulation empieza a necesitarla. Ahora la fila
+        // de "Riesgos Desencadenantes" del Paso 1 la trae precargada desde el Registro (ver
+        // loadRegisteredRiskIntoForm) y la reenvía tal cual.
         const [putRes] = await Promise.all([
             page.waitForResponse((r) => r.url().includes('/api/register/') && r.request().method() === 'PUT', {
                 timeout: 15000,
@@ -104,7 +116,7 @@ test.describe('Árbol de Riesgos en Cascada', () => {
             runFullFairAnalysis(page, 'E2E Familia — Hijo'),
         ]);
         const putBody = await putRes.json();
-        expect(putBody.entry.triggeredByProbability).toBe(90);
+        expect(putBody.entry.triggeredBy).toEqual([{ riskName: 'E2E Familia — Padre', probability: 90 }]);
 
         await page.click('#nav-risk-tree');
         await page.waitForTimeout(300);
@@ -188,17 +200,26 @@ test.describe('Árbol de Riesgos en Cascada', () => {
         await page.waitForSelector('#risk-cascade-tree-container');
         await page.waitForTimeout(300);
 
-        // "Nieto Huérfano" nace como raíz (sin desencadenante) — se vincula retroactivamente
-        // como hijo de "Abuelo", sin volver a pasar por el wizard de FAIR.
+        // "Nieto Huérfano" nace como raíz (sin ninguna causa) — se vincula retroactivamente
+        // como hijo de "Abuelo", sin volver a pasar por el wizard de FAIR. El modal multi-causa
+        // arranca sin filas cuando el riesgo no tiene ninguna causa todavía — hay que agregar
+        // una antes de poder elegir.
         const orphanCard = page.locator('.risk-tree-card', { hasText: 'E2E Vínculo — Nieto Huérfano' });
         await orphanCard.locator('[data-tree-change-trigger]').click();
-        await page.waitForSelector('#tree-change-trigger-select');
+        await page.waitForSelector('#tree-change-trigger-add-btn');
+        await page.click('#tree-change-trigger-add-btn');
+        await page.waitForSelector('#tree-change-trigger-body [data-cause-row]');
 
-        const options = await page.locator('#tree-change-trigger-select option').allTextContents();
+        const options = await page
+            .locator('#tree-change-trigger-body [data-cause-row] [data-field="riskName"] option')
+            .allTextContents();
         expect(options).toContain('E2E Vínculo — Abuelo');
 
-        await page.selectOption('#tree-change-trigger-select', 'E2E Vínculo — Abuelo');
-        await page.fill('#tree-change-trigger-probability', '70');
+        await page.selectOption(
+            '#tree-change-trigger-body [data-cause-row] [data-field="riskName"]',
+            'E2E Vínculo — Abuelo',
+        );
+        await page.fill('#tree-change-trigger-body [data-cause-row] [data-field="probability"]', '70');
         const [putRes] = await Promise.all([
             page.waitForResponse((r) => r.url().includes('/api/register/') && r.request().method() === 'PUT', {
                 timeout: 10000,
@@ -206,39 +227,47 @@ test.describe('Árbol de Riesgos en Cascada', () => {
             page.click('#tree-change-trigger-save-btn'),
         ]);
         const putBody = await putRes.json();
-        expect(putBody.entry.triggeredByRiskName).toBe('E2E Vínculo — Abuelo');
-        expect(putBody.entry.triggeredByProbability).toBe(70);
+        expect(putBody.entry.triggeredBy).toEqual([{ riskName: 'E2E Vínculo — Abuelo', probability: 70 }]);
         await page.waitForTimeout(300);
 
-        const parentLi = page.locator('li', {
-            has: page.locator('.risk-tree-card', { hasText: 'E2E Vínculo — Abuelo' }),
-        });
-        await expect(parentLi.locator('.risk-tree-card', { hasText: 'E2E Vínculo — Nieto Huérfano' })).toBeVisible();
-
-        // Ahora "Abuelo" tiene un hijo real — su propio selector de "Cambiar quién lo causó" NO
-        // debe ofrecer a "Nieto Huérfano" como opción (crearía un ciclo directo).
         const grandparentCard = page.locator('.risk-tree-card', { hasText: 'E2E Vínculo — Abuelo' });
+        await expect(grandparentCard).toBeVisible();
+        await expect(orphanCard).toBeVisible();
+
+        // Ahora "Abuelo" tiene un hijo real — su propio modal de "Cambiar quién lo causó" NO debe
+        // ofrecer a "Nieto Huérfano" como opción (crearía un ciclo directo).
         await grandparentCard.locator('[data-tree-change-trigger]').click();
-        await page.waitForSelector('#tree-change-trigger-select');
-        const grandparentOptions = await page.locator('#tree-change-trigger-select option').allTextContents();
+        await page.waitForSelector('#tree-change-trigger-add-btn');
+        await page.click('#tree-change-trigger-add-btn');
+        await page.waitForSelector('#tree-change-trigger-body [data-cause-row]');
+        const grandparentOptions = await page
+            .locator('#tree-change-trigger-body [data-cause-row] [data-field="riskName"] option')
+            .allTextContents();
         expect(grandparentOptions).not.toContain('E2E Vínculo — Nieto Huérfano');
         await page.click('#tree-change-trigger-cancel-btn');
 
-        // Quitar el vínculo (volver a "— Ninguno —") deja al riesgo como raíz otra vez.
+        // Quitar el vínculo (eliminar la fila con "✕") deja al riesgo como raíz otra vez.
         await orphanCard.locator('[data-tree-change-trigger]').click();
-        await page.waitForSelector('#tree-change-trigger-select');
+        await page.waitForSelector('#tree-change-trigger-body [data-cause-row]');
         const [clearRes] = await Promise.all([
             page.waitForResponse((r) => r.url().includes('/api/register/') && r.request().method() === 'PUT', {
                 timeout: 10000,
             }),
             (async () => {
-                await page.selectOption('#tree-change-trigger-select', '');
+                await page.click('#tree-change-trigger-body [data-cause-row] [data-remove-cause]');
                 await page.click('#tree-change-trigger-save-btn');
             })(),
         ]);
         const clearBody = await clearRes.json();
-        expect(clearBody.entry.triggeredByRiskName).toBeNull();
+        expect(clearBody.entry.triggeredBy).toEqual([]);
         await page.waitForTimeout(300);
-        await expect(parentLi.locator('.risk-tree-card', { hasText: 'E2E Vínculo — Nieto Huérfano' })).toHaveCount(0);
+
+        // Sigue existiendo, pero ya no como hijo de "Abuelo".
+        const register = await page.evaluate(async () => {
+            const res = await fetch('http://localhost:3000/api/register', { headers: { 'X-API-Key': 'test-e2e-key' } });
+            return res.json();
+        });
+        const orphanEntry = register.risks.find((r) => r.riskName === 'E2E Vínculo — Nieto Huérfano');
+        expect(orphanEntry.triggeredBy).toEqual([]);
     });
 });

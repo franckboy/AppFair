@@ -172,8 +172,7 @@ function makeCascadeFamily() {
     const interrupcion = {
         riskName: 'Interrupcion',
         riskType: 'amenaza',
-        triggeredByRiskName: 'Incendio',
-        triggeredByProbability: 100, // fuerza la cascada en TODAS las iteraciones
+        triggeredBy: [{ riskName: 'Incendio', probability: 100 }], // fuerza la cascada en TODAS las iteraciones
         tef: { min: 1, mode: 2, max: 3 },
         vuln: { min: 30, mode: 40, max: 50 },
         lossMagnitudes: { productividad: { min: 10000, mode: 15000, max: 25000 } },
@@ -181,15 +180,13 @@ function makeCascadeFamily() {
     const danoReputacional = {
         riskName: 'DanoReputacional',
         riskType: 'amenaza',
-        triggeredByRiskName: 'Incendio',
-        triggeredByProbability: 50,
+        triggeredBy: [{ riskName: 'Incendio', probability: 50 }],
         // Sin tef/vuln/lossMagnitudes — "Sin analizar" (creado con el botón "+").
     };
     const ahorroEnSeguro = {
         riskName: 'Ahorro',
         riskType: 'oportunidad',
-        triggeredByRiskName: 'Incendio',
-        triggeredByProbability: 50,
+        triggeredBy: [{ riskName: 'Incendio', probability: 50 }],
         tef: { min: 1, mode: 2, max: 3 },
         vuln: { min: 30, mode: 40, max: 50 },
         lossMagnitudes: { productividad: { min: 5000, mode: 8000, max: 12000 } },
@@ -197,22 +194,50 @@ function makeCascadeFamily() {
     return [incendio, interrupcion, danoReputacional, ahorroEnSeguro];
 }
 
-test('buildFamilySubtree: arma el subárbol completo que cuelga de la raíz vía triggeredByRiskName', () => {
+test('buildFamilySubtree: arma el subárbol completo que cuelga de la raíz vía triggeredBy', () => {
     const { order, childrenOf } = buildFamilySubtree('Incendio', makeCascadeFamily());
     assert.deepStrictEqual([...order].sort(), ['Ahorro', 'DanoReputacional', 'Incendio', 'Interrupcion'].sort());
     assert.deepStrictEqual(
-        [...(childrenOf.get('Incendio') || [])].sort(),
+        (childrenOf.get('Incendio') || []).map((c) => c.riskName).sort(),
         ['Ahorro', 'DanoReputacional', 'Interrupcion'].sort(),
     );
 });
 
 test('buildFamilySubtree: un ciclo (A desencadena B, B desencadena A) no cuelga la función', () => {
     const register = [
-        { riskName: 'A', triggeredByRiskName: 'B' },
-        { riskName: 'B', triggeredByRiskName: 'A' },
+        { riskName: 'A', triggeredBy: [{ riskName: 'B', probability: 100 }] },
+        { riskName: 'B', triggeredBy: [{ riskName: 'A', probability: 100 }] },
     ];
     const { order } = buildFamilySubtree('A', register);
     assert.deepStrictEqual([...order].sort(), ['A', 'B']);
+});
+
+test('buildFamilySubtree: un riesgo con DOS padres aparece como hijo de AMBOS (multi-causa)', () => {
+    // A y B son dos causas independientes del mismo hijo C — a diferencia del esquema viejo
+    // (un solo triggeredByRiskName), esto ahora es representable: C debe listarse como hijo de
+    // A Y de B a la vez, cada arista con su propia probabilidad.
+    const register = [
+        { riskName: 'A', riskType: 'amenaza' },
+        { riskName: 'B', riskType: 'amenaza' },
+        {
+            riskName: 'C',
+            riskType: 'amenaza',
+            triggeredBy: [
+                { riskName: 'A', probability: 30 },
+                { riskName: 'B', probability: 70 },
+            ],
+        },
+    ];
+    const { childrenOf: childrenOfA } = buildFamilySubtree('A', register);
+    const { childrenOf: childrenOfB } = buildFamilySubtree('B', register);
+    assert.deepStrictEqual(
+        (childrenOfA.get('A') || []).map((c) => ({ riskName: c.riskName, probability: c.probability })),
+        [{ riskName: 'C', probability: 30 }],
+    );
+    assert.deepStrictEqual(
+        (childrenOfB.get('B') || []).map((c) => ({ riskName: c.riskName, probability: c.probability })),
+        [{ riskName: 'C', probability: 70 }],
+    );
 });
 
 test('runFamilyCascadeSimulation: separa correctamente analizados (incluidos) de excluidos (sin analizar / oportunidad)', () => {
@@ -283,8 +308,7 @@ test('runFamilyCascadeSimulation: un hijo activado aporta su magnitud, no magnit
         {
             riskName: 'Hijo',
             riskType: 'amenaza',
-            triggeredByRiskName: 'Raiz',
-            triggeredByProbability: 0,
+            triggeredBy: [{ riskName: 'Raiz', probability: 0 }],
             tef: { min: 0.05, mode: 0.1, max: 0.2 },
             vuln: { min: 80, mode: 90, max: 100 },
             lossMagnitudes: { productividad: { min: 1000000, mode: 1000000, max: 1000000 } },
@@ -296,6 +320,81 @@ test('runFamilyCascadeSimulation: un hijo activado aporta su magnitud, no magnit
     assert.ok(
         Math.abs(avgFamily - expected) < 1,
         `avgFamily (${avgFamily}) debería ser activationRate × magnitud fija (${expected}) — no magnitud × LEF otra vez`,
+    );
+});
+
+test('runFamilyCascadeSimulation: un hijo con DOS padres se activa según 1-(1-p1)(1-p2), no solo el primero', () => {
+    // Raíz siempre activa dos hijos intermedios A y B (probability:100, forzado), cada uno sin
+    // LEF propio (stub, sin tef/vuln — pOwn=0, solo pueden activarse por cascada) — así A y B
+    // están SIEMPRE activos, y lo único que varía es si C se activa vía A (30%), vía B (70%), o
+    // ninguna. Sin magnitud/LEF propios en C tampoco (pOwn=0 ahí también), su activationRate
+    // debe converger a la combinación de cascada pura: 1-(1-0.3)(1-0.7) = 0.79.
+    const register = [
+        { riskName: 'Raiz', riskType: 'amenaza' },
+        { riskName: 'A', riskType: 'amenaza', triggeredBy: [{ riskName: 'Raiz', probability: 100 }] },
+        { riskName: 'B', riskType: 'amenaza', triggeredBy: [{ riskName: 'Raiz', probability: 100 }] },
+        {
+            riskName: 'C',
+            riskType: 'amenaza',
+            triggeredBy: [
+                { riskName: 'A', probability: 30 },
+                { riskName: 'B', probability: 70 },
+            ],
+        },
+    ];
+    const result = runFamilyCascadeSimulation({ rootRiskName: 'Raiz', register, iterations: 20000, seed: 909 });
+    const expected = 1 - (1 - 0.3) * (1 - 0.7); // 0.79
+    assert.ok(
+        Math.abs(result.activationRates['C'] / 100 - expected) < 0.02,
+        `activationRate de C (${result.activationRates['C']}%) debería converger a ${expected * 100}%`,
+    );
+});
+
+test('runFamilyCascadeSimulation: con DOS padres de probability:0, la propia frecuencia (pOwn) del hijo NO se cuenta dos veces (regresión)', () => {
+    // Regresión del bug real que este diseño evita: sin el guardián pOwnConsumedThisIteration,
+    // un hijo con N padres recibiría N tiradas de su propia frecuencia esa misma iteración
+    // (1-(1-pOwn)^N en vez de pOwn), sobreestimando su activación cuanto más padres tenga. Se
+    // aísla el efecto con probability:0 en TODAS las aristas de cascada (el hijo solo puede
+    // activarse por su propio LEF) y se compara la tasa de activación con 1 padre vs. 2 padres
+    // — deben converger a la MISMA tasa (la propia, sin inflar), dentro de margen estadístico.
+    const hijoConfig = {
+        riskName: 'Hijo',
+        riskType: 'amenaza',
+        tef: { min: 0.05, mode: 0.1, max: 0.2 },
+        vuln: { min: 80, mode: 90, max: 100 },
+        lossMagnitudes: { productividad: { min: 1000000, mode: 1000000, max: 1000000 } },
+    };
+    const unParadre = [
+        { riskName: 'Raiz', riskType: 'amenaza' },
+        { ...hijoConfig, triggeredBy: [{ riskName: 'Raiz', probability: 0 }] },
+    ];
+    const dosPadres = [
+        { riskName: 'Raiz', riskType: 'amenaza' },
+        { riskName: 'A', riskType: 'amenaza', triggeredBy: [{ riskName: 'Raiz', probability: 100 }] },
+        { riskName: 'B', riskType: 'amenaza', triggeredBy: [{ riskName: 'Raiz', probability: 100 }] },
+        {
+            ...hijoConfig,
+            triggeredBy: [
+                { riskName: 'A', probability: 0 },
+                { riskName: 'B', probability: 0 },
+            ],
+        },
+    ];
+    const resultUno = runFamilyCascadeSimulation({
+        rootRiskName: 'Raiz',
+        register: unParadre,
+        iterations: 20000,
+        seed: 606,
+    });
+    const resultDos = runFamilyCascadeSimulation({
+        rootRiskName: 'Raiz',
+        register: dosPadres,
+        iterations: 20000,
+        seed: 606,
+    });
+    assert.ok(
+        Math.abs(resultUno.activationRates['Hijo'] - resultDos.activationRates['Hijo']) < 3,
+        `1 padre (${resultUno.activationRates['Hijo']}%) y 2 padres de probability:0 (${resultDos.activationRates['Hijo']}%) deberían converger a la misma tasa — pOwn no debe contarse dos veces`,
     );
 });
 
@@ -329,7 +428,7 @@ test('runFamilyCascadeSimulation: un riesgo sin hijos se simula igual (familia =
 test('runFamilyCascadeSimulation: una familia de más de MAX_FAMILY_SIZE riesgos revienta con error explícito (FAMILY_TOO_LARGE)', () => {
     const register = [{ riskName: 'raiz-0' }];
     for (let i = 1; i <= MAX_FAMILY_SIZE + 5; i++) {
-        register.push({ riskName: `raiz-${i}`, triggeredByRiskName: `raiz-${i - 1}` });
+        register.push({ riskName: `raiz-${i}`, triggeredBy: [{ riskName: `raiz-${i - 1}`, probability: 100 }] });
     }
     assert.throws(
         () => runFamilyCascadeSimulation({ rootRiskName: 'raiz-0', register, iterations: 10, seed: 1 }),

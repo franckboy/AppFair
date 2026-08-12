@@ -13,13 +13,15 @@ import {
 } from './utils.js';
 
 // ============================================================
-// App.RiskCascadeTree — vista de árbol del vínculo "Riesgo Desencadenante" (Paso 1, opcional,
-// ver App.FairWizard.populateTriggeredByOptions): quién desencadena a quién, entre los riesgos
-// ya guardados en el Registro. Puramente informativo — lee state.fair.riskRegister tal cual
-// quedó guardado, sin combinar ni recalcular ningún ALE. Sumar/restar los riesgos vinculados
-// se descartó explícitamente en esta misma sesión: requeriría simular ambos de forma
-// correlacionada (misma iteración Monte Carlo) para no sobreestimar por doble conteo (Broder,
-// 1984) — fuera del alcance de esta vista, que solo dibuja la relación ya guardada.
+// App.RiskCascadeTree — vista de árbol/grafo del vínculo "Riesgos Desencadenantes" (Paso 1,
+// opcional, ver App.FairWizard.renderTriggeredByRows): quién desencadena a quién, entre los
+// riesgos ya guardados en el Registro — un riesgo puede tener MÁS de una causa a la vez (ver
+// buildGraph, triggeredBy es un array). El árbol en sí es puramente informativo — lee
+// state.fair.riskRegister tal cual quedó guardado, sin combinar ni recalcular ningún ALE por su
+// cuenta. Combinar los riesgos vinculados SÍ existe, pero como una acción aparte y explícita
+// ("Simular Familia", ver simulateFamily): simula de forma correlacionada (misma iteración Monte
+// Carlo) para no sobreestimar por doble conteo (Broder, 1984) — el árbol nunca lo hace solo, sin
+// que el usuario lo pida.
 // ============================================================
 const formatAle = (value) =>
     typeof value === 'number'
@@ -79,49 +81,78 @@ export const RiskCascadeTree = {
         this.render();
     },
 
-    // Arma el bosque de árboles a partir de triggeredByRiskName — cada riesgo elige como
-    // máximo UN desencadenante (select de selección única), así que la estructura real es un
-    // árbol multi-hijo por raíz, nunca un nodo con dos padres.
-    buildForest() {
+    // Arma el grafo completo a partir de triggeredBy — un riesgo puede tener MÁS DE UNA causa
+    // (ej. un incendio en bodega puede venir de una falla eléctrica Y de mal almacenamiento de
+    // inflamables, dos causas independientes), así que esto ya no es un bosque de árboles (un
+    // nodo puede tener más de un padre) sino un grafo dirigido. `edges` es la forma plana que
+    // consume directamente Cytoscape (ver el plan de migración) — cada arista es una causa
+    // VÁLIDA (el padre existe en el Registro); una causa declarada hacia un riesgo que ya no
+    // existe (borrado/renombrado) no genera arista, se anota en `node.broken` en su lugar.
+    buildGraph() {
         const register = state.fair.riskRegister || [];
         const byName = new Map(register.map((r) => [r.riskName, r]));
+        const edges = []; // { source: parentName, target: childName, probability }
+        const brokenBy = new Map(); // riskName -> string[] (causas declaradas que ya no existen)
+
+        register.forEach((r) => {
+            (r.triggeredBy || []).forEach(({ riskName: parentName, probability }) => {
+                if (!parentName || parentName === r.riskName) return;
+                if (!byName.has(parentName)) {
+                    if (!brokenBy.has(r.riskName)) brokenBy.set(r.riskName, []);
+                    brokenBy.get(r.riskName).push(parentName);
+                    return;
+                }
+                edges.push({ source: parentName, target: r.riskName, probability });
+            });
+        });
+
+        const nodes = register.map((r) => ({ id: r.riskName, risk: r, broken: brokenBy.get(r.riskName) || [] }));
+        return { nodes, edges };
+    },
+
+    // TEMPORAL, mientras el motor de dibujo siga siendo el <ul>/<li> CSS de render()/renderNode()
+    // (ver el plan de migración a Cytoscape.js, que sí soporta múltiples padres por nodo de
+    // forma nativa): esa técnica de dibujo solo puede mostrar UN padre por tarjeta, así que
+    // buildForest() sigue existiendo como una vista DERIVADA de buildGraph() que colapsa a "solo
+    // la primera causa declarada" por riesgo — un riesgo con 2+ causas reales se dibuja aquí bajo
+    // la primera nada más, sin perder el dato (buildGraph()/el Registro sí las guarda todas). Se
+    // retira en cuanto Cytoscape reemplace a render()/renderNode().
+    buildForest() {
+        const { nodes, edges } = this.buildGraph();
         const childrenOf = new Map();
         const roots = [];
 
-        register.forEach((r) => {
-            const parentName = r.triggeredByRiskName;
-            // Raíz si no tiene desencadenante, o si el que tiene ya no existe en el Registro —
-            // el vínculo se guarda por NOMBRE, no por id (a diferencia de assetId); si el
-            // riesgo padre se borró o se renombró después, el vínculo queda huérfano. Se trata
-            // como raíz (con una nota aparte) en vez de ocultar el riesgo del árbol.
-            if (!parentName || parentName === r.riskName) {
-                roots.push({ risk: r, orphan: false });
+        nodes.forEach((n) => {
+            const firstEdge = edges.find((e) => e.target === n.id);
+            if (!firstEdge) {
+                roots.push({
+                    risk: n.risk,
+                    orphan: n.broken.length > 0,
+                    orphanParentName: n.broken[0] || null,
+                });
                 return;
             }
-            if (!byName.has(parentName)) {
-                roots.push({ risk: r, orphan: true, orphanParentName: parentName });
-                return;
-            }
-            if (!childrenOf.has(parentName)) childrenOf.set(parentName, []);
-            childrenOf.get(parentName).push(r);
+            if (!childrenOf.has(firstEdge.source)) childrenOf.set(firstEdge.source, []);
+            childrenOf.get(firstEdge.source).push(n.risk);
         });
 
         return { roots, childrenOf };
     },
 
-    // Todos los nombres alcanzables recorriendo childrenOf a partir de una lista de riesgos de
-    // entrada — usado para detectar riesgos que NUNCA aparecen bajo ninguna raíz declarada
+    // Todos los nombres alcanzables recorriendo `edges` a partir de una lista de nombres de
+    // entrada — usado para (a) detectar riesgos que NUNCA aparecen bajo ninguna raíz declarada
     // (ver render(): un ciclo sin ninguna raíz externa, ej. A desencadenado por B y B
     // desencadenado por A, no cuelga de ningún root real y quedaría fuera del árbol si no se
-    // busca aparte).
-    collectReachable(entryRisks, childrenOf) {
+    // busca aparte) y (b) excluir los propios descendientes de un riesgo al elegirle una nueva
+    // causa (ver openChangeTriggerModal — evita crear un ciclo nuevo a propósito).
+    collectReachable(startRiskNames, edges) {
         const seen = new Set();
-        const stack = [...entryRisks];
+        const stack = [...startRiskNames];
         while (stack.length) {
             const cur = stack.pop();
-            if (seen.has(cur.riskName)) continue;
-            seen.add(cur.riskName);
-            (childrenOf.get(cur.riskName) || []).forEach((c) => stack.push(c));
+            if (seen.has(cur)) continue;
+            seen.add(cur);
+            edges.filter((e) => e.source === cur).forEach((e) => stack.push(e.target));
         }
         return seen;
     },
@@ -143,6 +174,10 @@ export const RiskCascadeTree = {
         scrollWrap.classList.remove('hidden');
 
         const { roots, childrenOf } = this.buildForest();
+        // Aristas del grafo REAL (no el `childrenOf` colapsado a un padre de buildForest, ver su
+        // comentario) — la detección de ciclos debe considerar TODAS las causas declaradas, no
+        // solo la primera de cada riesgo.
+        const { edges } = this.buildGraph();
 
         // Riesgos que forman un ciclo sin ninguna raíz externa (ver collectReachable) — nunca
         // se alcanzan recorriendo desde `roots`, así que sin este paso desaparecerían del
@@ -150,14 +185,14 @@ export const RiskCascadeTree = {
         // primero de cada ciclo (en el orden del Registro) como punto de entrada arbitrario;
         // el resto del mismo ciclo ya queda cubierto al recorrerlo desde ahí.
         const handled = this.collectReachable(
-            roots.map((r) => r.risk),
-            childrenOf,
+            roots.map((r) => r.risk.riskName),
+            edges,
         );
         const cycleEntryRoots = [];
         register.forEach((r) => {
             if (handled.has(r.riskName)) return;
             cycleEntryRoots.push(r);
-            this.collectReachable([r], childrenOf).forEach((name) => handled.add(name));
+            this.collectReachable([r.riskName], edges).forEach((name) => handled.add(name));
         });
 
         const rootEntries = [
@@ -223,11 +258,10 @@ export const RiskCascadeTree = {
     // árbol (nace como stub: ale 0, sin TEF/Vulnerabilidad/Magnitud) para completarlo después
     // desde su propia tarjeta. Se guarda DIRECTO en el Registro (PUT /api/register/:nombre), no
     // como borrador de Análisis Rápido (/api/risks) — el árbol solo lee state.fair.riskRegister
-    // (ver buildForest), así que un borrador nunca aparecería aquí.
-    // triggeredByProbability (0-100) es la probabilidad condicional de esta flecha padre→hijo —
-    // el dato que le falta a walkMarkovChain (lib/markov.js, todavía sin conectar) para simular
-    // la cascada correlacionada más adelante; se captura ya desde ahora para no tener que volver
-    // flecha por flecha a rellenarla cuando esa simulación exista.
+    // (ver buildGraph), así que un borrador nunca aparecería aquí.
+    // La probabilidad (0-100) que se captura aquí es la probabilidad condicional de esta arista
+    // padre→hijo (triggeredBy[].probability) — el dato que usa runFamilyCascadeSimulation
+    // (lib/cascadeSimulation.js, "Simular Familia") para simular la cascada correlacionada.
     openCreateChildModal(parentRiskName) {
         Modal.title.textContent = 'Crear riesgo desencadenado';
         Modal.body.innerHTML = `
@@ -338,8 +372,7 @@ export const RiskCascadeTree = {
                         cvar95: 0,
                         riskType,
                         description: description || null,
-                        triggeredByRiskName: parentRiskName,
-                        triggeredByProbability: probability,
+                        triggeredBy: [{ riskName: parentRiskName, probability }],
                         catalogStandard,
                         catalogCode,
                     },
@@ -357,20 +390,22 @@ export const RiskCascadeTree = {
         });
     },
 
-    // Cambia (o quita) el "Riesgo Desencadenante" de un riesgo YA guardado, directo desde su
-    // tarjeta — a diferencia de openCreateChildModal (crea un riesgo NUEVO ya vinculado), esto
-    // reasigna el vínculo de uno que ya existe: sirve tanto para darle padre a un huérfano como
-    // para "adoptar" un riesgo existente como hijo (abriendo esto desde la tarjeta del futuro
-    // hijo, no la del padre — "hermano" no necesita nada aparte: dos riesgos con el mismo
-    // desencadenante ya lo son). Antes la única forma de tocar este campo era reabrir el riesgo
-    // completo en el wizard de FAIR (Paso 1) — un vínculo es un dato de relación, no algo que
-    // debería exigir pasar por un análisis completo para editarse.
+    // Cambia (agrega/quita) las causas ("Riesgo Desencadenante") de un riesgo YA guardado,
+    // directo desde su tarjeta — a diferencia de openCreateChildModal (crea un riesgo NUEVO ya
+    // vinculado), esto reasigna el vínculo de uno que ya existe: sirve tanto para darle causa a
+    // un huérfano como para "adoptar" un riesgo existente como hijo (abriendo esto desde la
+    // tarjeta del futuro hijo, no la del padre — "hermano" no necesita nada aparte: dos riesgos
+    // con la misma causa ya lo son). Un riesgo puede tener MÁS de una causa a la vez (ej. un
+    // incendio en bodega puede venir de una falla eléctrica Y de mal almacenamiento de
+    // inflamables) — de ahí la lista de filas en vez de un solo <select>, mismo patrón que
+    // App.Treatment.openControlsModal (treatment.js: array de trabajo `working`,
+    // syncWorkingFromDom() antes de cada re-render, filas con botón "✕", "+ Agregar" al final).
     //
     // Guarda con PUT /api/register/:nombre, igual que el resto de la app (Treatment.
     // persistTreatment, RiskManagement.persist, adoptStrategy) — ese endpoint REEMPLAZA la
-    // entrada completa, así que el body parte de `{...risk}` (todo lo demás intacto) y solo
-    // pisa triggeredByRiskName/triggeredByProbability. No hace falta volver a simular: es
-    // exactamente el mismo campo que ya guarda el Paso 1 del wizard, sin tocar ningún cálculo.
+    // entrada completa, así que el body parte de `{...risk}` (todo lo demás intacto) y solo pisa
+    // triggeredBy. No hace falta volver a simular: es el mismo campo que ya guarda el Paso 1 del
+    // wizard, sin tocar ningún cálculo.
     openChangeTriggerModal(riskName) {
         const register = state.fair.riskRegister || [];
         const risk = register.find((r) => r.riskName === riskName);
@@ -379,97 +414,148 @@ export const RiskCascadeTree = {
             return;
         }
 
-        // Bug real que este modal evita, a diferencia del <select> "Riesgo Desencadenante" del
-        // Paso 1 (que solo excluye el propio nombre): elegir aquí a uno de los DESCENDIENTES del
-        // riesgo actual como su nuevo desencadenante crearía un ciclo (A causado por B, B
-        // causado por A) de forma directa e inmediata, no un caso raro de renombrar/borrar más
-        // tarde. Se calculan con collectReachable (mismo helper que ya usa render() para
-        // detectar ciclos existentes) y se excluyen del selector — no se puede ni intentar.
-        const { childrenOf } = this.buildForest();
-        const descendants = this.collectReachable([risk], childrenOf);
-        const validParentOptions = register.filter((r) => !descendants.has(r.riskName));
+        // Bug real que este modal evita, a diferencia del Paso 1 del wizard (que solo excluye el
+        // propio nombre): elegir aquí a uno de los DESCENDIENTES del riesgo actual como una de
+        // sus causas crearía un ciclo (A causado por B, B causado por A) de forma directa e
+        // inmediata, no un caso raro de renombrar/borrar más tarde. Se calculan con
+        // collectReachable (mismo helper que ya usa render() para detectar ciclos existentes) —
+        // fijo durante la vida del modal, no cambia entre filas.
+        const { edges } = this.buildGraph();
+        const descendants = this.collectReachable([riskName], edges);
+        const working = (risk.triggeredBy || []).map((t) => ({ ...t }));
 
-        const currentParent = risk.triggeredByRiskName || '';
-        const optionsHTML = validParentOptions
-            .map(
-                (r) =>
-                    `<option value="${sanitizeHTML(r.riskName)}" ${r.riskName === currentParent ? 'selected' : ''}>${sanitizeHTML(r.riskName)}</option>`,
-            )
-            .join('');
+        // A diferencia de `descendants` (fijo), qué otros riesgos ya están elegidos en OTRAS
+        // filas sí cambia en cada render — evita repetir la misma causa dos veces en el array.
+        const optionsFor = (rowIndex) => {
+            const chosenElsewhere = new Set(
+                working.map((t, i) => (i === rowIndex ? null : t.riskName)).filter(Boolean),
+            );
+            return register.filter(
+                (r) => r.riskName !== riskName && !descendants.has(r.riskName) && !chosenElsewhere.has(r.riskName),
+            );
+        };
 
-        Modal.title.textContent = 'Cambiar Riesgo Desencadenante';
-        Modal.body.innerHTML = `
-            <p class="description-text mb-3">
-                Elige qué riesgo causó a "${sanitizeHTML(riskName)}" — o déjalo sin ninguno si es un punto de
-                partida (no lo causó otro riesgo ya guardado). Los riesgos que ya dependen de este (sus propios
-                hijos/nietos) no aparecen en la lista, para no crear un ciclo.
-            </p>
-            <p id="tree-change-trigger-error" class="text-red-600 text-sm mb-3 hidden"></p>
-            <div class="input-group">
-                <label for="tree-change-trigger-select">Causado por:</label>
-                <select id="tree-change-trigger-select" class="form-select">
-                    <option value="">— Ninguno (punto de partida) —</option>
-                    ${optionsHTML}
-                </select>
-            </div>
-            <div class="input-group ${currentParent ? '' : 'hidden'}" id="tree-change-trigger-probability-group">
-                <label for="tree-change-trigger-probability">
-                    ¿Qué tan probable es que esto ocurra SI el riesgo elegido ocurre? (%)
-                </label>
-                <input type="number" id="tree-change-trigger-probability" class="form-input" min="0" max="100"
-                    value="${typeof risk.triggeredByProbability === 'number' ? risk.triggeredByProbability : 50}">
-            </div>
-        `;
-        Modal.footer.innerHTML = `
-            <button id="tree-change-trigger-cancel-btn" class="btn btn-secondary">Cancelar</button>
-            <button id="tree-change-trigger-save-btn" class="btn btn-primary">Guardar</button>
-        `;
-        Modal.modal.classList.remove('hidden');
+        const renderRow = (cause, i) => `
+            <tr data-cause-row data-index="${i}">
+                <td class="px-2 py-1">
+                    <select class="form-select" data-field="riskName">
+                        <option value="">— Elige un riesgo —</option>
+                        ${optionsFor(i)
+                            .map(
+                                (r) =>
+                                    `<option value="${sanitizeHTML(r.riskName)}" ${r.riskName === cause.riskName ? 'selected' : ''}>${sanitizeHTML(r.riskName)}</option>`,
+                            )
+                            .join('')}
+                    </select>
+                </td>
+                <td class="px-2 py-1">
+                    <input type="number" class="form-input" data-field="probability" min="0" max="100"
+                        placeholder="%" value="${typeof cause.probability === 'number' ? cause.probability : ''}">
+                </td>
+                <td class="py-1"><button type="button" class="btn btn-danger text-xs" data-remove-cause title="Quitar esta causa">✕</button></td>
+            </tr>`;
 
-        const selectEl = document.getElementById('tree-change-trigger-select');
-        const probabilityGroup = document.getElementById('tree-change-trigger-probability-group');
-        selectEl.addEventListener('change', () => {
-            probabilityGroup.classList.toggle('hidden', !selectEl.value);
-        });
+        const render = () => {
+            Modal.title.textContent = 'Cambiar Riesgo Desencadenante';
+            Modal.body.innerHTML = `
+                <p class="description-text mb-3">
+                    Elige qué riesgo(s) causaron a "${sanitizeHTML(riskName)}" — puede ser más de uno. Déjalo sin
+                    ninguno si es un punto de partida (no lo causó otro riesgo ya guardado). Los riesgos que ya
+                    dependen de este (sus propios hijos/nietos) no aparecen en la lista, para no crear un ciclo.
+                </p>
+                <p id="tree-change-trigger-error" class="text-red-600 text-sm mb-3 hidden"></p>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="text-left border-b">
+                                <th class="px-2 py-1">Causado por</th>
+                                <th class="px-2 py-1">Probabilidad (%)</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="tree-change-trigger-body">${working.map(renderRow).join('')}</tbody>
+                    </table>
+                </div>
+                <button type="button" id="tree-change-trigger-add-btn" class="btn btn-secondary text-sm mt-3">+ Agregar causa</button>
+            `;
+            Modal.footer.innerHTML = `
+                <button id="tree-change-trigger-cancel-btn" class="btn btn-secondary">Cancelar</button>
+                <button id="tree-change-trigger-save-btn" class="btn btn-primary">Guardar</button>
+            `;
+            Modal.modal.classList.remove('hidden');
 
-        document.getElementById('tree-change-trigger-cancel-btn').addEventListener('click', () => Modal.hide());
-        document.getElementById('tree-change-trigger-save-btn').addEventListener('click', async (e) => {
-            const newParent = selectEl.value || null;
-            const probability = getSafeNumber(document.getElementById('tree-change-trigger-probability'));
-            const errorEl = document.getElementById('tree-change-trigger-error');
-
-            if (newParent && !(probability >= 0 && probability <= 100)) {
-                errorEl.textContent = 'La probabilidad debe estar entre 0 y 100.';
-                errorEl.classList.remove('hidden');
-                return;
-            }
-
-            const saveBtn = e.target;
-            saveBtn.disabled = true;
-            try {
-                await App.Api.request(`/api/register/${encodeURIComponent(riskName)}`, {
-                    method: 'PUT',
-                    body: {
-                        ...risk,
-                        triggeredByRiskName: newParent,
-                        triggeredByProbability: newParent ? probability : null,
-                    },
+            document.getElementById('tree-change-trigger-add-btn').addEventListener('click', () => {
+                // Sin esto, agregar una fila pintaba TODAS desde `working` sin haber leído antes
+                // lo que el usuario ya había escrito en pantalla — perdía ediciones en curso.
+                syncWorkingFromDom();
+                working.push({ riskName: '', probability: null });
+                render();
+            });
+            document.querySelectorAll('[data-remove-cause]').forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    syncWorkingFromDom();
+                    const i = Number(btn.closest('[data-cause-row]').dataset.index);
+                    working.splice(i, 1);
+                    render();
                 });
-                Modal.hide();
-                showToast(
-                    newParent
-                        ? `"${riskName}" ahora está vinculado como consecuencia de "${newParent}".`
-                        : `"${riskName}" ya no tiene ningún riesgo desencadenante.`,
-                );
-                await App.FairRegister.loadRiskRegister(false);
-                this.render();
-            } catch (err) {
-                errorEl.textContent = err.userMessage || 'No se pudo guardar el vínculo. Intenta de nuevo.';
-                errorEl.classList.remove('hidden');
-            } finally {
-                saveBtn.disabled = false;
-            }
-        });
+            });
+            document.getElementById('tree-change-trigger-cancel-btn').addEventListener('click', () => Modal.hide());
+            document.getElementById('tree-change-trigger-save-btn').addEventListener('click', async (e) => {
+                syncWorkingFromDom();
+                const errorEl = document.getElementById('tree-change-trigger-error');
+                const finalCauses = working.filter((t) => t.riskName);
+
+                for (const t of finalCauses) {
+                    if (!(t.probability === null || (t.probability >= 0 && t.probability <= 100))) {
+                        errorEl.textContent = `La probabilidad de "${t.riskName}" debe estar entre 0 y 100.`;
+                        errorEl.classList.remove('hidden');
+                        return;
+                    }
+                }
+
+                const saveBtn = e.target;
+                saveBtn.disabled = true;
+                try {
+                    await App.Api.request(`/api/register/${encodeURIComponent(riskName)}`, {
+                        method: 'PUT',
+                        body: { ...risk, triggeredBy: finalCauses },
+                    });
+                    Modal.hide();
+                    showToast(
+                        finalCauses.length > 0
+                            ? `"${riskName}" ahora está vinculado como consecuencia de ${
+                                  finalCauses.length === 1
+                                      ? `"${finalCauses[0].riskName}"`
+                                      : `${finalCauses.length} riesgos`
+                              }.`
+                            : `"${riskName}" ya no tiene ningún riesgo desencadenante.`,
+                    );
+                    await App.FairRegister.loadRiskRegister(false);
+                    this.render();
+                } catch (err) {
+                    errorEl.textContent = err.userMessage || 'No se pudo guardar el vínculo. Intenta de nuevo.';
+                    errorEl.classList.remove('hidden');
+                } finally {
+                    saveBtn.disabled = false;
+                }
+            });
+        };
+
+        // Relee los inputs de cada fila hacia `working` — se usa antes de cualquier acción que
+        // vuelva a renderizar (agregar/quitar fila) o que guarde, para no perder ediciones en
+        // curso en las filas que no cambiaron.
+        const syncWorkingFromDom = () => {
+            document.querySelectorAll('[data-cause-row]').forEach((row) => {
+                const i = Number(row.dataset.index);
+                const rawProbability = row.querySelector('[data-field="probability"]').value.trim();
+                working[i] = {
+                    riskName: row.querySelector('[data-field="riskName"]').value,
+                    probability: rawProbability === '' ? null : Number(rawProbability),
+                };
+            });
+        };
+
+        render();
     },
 
     // Detalle completo de un riesgo al hacer clic en su tarjeta (mismo `Modal` que ya usan el

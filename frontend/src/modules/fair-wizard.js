@@ -265,7 +265,10 @@ export const FairWizard = {
             effect: document.getElementById('fair-effect').value,
             riskType: document.getElementById('fair-risk-type').value,
             timeHorizon: document.getElementById('fair-time-horizon').value,
-            triggeredByRiskName: document.getElementById('fair-triggered-by').value || null,
+            triggeredBy: (() => {
+                this.syncTriggeredByDraftFromDom();
+                return state.fair.triggeredByDraft.filter((t) => t.riskName);
+            })(),
             riskCriteriaOverride: state.fair.riskCriteriaOverride || null,
         };
 
@@ -298,6 +301,11 @@ export const FairWizard = {
     bindEvents() {
         document.getElementById('fair-step1-next').addEventListener('click', () => this.navigateWizard(2));
         document.getElementById('fair-save-draft-btn').addEventListener('click', () => this.saveDraftToRisksList());
+        document.getElementById('fair-triggered-by-add-btn').addEventListener('click', () => {
+            this.syncTriggeredByDraftFromDom();
+            state.fair.triggeredByDraft.push({ riskName: '', probability: null });
+            this.renderTriggeredByRows();
+        });
         document
             .getElementById('open-criteria-override-btn-fair')
             .addEventListener('click', () => this.openCriteriaOverrideEditor());
@@ -619,7 +627,12 @@ export const FairWizard = {
         state.fair.riskCriteriaOverride = data.riskCriteriaOverride || null;
         this.updateCriteriaOverrideStatus();
         document.getElementById('fair-riskName').value = data.riskName || '';
-        this.populateTriggeredByOptions();
+        state.fair.triggeredByDraft = Array.isArray(data.triggeredBy)
+            ? data.triggeredBy.map((t) => ({ ...t }))
+            : data.triggeredByRiskName
+              ? [{ riskName: data.triggeredByRiskName, probability: data.triggeredByProbability ?? null }]
+              : [];
+        this.renderTriggeredByRows();
         // Igual que la Descripción/norma de abajo: si el riesgo se armó eligiendo un activo
         // del Catálogo de Activos en Análisis Rápido, ese nombre se transfiere aquí en vez
         // de forzar a re-escribirlo (ver App.AssetCatalog y calculateAll()).
@@ -647,7 +660,6 @@ export const FairWizard = {
         document.getElementById('fair-risk-type').value = data.riskType || 'amenaza';
         document.getElementById('fair-time-horizon').value = data.timeHorizon || '1';
         this.toggleRiskTypeLabels();
-        if (data.triggeredByRiskName) document.getElementById('fair-triggered-by').value = data.triggeredByRiskName;
 
         if (data.attackerKey) document.getElementById('fair-attacker-profile').value = data.attackerKey;
         if (data.defenseKey) document.getElementById('fair-defense-profile').value = data.defenseKey;
@@ -700,38 +712,75 @@ export const FairWizard = {
     // usuario al wizard de verdad para poder revisar/ajustar y decidir Mitigar/Transferir/
     // Evitar/Aceptar. Mismo patrón que duplicateFromTemplate(), pero la fuente son los datos
     // reales guardados de ESTE riesgo (no una plantilla genérica del último análisis).
-    // Llena "Riesgo Desencadenante" (Paso 1) con los demás riesgos del Registro — excluye el
-    // riesgo actual (por nombre) para que no se pueda seleccionar a sí mismo. Se llama cada
-    // vez que el Registro se recarga (ver App.FairRegister.loadRiskRegister) y cada vez que
-    // se carga un riesgo específico en el formulario, para que la exclusión quede al día con
-    // el nombre vigente. Solo organizativo por ahora — no alimenta ningún cálculo; deja lista
-    // la relación padre-hijo para poder dibujar un árbol de riesgos en cascada más adelante,
-    // sin tener que rediseñar el dato.
-    populateTriggeredByOptions() {
-        const select = document.getElementById('fair-triggered-by');
-        if (!select) return;
-        const currentValue = select.value;
+    // Pinta state.fair.triggeredByDraft (Paso 1, "Riesgos Desencadenantes") como filas
+    // editables — un riesgo puede tener más de una causa (ver
+    // App.RiskCascadeTree.buildGraph/openChangeTriggerModal, mismo patrón de filas). Cada
+    // <select> excluye el propio nombre + lo ya elegido en OTRAS filas (recalculado en cada
+    // render). A diferencia de openChangeTriggerModal, no excluye descendientes: un riesgo
+    // recién armado en el wizard no puede ser ancestro de nada todavía. Se llama cada vez que
+    // el Registro se recarga (ver App.FairRegister.loadRiskRegister) y cada vez que se carga
+    // un riesgo específico en el formulario, para que la exclusión quede al día con el nombre
+    // vigente.
+    renderTriggeredByRows() {
+        const body = document.getElementById('fair-triggered-by-body');
+        if (!body) return;
         const ownName = document.getElementById('fair-riskName').value.trim();
         const register = state.fair.riskRegister || [];
+        const working = state.fair.triggeredByDraft;
 
-        select.innerHTML = '';
-        const noneOpt = document.createElement('option');
-        noneOpt.value = '';
-        noneOpt.textContent = '— Ninguno (riesgo independiente) —';
-        select.appendChild(noneOpt);
+        const optionsFor = (rowIndex) => {
+            const chosenElsewhere = new Set(
+                working.map((t, i) => (i === rowIndex ? null : t.riskName)).filter(Boolean),
+            );
+            return register.filter((r) => r.riskName !== ownName && !chosenElsewhere.has(r.riskName));
+        };
 
-        register
-            .filter((r) => r.riskName !== ownName)
-            .forEach((r) => {
-                const opt = document.createElement('option');
-                opt.value = r.riskName;
-                opt.textContent = r.riskName;
-                select.appendChild(opt);
+        body.innerHTML = working
+            .map(
+                (cause, i) => `
+            <tr data-trigger-row data-index="${i}">
+                <td class="px-2 py-1">
+                    <select class="form-select" data-field="riskName">
+                        <option value="">— Selecciona —</option>
+                        ${optionsFor(i)
+                            .map(
+                                (r) =>
+                                    `<option value="${sanitizeHTML(r.riskName)}" ${r.riskName === cause.riskName ? 'selected' : ''}>${sanitizeHTML(r.riskName)}</option>`,
+                            )
+                            .join('')}
+                    </select>
+                </td>
+                <td class="px-2 py-1">
+                    <input type="number" class="form-input" data-field="probability" min="0" max="100"
+                        value="${cause.probability ?? ''}" placeholder="—">
+                </td>
+                <td class="px-2 py-1"><button type="button" class="btn btn-secondary text-sm" data-remove-trigger>✕</button></td>
+            </tr>`,
+            )
+            .join('');
+
+        body.querySelectorAll('[data-remove-trigger]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                this.syncTriggeredByDraftFromDom();
+                const i = Number(btn.closest('[data-trigger-row]').dataset.index);
+                state.fair.triggeredByDraft.splice(i, 1);
+                this.renderTriggeredByRows();
             });
+        });
+    },
 
-        if (Array.from(select.options).some((opt) => opt.value === currentValue)) {
-            select.value = currentValue;
-        }
+    // Lee las filas actualmente en el DOM y actualiza state.fair.triggeredByDraft — se llama
+    // antes de cada re-render (agregar/quitar fila) y antes de guardar, mismo patrón que
+    // syncWorkingFromDom() en App.Treatment.openControlsModal/App.RiskCascadeTree.openChangeTriggerModal.
+    syncTriggeredByDraftFromDom() {
+        document.querySelectorAll('#fair-triggered-by-body [data-trigger-row]').forEach((row) => {
+            const i = Number(row.dataset.index);
+            const rawProbability = row.querySelector('[data-field="probability"]').value.trim();
+            state.fair.triggeredByDraft[i] = {
+                riskName: row.querySelector('[data-field="riskName"]').value,
+                probability: rawProbability === '' ? null : Number(rawProbability),
+            };
+        });
     },
 
     loadRegisteredRiskIntoForm(riskName) {
@@ -768,8 +817,10 @@ export const FairWizard = {
 
         document.getElementById('fair-riskName').value = entry.riskName || '';
         document.getElementById('fair-riskDescription').value = entry.description || '';
-        this.populateTriggeredByOptions();
-        document.getElementById('fair-triggered-by').value = entry.triggeredByRiskName || '';
+        // entry viene de GET /api/register, que ya migra al formato nuevo (ver
+        // normalizeTriggeredBy, backend/src/lib/register.js) — triggeredBy siempre es un array.
+        state.fair.triggeredByDraft = (entry.triggeredBy || []).map((t) => ({ ...t }));
+        this.renderTriggeredByRows();
         if (entry.asset && entry.asset !== '—') document.getElementById('fair-asset').value = entry.asset;
         // Restaura el vínculo real con el Catálogo de Activos (ver saveToRiskRegister).
         if (entry.assetId) state.quick.selectedAssetRef = { id: entry.assetId };
@@ -1314,8 +1365,8 @@ export const FairWizard = {
             document.getElementById('fair-effect').value = 'material';
             document.getElementById('fair-risk-type').value = 'amenaza';
             document.getElementById('fair-time-horizon').value = '1';
-            this.populateTriggeredByOptions();
-            document.getElementById('fair-triggered-by').value = '';
+            state.fair.triggeredByDraft = [];
+            this.renderTriggeredByRows();
             this.toggleRiskTypeLabels();
             document.getElementById('fair-data-source').value = App.OrgDefaults.defaults.dataSource;
             document.getElementById('fair-data-confidence').value = App.OrgDefaults.defaults.dataConfidence;

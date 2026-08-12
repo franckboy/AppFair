@@ -1008,9 +1008,9 @@ test('PUT /api/register/:riskName con riskCriteriaOverride lo persiste y lo usa 
 
 // Riesgo desencadenado creado desde el botón "+" del Árbol de Riesgos en Cascada (ver
 // App.RiskCascadeTree.openCreateChildModal) — nace como stub (ale: 0, sin tef/vuln) hasta que
-// alguien lo lleve al wizard y lo simule. triggeredByProbability es el dato que le falta a
-// walkMarkovChain (lib/markov.js) para simular la cascada correlacionada más adelante.
-test('PUT /api/register/:riskName persiste triggeredByRiskName y triggeredByProbability (riesgo en cascada)', async () => {
+// alguien lo lleve al wizard y lo simule. triggeredBy[].probability es el dato que usa
+// runFamilyCascadeSimulation (lib/cascadeSimulation.js) para simular la cascada correlacionada.
+test('PUT /api/register/:riskName persiste triggeredBy (riesgo en cascada, puede tener más de una causa)', async () => {
     const riskName = 'Daño reputacional HTTP';
     const putRes = await request(app)
         .put(`/api/register/${encodeURIComponent(riskName)}`)
@@ -1018,12 +1018,45 @@ test('PUT /api/register/:riskName persiste triggeredByRiskName y triggeredByProb
         .send({
             ale: 0,
             cvar95: 0,
-            triggeredByRiskName: 'Incendio en bodega HTTP',
-            triggeredByProbability: 40,
+            triggeredBy: [
+                { riskName: 'Incendio en bodega HTTP', probability: 40 },
+                { riskName: 'Falla eléctrica HTTP', probability: 20 },
+            ],
         });
     assert.strictEqual(putRes.status, 200);
-    assert.strictEqual(putRes.body.entry.triggeredByRiskName, 'Incendio en bodega HTTP');
-    assert.strictEqual(putRes.body.entry.triggeredByProbability, 40);
+    assert.deepStrictEqual(putRes.body.entry.triggeredBy, [
+        { riskName: 'Incendio en bodega HTTP', probability: 40 },
+        { riskName: 'Falla eléctrica HTTP', probability: 20 },
+    ]);
+
+    await request(app)
+        .delete(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY);
+});
+
+test('PUT /api/register/:riskName valida triggeredBy: array requerido, riskName no vacío, sin auto-referencia, sin duplicados, probability 0-100', async () => {
+    const riskName = 'Validación TriggeredBy HTTP';
+    const put = (triggeredBy) =>
+        request(app)
+            .put(`/api/register/${encodeURIComponent(riskName)}`)
+            .set('X-API-Key', TEST_API_KEY)
+            .send({ ale: 0, triggeredBy });
+
+    assert.strictEqual((await put('no-es-un-array')).status, 400);
+    assert.strictEqual((await put([{ riskName: '' }])).status, 400);
+    assert.strictEqual((await put([{ riskName: '   ' }])).status, 400);
+    assert.strictEqual((await put([{ riskName }])).status, 400); // auto-referencia
+    assert.strictEqual((await put([{ riskName: 'A' }, { riskName: 'A' }])).status, 400); // duplicado dentro del mismo array
+    assert.strictEqual((await put([{ riskName: 'A', probability: 150 }])).status, 400);
+    assert.strictEqual((await put([{ riskName: 'A', probability: -1 }])).status, 400);
+
+    // Válido: probability null (o ausente) es aceptado.
+    const ok = await put([{ riskName: 'A', probability: null }, { riskName: 'B' }]);
+    assert.strictEqual(ok.status, 200);
+    assert.deepStrictEqual(ok.body.entry.triggeredBy, [
+        { riskName: 'A', probability: null },
+        { riskName: 'B', probability: null },
+    ]);
 
     await request(app)
         .delete(`/api/register/${encodeURIComponent(riskName)}`)
@@ -1107,14 +1140,6 @@ test('PUT /api/register/:riskName sin vulnManualOverride guarda false por defect
     await request(app)
         .delete(`/api/register/${encodeURIComponent(riskName)}`)
         .set('X-API-Key', TEST_API_KEY);
-});
-
-test('PUT /api/register/:riskName rechaza triggeredByProbability fuera de 0-100 con 400', async () => {
-    const res = await request(app)
-        .put(`/api/register/${encodeURIComponent('Riesgo probabilidad inválida HTTP')}`)
-        .set('X-API-Key', TEST_API_KEY)
-        .send({ ale: 0, triggeredByProbability: 150 });
-    assert.strictEqual(res.status, 400);
 });
 
 // treatmentDecision: cuál de las 4 estrategias de Tratamiento se ADOPTÓ de verdad (a diferencia
@@ -1235,8 +1260,7 @@ test('POST /api/cascade/:riskName/simulate-family simula la familia correlaciona
     const childName = 'Interrupcion Cascada HTTP';
     await putAnalyzedRisk(rootName);
     await putAnalyzedRisk(childName, {
-        triggeredByRiskName: rootName,
-        triggeredByProbability: 100, // se activa siempre, para que la prueba sea determinista
+        triggeredBy: [{ riskName: rootName, probability: 100 }], // se activa siempre, para que la prueba sea determinista
         lossMagnitudes: { productividad: { min: 10000, mode: 15000, max: 25000 } },
     });
 
@@ -1269,7 +1293,7 @@ test('POST /api/cascade/:riskName/simulate-family excluye un hijo "Sin analizar"
     await request(app)
         .put(`/api/register/${encodeURIComponent(stubChildName)}`)
         .set('X-API-Key', TEST_API_KEY)
-        .send({ ale: 0, cvar95: 0, triggeredByRiskName: rootName, triggeredByProbability: 50 });
+        .send({ ale: 0, cvar95: 0, triggeredBy: [{ riskName: rootName, probability: 50 }] });
 
     const res = await request(app)
         .post(`/api/cascade/${encodeURIComponent(rootName)}/simulate-family`)
@@ -1477,7 +1501,7 @@ test('PUT /api/register/:riskName sin assetId lo guarda como null (riesgo sin ac
         .set('X-API-Key', TEST_API_KEY);
 });
 
-test('PUT /api/register/:riskName guarda triggeredByRiskName (riesgo en cascada)', async () => {
+test('PUT /api/register/:riskName guarda triggeredBy (riesgo en cascada) y GET lo devuelve tal cual', async () => {
     const parentName = 'Incendio en bodega (padre de prueba)';
     const childName = 'Interrupción operativa (hijo de prueba)';
     await request(app)
@@ -1488,16 +1512,23 @@ test('PUT /api/register/:riskName guarda triggeredByRiskName (riesgo en cascada)
     const putRes = await request(app)
         .put(`/api/register/${encodeURIComponent(childName)}`)
         .set('X-API-Key', TEST_API_KEY)
-        .send({ ale: 40000, cvar95: 60000, evaluationLevel: 'Riesgo Medio', triggeredByRiskName: parentName });
+        .send({
+            ale: 40000,
+            cvar95: 60000,
+            evaluationLevel: 'Riesgo Medio',
+            triggeredBy: [{ riskName: parentName, probability: null }],
+        });
     assert.strictEqual(putRes.status, 200);
-    assert.strictEqual(putRes.body.entry.triggeredByRiskName, parentName);
+    assert.deepStrictEqual(putRes.body.entry.triggeredBy, [{ riskName: parentName, probability: null }]);
 
     const getRes = await request(app).get('/api/register').set('X-API-Key', TEST_API_KEY);
-    assert.strictEqual(getRes.body.risks.find((r) => r.riskName === childName).triggeredByRiskName, parentName);
-    assert.strictEqual(
-        getRes.body.risks.find((r) => r.riskName === parentName).triggeredByRiskName,
-        null,
-        'un riesgo sin desencadenante debe guardarse como null, no undefined ni una cadena vacía',
+    assert.deepStrictEqual(getRes.body.risks.find((r) => r.riskName === childName).triggeredBy, [
+        { riskName: parentName, probability: null },
+    ]);
+    assert.deepStrictEqual(
+        getRes.body.risks.find((r) => r.riskName === parentName).triggeredBy,
+        [],
+        'un riesgo sin ninguna causa debe guardarse como array vacío, no null ni undefined',
     );
 
     await request(app)
@@ -1506,6 +1537,49 @@ test('PUT /api/register/:riskName guarda triggeredByRiskName (riesgo en cascada)
     await request(app)
         .delete(`/api/register/${encodeURIComponent(childName)}`)
         .set('X-API-Key', TEST_API_KEY);
+});
+
+// La app tiene despliegue real (GitHub Pages + Render, ver README.md) — un riesgo guardado ANTES
+// de que triggeredBy fuera un array (formato viejo: triggeredByRiskName/triggeredByProbability
+// sueltos) sigue en el store si ese despliegue ya lo había guardado. Sin normalizeTriggeredBy
+// (lib/register.js), el frontend nunca vería ese vínculo. Manipula el store directo (no hay forma
+// de crear ese formato viejo a través de PUT, que ya exige triggeredBy como array) para simular
+// una instalación que se actualizó con datos previos — mismo patrón que la migración de
+// riskCriteria arriba.
+test('GET /api/register migra un riesgo guardado en formato viejo (triggeredByRiskName suelto) a triggeredBy', async () => {
+    const { JsonStore } = require('../src/store/jsonStore');
+    const rawStore = new JsonStore();
+    const before = (await rawStore.get('riskRegister')) || [];
+    await rawStore.set('riskRegister', [
+        ...before,
+        {
+            id: 'legacy-1',
+            riskName: 'Riesgo Formato Viejo HTTP',
+            riskType: 'amenaza',
+            ale: 10000,
+            triggeredByRiskName: 'Padre Formato Viejo HTTP',
+            triggeredByProbability: 60,
+        },
+        {
+            id: 'legacy-2',
+            riskName: 'Riesgo Formato Viejo Sin Padre HTTP',
+            riskType: 'amenaza',
+            ale: 5000,
+            // Sin triggeredByRiskName ni triggeredByProbability — nunca tuvo vínculo.
+        },
+    ]);
+
+    const res = await request(app).get('/api/register').set('X-API-Key', TEST_API_KEY);
+    assert.strictEqual(res.status, 200);
+    assert.deepStrictEqual(res.body.risks.find((r) => r.riskName === 'Riesgo Formato Viejo HTTP').triggeredBy, [
+        { riskName: 'Padre Formato Viejo HTTP', probability: 60 },
+    ]);
+    assert.deepStrictEqual(
+        res.body.risks.find((r) => r.riskName === 'Riesgo Formato Viejo Sin Padre HTTP').triggeredBy,
+        [],
+    );
+
+    await rawStore.set('riskRegister', before);
 });
 
 test('PUT /api/register/:riskName guarda description', async () => {
