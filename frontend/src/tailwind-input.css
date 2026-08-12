@@ -194,95 +194,13 @@ body.modo-tecnico .simple-only {
   color: #1e3a8a;
 }
 
-/* Árbol de Riesgos en Cascada (ver App.RiskCascadeTree): conectores dibujados con
-   pseudo-elementos sobre una lista anidada — técnica CSS clásica de organigrama, sin ninguna
-   librería nueva. El color de cada tarjeta (clases bg/border/text de Tailwind) lo aporta
-   severityToClasses por fuera, aquí solo va la geometría. */
-.risk-tree,
-.risk-tree ul {
-  display: flex;
-  justify-content: center;
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-.risk-tree {
-  padding-top: 8px;
-}
-/* Sin esto, ".risk-tree ul::before" (la línea vertical que baja del padre hacia sus hijos, ver
-   más abajo) no tiene ningún ancestro con position != static entre el <ul> anidado y el <li>
-   del padre — termina anclándose a ESE <li> (que sí es position:relative) en vez de al propio
-   <ul>, y como top:0 ahí coincide con la parte de ARRIBA de la tarjeta del padre, la línea
-   queda dibujada encima de esa tarjeta en vez de en el hueco hacia el hijo: invisible. */
-.risk-tree ul {
-  position: relative;
-}
-/* La utilidad .hidden de Tailwind (display: none) tiene MENOS especificidad que ".risk-tree
-   ul" de arriba (una clase vs. clase+tipo) — sin esto, el toggle de colapsar/expandir
-   (App.RiskCascadeTree) agrega la clase pero el display:flex de arriba sigue ganando y la
-   rama nunca se oculta visualmente. */
-.risk-tree ul.hidden {
-  display: none;
-}
-.risk-tree li {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 24px 12px 0 12px;
-}
-.risk-tree li::before,
-.risk-tree li::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  width: 50%;
-  height: 24px;
-  border-top: 2px solid #cbd5e1;
-}
-.risk-tree li::before {
-  left: 0;
-  border-right: 2px solid #cbd5e1;
-}
-.risk-tree li::after {
-  right: 0;
-  border-left: 2px solid #cbd5e1;
-}
-.risk-tree > li {
-  padding-top: 0;
-}
-.risk-tree > li::before,
-.risk-tree > li::after,
-/* Un hijo único no necesita las líneas horizontales de esquina (::before/::after — solo tienen
-   sentido para repartir hacia varios hermanos), así que se ocultan igual que antes. Pero a
-   diferencia de la versión anterior, YA NO se le quita el padding-top: ese espacio es el mismo
-   hueco donde cae la línea vertical de ".risk-tree ul::before" — quitarlo dejaba la tarjeta del
-   hijo pegada directo a la del padre, sin ningún espacio donde la línea (ya corregida arriba)
-   pudiera verse. */
-.risk-tree li:only-child::before,
-.risk-tree li:only-child::after {
-  display: none;
-}
-.risk-tree li:first-child::before,
-.risk-tree li:last-child::after {
-  border: 0 none;
-}
-.risk-tree li:last-child::before {
-  border-right: 2px solid #cbd5e1;
-  border-radius: 0 6px 0 0;
-}
-.risk-tree li:first-child::after {
-  border-radius: 6px 0 0 0;
-}
-.risk-tree ul::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 50%;
-  width: 0;
-  height: 24px;
-  border-left: 2px solid #cbd5e1;
-}
+/* Árbol de Riesgos en Cascada (ver App.RiskCascadeTree): Cytoscape.js dibuja el grafo (nodos,
+   aristas, layout dagre, zoom/pan) sobre un <canvas> — las tarjetas siguen siendo HTML real
+   (Tailwind), superpuestas con cytoscape-node-html-label y sincronizadas a la posición de cada
+   nodo. Aquí solo quedan las clases de la tarjeta en sí; la geometría de conectores (antes
+   pseudo-elementos sobre una lista anidada, incapaz de representar un nodo con dos padres) la
+   resuelve Cytoscape. El color de cada tarjeta (clases bg/border/text de Tailwind) lo aporta
+   severityToClasses por fuera. */
 .risk-tree-card {
   /* Ancho FIJO (no min/max) — con un rango, dos nombres de largo distinto (ej. "Incendio" vs.
      "Interrupción de Línea de Producción") producían tarjetas de tamaño visiblemente distinto
@@ -370,27 +288,23 @@ body.modo-tecnico .simple-only {
 }
 
 /* Visor del árbol: espacio de trabajo grande y propio (antes vivía sin alto definido, mezclado
-   en el flujo normal de la página — se sentía chico con pocos nodos). overflow: auto en los DOS
-   ejes (antes solo overflow-x) porque un árbol con varias generaciones puede crecer más alto que
-   el visor, no solo más ancho. El pellizco para zoom en móvil ya lo da el navegador gratis (el
-   <meta name="viewport"> de la app no lo bloquea) — esto solo agrega un zoom con botones para
-   desktop/casos donde el gesto no es cómodo. */
+   en el flujo normal de la página — se sentía chico con pocos nodos). overflow: hidden porque
+   Cytoscape administra su propio pan/zoom sobre el <canvas> — dejarlo en auto agregaría una
+   segunda barra de scroll del navegador compitiendo con el pan nativo del grafo. El pellizco
+   para zoom en móvil, y el zoom con rueda del mouse en desktop, los da Cytoscape mismo; los
+   botones +/−/100% (App.RiskCascadeTree.setZoom) llaman a cy.zoom() en vez de un transform:scale
+   CSS. */
 .risk-tree-viewport {
   height: 70vh;
   min-height: 420px;
-  overflow: auto;
+  overflow: hidden;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
   background: #fafafa;
 }
-/* transform-origin en la esquina, no al centro — con scale > 1 el contenido crece hacia abajo/
-   derecha, que es hacia donde el visor ya tiene scroll (overflow: auto de arriba), en vez de
-   crecer también hacia arriba/izquierda y salirse por un lado sin forma de alcanzarlo. */
-.risk-tree-zoom-wrap {
-  transform-origin: top left;
-  transition: transform 0.15s ease;
-  width: fit-content;
-  padding: 16px;
+.risk-tree-cy {
+  width: 100%;
+  height: 100%;
 }
 
 /* "Marco Normativo" (App.RiskCascadeTree.renderMarcoNormativo / renderCatalogStandardLine):

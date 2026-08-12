@@ -22,6 +22,13 @@ import {
 // ("Simular Familia", ver simulateFamily): simula de forma correlacionada (misma iteración Monte
 // Carlo) para no sobreestimar por doble conteo (Broder, 1984) — el árbol nunca lo hace solo, sin
 // que el usuario lo pida.
+//
+// Motor de dibujo: Cytoscape.js (+ cytoscape-dagre para el layout jerárquico, +
+// cytoscape-node-html-label para superponer las tarjetas Tailwind reales sobre el grafo dibujado
+// en <canvas>) — cargados como <script> CDN en app_fair.html. Reemplaza al motor anterior (CSS
+// <ul>/<li> con pseudo-elementos como conectores), que era estructuralmente incapaz de mostrar un
+// nodo con más de un padre sin duplicar su tarjeta. buildGraph() (abajo) es la única fuente de
+// verdad del grafo; buildCyElements() solo la traduce al formato que espera Cytoscape.
 // ============================================================
 const formatAle = (value) =>
     typeof value === 'number'
@@ -33,18 +40,38 @@ const formatAle = (value) =>
           }).format(value)
         : '—';
 
-// Zoom con botones sobre el árbol ya existente (ver .risk-tree-zoom-wrap en tailwind-input.css)
-// — el pellizco de dos dedos en móvil ya lo da el navegador gratis (el <meta name="viewport">
-// de la app no lo bloquea), esto es solo para desktop/cuando el gesto no es cómodo. Puro
-// transform: scale() sobre el wrapper, sin ninguna librería de canvas/pan-zoom: el árbol sigue
-// siendo el mismo <ul>/<li> con conectores CSS de siempre, solo que ahora vive en un visor con
-// su propio alto y scroll (ver .risk-tree-viewport) en vez de mezclado en el flujo de la página.
+// Zoom con botones (ver App.RiskCascadeTree.setZoom) — además, Cytoscape trae gratis pan por
+// arrastre y zoom con rueda del mouse, que el motor CSS anterior no tenía (ese solo daba scroll
+// de navegador). ZOOM_MIN/MAX/STEP acotan únicamente los 3 botones — el zoom nativo de Cytoscape
+// (rueda/pellizco) no está limitado a este rango, ni el fit() inicial (ver render()).
 const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 1.5;
 const ZOOM_STEP = 0.1;
 
+// Se mantiene top-down (igual que el motor anterior) — cambiar la disposición visual junto con el
+// motor de dibujo mezclaría dos decisiones en un solo diff. fit:false porque el encuadre inicial
+// del visor lo maneja render() aparte (cy.fit()), no el layout en sí — así el mismo config sirve
+// también para toggleBranch() (colapsar/expandir), donde SÍ queremos que los hermanos se
+// reacomoden pero NO queremos que cada toggle también reencuadre el zoom/pan del usuario.
+const DAGRE_LAYOUT = {
+    name: 'dagre',
+    rankDir: 'TB',
+    nodeSep: 40,
+    rankSep: 70,
+    edgeSep: 10,
+    ranker: 'network-simplex',
+    fit: false,
+    padding: 40,
+    animate: false,
+};
+
 export const RiskCascadeTree = {
     _zoom: 1,
+    // Instancia viva de Cytoscape, si el árbol tiene al menos 1 riesgo (ver render()) — null
+    // mientras el Registro está vacío. render() la destruye y crea una nueva desde cero en cada
+    // llamada (mismo espíritu que el innerHTML de siempre: reconstruir todo es más simple de
+    // razonar que actualizar un grafo existente de forma incremental).
+    _cy: null,
     // Guardián contra condición de carrera de red (mismo patrón que App.Treatment, ver el
     // comentario junto a _reduccionALERequestId ahí): si el usuario abre "Simular Familia" de un
     // riesgo, y antes de que llegue la respuesta abre el detalle de OTRO riesgo y también pide
@@ -64,17 +91,59 @@ export const RiskCascadeTree = {
         document.getElementById('risk-tree-family-sim-close').addEventListener('click', () => {
             document.getElementById('risk-tree-family-simulation').classList.add('hidden');
         });
+
+        // Un solo listener delegado, registrado UNA vez aquí — no dentro de render(). Cytoscape
+        // reconstruye el CONTENIDO del contenedor en cada render() (destruye/crea una instancia
+        // cy nueva), pero el propio #risk-cascade-tree-container nunca se reemplaza, así que este
+        // listener sigue funcionando sin volver a engancharse. Los 4 casos son mutuamente
+        // excluyentes por closest('[data-tree-*]'), sin necesidad de stopPropagation (a
+        // diferencia del motor anterior, donde cada botón vivía dentro de un <li> reconstruido en
+        // cada render y necesitaba su propio listener + stopPropagation).
+        document.getElementById('risk-cascade-tree-container').addEventListener('click', (e) => {
+            const toggleBtn = e.target.closest('[data-tree-toggle]');
+            const addChildBtn = e.target.closest('[data-tree-add-child]');
+            const changeTriggerBtn = e.target.closest('[data-tree-change-trigger]');
+            const card = e.target.closest('[data-tree-card]');
+
+            if (toggleBtn) {
+                const riskName = toggleBtn.closest('[data-tree-card]').querySelector('.risk-tree-name').textContent;
+                this.toggleBranch(riskName, toggleBtn);
+            } else if (addChildBtn) {
+                const riskName = addChildBtn.closest('[data-tree-card]').querySelector('.risk-tree-name').textContent;
+                this.openCreateChildModal(riskName);
+            } else if (changeTriggerBtn) {
+                const riskName = changeTriggerBtn
+                    .closest('[data-tree-card]')
+                    .querySelector('.risk-tree-name').textContent;
+                this.openChangeTriggerModal(riskName);
+            } else if (card) {
+                this.openDetail(card.querySelector('.risk-tree-name').textContent);
+            }
+        });
     },
 
     setZoom(value) {
         this._zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, value));
-        document.getElementById('risk-cascade-tree-zoom-wrap').style.transform = `scale(${this._zoom})`;
+        if (this._cy) {
+            // Zoom centrado en el visor (no en el origen del modelo) — mismo comportamiento que
+            // un usuario esperaría de los botones +/−, y consistente con el zoom nativo de
+            // rueda del mouse que Cytoscape ya da gratis.
+            this._cy.zoom({
+                level: this._zoom,
+                renderedPosition: { x: this._cy.width() / 2, y: this._cy.height() / 2 },
+            });
+        }
+        this._syncZoomLabel();
+    },
+
+    _syncZoomLabel() {
         document.getElementById('risk-tree-zoom-reset-btn').textContent = `${Math.round(this._zoom * 100)}%`;
     },
 
     // El zoom se reinicia a 100% cada vez que se entra a la página — un valor que quedó de la
     // visita anterior (ej. muy alejado) haría que el árbol se viera vacío/roto al volver, sin
-    // ninguna pista de por qué.
+    // ninguna pista de por qué. Si el Registro no está vacío, render() vuelve a ajustar el zoom
+    // real al terminar (cy.fit(), ver más abajo) para que el árbol completo entre en el visor.
     async load() {
         this.setZoom(1);
         await App.FairRegister.loadRiskRegister(false);
@@ -85,9 +154,9 @@ export const RiskCascadeTree = {
     // (ej. un incendio en bodega puede venir de una falla eléctrica Y de mal almacenamiento de
     // inflamables, dos causas independientes), así que esto ya no es un bosque de árboles (un
     // nodo puede tener más de un padre) sino un grafo dirigido. `edges` es la forma plana que
-    // consume directamente Cytoscape (ver el plan de migración) — cada arista es una causa
-    // VÁLIDA (el padre existe en el Registro); una causa declarada hacia un riesgo que ya no
-    // existe (borrado/renombrado) no genera arista, se anota en `node.broken` en su lugar.
+    // consume directamente Cytoscape (ver buildCyElements) — cada arista es una causa VÁLIDA (el
+    // padre existe en el Registro); una causa declarada hacia un riesgo que ya no existe
+    // (borrado/renombrado) no genera arista, se anota en `node.broken` en su lugar.
     buildGraph() {
         const register = state.fair.riskRegister || [];
         const byName = new Map(register.map((r) => [r.riskName, r]));
@@ -110,41 +179,14 @@ export const RiskCascadeTree = {
         return { nodes, edges };
     },
 
-    // TEMPORAL, mientras el motor de dibujo siga siendo el <ul>/<li> CSS de render()/renderNode()
-    // (ver el plan de migración a Cytoscape.js, que sí soporta múltiples padres por nodo de
-    // forma nativa): esa técnica de dibujo solo puede mostrar UN padre por tarjeta, así que
-    // buildForest() sigue existiendo como una vista DERIVADA de buildGraph() que colapsa a "solo
-    // la primera causa declarada" por riesgo — un riesgo con 2+ causas reales se dibuja aquí bajo
-    // la primera nada más, sin perder el dato (buildGraph()/el Registro sí las guarda todas). Se
-    // retira en cuanto Cytoscape reemplace a render()/renderNode().
-    buildForest() {
-        const { nodes, edges } = this.buildGraph();
-        const childrenOf = new Map();
-        const roots = [];
-
-        nodes.forEach((n) => {
-            const firstEdge = edges.find((e) => e.target === n.id);
-            if (!firstEdge) {
-                roots.push({
-                    risk: n.risk,
-                    orphan: n.broken.length > 0,
-                    orphanParentName: n.broken[0] || null,
-                });
-                return;
-            }
-            if (!childrenOf.has(firstEdge.source)) childrenOf.set(firstEdge.source, []);
-            childrenOf.get(firstEdge.source).push(n.risk);
-        });
-
-        return { roots, childrenOf };
-    },
-
     // Todos los nombres alcanzables recorriendo `edges` a partir de una lista de nombres de
-    // entrada — usado para (a) detectar riesgos que NUNCA aparecen bajo ninguna raíz declarada
-    // (ver render(): un ciclo sin ninguna raíz externa, ej. A desencadenado por B y B
-    // desencadenado por A, no cuelga de ningún root real y quedaría fuera del árbol si no se
-    // busca aparte) y (b) excluir los propios descendientes de un riesgo al elegirle una nueva
-    // causa (ver openChangeTriggerModal — evita crear un ciclo nuevo a propósito).
+    // entrada (incluye a los propios nombres de entrada) — usado para (a) detectar riesgos que
+    // NUNCA aparecen bajo ninguna raíz declarada (ver buildCyElements: un ciclo sin ninguna raíz
+    // externa, ej. A desencadenado por B y B desencadenado por A, no cuelga de ningún root real y
+    // quedaría fuera del árbol si no se busca aparte), (b) excluir los propios descendientes de
+    // un riesgo al elegirle una nueva causa (ver openChangeTriggerModal — evita crear un ciclo
+    // nuevo a propósito), y (c) calcular qué tarjetas ocultar al colapsar una rama (ver
+    // toggleBranch).
     collectReachable(startRiskNames, edges) {
         const seen = new Set();
         const stack = [...startRiskNames];
@@ -157,11 +199,120 @@ export const RiskCascadeTree = {
         return seen;
     },
 
+    // Traduce buildGraph() (nodos + aristas planas) al formato de elementos que espera Cytoscape
+    // — un array mixto de { data: {...} } para nodos y aristas. Detección de ciclos sin raíz:
+    // mismo cálculo que antes (recorrer collectReachable desde las raíces reales, lo que quede
+    // fuera forma parte de un ciclo), pero ahora se anota en TODOS los miembros del ciclo — ya no
+    // hace falta elegir un único "punto de entrada" arbitrario como con el motor CSS anterior
+    // (Cytoscape no recorre nada, solo dibuja lo que se le da).
+    buildCyElements() {
+        const { nodes, edges } = this.buildGraph();
+        const roots = nodes.filter((n) => !edges.some((e) => e.target === n.id));
+        const handled = this.collectReachable(
+            roots.map((n) => n.id),
+            edges,
+        );
+        const cycleNodes = new Set(nodes.filter((n) => !handled.has(n.id)).map((n) => n.id));
+
+        const cyNodes = nodes.map((n) => ({ data: this.nodeData(n, edges, cycleNodes) }));
+        const cyEdges = edges.map((e) => ({
+            data: { id: `${e.source}=>${e.target}`, source: e.source, target: e.target },
+        }));
+        return [...cyNodes, ...cyEdges];
+    },
+
+    // `data` de un nodo Cytoscape — todo lo que cardHtml() necesita para pintar la tarjeta, más
+    // `height`: un bucket fijo (100px normal / 140px con alguna nota) que dagre necesita ANTES de
+    // que exista DOM real que medir (cytoscape-node-html-label superpone el HTML DESPUÉS de que
+    // el layout ya corrió).
+    nodeData(node, edges, cycleNodes) {
+        const risk = node.risk;
+        const isOpportunity = risk.riskType === 'oportunidad';
+        // Un riesgo creado desde el botón "+" (ver openCreateChildModal) nace como stub, sin
+        // TEF/Vulnerabilidad todavía — su ale es literalmente 0 porque nadie lo ha simulado, no
+        // porque de verdad valga $0. Mostrarlo como "Aceptable"/verde (o azul, si es Oportunidad)
+        // sería indistinguible de un riesgo YA evaluado — se fuerza gris (el mismo respaldo que
+        // ya usa severityToClasses para severidad desconocida) y "Sin analizar" en vez del ALE.
+        const neverSimulated = !risk.tef && !risk.vuln;
+        const classes = neverSimulated
+            ? 'bg-gray-50 border-gray-400 text-gray-700'
+            : isOpportunity
+              ? 'bg-blue-50 border-blue-500 text-blue-800'
+              : severityToClasses(risk.severity);
+        const typeLabel = isOpportunity ? 'Oportunidad' : 'Amenaza';
+        const aleLabel = neverSimulated ? 'Sin analizar' : `${formatAle(risk.ale)}/año`;
+        const hasChildren = edges.some((e) => e.source === node.id);
+        const isCycle = cycleNodes.has(node.id);
+        const hasNote = node.broken.length > 0 || isCycle;
+
+        return {
+            id: node.id,
+            riskName: risk.riskName,
+            classes,
+            typeLabel,
+            aleLabel,
+            hasChildren,
+            broken: node.broken,
+            isCycle,
+            height: hasNote ? 140 : 100,
+            // Estado de colapso — vive en `data()` (no en el DOM ni en una clase Cytoscape
+            // aparte) a propósito: cytoscape-node-html-label vuelve a pintar una tarjeta desde
+            // cero (tpl(data), ver cardHtml) cada vez que el nodo dispara un evento "style"/
+            // "data" — cosa que TAMBIÉN pasa por simples efectos colaterales del layout (dagre
+            // reposiciona nodos vecinos al colapsar una rama), no solo por los cambios que hace
+            // toggleBranch() a propósito. Cualquier cambio de DOM hecho por fuera de `data()` se
+            // pierde en la siguiente repintada — guardar el estado AQUÍ, para que cada repintada
+            // (sin importar qué la disparó) lo lea de la misma fuente y siempre salga correcto,
+            // en vez de perseguir el momento exacto en que ya no lo va a sobreescribir.
+            collapsed: false,
+            hiddenByCollapse: false,
+        };
+    },
+
+    // El HTML de una tarjeta — usado como tpl() de cytoscape-node-html-label (ver render()), que
+    // lo superpone en una posición absoluta sincronizada con el nodo correspondiente del grafo.
+    // Mismo contenido que antes armaba renderNode(), sin el <li>/<ul> envolvente (ya no hace
+    // falta: Cytoscape no dibuja con listas anidadas). `data.collapsed`/`data.hiddenByCollapse`
+    // (ver toggleBranch) determinan el estado visible de la tarjeta en CADA repintada — nunca se
+    // parchea el DOM ya pintado a mano (ver el comentario en nodeData).
+    cardHtml(data) {
+        return `
+            <div class="risk-tree-card cursor-pointer ${data.classes}${data.hiddenByCollapse ? ' hidden' : ''}" data-tree-card>
+                <p class="risk-tree-name">${sanitizeHTML(data.riskName)}</p>
+                <p class="risk-tree-meta">${data.typeLabel} · ${data.aleLabel}</p>
+                ${data.broken
+                    .map(
+                        (parentName) =>
+                            `<p class="risk-tree-orphan-note">⚠️ Vinculado a "${sanitizeHTML(parentName)}", que ya no está en el Registro (renombrado o eliminado).</p>`,
+                    )
+                    .join('')}
+                ${
+                    data.isCycle
+                        ? `<p class="risk-tree-orphan-note">⚠️ Forma parte de un ciclo de desencadenantes (ej. A⟶B⟶A) sin ninguna raíz externa.</p>`
+                        : ''
+                }
+                <div class="risk-tree-card-actions">
+                    ${
+                        data.hasChildren
+                            ? `<button type="button" class="risk-tree-toggle" data-tree-toggle aria-expanded="${data.collapsed ? 'false' : 'true'}" title="Colapsar/expandir">${data.collapsed ? '▸' : '▾'}</button>`
+                            : ''
+                    }
+                    <button type="button" class="risk-tree-add-child" data-tree-add-child title="Crear riesgo desencadenado por este">+</button>
+                    <button type="button" class="risk-tree-change-trigger" data-tree-change-trigger title="Cambiar quién causó este riesgo">🔗</button>
+                </div>
+            </div>`;
+    },
+
     render() {
         const container = document.getElementById('risk-cascade-tree-container');
         const scrollWrap = document.getElementById('risk-cascade-tree-scroll');
         const empty = document.getElementById('risk-cascade-tree-empty');
         if (!container) return;
+
+        if (this._cy) {
+            this._cy.destroy();
+            this._cy = null;
+        }
 
         const register = state.fair.riskRegister || [];
         if (register.length === 0) {
@@ -173,84 +324,115 @@ export const RiskCascadeTree = {
         empty.classList.add('hidden');
         scrollWrap.classList.remove('hidden');
 
-        const { roots, childrenOf } = this.buildForest();
-        // Aristas del grafo REAL (no el `childrenOf` colapsado a un padre de buildForest, ver su
-        // comentario) — la detección de ciclos debe considerar TODAS las causas declaradas, no
-        // solo la primera de cada riesgo.
-        const { edges } = this.buildGraph();
+        this._cy = cytoscape({
+            container,
+            elements: this.buildCyElements(),
+            layout: DAGRE_LAYOUT,
+            // Los nodos son transparentes (el HTML real superpuesto por node-html-label es lo
+            // único que se ve) — Cytoscape solo reserva el espacio/posición. width/height fijos
+            // (mismo ancho que .risk-tree-card en tailwind-input.css) para que el rectángulo que
+            // dagre usa para el layout coincida con el tamaño real de la tarjeta. Las aristas van
+            // en ángulo recto (curve-style: taxi) sin flecha, mismo estilo visual que los
+            // conectores CSS del motor anterior. `display` es una función leyendo
+            // data(hiddenByCollapse) (ver toggleBranch/nodeData) en vez de una clase CSS — mismo
+            // criterio que cardHtml: todo lo visual de una rama colapsada sale de `data()`, nunca
+            // de un parche de DOM aparte.
+            style: [
+                {
+                    selector: 'node',
+                    style: {
+                        'background-opacity': 0,
+                        'border-width': 0,
+                        width: 210,
+                        height: 'data(height)',
+                        shape: 'rectangle',
+                        display: (ele) => (ele.data('hiddenByCollapse') ? 'none' : 'element'),
+                    },
+                },
+                {
+                    selector: 'edge',
+                    style: {
+                        'curve-style': 'taxi',
+                        'taxi-direction': 'vertical',
+                        'line-color': '#cbd5e1',
+                        width: 2,
+                        'target-arrow-shape': 'none',
+                        display: (ele) => (ele.data('hiddenByCollapse') ? 'none' : 'element'),
+                    },
+                },
+            ],
+            boxSelectionEnabled: false,
+            // Los nodos ya están posicionados por dagre — dejarlos arrastrables invitaría a
+            // desalinear el árbol sin querer (el motor anterior tampoco permitía mover tarjetas).
+            autoungrabify: true,
+        });
 
-        // Riesgos que forman un ciclo sin ninguna raíz externa (ver collectReachable) — nunca
-        // se alcanzan recorriendo desde `roots`, así que sin este paso desaparecerían del
-        // árbol en silencio en vez de mostrarse con la advertencia de ciclo. Se elige el
-        // primero de cada ciclo (en el orden del Registro) como punto de entrada arbitrario;
-        // el resto del mismo ciclo ya queda cubierto al recorrerlo desde ahí.
-        const handled = this.collectReachable(
-            roots.map((r) => r.risk.riskName),
-            edges,
+        // enablePointerEvents:true es obligatorio — sin esto, cytoscape-node-html-label pone
+        // pointer-events:none en las tarjetas superpuestas (pensado para etiquetas puramente
+        // decorativas) y ninguno de los 3 botones ni el clic en la tarjeta funcionarían.
+        this._cy.nodeHtmlLabel(
+            [
+                {
+                    query: 'node',
+                    halign: 'center',
+                    valign: 'center',
+                    halignBox: 'center',
+                    valignBox: 'center',
+                    tpl: (data) => this.cardHtml(data),
+                },
+            ],
+            { enablePointerEvents: true },
         );
-        const cycleEntryRoots = [];
-        register.forEach((r) => {
-            if (handled.has(r.riskName)) return;
-            cycleEntryRoots.push(r);
-            this.collectReachable([r.riskName], edges).forEach((name) => handled.add(name));
+
+        // Encuadra el árbol completo en el visor sin scroll manual — mejora real sobre el motor
+        // anterior, donde un árbol grande quedaba cortado hasta hacer scroll a mano. El zoom
+        // resultante puede caer fuera de [ZOOM_MIN, ZOOM_MAX] (esos límites solo aplican a los 3
+        // botones, ver setZoom) — se refleja tal cual en el botón "100%"/label.
+        this._cy.fit(this._cy.elements(), 40);
+        this._zoom = this._cy.zoom();
+        this._syncZoomLabel();
+    },
+
+    // Colapsa/expande la rama de `riskName` — oculta (o vuelve a mostrar) todos sus
+    // descendientes, calculados con collectReachable sobre las ARISTAS salientes de riskName (ya
+    // no un `childrenOf.get()` de un solo padre por nodo).
+    //
+    // Todo el estado se escribe en `data()` (`collapsed` en el propio nodo, `hiddenByCollapse` en
+    // sus descendientes y las aristas que los alcanzan) — nunca se parchea el DOM ya pintado.
+    // Motivo real, no preferencia de estilo: cytoscape-node-html-label vuelve a pintar una
+    // tarjeta desde cero (tpl(data), ver cardHtml) cada vez que su nodo dispara un evento
+    // "style"/"data" en Cytoscape — y layout(...).run() dispara justo esos eventos en CUALQUIER
+    // nodo que reposicione, no solo en los que toggleClass tocó a propósito (confirmado leyendo
+    // su fuente: updateDataOrStyleCyHandler, con su propio setTimeout(fn, 0), reacciona a ambos).
+    // Parchear el DOM directamente después de correr el layout es una carrera imposible de ganar
+    // de forma confiable (no hay forma de saber cuántas de esas repinturas quedan pendientes ni
+    // cuándo termina la última). Escribir el estado en `data()` la evita por completo: sin
+    // importar cuándo o por qué se repinte una tarjeta, cardHtml() siempre lee la verdad vigente.
+    toggleBranch(riskName, btnEl) {
+        if (!this._cy) return;
+        const { edges } = this.buildGraph();
+        const descendants = this.collectReachable([riskName], edges);
+        descendants.delete(riskName);
+        const willCollapse = btnEl.getAttribute('aria-expanded') !== 'false';
+
+        this._cy.getElementById(riskName).data('collapsed', willCollapse);
+        this._cy.nodes().forEach((node) => {
+            if (descendants.has(node.id())) node.data('hiddenByCollapse', willCollapse);
+        });
+        this._cy.edges().forEach((edge) => {
+            if (descendants.has(edge.data('target'))) edge.data('hiddenByCollapse', willCollapse);
         });
 
-        const rootEntries = [
-            ...roots.map((r) => ({
-                risk: r.risk,
-                orphanParentName: r.orphan ? r.orphanParentName : null,
-                isCycleEntry: false,
-            })),
-            ...cycleEntryRoots.map((r) => ({ risk: r, orphanParentName: null, isCycleEntry: true })),
-        ];
-
-        container.innerHTML = `
-            <ul class="risk-tree">
-                ${rootEntries.map((e) => this.renderNode(e.risk, childrenOf, new Set(), e.orphanParentName, e.isCycleEntry)).join('')}
-            </ul>
-        `;
-
-        container.querySelectorAll('[data-tree-toggle]').forEach((btn) => {
-            btn.addEventListener('click', (e) => {
-                // Sin esto, el clic también le llega al listener de la tarjeta (ver abajo,
-                // [data-tree-card]) y abre el detalle al mismo tiempo que colapsa la rama — el
-                // botón vive DENTRO de la tarjeta, así que el evento burbujea por defecto.
-                e.stopPropagation();
-                const subtree = btn.closest('li').querySelector(':scope > ul');
-                if (!subtree) return;
-                const collapsed = subtree.classList.toggle('hidden');
-                btn.textContent = collapsed ? '▸' : '▾';
-                btn.setAttribute('aria-expanded', String(!collapsed));
-            });
-        });
-
-        container.querySelectorAll('[data-tree-card]').forEach((card) => {
-            // El nombre sale del texto ya renderizado (.risk-tree-name), no de un atributo —
-            // sanitizeHTML escapa &/</> para texto, pero no comillas dobles, así que un nombre
-            // de riesgo con " rompería un atributo data-tree-card="...". textContent no tiene
-            // ese problema: siempre devuelve el string original tal cual, sin importar qué
-            // caracteres tenga.
-            card.addEventListener('click', () => this.openDetail(card.querySelector('.risk-tree-name').textContent));
-        });
-
-        container.querySelectorAll('[data-tree-add-child]').forEach((btn) => {
-            btn.addEventListener('click', (e) => {
-                // Mismo motivo que [data-tree-toggle] arriba: el botón vive dentro de la
-                // tarjeta, sin esto también abriría el detalle al mismo tiempo.
-                e.stopPropagation();
-                const parentName = btn.closest('.risk-tree-card').querySelector('.risk-tree-name').textContent;
-                this.openCreateChildModal(parentName);
-            });
-        });
-
-        container.querySelectorAll('[data-tree-change-trigger]').forEach((btn) => {
-            btn.addEventListener('click', (e) => {
-                // Mismo motivo que [data-tree-toggle]/[data-tree-add-child] arriba.
-                e.stopPropagation();
-                const riskName = btn.closest('.risk-tree-card').querySelector('.risk-tree-name').textContent;
-                this.openChangeTriggerModal(riskName);
-            });
-        });
+        // Corre el layout SOLO sobre lo que sigue visible — así los hermanos de la rama
+        // colapsada se reacomodan para llenar el espacio libre, en vez de que dagre siga
+        // reservando el hueco de nodos ocultos que ya no participan del layout. `.filter()` (no
+        // un selector de Cytoscape) para no depender de la sintaxis exacta de selectores sobre
+        // campos booleanos de `data()`.
+        this._cy
+            .elements()
+            .filter((ele) => !ele.data('hiddenByCollapse'))
+            .layout(DAGRE_LAYOUT)
+            .run();
     },
 
     // Crea un riesgo NUEVO, ya vinculado como desencadenado por `parentRiskName` — a diferencia
@@ -418,8 +600,8 @@ export const RiskCascadeTree = {
         // propio nombre): elegir aquí a uno de los DESCENDIENTES del riesgo actual como una de
         // sus causas crearía un ciclo (A causado por B, B causado por A) de forma directa e
         // inmediata, no un caso raro de renombrar/borrar más tarde. Se calculan con
-        // collectReachable (mismo helper que ya usa render() para detectar ciclos existentes) —
-        // fijo durante la vida del modal, no cambia entre filas.
+        // collectReachable (mismo helper que ya usa buildCyElements para detectar ciclos
+        // existentes) — fijo durante la vida del modal, no cambia entre filas.
         const { edges } = this.buildGraph();
         const descendants = this.collectReachable([riskName], edges);
         const working = (risk.triggeredBy || []).map((t) => ({ ...t }));
@@ -570,7 +752,7 @@ export const RiskCascadeTree = {
             return;
         }
         const isOpportunity = risk.riskType === 'oportunidad';
-        // Mismo criterio que renderNode: un riesgo creado desde "+" (ver openCreateChildModal)
+        // Mismo criterio que nodeData: un riesgo creado desde "+" (ver openCreateChildModal)
         // nace sin TEF/Vulnerabilidad — su ale de $0 es "nadie lo ha simulado todavía", no un
         // resultado real. "Tratar" tampoco tiene sentido sin un ALE real que reducir — se ofrece
         // "Continuar en FAIR" en su lugar, que retoma exactamente donde el "+" lo dejó.
@@ -813,66 +995,6 @@ export const RiskCascadeTree = {
                 },
             },
         });
-    },
-
-    // `visited`: nombres ya recorridos en esta rama — corta cualquier ciclo (A desencadena B,
-    // B desencadena A, directa o indirectamente) sin recursión infinita. El select de "Riesgo
-    // Desencadenante" solo excluye el propio nombre del riesgo que se está editando en ese
-    // momento, no toda la cadena — así que un ciclo indirecto entre varios riesgos guardados
-    // en momentos distintos sí es posible y hay que tolerarlo, no asumir que nunca pasa.
-    renderNode(risk, childrenOf, visited, orphanParentName = null, isCycleEntry = false) {
-        const isCycle = visited.has(risk.riskName);
-        const children = isCycle ? [] : childrenOf.get(risk.riskName) || [];
-        const nextVisited = new Set(visited).add(risk.riskName);
-        const isOpportunity = risk.riskType === 'oportunidad';
-        // Un riesgo creado desde el botón "+" (ver openCreateChildModal) nace como stub, sin
-        // TEF/Vulnerabilidad todavía — su ale es literalmente 0 porque nadie lo ha simulado, no
-        // porque de verdad valga $0. Mostrarlo como "Aceptable"/verde (o azul, si es Oportunidad)
-        // sería indistinguible de un riesgo YA evaluado — se fuerza gris (el mismo respaldo que
-        // ya usa severityToClasses para severidad desconocida) y "Sin analizar" en vez del ALE.
-        const neverSimulated = !risk.tef && !risk.vuln;
-        const classes = neverSimulated
-            ? 'bg-gray-50 border-gray-400 text-gray-700'
-            : isOpportunity
-              ? 'bg-blue-50 border-blue-500 text-blue-800'
-              : severityToClasses(risk.severity);
-        const typeLabel = isOpportunity ? 'Oportunidad' : 'Amenaza';
-        const aleLabel = neverSimulated ? 'Sin analizar' : `${formatAle(risk.ale)}/año`;
-        const hasChildren = children.length > 0;
-
-        return `
-            <li>
-                <div class="risk-tree-card cursor-pointer ${classes}" data-tree-card>
-                    <p class="risk-tree-name">${sanitizeHTML(risk.riskName)}</p>
-                    <p class="risk-tree-meta">${typeLabel} · ${aleLabel}</p>
-                    ${
-                        orphanParentName
-                            ? `<p class="risk-tree-orphan-note">⚠️ Vinculado a "${sanitizeHTML(orphanParentName)}", que ya no está en el Registro (renombrado o eliminado).</p>`
-                            : ''
-                    }
-                    ${
-                        isCycleEntry
-                            ? `<p class="risk-tree-orphan-note">⚠️ Forma parte de un ciclo de desencadenantes (ej. A⟶B⟶A) sin ninguna raíz externa — se muestra aquí como punto de entrada.</p>`
-                            : ''
-                    }
-                    ${
-                        isCycle
-                            ? `<p class="risk-tree-orphan-note">⚠️ Ciclo detectado: este riesgo ya aparece más arriba en esta misma rama.</p>`
-                            : ''
-                    }
-                    <div class="risk-tree-card-actions">
-                        ${
-                            hasChildren
-                                ? `<button type="button" class="risk-tree-toggle" data-tree-toggle aria-expanded="true" title="Colapsar/expandir">▾</button>`
-                                : ''
-                        }
-                        <button type="button" class="risk-tree-add-child" data-tree-add-child title="Crear riesgo desencadenado por este">+</button>
-                        <button type="button" class="risk-tree-change-trigger" data-tree-change-trigger title="Cambiar quién causó este riesgo">🔗</button>
-                    </div>
-                </div>
-                ${hasChildren ? `<ul>${children.map((c) => this.renderNode(c, childrenOf, nextVisited)).join('')}</ul>` : ''}
-            </li>
-        `;
     },
 };
 
