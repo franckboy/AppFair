@@ -54,7 +54,7 @@ test.describe('Árbol de Riesgos en Cascada', () => {
 
         // Colapsar la rama del padre oculta al hijo sin quitarlo del DOM — el botón vive en la
         // misma tarjeta del padre, sin necesidad de buscar un <li> envolvente.
-        await parentCard.locator('[data-tree-toggle]').first().click();
+        await parentCard.locator('[data-tree-toggle]').click();
         await page.waitForTimeout(200);
         await expect(childCard).toBeHidden();
     });

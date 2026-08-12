@@ -6,10 +6,14 @@ const path = require('path');
 const STUBS_DIR = path.join(__dirname, 'fixtures');
 const CHART_JS = fs.readFileSync(path.join(STUBS_DIR, 'chart.umd.js'), 'utf8');
 const HTML2CANVAS_JS = fs.readFileSync(path.join(STUBS_DIR, 'html2canvas.min.js'), 'utf8');
+const CYTOSCAPE_JS = fs.readFileSync(path.join(STUBS_DIR, 'cytoscape.min.js'), 'utf8');
+const CYTOSCAPE_DAGRE_JS = fs.readFileSync(path.join(STUBS_DIR, 'cytoscape-dagre.min.js'), 'utf8');
+const CYTOSCAPE_NODE_HTML_LABEL_JS = fs.readFileSync(path.join(STUBS_DIR, 'cytoscape-node-html-label.min.js'), 'utf8');
 
-// El entorno de CI no siempre tiene salida a cdnjs.cloudflare.com/jsdelivr — se sirven Chart.js y
-// html2canvas desde archivos locales (misma versión exacta que <script src> en app_fair.html) en
-// vez de la red real, y Font Awesome (solo iconos, cosmético) se stubbea vacío.
+// El entorno de CI no siempre tiene salida a cdnjs.cloudflare.com/jsdelivr — se sirven Chart.js,
+// html2canvas y Cytoscape.js (+ sus 2 plugins, ver el Árbol de Riesgos en Cascada) desde archivos
+// locales (misma versión exacta que <script src> en app_fair.html) en vez de la red real, y Font
+// Awesome (solo iconos, cosmético) se stubbea vacío.
 const test = base.test.extend({
     page: async ({ page }, use) => {
         await page.route('**://cdnjs.cloudflare.com/**', (route) =>
@@ -20,6 +24,19 @@ const test = base.test.extend({
         );
         await page.route('**html2canvas.min.js', (route) =>
             route.fulfill({ status: 200, contentType: 'application/javascript', body: HTML2CANVAS_JS }),
+        );
+        await page.route('**cytoscape.min.js', (route) =>
+            route.fulfill({ status: 200, contentType: 'application/javascript', body: CYTOSCAPE_JS }),
+        );
+        await page.route('**cytoscape-dagre.min.js', (route) =>
+            route.fulfill({ status: 200, contentType: 'application/javascript', body: CYTOSCAPE_DAGRE_JS }),
+        );
+        await page.route('**cytoscape-node-html-label.min.js', (route) =>
+            route.fulfill({
+                status: 200,
+                contentType: 'application/javascript',
+                body: CYTOSCAPE_NODE_HTML_LABEL_JS,
+            }),
         );
         await use(page);
     },

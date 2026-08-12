@@ -40,6 +40,10 @@ module.exports = [
                 // navegador, no importados por ningún módulo.
                 Chart: 'readonly',
                 html2canvas: 'readonly',
+                // cytoscape-dagre/cytoscape-node-html-label se auto-registran sobre el objeto
+                // cytoscape (ver los 3 <script> en app_fair.html) — no hace falta declararlos
+                // aparte, solo el global cytoscape en sí.
+                cytoscape: 'readonly',
             },
         },
         rules: {
