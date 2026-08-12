@@ -135,6 +135,15 @@ function createRegisterRouter(store) {
                 // vulnManualOverride).
                 inherentALE = null,
                 inherentCVaR = null,
+                // Clasificación (Bajo/Medio/Alto/Crítico) del Riesgo Inherente — ver
+                // POST /api/simulate, que ya la calcula (evaluateFairThreat) y manda dentro de
+                // inherentEvaluation. Mismo criterio que inherentALE/inherentCVaR arriba: null
+                // para Oportunidad, o para riesgos guardados antes de que existiera esto. Antes
+                // el frontend reimplementaba este banding a mano (solo mirando inherentALE, nunca
+                // inherentCVaR) — se persiste aquí para que nunca tenga que volver a hacerlo.
+                inherentEvaluationLevel = null,
+                inherentEvaluationClasses = null,
+                inherentSeverity = null,
                 securityPlan = '—',
                 // tef/vuln/lossMagnitudes/seed son opcionales (un riesgo guardado antes de que
                 // existiera esto no los trae) — se guardan tal cual para poder re-simular este
@@ -339,6 +348,9 @@ function createRegisterRouter(store) {
                 p90,
                 inherentALE,
                 inherentCVaR,
+                inherentEvaluationLevel,
+                inherentEvaluationClasses,
+                inherentSeverity,
                 riskType,
                 evaluationLevel,
                 evaluationClasses,

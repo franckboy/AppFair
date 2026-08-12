@@ -229,6 +229,16 @@ test.describe('Tratamiento del Riesgo (página aparte)', () => {
         expect(typeof entry.treatmentDecision.residualCVaR).toBe('number');
         const originalId = entry.id;
 
+        // La tabla de Riesgos Guardados debe mostrar la señal "✔ Tratado" junto a Etapa en
+        // cuanto se adopta una decisión — antes esa tabla se quedaba en 2 pisos (Inherente/
+        // Actual), sin ninguna señal de que este riesgo ya tiene un 3er piso (Residual real).
+        await page.click('#nav-fair');
+        await page.waitForTimeout(500);
+        const row = page.locator('#quick-concentrated-table-body tr', { hasText: 'E2E Tratamiento — Decisión' });
+        const treatedBadge = row.locator('span', { hasText: 'Tratado' });
+        await expect(treatedBadge).toBeVisible();
+        await expect(treatedBadge).toHaveAttribute('title', /Mitigar/);
+
         // Regresión del fix crítico en fair-register.js: re-simular el MISMO riesgo (vía el
         // banner de "Reanudar", igual que draft-and-resume.spec.js) no debe borrar la decisión
         // de tratamiento ya adoptada — antes de agregar treatmentDecision a la lista de campos
@@ -272,6 +282,14 @@ test.describe('Tratamiento del Riesgo (página aparte)', () => {
         });
         entry = register.risks.find((r) => r.riskName === 'E2E Tratamiento — Decisión');
         expect(entry.treatmentDecision).toBe(null);
+
+        // La señal "✔ Tratado" también debe desaparecer de Riesgos Guardados al quitar la decisión.
+        await page.click('#nav-fair');
+        await page.waitForTimeout(500);
+        const rowAfterClear = page.locator('#quick-concentrated-table-body tr', {
+            hasText: 'E2E Tratamiento — Decisión',
+        });
+        await expect(rowAfterClear.locator('span', { hasText: 'Tratado' })).toHaveCount(0);
     });
 
     test('CVaR residual escala igual que el ALE residual para Mitigar/Evitar/Aceptar (proporcional a la Vulnerabilidad reducida)', async ({

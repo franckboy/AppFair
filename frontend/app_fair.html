@@ -584,6 +584,27 @@
                             <button id="fair-export-consolidated-btn" class="btn btn-primary"><i class="fas fa-file-pdf mr-2"></i>Exportar Informe Consolidado (PDF)</button>
                         </div>
                     </div>
+                    <div class="flex gap-4 flex-wrap items-center mb-3">
+                        <div class="flex items-center gap-2">
+                            <label for="quick-concentrated-filter-stage" class="text-sm text-gray-600">Etapa:</label>
+                            <select id="quick-concentrated-filter-stage" class="form-select text-sm">
+                                <option value="">Todas</option>
+                                <option value="triage">Triage</option>
+                                <option value="fair">Analizado (FAIR)</option>
+                            </select>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <label for="quick-concentrated-filter-eval" class="text-sm text-gray-600">Evaluación:</label>
+                            <select id="quick-concentrated-filter-eval" class="form-select text-sm">
+                                <option value="">Todas</option>
+                                <option value="bajo">Bajo</option>
+                                <option value="medio">Medio</option>
+                                <option value="alto">Alto</option>
+                                <option value="critico">Crítico</option>
+                            </select>
+                        </div>
+                        <span id="quick-concentrated-filter-count" class="text-sm text-gray-500"></span>
+                    </div>
                     <div class="bg-white p-4 rounded-lg shadow-md overflow-x-auto">
                         <table class="w-full text-sm text-left text-gray-500">
                             <thead class="text-xs text-gray-700 uppercase bg-gray-50">
