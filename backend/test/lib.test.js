@@ -1612,6 +1612,11 @@ test('evaluateTreatmentStrategies: la combinación Mitigar+Transferir puede gana
     assert.strictEqual(result.evitar.netBenefit, 30000);
     assert.strictEqual(result.mitigarTransferir.netBenefit, 86700);
     assert.strictEqual(result.mitigarTransferir.cost, 15000); // mitigar.cost + transferir.premium
+    // netBenefit (86700) + cost (15000) = 101700, por encima de currentALE (100000) — el
+    // "avoidedLoss implícito" de esta combinación puede superar el 100% del ALE actual (la
+    // expectativa mezcla ramas donde mitigar Y transferir funcionan a la vez), así que el
+    // residualALE derivado se acota en 0 en vez de dar un número negativo sin sentido.
+    assert.strictEqual(result.mitigarTransferir.residualALE, 0);
     assert.strictEqual(result.recommendation.strategy, 'mitigarTransferir');
     assert.strictEqual(result.recommendation.netBenefit, 86700);
 });

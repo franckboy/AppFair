@@ -216,12 +216,12 @@ test.describe('Tratamiento del Riesgo (página aparte)', () => {
         await expect(page.locator('#fair-seguro-verdict')).not.toContainText('NO conviene');
 
         // Sin ningún término de seguro capturado (deducible/límite/sin-límite en 0/false), la
-        // Pérdida Evitada de $0.00 SÍ es una respuesta real (no se modeló ningún seguro) — no
+        // Pérdida Evitada de $0 SÍ es una respuesta real (no se modeló ningún seguro) — no
         // debe mostrar "No calculable" en ese caso.
         await page.uncheck('#fair-seguro-sin-limite');
         await page.fill('#fair-seguro-deducible', '0');
         await page.waitForTimeout(1000);
-        await expect(page.locator('#fair-seguro-evitada')).toHaveText('$0.00');
+        await expect(page.locator('#fair-seguro-evitada')).toHaveText('$0');
         await expect(page.locator('#fair-seguro-verdict')).toContainText('NO conviene');
     });
 
@@ -329,6 +329,48 @@ test.describe('Tratamiento del Riesgo (página aparte)', () => {
         await expect(rowAfterClear.locator('span', { hasText: 'Tratado' })).toHaveCount(0);
     });
 
+    test('la combinación "Mitigar + Transferir" solo aparece con costo real en AMBAS partes, y "Adoptar" persiste su propio residualALE', async ({
+        page,
+    }) => {
+        await connectAndBoot(page);
+        await runFullFairAnalysis(page, 'E2E Tratamiento — Combinado');
+
+        await page.click('#nav-treatment');
+        await page.waitForTimeout(500);
+        await page.selectOption('#treatment-risk-select', 'E2E Tratamiento — Combinado');
+        await page.waitForTimeout(500);
+
+        // Sin costo capturado en ninguna de las 2 partes: la sección combinada está oculta.
+        await expect(page.locator('#fair-mitigar-transferir-section')).toBeHidden();
+
+        // Con costo SOLO en Mitigar: sigue oculta (falta la prima de Transferir).
+        await page.fill('#fair-costoControlAnual', '2000');
+        await page.waitForTimeout(600);
+        await expect(page.locator('#fair-mitigar-transferir-section')).toBeHidden();
+
+        // Con costo real en AMBAS partes: aparece, con su propio botón "Adoptar".
+        await page.fill('#fair-seguro-prima', '500');
+        await page.waitForTimeout(600);
+        await expect(page.locator('#fair-mitigar-transferir-section')).toBeVisible();
+        await expect(page.locator('#treatment-adopt-mitigarTransferir-btn')).toBeVisible();
+
+        await page.click('#treatment-adopt-mitigarTransferir-btn');
+        await page.waitForTimeout(800);
+
+        await expect(page.locator('#treatment-adopted-mitigarTransferir-badge')).toBeVisible();
+        await expect(page.locator('#treatment-adopt-mitigarTransferir-btn')).toBeHidden();
+        await expect(page.locator('#treatment-decision-summary-text')).toContainText('Mitigar + Transferir');
+
+        const register = await page.evaluate(async () => {
+            const res = await fetch('http://localhost:3000/api/register', { headers: { 'X-API-Key': 'test-e2e-key' } });
+            return res.json();
+        });
+        const entry = register.risks.find((r) => r.riskName === 'E2E Tratamiento — Combinado');
+        expect(entry.treatmentDecision.strategy).toBe('mitigarTransferir');
+        expect(typeof entry.treatmentDecision.residualALE).toBe('number');
+        expect(entry.treatmentDecision.residualALE).toBeGreaterThanOrEqual(0);
+    });
+
     test('CVaR residual escala igual que el ALE residual para Mitigar/Evitar/Aceptar (proporcional a la Vulnerabilidad reducida)', async ({
         page,
     }) => {
@@ -359,10 +401,10 @@ test.describe('Tratamiento del Riesgo (página aparte)', () => {
         await page.waitForTimeout(1000);
 
         // Mitigar: residualALE = 100000*(1-0.6) = 40000, residualCVaR = 250000*(1-0.6) = 100000.
-        await expect(page.locator('#fair-roi-ale-despues')).toHaveText('$40,000.00');
-        await expect(page.locator('#fair-roi-cvar-despues')).toHaveText('$100,000.00');
+        await expect(page.locator('#fair-roi-ale-despues')).toHaveText('$40,000');
+        await expect(page.locator('#fair-roi-cvar-despues')).toHaveText('$100,000');
         // Aceptar: sin cambios — residual = el ALE/CVaR actual.
-        await expect(page.locator('#fair-aceptar-residual-cvar')).toContainText('$250,000.00');
+        await expect(page.locator('#fair-aceptar-residual-cvar')).toContainText('$250,000');
 
         await page.click('#treatment-adopt-mitigar-btn');
         await page.waitForTimeout(800);

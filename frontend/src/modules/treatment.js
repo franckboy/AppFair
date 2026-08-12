@@ -1,7 +1,7 @@
 import { App } from './app-namespace.js';
 import { state } from './state.js';
 import { Modal } from './modal.js';
-import { debounce, getSafeNumber, sanitizeHTML, shortMetricLabel, showToast } from './utils.js';
+import { debounce, formatCurrency, getSafeNumber, sanitizeHTML, shortMetricLabel, showToast } from './utils.js';
 
 // Orden de fiabilidad de más débil a más fuerte — mismo orden que
 // RELIABILITY_TO_PROBABILITY en backend/src/lib/treatment.js (baja: 0.4 < media: 0.7 <
@@ -9,13 +9,27 @@ import { debounce, getSafeNumber, sanitizeHTML, shortMetricLabel, showToast } fr
 // agregada (la más débil presente), sin inventar una fórmula numérica nueva.
 const RELIABILITY_ORDER = ['baja', 'media', 'alta'];
 
+// Texto de Fiabilidad + advertencia para la combinación Mitigar+Transferir — no tiene una única
+// Fiabilidad (trae mitigarReliability/transferirReliability, ver evaluateMitigarConTransferir en
+// el backend), a diferencia de las otras 4 estrategias (una sola stratData.reliability). Aparte
+// de las demás porque lo usan tanto la recomendación (updateTreatmentView) como la sección propia
+// de resultados de esta combinación.
+function mitigarTransferirFiabilidadTexto(stratData, fiabilidadLabel) {
+    const fiabilidadTexto = `Mitigar ${fiabilidadLabel[stratData.mitigarReliability] || stratData.mitigarReliability} / Transferir ${fiabilidadLabel[stratData.transferirReliability] || stratData.transferirReliability}`;
+    let advertencia = '';
+    if (stratData.mitigarReliability === 'baja' || stratData.transferirReliability === 'baja') {
+        advertencia = ` <strong class="text-orange-700">Atención:</strong> una parte de esta combinación tiene Fiabilidad Baja — el beneficio neto ya está ajustado por ese riesgo, pero el rango de resultados posibles es amplio (desde el beneficio completo hasta perder lo invertido, si esa parte no funciona).`;
+    } else if (stratData.delayDays > 90) {
+        advertencia = ` <strong class="text-orange-700">Atención:</strong> el tiempo de implementación es de ${stratData.delayDays} días — el riesgo actual sigue expuesto mientras tanto.`;
+    }
+    return { fiabilidadTexto, advertencia };
+}
+
 // Nombres para mostrar de cada estrategia — compartido entre la recomendación
 // (updateTreatmentView), el resumen de la Decisión de Tratamiento adoptada
 // (renderTreatmentDecision) y App.RiskManagement.renderResidualStatus (Gestión de Riesgos, que
 // también necesita mostrar qué estrategia generó el Residual Canónico vigente). Exportado en vez
-// de duplicado, para no arriesgar que los dos mapas se desincronicen. mitigarTransferir no es
-// adoptable como decisión propia (ver adoptStrategy) pero sí aparece como recomendación, por eso
-// vive en el mismo mapa.
+// de duplicado, para no arriesgar que los dos mapas se desincronicen.
 export const STRATEGY_LABELS = {
     mitigar: 'Mitigar',
     transferir: 'Transferir (Seguro)',
@@ -105,7 +119,7 @@ export const Treatment = {
             this.updateTreatmentView(true);
         });
 
-        ['mitigar', 'transferir', 'evitar', 'aceptar'].forEach((key) => {
+        ['mitigar', 'transferir', 'evitar', 'aceptar', 'mitigarTransferir'].forEach((key) => {
             document
                 .getElementById(`treatment-adopt-${key}-btn`)
                 .addEventListener('click', () => this.adoptStrategy(key));
@@ -469,8 +483,6 @@ export const Treatment = {
     async updateTreatmentView(save) {
         const entry = state.treatment.currentEntry;
         if (!entry) return;
-        const currency = 'USD';
-        const formatCurrency = (value) => new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(value);
         const aleActual = entry.ale;
         document.getElementById('fair-treat-ale-base').textContent = formatCurrency(aleActual);
 
@@ -509,7 +521,7 @@ export const Treatment = {
         try {
             result = await App.Api.request('/api/treatment/evaluate', {
                 method: 'POST',
-                body: { currentALE: aleActual, currentCVaR: entry.cvar95, mitigar, transferir, evitar, currency },
+                body: { currentALE: aleActual, currentCVaR: entry.cvar95, mitigar, transferir, evitar },
             });
         } catch (err) {
             showToast(err.userMessage || 'No se pudo calcular el tratamiento del riesgo.');
@@ -572,25 +584,40 @@ export const Treatment = {
                 ? '—'
                 : `${formatCurrency(result.aceptar.residualCVaR)} (= ${shortMetricLabel('cvar95', 'CVaR')} actual)`;
 
+        // La sección de la combinación solo aparece cuando ya hay costo real capturado en AMBAS
+        // partes (ver el mismo criterio en evaluateTreatmentStrategies, backend) — hasta entonces
+        // no hay nada que mostrar ni adoptar.
+        const mtSection = document.getElementById('fair-mitigar-transferir-section');
+        if (result.mitigarTransferir) {
+            mtSection.classList.remove('hidden');
+            const mt = result.mitigarTransferir;
+            document.getElementById('fair-mitigar-transferir-costo').textContent = formatCurrency(mt.cost);
+            document.getElementById('fair-mitigar-transferir-residual').textContent = formatCurrency(mt.residualALE);
+            const mtEl = document.getElementById('fair-mitigar-transferir-beneficio');
+            mtEl.textContent = formatCurrency(mt.netBenefit);
+            mtEl.className = `font-bold ${mt.netBenefit > 0 ? 'text-green-700' : mt.netBenefit < 0 ? 'text-red-700' : 'text-gray-800'}`;
+            document.getElementById('fair-mitigar-transferir-retraso').textContent = `${mt.delayDays} días`;
+            const { fiabilidadTexto: mtFiabilidad, advertencia: mtAdvertencia } = mitigarTransferirFiabilidadTexto(
+                mt,
+                fiabilidadLabel,
+            );
+            document.getElementById('fair-mitigar-transferir-fiabilidad').innerHTML =
+                `Fiabilidad: ${mtFiabilidad}.${mtAdvertencia}`;
+            this.renderInvestmentVerdict('fair-mitigar-transferir-rosi', 'fair-mitigar-transferir-verdict', mt.verdict);
+        } else {
+            mtSection.classList.add('hidden');
+        }
+
         const recEl = document.getElementById('fair-treatment-recommendation');
         const rec = result.recommendation;
         if (rec.strategy === 'aceptar') {
             recEl.innerHTML = `<p>${sanitizeHTML(rec.reason)}</p>`;
         } else {
             const stratData = result[rec.strategy];
-            // La combinación Mitigar+Transferir no tiene una única Fiabilidad (trae
-            // mitigarReliability/transferirReliability, ver evaluateMitigarConTransferir en el
-            // backend) — se arma un texto de Fiabilidad/advertencia distinto para ese caso, en
-            // vez de leer stratData.reliability (undefined ahí).
             let fiabilidadTexto;
             let advertencia = '';
             if (rec.strategy === 'mitigarTransferir') {
-                fiabilidadTexto = `Mitigar ${fiabilidadLabel[stratData.mitigarReliability] || stratData.mitigarReliability} / Transferir ${fiabilidadLabel[stratData.transferirReliability] || stratData.transferirReliability}`;
-                if (stratData.mitigarReliability === 'baja' || stratData.transferirReliability === 'baja') {
-                    advertencia = ` <strong class="text-orange-700">Atención:</strong> una parte de esta combinación tiene Fiabilidad Baja — el beneficio neto de arriba ya está ajustado por ese riesgo, pero el rango de resultados posibles es amplio (desde el beneficio completo hasta perder lo invertido, si esa parte no funciona).`;
-                } else if (stratData.delayDays > 90) {
-                    advertencia = ` <strong class="text-orange-700">Atención:</strong> el tiempo de implementación es de ${stratData.delayDays} días — el riesgo actual sigue expuesto mientras tanto.`;
-                }
+                ({ fiabilidadTexto, advertencia } = mitigarTransferirFiabilidadTexto(stratData, fiabilidadLabel));
             } else {
                 fiabilidadTexto = fiabilidadLabel[stratData.reliability] || stratData.reliability;
                 if (stratData.reliability === 'baja') {
@@ -653,7 +680,7 @@ export const Treatment = {
         const entry = state.treatment.currentEntry;
         const decision = (entry && entry.treatmentDecision) || null;
 
-        ['mitigar', 'transferir', 'evitar', 'aceptar'].forEach((key) => {
+        ['mitigar', 'transferir', 'evitar', 'aceptar', 'mitigarTransferir'].forEach((key) => {
             const adopted = !!decision && decision.strategy === key;
             document.getElementById(`treatment-adopt-${key}-btn`).classList.toggle('hidden', adopted);
             document.getElementById(`treatment-adopted-${key}-badge`).classList.toggle('hidden', !adopted);
@@ -664,8 +691,6 @@ export const Treatment = {
             summaryEl.classList.add('hidden');
             return;
         }
-        const formatCurrency = (value) =>
-            new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
         const decidedAt = decision.decidedAt ? new Date(decision.decidedAt).toLocaleDateString('es-MX') : '—';
         // decision.residualCVaR puede faltar del todo (Transferir, o una decisión adoptada antes
         // de que este campo existiera) — `!= null` trata "ausente" y "null" igual, sin mostrar
@@ -679,12 +704,14 @@ export const Treatment = {
         summaryEl.classList.remove('hidden');
     },
 
-    // Adopta `strategyKey` ('mitigar'|'transferir'|'evitar'|'aceptar') como la decisión de
-    // tratamiento de este riesgo — lee el residualALE ya calculado en state.treatment.lastResult
-    // (la última corrida de /api/treatment/evaluate, ver updateTreatmentView) en vez de volver a
-    // pedirlo. mitigarTransferir queda afuera a propósito: su resultado no trae residualALE
-    // propio (solo netBenefit del árbol de decisión combinado) y no tiene su propia sección en
-    // el formulario — inventarle un residual sería una precisión no verificable.
+    // Adopta `strategyKey` ('mitigar'|'transferir'|'evitar'|'aceptar'|'mitigarTransferir') como
+    // la decisión de tratamiento de este riesgo — lee el residualALE ya calculado en
+    // state.treatment.lastResult (la última corrida de /api/treatment/evaluate, ver
+    // updateTreatmentView) en vez de volver a pedirlo. Para mitigarTransferir, ese residualALE es
+    // un valor ESPERADO derivado del árbol de decisión combinado (ver el comentario junto a
+    // results.mitigarTransferir en backend/src/lib/treatment.js) — no un residual determinístico
+    // como el de las otras 4, pero sí utilizable: es la misma cifra que ya se le mostraba al
+    // usuario en el mensaje de recomendación, solo que ahora también queda persistida.
     async adoptStrategy(strategyKey) {
         // Por si hay una edición reciente (costo, fiabilidad...) todavía sin persistir — no
         // tiene sentido adoptar una decisión sobre datos que el propio Registro no refleja

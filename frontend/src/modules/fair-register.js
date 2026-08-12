@@ -5,6 +5,7 @@ import {
     LOSS_FORM_LABELS,
     buildHistogramBins,
     classifyPointSeverity,
+    formatCurrency,
     getSafeNumber,
     sanitizeHTML,
     sensitivityLabel,
@@ -1069,13 +1070,6 @@ export const FairRegister = {
     renderParetoChart() {
         const pareto = state.fair.registerPareto;
         if (!pareto) return;
-        const formatCurrency = (value) =>
-            new Intl.NumberFormat('en-US', {
-                style: 'currency',
-                currency: 'USD',
-                minimumFractionDigits: 0,
-                maximumFractionDigits: 0,
-            }).format(value);
 
         document.getElementById('fair-pareto-summary').textContent =
             `${pareto.riskCountFor80Percent} de ${pareto.totalRiskCount} riesgo(s) concentran el 80% de tu exposición total (${formatCurrency(pareto.totalExposure)}/año). Prioriza el tratamiento en esos primero.`;
@@ -1243,7 +1237,6 @@ export const FairRegister = {
         loading.classList.add('hidden');
         body.classList.remove('hidden');
 
-        const formatCurrency = (v) => `$${Math.round(v).toLocaleString('en-US')}`;
         document.getElementById('fair-register-sim-ale').textContent = formatCurrency(result.summary.average);
         document.getElementById('fair-register-sim-median').textContent = formatCurrency(result.summary.median);
         document.getElementById('fair-register-sim-p90').textContent = formatCurrency(result.summary.p90);
@@ -1324,8 +1317,6 @@ export const FairRegister = {
         threatRegister.forEach((r) => {
             if (r.severity && bySeverity[r.severity] !== undefined) bySeverity[r.severity]++;
         });
-        const formatCurrency = (v) => `$${Math.round(v).toLocaleString('en-US')}`;
-
         const parts = [];
         if (threatRegister.length > 0) {
             parts.push(

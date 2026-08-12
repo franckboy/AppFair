@@ -6,6 +6,7 @@ import {
     classifyPointSeverity,
     computeCoveredIsoClauses,
     debounce,
+    formatCurrency,
     getSafeNumber,
     sanitizeHTML,
     sensitivityLabel,
@@ -44,6 +45,30 @@ describe('getSafeNumber', () => {
     it('devuelve 0 si el input no existe', () => {
         expect(getSafeNumber(null)).toBe(0);
         expect(getSafeNumber(undefined)).toBe(0);
+    });
+});
+
+describe('formatCurrency', () => {
+    it('formatea un número positivo en dólares enteros, sin centavos', () => {
+        expect(formatCurrency(1234)).toBe('$1,234');
+    });
+
+    it('redondea en vez de mostrar centavos', () => {
+        expect(formatCurrency(1234.56)).toBe('$1,235');
+    });
+
+    it('formatea negativos con el signo antes del símbolo ($, no al revés)', () => {
+        expect(formatCurrency(-500)).toBe('-$500');
+    });
+
+    it('devuelve "—" para null/undefined/NaN en vez de "$NaN"', () => {
+        expect(formatCurrency(null)).toBe('—');
+        expect(formatCurrency(undefined)).toBe('—');
+        expect(formatCurrency(NaN)).toBe('—');
+    });
+
+    it('formatea 0 como $0, no como "—"', () => {
+        expect(formatCurrency(0)).toBe('$0');
     });
 });
 

@@ -371,8 +371,16 @@ function evaluateTreatmentStrategies(
     if (mitigar.cost > 0 && transferir.premium > 0) {
         const combined = evaluateMitigarConTransferir({ currentALE, annualLosses, mitigar, transferir });
         const combinedCost = mitigar.cost + transferir.premium;
+        // residualALE: no existe un único residual determinístico para esta combinación (el árbol
+        // tiene 2 decisiones anidadas, cada una con su propia probabilidad de éxito — a diferencia
+        // de Mitigar/Transferir/Evitar solos, que sí tienen un residual fijo). Se deriva del mismo
+        // "avoidedLoss implícito" (combined.value + combinedCost) que ya usa el verdict de abajo
+        // para su mensaje ("evitas perder $X") — no es una aproximación nueva, es la misma que ya
+        // se usaba para mostrar la recomendación, solo expresada como residual en vez de ahorro.
+        // Es un valor ESPERADO (pondera las 2 decisiones y sus probabilidades), no garantizado.
         results.mitigarTransferir = {
             cost: combinedCost,
+            residualALE: Math.max(0, currentALE - (combined.value + combinedCost)),
             netBenefit: combined.value,
             mitigarReliability: mitigar.reliability,
             transferirReliability: transferir.reliability,

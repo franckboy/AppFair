@@ -124,7 +124,7 @@ test.describe('Gestión de Riesgos (página aparte)', () => {
         // Sin decisión: el residual mostrado es igual al actual, con botón para ir a decidir.
         await expect(page.locator('#riskmgmt-residual-section')).toBeVisible();
         await expect(page.locator('#riskmgmt-residual-note')).toContainText('igual al actual');
-        await expect(page.locator('#riskmgmt-residual-ale')).toHaveText('$2,000.00');
+        await expect(page.locator('#riskmgmt-residual-ale')).toHaveText('$2,000');
         await expect(page.locator('#riskmgmt-goto-treatment-btn')).toBeVisible();
 
         await page.click('#riskmgmt-goto-treatment-btn');
@@ -146,8 +146,8 @@ test.describe('Gestión de Riesgos (página aparte)', () => {
         await page.waitForTimeout(1500);
 
         await expect(page.locator('#riskmgmt-residual-note')).toContainText('Con tratamiento (Mitigar)');
-        await expect(page.locator('#riskmgmt-residual-ale')).toHaveText('$100.00');
-        await expect(page.locator('#riskmgmt-residual-cvar')).toHaveText('$100.00');
+        await expect(page.locator('#riskmgmt-residual-ale')).toHaveText('$100');
+        await expect(page.locator('#riskmgmt-residual-cvar')).toHaveText('$100');
         await expect(page.locator('#riskmgmt-residual-badge')).toHaveText('Aceptable');
         await expect(page.locator('#riskmgmt-goto-treatment-btn')).toBeHidden();
 
@@ -218,7 +218,12 @@ test.describe('Gestión de Riesgos (página aparte)', () => {
         const expectedALE = beforeALE + 55000;
         const expectedCVaR = beforeCVaR + 100000;
         const formatCurrency = (value) =>
-            new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
+            new Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency: 'USD',
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0,
+            }).format(value);
 
         await page.click('#nav-risk-mgmt');
         await page.waitForTimeout(1000);
@@ -294,7 +299,7 @@ test.describe('Gestión de Riesgos (página aparte)', () => {
 
         // El resumen del panel de Gestión de Riesgos se deriva 1:1 de residualPareto, ya
         // recalculado — se compara contra ese mismo dato en vez de un número fijo.
-        const expectedSummary = `${residualPareto.riskCountFor80Percent} de ${residualPareto.totalRiskCount} riesgo(s) concentran el 80% de tu exposición residual (${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(residualPareto.totalExposure)}/año).`;
+        const expectedSummary = `${residualPareto.riskCountFor80Percent} de ${residualPareto.totalRiskCount} riesgo(s) concentran el 80% de tu exposición residual (${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(residualPareto.totalExposure)}/año).`;
 
         await page.click('#nav-risk-mgmt');
         await page.waitForTimeout(1000);
@@ -355,7 +360,12 @@ test.describe('Gestión de Riesgos (página aparte)', () => {
 
         await expect(page.locator('#riskmgmt-portfolio-waterfall')).toBeVisible();
         const formatCurrency = (value) =>
-            new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
+            new Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency: 'USD',
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0,
+            }).format(value);
         await expect(page.locator('#riskmgmt-portfolio-waterfall')).toContainText(
             `Riesgo Inherente: ${formatCurrency(inherentPortfolio.totalInherentALE)}`,
         );

@@ -1,6 +1,6 @@
 import { App } from './app-namespace.js';
 import { state } from './state.js';
-import { debounce, sanitizeHTML, severityToClasses, shortMetricLabel, showToast } from './utils.js';
+import { debounce, formatCurrency, sanitizeHTML, severityToClasses, shortMetricLabel, showToast } from './utils.js';
 import { STRATEGY_LABELS } from './treatment.js';
 
 // ============================================================
@@ -125,11 +125,6 @@ export const RiskManagement = {
         }
         section.classList.remove('hidden');
 
-        const formatCurrency = (value) =>
-            value === null || value === undefined
-                ? '—'
-                : new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
-
         document.getElementById('riskmgmt-portfolio-ale').textContent = formatCurrency(portfolio.totalResidualALE);
         document.getElementById('riskmgmt-portfolio-cvar').textContent = formatCurrency(portfolio.totalResidualCVaR);
 
@@ -210,9 +205,6 @@ export const RiskManagement = {
         }
         section.classList.remove('hidden');
 
-        const formatCurrency = (value) =>
-            new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
-
         document.getElementById('riskmgmt-residual-pareto-summary').textContent =
             `${pareto.riskCountFor80Percent} de ${pareto.totalRiskCount} riesgo(s) concentran el 80% de tu exposición residual (${formatCurrency(pareto.totalExposure)}/año).`;
 
@@ -280,10 +272,6 @@ export const RiskManagement = {
         }
         section.classList.remove('hidden');
 
-        const formatCurrency = (value) =>
-            value === null || value === undefined
-                ? '—'
-                : new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
         const applyBadge = (severity, label) => {
             section.className = `p-4 rounded-lg mb-4 border-l-4 ${severityToClasses(severity)}`;
             document.getElementById('riskmgmt-residual-badge').textContent = label;

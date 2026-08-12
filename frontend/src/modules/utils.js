@@ -103,6 +103,21 @@ export function shortMetricLabel(key, fallbackTechnicalText) {
     return fallbackTechnicalText;
 }
 
+// Formato de moneda único para toda la app — antes cada módulo definía su propia versión local
+// (con inconsistencias reales entre ellas: unas mostraban centavos y otras no, y la versión
+// armada a mano con Math.round + toLocaleString rompía con negativos, ej. "$-500" en vez de
+// "-$500"). Siempre dólares enteros (sin centavos) y '—' si el valor no es un número — mismo
+// criterio que ya usaba risk-summary-bar.js antes de este cambio.
+export function formatCurrency(value) {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return '—';
+    return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: 'USD',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
+    }).format(value);
+}
+
 // `evaluation.justification` (calculado por evaluateFairThreat/evaluateFairOpportunity, ver
 // backend/src/lib/evaluation.js) menciona CVaR95/percentiles a propósito — sigue siendo la
 // prosa correcta para Modo Técnico y para el reporte PDF (ver fair-export.js, que se queda

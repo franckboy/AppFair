@@ -1142,10 +1142,10 @@ test('PUT /api/register/:riskName sin vulnManualOverride guarda false por defect
         .set('X-API-Key', TEST_API_KEY);
 });
 
-// treatmentDecision: cuál de las 4 estrategias de Tratamiento se ADOPTÓ de verdad (a diferencia
-// de mitigar/transferir/evitar/aceptarJustificacion, que son solo los insumos de las 4
-// hipótesis comparadas en paralelo) + el ALE residual que de ahí resulta — ver
-// App.Treatment.adoptStrategy.
+// treatmentDecision: cuál estrategia de Tratamiento se ADOPTÓ de verdad — una de las 4 (Mitigar/
+// Transferir/Evitar/Aceptar) o la combinación Mitigar+Transferir (a diferencia de
+// mitigar/transferir/evitar/aceptarJustificacion, que son solo los insumos de las hipótesis
+// comparadas en paralelo) + el ALE residual que de ahí resulta — ver App.Treatment.adoptStrategy.
 test('PUT /api/register/:riskName persiste treatmentDecision y se lee de vuelta vía GET', async () => {
     const riskName = 'Robo en bodega HTTP (decisión)';
     const treatmentDecision = { strategy: 'mitigar', residualALE: 4200, decidedAt: '2026-01-15T00:00:00.000Z' };
@@ -1183,8 +1183,27 @@ test('PUT /api/register/:riskName rechaza treatmentDecision.strategy inválido c
     const res = await request(app)
         .put(`/api/register/${encodeURIComponent('Riesgo decisión inválida HTTP')}`)
         .set('X-API-Key', TEST_API_KEY)
-        .send({ ale: 0, treatmentDecision: { strategy: 'mitigarTransferir', residualALE: 100 } });
+        .send({ ale: 0, treatmentDecision: { strategy: 'invalida', residualALE: 100 } });
     assert.strictEqual(res.status, 400);
+});
+
+test('PUT /api/register/:riskName acepta treatmentDecision.strategy "mitigarTransferir" (combinación adoptable)', async () => {
+    const riskName = 'Robo en bodega HTTP (decisión combinada)';
+    const treatmentDecision = {
+        strategy: 'mitigarTransferir',
+        residualALE: 1300,
+        decidedAt: '2026-01-15T00:00:00.000Z',
+    };
+    const putRes = await request(app)
+        .put(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ale: 10000, cvar95: 15000, treatmentDecision });
+    assert.strictEqual(putRes.status, 200);
+    assert.deepStrictEqual(putRes.body.entry.treatmentDecision, treatmentDecision);
+
+    await request(app)
+        .delete(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY);
 });
 
 test('PUT /api/register/:riskName rechaza treatmentDecision.residualALE negativo con 400', async () => {

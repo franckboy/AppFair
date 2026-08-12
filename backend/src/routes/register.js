@@ -250,10 +250,11 @@ function createRegisterRouter(store) {
                 transferir = null,
                 evitar = null,
                 aceptarJustificacion = null,
-                // Decisión de tratamiento: cuál de las 4 estrategias de arriba se ADOPTÓ de
-                // verdad (a diferencia de mitigar/transferir/evitar/aceptarJustificacion, que
-                // son solo los INSUMOS de las 4 hipótesis comparadas en paralelo) + el ALE
-                // residual que de ahí resulta — ver App.Treatment.adoptStrategy. null mientras
+                // Decisión de tratamiento: cuál estrategia se ADOPTÓ de verdad — una de las 4 de
+                // arriba, o la combinación Mitigar+Transferir (a diferencia de
+                // mitigar/transferir/evitar/aceptarJustificacion, que son solo los INSUMOS de las
+                // hipótesis comparadas en paralelo) + el ALE residual que de ahí resulta — ver
+                // App.Treatment.adoptStrategy. null mientras
                 // nadie haya decidido nada todavía; es un estado real y distinto de "aceptar"
                 // (ISO 31000 exige que aceptar sea una decisión documentada y deliberada, no la
                 // ausencia de una decisión).
@@ -310,11 +311,11 @@ function createRegisterRouter(store) {
                 }
             }
             if (treatmentDecision !== null) {
-                const validStrategies = ['mitigar', 'transferir', 'evitar', 'aceptar'];
+                const validStrategies = ['mitigar', 'transferir', 'evitar', 'aceptar', 'mitigarTransferir'];
                 if (!validStrategies.includes(treatmentDecision.strategy)) {
-                    return res
-                        .status(400)
-                        .json({ error: 'treatmentDecision.strategy debe ser mitigar, transferir, evitar o aceptar.' });
+                    return res.status(400).json({
+                        error: 'treatmentDecision.strategy debe ser mitigar, transferir, evitar, aceptar o mitigarTransferir.',
+                    });
                 }
                 if (
                     typeof treatmentDecision.residualALE !== 'number' ||

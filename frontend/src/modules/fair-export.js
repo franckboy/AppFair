@@ -1,7 +1,14 @@
 import { App } from './app-namespace.js';
 import { state } from './state.js';
 import { Modal } from './modal.js';
-import { LOSS_FORMS_KEYS, LOSS_FORM_LABELS, classifyPointSeverity, sanitizeHTML, severityToHex } from './utils.js';
+import {
+    LOSS_FORMS_KEYS,
+    LOSS_FORM_LABELS,
+    classifyPointSeverity,
+    formatCurrency,
+    sanitizeHTML,
+    severityToHex,
+} from './utils.js';
 import { STRATEGY_LABELS } from './treatment.js';
 
 // ============================================================
@@ -248,13 +255,6 @@ export const FairExport = {
             canvas.style.position = 'fixed';
             canvas.style.left = '-9999px';
             document.body.appendChild(canvas);
-            const formatCurrency = (value) =>
-                new Intl.NumberFormat('en-US', {
-                    style: 'currency',
-                    currency: 'USD',
-                    minimumFractionDigits: 0,
-                    maximumFractionDigits: 0,
-                }).format(value);
 
             const chart = new Chart(canvas, {
                 type: 'bar',
@@ -505,13 +505,6 @@ export const FairExport = {
             Modal.alert('Aún no tienes ningún riesgo guardado en el Registro.', 'Nada que exportar');
             return;
         }
-        const formatCurrency = (value) =>
-            new Intl.NumberFormat('en-US', {
-                style: 'currency',
-                currency: 'USD',
-                minimumFractionDigits: 0,
-                maximumFractionDigits: 0,
-            }).format(value);
         const ctx = App.OrgContext.context;
 
         // 'oportunidad' se excluye de la exposición total y del mapa de calor — su "ale" es
