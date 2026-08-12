@@ -207,6 +207,15 @@ export const RiskCascadeTree = {
                 this.openCreateChildModal(parentName);
             });
         });
+
+        container.querySelectorAll('[data-tree-change-trigger]').forEach((btn) => {
+            btn.addEventListener('click', (e) => {
+                // Mismo motivo que [data-tree-toggle]/[data-tree-add-child] arriba.
+                e.stopPropagation();
+                const riskName = btn.closest('.risk-tree-card').querySelector('.risk-tree-name').textContent;
+                this.openChangeTriggerModal(riskName);
+            });
+        });
     },
 
     // Crea un riesgo NUEVO, ya vinculado como desencadenado por `parentRiskName` — a diferencia
@@ -341,6 +350,121 @@ export const RiskCascadeTree = {
                 this.render();
             } catch (err) {
                 errorEl.textContent = err.userMessage || 'No se pudo crear el riesgo. Intenta de nuevo.';
+                errorEl.classList.remove('hidden');
+            } finally {
+                saveBtn.disabled = false;
+            }
+        });
+    },
+
+    // Cambia (o quita) el "Riesgo Desencadenante" de un riesgo YA guardado, directo desde su
+    // tarjeta — a diferencia de openCreateChildModal (crea un riesgo NUEVO ya vinculado), esto
+    // reasigna el vínculo de uno que ya existe: sirve tanto para darle padre a un huérfano como
+    // para "adoptar" un riesgo existente como hijo (abriendo esto desde la tarjeta del futuro
+    // hijo, no la del padre — "hermano" no necesita nada aparte: dos riesgos con el mismo
+    // desencadenante ya lo son). Antes la única forma de tocar este campo era reabrir el riesgo
+    // completo en el wizard de FAIR (Paso 1) — un vínculo es un dato de relación, no algo que
+    // debería exigir pasar por un análisis completo para editarse.
+    //
+    // Guarda con PUT /api/register/:nombre, igual que el resto de la app (Treatment.
+    // persistTreatment, RiskManagement.persist, adoptStrategy) — ese endpoint REEMPLAZA la
+    // entrada completa, así que el body parte de `{...risk}` (todo lo demás intacto) y solo
+    // pisa triggeredByRiskName/triggeredByProbability. No hace falta volver a simular: es
+    // exactamente el mismo campo que ya guarda el Paso 1 del wizard, sin tocar ningún cálculo.
+    openChangeTriggerModal(riskName) {
+        const register = state.fair.riskRegister || [];
+        const risk = register.find((r) => r.riskName === riskName);
+        if (!risk) {
+            showToast('No se encontró este riesgo en el Registro.');
+            return;
+        }
+
+        // Bug real que este modal evita, a diferencia del <select> "Riesgo Desencadenante" del
+        // Paso 1 (que solo excluye el propio nombre): elegir aquí a uno de los DESCENDIENTES del
+        // riesgo actual como su nuevo desencadenante crearía un ciclo (A causado por B, B
+        // causado por A) de forma directa e inmediata, no un caso raro de renombrar/borrar más
+        // tarde. Se calculan con collectReachable (mismo helper que ya usa render() para
+        // detectar ciclos existentes) y se excluyen del selector — no se puede ni intentar.
+        const { childrenOf } = this.buildForest();
+        const descendants = this.collectReachable([risk], childrenOf);
+        const validParentOptions = register.filter((r) => !descendants.has(r.riskName));
+
+        const currentParent = risk.triggeredByRiskName || '';
+        const optionsHTML = validParentOptions
+            .map(
+                (r) =>
+                    `<option value="${sanitizeHTML(r.riskName)}" ${r.riskName === currentParent ? 'selected' : ''}>${sanitizeHTML(r.riskName)}</option>`,
+            )
+            .join('');
+
+        Modal.title.textContent = 'Cambiar Riesgo Desencadenante';
+        Modal.body.innerHTML = `
+            <p class="description-text mb-3">
+                Elige qué riesgo causó a "${sanitizeHTML(riskName)}" — o déjalo sin ninguno si es un punto de
+                partida (no lo causó otro riesgo ya guardado). Los riesgos que ya dependen de este (sus propios
+                hijos/nietos) no aparecen en la lista, para no crear un ciclo.
+            </p>
+            <p id="tree-change-trigger-error" class="text-red-600 text-sm mb-3 hidden"></p>
+            <div class="input-group">
+                <label for="tree-change-trigger-select">Causado por:</label>
+                <select id="tree-change-trigger-select" class="form-select">
+                    <option value="">— Ninguno (punto de partida) —</option>
+                    ${optionsHTML}
+                </select>
+            </div>
+            <div class="input-group ${currentParent ? '' : 'hidden'}" id="tree-change-trigger-probability-group">
+                <label for="tree-change-trigger-probability">
+                    ¿Qué tan probable es que esto ocurra SI el riesgo elegido ocurre? (%)
+                </label>
+                <input type="number" id="tree-change-trigger-probability" class="form-input" min="0" max="100"
+                    value="${typeof risk.triggeredByProbability === 'number' ? risk.triggeredByProbability : 50}">
+            </div>
+        `;
+        Modal.footer.innerHTML = `
+            <button id="tree-change-trigger-cancel-btn" class="btn btn-secondary">Cancelar</button>
+            <button id="tree-change-trigger-save-btn" class="btn btn-primary">Guardar</button>
+        `;
+        Modal.modal.classList.remove('hidden');
+
+        const selectEl = document.getElementById('tree-change-trigger-select');
+        const probabilityGroup = document.getElementById('tree-change-trigger-probability-group');
+        selectEl.addEventListener('change', () => {
+            probabilityGroup.classList.toggle('hidden', !selectEl.value);
+        });
+
+        document.getElementById('tree-change-trigger-cancel-btn').addEventListener('click', () => Modal.hide());
+        document.getElementById('tree-change-trigger-save-btn').addEventListener('click', async (e) => {
+            const newParent = selectEl.value || null;
+            const probability = getSafeNumber(document.getElementById('tree-change-trigger-probability'));
+            const errorEl = document.getElementById('tree-change-trigger-error');
+
+            if (newParent && !(probability >= 0 && probability <= 100)) {
+                errorEl.textContent = 'La probabilidad debe estar entre 0 y 100.';
+                errorEl.classList.remove('hidden');
+                return;
+            }
+
+            const saveBtn = e.target;
+            saveBtn.disabled = true;
+            try {
+                await App.Api.request(`/api/register/${encodeURIComponent(riskName)}`, {
+                    method: 'PUT',
+                    body: {
+                        ...risk,
+                        triggeredByRiskName: newParent,
+                        triggeredByProbability: newParent ? probability : null,
+                    },
+                });
+                Modal.hide();
+                showToast(
+                    newParent
+                        ? `"${riskName}" ahora está vinculado como consecuencia de "${newParent}".`
+                        : `"${riskName}" ya no tiene ningún riesgo desencadenante.`,
+                );
+                await App.FairRegister.loadRiskRegister(false);
+                this.render();
+            } catch (err) {
+                errorEl.textContent = err.userMessage || 'No se pudo guardar el vínculo. Intenta de nuevo.';
                 errorEl.classList.remove('hidden');
             } finally {
                 saveBtn.disabled = false;
@@ -657,6 +781,7 @@ export const RiskCascadeTree = {
                                 : ''
                         }
                         <button type="button" class="risk-tree-add-child" data-tree-add-child title="Crear riesgo desencadenado por este">+</button>
+                        <button type="button" class="risk-tree-change-trigger" data-tree-change-trigger title="Cambiar quién causó este riesgo">🔗</button>
                     </div>
                 </div>
                 ${hasChildren ? `<ul>${children.map((c) => this.renderNode(c, childrenOf, nextVisited)).join('')}</ul>` : ''}

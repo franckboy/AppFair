@@ -175,4 +175,70 @@ test.describe('Árbol de Riesgos en Cascada', () => {
         expect(membersText).toContain('E2E Familia — Carrera B');
         expect(membersText).not.toContain('E2E Familia — Carrera A');
     });
+
+    test('"Cambiar quién causó este riesgo" vincula un huérfano existente sin pasar por el wizard, y excluye a sus propios descendientes para evitar un ciclo', async ({
+        page,
+    }) => {
+        await connectAndBoot(page);
+        await runFullFairAnalysis(page, 'E2E Vínculo — Abuelo');
+        await connectAndBoot(page);
+        await runFullFairAnalysis(page, 'E2E Vínculo — Nieto Huérfano');
+
+        await page.click('#nav-risk-tree');
+        await page.waitForSelector('#risk-cascade-tree-container');
+        await page.waitForTimeout(300);
+
+        // "Nieto Huérfano" nace como raíz (sin desencadenante) — se vincula retroactivamente
+        // como hijo de "Abuelo", sin volver a pasar por el wizard de FAIR.
+        const orphanCard = page.locator('.risk-tree-card', { hasText: 'E2E Vínculo — Nieto Huérfano' });
+        await orphanCard.locator('[data-tree-change-trigger]').click();
+        await page.waitForSelector('#tree-change-trigger-select');
+
+        const options = await page.locator('#tree-change-trigger-select option').allTextContents();
+        expect(options).toContain('E2E Vínculo — Abuelo');
+
+        await page.selectOption('#tree-change-trigger-select', 'E2E Vínculo — Abuelo');
+        await page.fill('#tree-change-trigger-probability', '70');
+        const [putRes] = await Promise.all([
+            page.waitForResponse((r) => r.url().includes('/api/register/') && r.request().method() === 'PUT', {
+                timeout: 10000,
+            }),
+            page.click('#tree-change-trigger-save-btn'),
+        ]);
+        const putBody = await putRes.json();
+        expect(putBody.entry.triggeredByRiskName).toBe('E2E Vínculo — Abuelo');
+        expect(putBody.entry.triggeredByProbability).toBe(70);
+        await page.waitForTimeout(300);
+
+        const parentLi = page.locator('li', {
+            has: page.locator('.risk-tree-card', { hasText: 'E2E Vínculo — Abuelo' }),
+        });
+        await expect(parentLi.locator('.risk-tree-card', { hasText: 'E2E Vínculo — Nieto Huérfano' })).toBeVisible();
+
+        // Ahora "Abuelo" tiene un hijo real — su propio selector de "Cambiar quién lo causó" NO
+        // debe ofrecer a "Nieto Huérfano" como opción (crearía un ciclo directo).
+        const grandparentCard = page.locator('.risk-tree-card', { hasText: 'E2E Vínculo — Abuelo' });
+        await grandparentCard.locator('[data-tree-change-trigger]').click();
+        await page.waitForSelector('#tree-change-trigger-select');
+        const grandparentOptions = await page.locator('#tree-change-trigger-select option').allTextContents();
+        expect(grandparentOptions).not.toContain('E2E Vínculo — Nieto Huérfano');
+        await page.click('#tree-change-trigger-cancel-btn');
+
+        // Quitar el vínculo (volver a "— Ninguno —") deja al riesgo como raíz otra vez.
+        await orphanCard.locator('[data-tree-change-trigger]').click();
+        await page.waitForSelector('#tree-change-trigger-select');
+        const [clearRes] = await Promise.all([
+            page.waitForResponse((r) => r.url().includes('/api/register/') && r.request().method() === 'PUT', {
+                timeout: 10000,
+            }),
+            (async () => {
+                await page.selectOption('#tree-change-trigger-select', '');
+                await page.click('#tree-change-trigger-save-btn');
+            })(),
+        ]);
+        const clearBody = await clearRes.json();
+        expect(clearBody.entry.triggeredByRiskName).toBeNull();
+        await page.waitForTimeout(300);
+        await expect(parentLi.locator('.risk-tree-card', { hasText: 'E2E Vínculo — Nieto Huérfano' })).toHaveCount(0);
+    });
 });
