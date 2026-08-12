@@ -1307,6 +1307,72 @@ test('evaluateTreatmentStrategies: la Fiabilidad SÍ puede cambiar cuál estrate
     assert.strictEqual(result.recommendation.netBenefit, 50000);
 });
 
+test('evaluateTreatmentStrategies: Transferir con deducible/cobertura ilimitada capturados pero SIN annualLosses queda "no calculable" (bug real corregido, no un $0 falso)', () => {
+    // Bug real reportado por el usuario: la página de Tratamiento (standalone, sin los 10,000
+    // escenarios de la simulación — el Registro solo persiste un histograma) mostraba "Pérdida
+    // Evitada: $0.00" para una póliza con deducible bajo y cobertura ILIMITADA, como si esa
+    // cobertura de verdad no ahorrara nada — un resultado matemáticamente imposible, no la
+    // ausencia de un dato. Ahora ese caso se distingue explícitamente: cost/reliability/delayDays
+    // siguen presentes (para mostrar la prima igual), pero residualALE/avoidedLoss/netBenefit
+    // quedan en null y el veredicto explica por qué, en vez de fingir un cálculo real.
+    const fmt = (n) => `$${n}`;
+    const result = evaluateTreatmentStrategies(
+        {
+            currentALE: 100000,
+            annualLosses: null, // riesgo cargado desde el Registro, no recién simulado
+            mitigar: { cost: 0, reductionPercent: 0, reliability: 'media', delayDays: 0 },
+            transferir: {
+                premium: 5000,
+                deductible: 1000,
+                limit: 0,
+                unlimited: true,
+                reliability: 'media',
+                delayDays: 0,
+            },
+            evitar: { cost: 0, reliability: 'alta', delayDays: 0 },
+        },
+        fmt,
+    );
+    assert.strictEqual(result.transferir.cost, 5000);
+    assert.strictEqual(result.transferir.residualALE, null);
+    assert.strictEqual(result.transferir.avoidedLoss, null);
+    assert.strictEqual(result.transferir.netBenefit, null);
+    assert.strictEqual(result.transferir.verdict.verdict, 'sin_datos');
+    assert.match(result.transferir.verdict.message, /no se puede calcular/i);
+    // Con solo Transferir teniendo costo capturado (y ahora excluido de la comparación por ser
+    // "no calculable"), no queda ninguna estrategia activa comparable — cae a Aceptar, NO a
+    // "transferir" con un beneficio neto null pasando como si fuera 0 (ver el fix del filtro de
+    // activeStrategies, donde `null > numero_negativo` coercionaba a `true` en JS).
+    assert.strictEqual(result.recommendation.strategy, 'aceptar');
+});
+
+test('evaluateTreatmentStrategies: Transferir SIN ningún término de seguro capturado sigue dando avoidedLoss=$0 real (no "no calculable")', () => {
+    // Distingue el caso de arriba: sin deducible/límite/sin-límite, no hay nada que evaluar —
+    // avoidedLoss=$0 es la respuesta REAL (no se modeló ningún seguro), no un hueco de datos.
+    const fmt = (n) => `$${n}`;
+    const result = evaluateTreatmentStrategies(
+        {
+            currentALE: 100000,
+            annualLosses: null,
+            mitigar: { cost: 0, reductionPercent: 0, reliability: 'media', delayDays: 0 },
+            transferir: {
+                premium: 5000,
+                deductible: 0,
+                limit: 0,
+                unlimited: false,
+                reliability: 'media',
+                delayDays: 0,
+            },
+            evitar: { cost: 0, reliability: 'alta', delayDays: 0 },
+        },
+        fmt,
+    );
+    assert.strictEqual(result.transferir.residualALE, 100000);
+    assert.strictEqual(result.transferir.avoidedLoss, 0);
+    assert.strictEqual(result.transferir.netBenefit, -5000);
+    assert.strictEqual(result.transferir.verdict.verdict, 'no_conviene');
+});
+
 test('evaluateMitigarConTransferir: sin annualLosses, transferir queda siempre dominado por aceptar (el seguro no reduce nada sin datos de pólizas simuladas)', () => {
     // Sin annualLosses no hay con qué calcular cuánto reduce la póliza (canCalculateInsurance =
     // false) — el residual "retenido" se trata igual que si nunca se transfiriera, así que

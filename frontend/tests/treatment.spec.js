@@ -188,6 +188,43 @@ test.describe('Tratamiento del Riesgo (página aparte)', () => {
         expect(entry.mitigar.controls).toEqual([]);
     });
 
+    test('Transferir con deducible/cobertura ilimitada muestra "No calculable" en vez de un $0.00 falso (bug real corregido)', async ({
+        page,
+    }) => {
+        // La página de Tratamiento (standalone) nunca manda los 10,000 escenarios crudos de la
+        // simulación (el Registro solo persiste un histograma de 20 barras) — antes, capturar un
+        // deducible bajo + cobertura ilimitada mostraba "Pérdida Evitada: $0.00" como si esa
+        // póliza de verdad no ahorrara nada, un resultado matemáticamente imposible. Ahora debe
+        // mostrar explícitamente que no se puede calcular, en vez de fingir un cálculo real.
+        await connectAndBoot(page);
+        await runFullFairAnalysis(page, 'E2E Tratamiento — Seguro Ilimitado');
+
+        await page.click('#nav-treatment');
+        await page.waitForTimeout(500);
+        await page.selectOption('#treatment-risk-select', 'E2E Tratamiento — Seguro Ilimitado');
+        await page.waitForTimeout(500);
+
+        await page.fill('#fair-seguro-prima', '5000');
+        await page.fill('#fair-seguro-deducible', '1000');
+        await page.check('#fair-seguro-sin-limite');
+        await page.waitForTimeout(1000);
+
+        await expect(page.locator('#fair-seguro-residual')).toHaveText('No calculable');
+        await expect(page.locator('#fair-seguro-evitada')).toHaveText('No calculable');
+        await expect(page.locator('#fair-seguro-beneficio')).toHaveText('No calculable');
+        await expect(page.locator('#fair-seguro-verdict')).toContainText('no se puede calcular');
+        await expect(page.locator('#fair-seguro-verdict')).not.toContainText('NO conviene');
+
+        // Sin ningún término de seguro capturado (deducible/límite/sin-límite en 0/false), la
+        // Pérdida Evitada de $0.00 SÍ es una respuesta real (no se modeló ningún seguro) — no
+        // debe mostrar "No calculable" en ese caso.
+        await page.uncheck('#fair-seguro-sin-limite');
+        await page.fill('#fair-seguro-deducible', '0');
+        await page.waitForTimeout(1000);
+        await expect(page.locator('#fair-seguro-evitada')).toHaveText('$0.00');
+        await expect(page.locator('#fair-seguro-verdict')).toContainText('NO conviene');
+    });
+
     test('"Adoptar esta estrategia" persiste la Decisión de Tratamiento y sobrevive a re-simular el mismo riesgo', async ({
         page,
     }) => {

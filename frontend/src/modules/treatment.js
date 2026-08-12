@@ -534,11 +534,28 @@ export const Treatment = {
         this.renderInvestmentVerdict('fair-roi-rosi', 'fair-mitigar-verdict', result.mitigar.verdict);
 
         document.getElementById('fair-seguro-costo').textContent = formatCurrency(result.transferir.cost);
-        document.getElementById('fair-seguro-residual').textContent = formatCurrency(result.transferir.residualALE);
-        document.getElementById('fair-seguro-evitada').textContent = formatCurrency(result.transferir.avoidedLoss);
+        // residualALE/avoidedLoss/netBenefit son null cuando hay deducible/límite capturado pero
+        // no se puede calcular sin los 10,000 escenarios de la simulación (ver el comentario
+        // "Bug real corregido" junto a transferirCalculable en evaluateTreatmentStrategies,
+        // backend) — "No calculable" en vez de un "$0.00" que parecería una respuesta real.
+        const transferirCalculable = result.transferir.residualALE !== null;
+        document.getElementById('fair-seguro-residual').textContent = transferirCalculable
+            ? formatCurrency(result.transferir.residualALE)
+            : 'No calculable';
+        document.getElementById('fair-seguro-evitada').textContent = transferirCalculable
+            ? formatCurrency(result.transferir.avoidedLoss)
+            : 'No calculable';
         const seguroEl = document.getElementById('fair-seguro-beneficio');
-        seguroEl.textContent = formatCurrency(result.transferir.netBenefit);
-        seguroEl.className = `font-bold ${result.transferir.netBenefit > 0 ? 'text-green-700' : result.transferir.netBenefit < 0 ? 'text-red-700' : 'text-gray-800'}`;
+        seguroEl.textContent = transferirCalculable ? formatCurrency(result.transferir.netBenefit) : 'No calculable';
+        seguroEl.className = `font-bold ${
+            !transferirCalculable
+                ? 'text-gray-800'
+                : result.transferir.netBenefit > 0
+                  ? 'text-green-700'
+                  : result.transferir.netBenefit < 0
+                    ? 'text-red-700'
+                    : 'text-gray-800'
+        }`;
         this.renderInvestmentVerdict('fair-seguro-rosi', 'fair-seguro-verdict', result.transferir.verdict);
 
         document.getElementById('fair-evitar-costo-display').textContent = formatCurrency(result.evitar.cost);
