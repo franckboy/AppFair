@@ -282,13 +282,19 @@ export const FairExport = {
                             borderColor: '#B22222',
                             backgroundColor: '#B22222',
                             yAxisID: 'y1',
-                            tension: 0.1,
+                            // Mismo fix que App.FairRegister.renderParetoChart: con tension > 0,
+                            // una meseta cerca del 100% hacía que la curva Bezier sobrepasara
+                            // visualmente el borde superior del cuadro.
+                            tension: 0,
                         },
                     ],
                 },
                 options: {
                     responsive: false,
                     animation: false,
+                    // Mismo motivo que App.FairRegister.renderParetoChart: el punto más alto cae
+                    // justo en el borde superior del área de dibujo (max:100 del eje y1).
+                    layout: { padding: { top: 10 } },
                     scales: {
                         y: {
                             position: 'left',
