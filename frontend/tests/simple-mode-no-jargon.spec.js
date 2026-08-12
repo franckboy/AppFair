@@ -35,7 +35,15 @@ async function assertNoJargon(page, pageLabel, { containerSelector = 'body', exc
             restore.forEach(([el, prevDisplay]) => {
                 el.style.display = prevDisplay;
             });
-            return captured;
+            // Bug real corregido: innerText NUNCA incluye el contenido de atributos title=
+            // (tooltips de los íconos ⓘ) — un tooltip con jerga cruda podía quedar invisible a
+            // esta prueba aunque la página que lo contiene sí esté en el alcance de arriba. Se
+            // concatenan los title= de TODOS los elementos del contenedor (visibles o no, para no
+            // depender de las mismas exclusiones de arriba) al texto ya capturado.
+            const titles = Array.from(container.querySelectorAll('[title]'))
+                .map((el) => el.getAttribute('title'))
+                .join(' ');
+            return `${captured} ${titles}`;
         },
         { containerSelector, excludeSelectors },
     );

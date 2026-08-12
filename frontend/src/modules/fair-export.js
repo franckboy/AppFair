@@ -2,6 +2,7 @@ import { App } from './app-namespace.js';
 import { state } from './state.js';
 import { Modal } from './modal.js';
 import { LOSS_FORMS_KEYS, LOSS_FORM_LABELS, classifyPointSeverity, sanitizeHTML, severityToHex } from './utils.js';
+import { STRATEGY_LABELS } from './treatment.js';
 
 // ============================================================
 // App.FairExport — arma el HTML imprimible y dispara window.print() para el Informe
@@ -443,6 +444,17 @@ export const FairExport = {
                     ${r.p90 != null ? `<tr><td>Peor 10% de los casos (P90)</td><td>> ${fmt(r.p90)}</td></tr>` : ''}
                     <tr><td>CVaR 95% (Expected Shortfall)</td><td>${fmt(r.cvar95)}</td></tr>
                 </table>
+                ${
+                    r.inherentALE != null
+                        ? `
+                <h3>Riesgo Inherente (sin ningún control, Vulnerabilidad 100%)</h3>
+                <table>
+                    <tr><td>Pérdida Anual Promedio Inherente</td><td>${fmt(r.inherentALE)}</td></tr>
+                    ${r.inherentCVaR != null ? `<tr><td>CVaR 95% Inherente</td><td>${fmt(r.inherentCVaR)}</td></tr>` : ''}
+                    <tr><td>Reducción lograda por los controles actuales</td><td>${r.inherentALE > 0 ? `${Math.round((1 - r.ale / r.inherentALE) * 100)}%` : '—'}</td></tr>
+                </table>`
+                        : ''
+                }
                 ${chartImg ? `<img src="${chartImg}" alt="Distribución de Pérdida Anual" style="max-width:100%; height:auto; display:block;">` : ''}
                 <h3>Evaluación del Riesgo (contra Criterios de Riesgo definidos)</h3>
                 <table>
@@ -461,6 +473,14 @@ export const FairExport = {
                         .join('')}
                 </table>
                 <h3>Comparación de Estrategias de Tratamiento (ISO 31000 / Broder, 1984)</h3>
+                ${
+                    r.riskType === 'oportunidad'
+                        ? ''
+                        : r.treatmentDecision
+                          ? `
+                <p style="margin-bottom:8px;"><strong>Decisión de Tratamiento adoptada: ${STRATEGY_LABELS[r.treatmentDecision.strategy] || r.treatmentDecision.strategy}</strong> — Pérdida Residual: ${fmt(r.treatmentDecision.residualALE)}${r.treatmentDecision.residualCVaR != null ? ` (CVaR95: ${fmt(r.treatmentDecision.residualCVaR)})` : ''}, decidida el ${r.treatmentDecision.decidedAt ? new Date(r.treatmentDecision.decidedAt).toLocaleDateString('es-MX') : '—'}.</p>`
+                          : `<p style="margin-bottom:8px;">Sin ninguna estrategia de tratamiento adoptada todavía — la tabla de abajo es una comparación teórica de las 4 opciones, no una decisión tomada.</p>`
+                }
                 ${treatmentHTML}
             </div>`;
     },

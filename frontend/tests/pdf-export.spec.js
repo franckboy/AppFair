@@ -11,6 +11,18 @@ test.describe('Informe Consolidado (PDF único)', () => {
         await connectAndBoot(page);
         await runFullFairAnalysis(page, 'E2E — Incendio en Almacén Central');
 
+        // Adopta una Decisión de Tratamiento — el PDF debe mostrarla en vez de solo la
+        // comparación teórica de las 4 estrategias (ver el hallazgo de la auditoría que motivó
+        // esto: el reporte guardaba treatmentDecision pero nunca lo mostraba).
+        await page.click('#nav-treatment');
+        await page.waitForTimeout(500);
+        await page.selectOption('#treatment-risk-select', 'E2E — Incendio en Almacén Central');
+        await page.waitForTimeout(500);
+        await page.fill('#fair-costoControlAnual', '2000');
+        await page.waitForTimeout(600);
+        await page.click('#treatment-adopt-mitigar-btn');
+        await page.waitForTimeout(800);
+
         await page.click('#nav-fair');
         await page.waitForTimeout(500);
         await expect(page.locator('#fair-export-consolidated-btn')).toBeVisible();
@@ -39,6 +51,16 @@ test.describe('Informe Consolidado (PDF único)', () => {
         expect(reportHTML).toContain('Resultados de la Simulación Monte Carlo');
         expect(reportHTML).toContain('Análisis de Sensibilidad');
         expect(reportHTML).toContain('Comparación de Estrategias de Tratamiento');
+
+        // Riesgo Inherente: se calcula automáticamente en CADA simulación de una Amenaza (ver
+        // POST /api/simulate, calculateInherentRiskFromSimulation) — debe aparecer en el reporte,
+        // no solo en pantalla (Registro de Riesgos).
+        expect(reportHTML).toContain('Riesgo Inherente (sin ningún control');
+
+        // Decisión de Tratamiento REAL adoptada arriba — el reporte debe decir cuál se adoptó,
+        // no solo mostrar la comparación teórica de las 4 estrategias.
+        expect(reportHTML).toContain('Decisión de Tratamiento adoptada');
+        expect(reportHTML).toContain('Mitigar');
 
         // REGRESIÓN: los gráficos (mapa de calor, Pareto, histograma del riesgo) se exportaban
         // en blanco cuando se exportaba SIN haber visitado antes "Registro de Riesgos" en la

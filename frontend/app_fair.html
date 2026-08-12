@@ -731,7 +731,7 @@
                                     <div class="input-group">
                                         <label for="fair-mitigar-defensa-objetivo">
                                             <span id="fair-mitigar-defensa-objetivo-label">Nivel de Defensa Objetivo con este Control</span>
-                                            <i class="fas fa-info-circle text-blue-500 cursor-pointer ml-1" title="A qué nivel de defensa subirías con este control. La Reducción de ALE se calcula sola comparando tu nivel actual contra este objetivo."></i>
+                                            <i id="fair-mitigar-defensa-objetivo-info" class="fas fa-info-circle text-blue-500 cursor-pointer ml-1" title="A qué nivel de defensa subirías con este control. La Reducción de ALE se calcula sola comparando tu nivel actual contra este objetivo."></i>
                                         </label>
                                         <select id="fair-mitigar-defensa-objetivo" class="form-select">
                                             <option value="basica">Básica</option>
@@ -911,7 +911,7 @@
                         <div id="riskmgmt-portfolio-section" class="p-4 rounded-lg mb-4 border-l-4 hidden">
                             <h4 class="font-semibold mb-1">
                                 Riesgo Residual del Portafolio
-                                <i class="fas fa-info-circle text-blue-500 cursor-pointer ml-1" title="Suma del ALE/CVaR95 VIGENTE de cada Amenaza del Registro: el residual de su decisión de Tratamiento si ya se adoptó una estrategia, o el ACTUAL (con el Nivel de Defensa vigente) si todavía no. También muestra el waterfall completo — Riesgo Inherente (sin ningún control) → Actual → Residual — y la Efectividad de Controles en dólares reales. El CVaR95 total es una cota conservadora (nunca subestima) — sumar los CVaR95 de riesgos independientes no es matemáticamente exacto."></i>
+                                <i id="riskmgmt-portfolio-info" class="fas fa-info-circle text-blue-500 cursor-pointer ml-1" title="Suma del ALE/CVaR95 VIGENTE de cada Amenaza del Registro: el residual de su decisión de Tratamiento si ya se adoptó una estrategia, o el ACTUAL (con el Nivel de Defensa vigente) si todavía no. También muestra el waterfall completo — Riesgo Inherente (sin ningún control) → Actual → Residual — y la Efectividad de Controles en dólares reales. El CVaR95 total es una cota conservadora (nunca subestima) — sumar los CVaR95 de riesgos independientes no es matemáticamente exacto."></i>
                             </h4>
                             <p id="riskmgmt-portfolio-detail" class="text-sm mb-1"></p>
                             <p id="riskmgmt-portfolio-waterfall" class="text-sm mb-1 hidden"></p>
@@ -929,7 +929,7 @@
                         <div id="riskmgmt-residual-pareto-section" class="p-4 rounded-lg mb-4 border bg-gray-50 hidden">
                             <h4 class="font-semibold mb-1">
                                 <span id="riskmgmt-residual-pareto-title">Concentración del Riesgo Residual (Pareto)</span>
-                                <i class="fas fa-info-circle text-blue-500 cursor-pointer ml-1" title="A diferencia del Pareto de Registro de Riesgos (sobre el ALE ACTUAL, antes de decidir nada), este ordena por el ALE RESIDUAL vigente de cada Amenaza — útil para notar una estrategia ya adoptada que resultó insuficiente, o qué riesgo sin tratar es ahora el más urgente."></i>
+                                <i id="riskmgmt-residual-pareto-info" class="fas fa-info-circle text-blue-500 cursor-pointer ml-1" title="A diferencia del Pareto de Registro de Riesgos (sobre el ALE ACTUAL, antes de decidir nada), este ordena por el ALE RESIDUAL vigente de cada Amenaza — útil para notar una estrategia ya adoptada que resultó insuficiente, o qué riesgo sin tratar es ahora el más urgente."></i>
                             </h4>
                             <p id="riskmgmt-residual-pareto-summary" class="text-sm mb-2"></p>
                             <div class="overflow-x-auto">

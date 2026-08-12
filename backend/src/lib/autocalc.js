@@ -112,6 +112,21 @@ function sampleVulnerabilityFromProfiles(attackerProfile, defenseProfile, confid
     };
 }
 
+/** Resume un arreglo de muestras de Vulnerabilidad (0-100) como {min, mode, max} (percentiles
+ * 10/50/90) — factorizado de summarizeVulnerabilitySamples para que calculateReduccionALEFromProfiles
+ * (que arma sus muestras con pairedVulnerabilitySample, no con un sampler+rng compartido) pueda
+ * reusar exactamente el mismo cálculo de percentiles sin duplicarlo. */
+function summarizePercentiles(samples) {
+    const sorted = [...samples].sort((a, b) => a - b);
+    const n = sorted.length;
+    const percentile = (p) => sorted[Math.min(n - 1, Math.floor((p / 100) * n))];
+    return {
+        min: Math.round(Math.max(0, percentile(10))),
+        mode: Math.round(Math.min(100, Math.max(0, percentile(50)))),
+        max: Math.round(Math.min(100, percentile(90))),
+    };
+}
+
 /**
  * Corre un sampler (ver sampleVulnerabilityFromProfiles) muchas veces y resume el resultado
  * como {min, mode, max} en escala 0-100 (percentiles 10/50/90) — mismo shape que devolvía la
@@ -127,13 +142,84 @@ function summarizeVulnerabilitySamples(sampler, iterations = 2000, rng = Math.ra
     for (let i = 0; i < iterations; i++) {
         samples[i] = sampler(rng) * 100;
     }
-    samples.sort((a, b) => a - b);
-    const percentile = (p) => samples[Math.min(iterations - 1, Math.floor((p / 100) * iterations))];
-    return {
-        min: Math.round(Math.max(0, percentile(10))),
-        mode: Math.round(Math.min(100, Math.max(0, percentile(50)))),
-        max: Math.round(Math.min(100, percentile(90))),
+    return summarizePercentiles(samples);
+}
+
+// Sufijos que distinguen los 3 streams de rng independientes por iteración dentro de
+// pairedVulnerabilitySample (ver ahí el porqué) — cualquier entero distinto sirve, son solo
+// "sales" para que deriveIterationSeed no le dé el mismo seed a dos roles distintos.
+const ROLE_TCAP = 0x1;
+const ROLE_RS = 0x2;
+const ROLE_ESCALATION = 0x3;
+
+/** Deriva un entero de 32 bits determinista a partir de (semilla base, índice de iteración, rol)
+ * — mezcla estilo Thomas Wang/Murmur (mismo estilo Math.imul-based que ya usa mulberry32 en
+ * random.js), para que los 3 streams por iteración (TCap/RS/Escalada) no quedaron accidentalmente
+ * correlacionados entre sí por compartir una fórmula lineal simple. */
+function deriveIterationSeed(baseSeed, iteration, roleSalt) {
+    let h = (baseSeed ^ Math.imul(iteration + 1, 0x9e3779b1) ^ roleSalt) >>> 0;
+    h = Math.imul(h ^ (h >>> 16), 0x45d9f3b) >>> 0;
+    h = Math.imul(h ^ (h >>> 16), 0x45d9f3b) >>> 0;
+    return (h ^ (h >>> 16)) >>> 0;
+}
+
+/**
+ * Una iteración de Vulnerabilidad (ver sampleVulnerabilityFromProfiles) para la comparación de
+ * calculateReduccionALEFromProfiles — misma lógica exacta (TCap/RS independientes + escalada no
+ * determinista + Tullock), pero con streams de rng INDEPENDIENTES por rol (TCap/RS/Escalada),
+ * sembrados por (semilla, iteración, rol) en vez de un solo `rng` consumido secuencialmente.
+ *
+ * Por qué hace falta: "números aleatorios comunes" (comparar Defensa actual vs. objetivo con la
+ * misma secuencia de aleatoriedad, para que el ruido de muestreo se cancele) solo funciona si
+ * ambas corridas consumen esa secuencia EN EL MISMO ORDEN. Pero getPertRandom usa rejection
+ * sampling (Marsaglia-Tsang, ver sampleGamma en random.js), que consume un número VARIABLE de
+ * tiradas según los parámetros de forma (alpha/beta) — que dependen de defenseScore, distinto
+ * entre el perfil actual y el objetivo. Con un solo rng compartido, la primera vez que el número
+ * de tiradas difiere entre las dos corridas (ya desde la primera iteración) desincroniza TODO lo
+ * que sigue, reintroduciendo el ruido que la técnica pretendía cancelar.
+ *
+ * Dándole a cada rol su PROPIO stream, sembrado por posición (semilla, iteración, rol) — no por
+ * posición dentro de una secuencia compartida — TCap sale IDÉNTICO en ambas corridas (mismo
+ * atacante, mismo seed, mismos parámetros → misma ejecución determinista de sampleGamma/sampleBeta
+ * sin importar qué consumió RS antes o después). RS arranca del mismo punto de partida (mismo
+ * seed) en ambas corridas aunque sus propios parámetros difieran (y por lo tanto también su
+ * número de tiradas de rechazo) — sigue sin ser una cancelación perfecta de RS (eso exigiría
+ * parámetros idénticos, lo que anularía la comparación), pero es la mejor aproximación disponible
+ * a números aleatorios comunes sin reescribir sampleGamma para no usar rejection sampling.
+ *
+ * @param {Object} attackerProfile
+ * @param {Object} defenseProfile
+ * @param {'alto'|'medio'|'bajo'} confidence
+ * @param {number} baseSeed
+ * @param {number} iteration
+ * @returns {number} decimal en [0,1] — misma Vulnerabilidad de una iteración que devolvería el
+ *   sampler de sampleVulnerabilityFromProfiles.
+ */
+function pairedVulnerabilitySample(attackerProfile, defenseProfile, confidence, baseSeed, iteration) {
+    const attackerScore = calculateProfileAverage(attackerProfile);
+    const defenseScore = calculateProfileAverage(defenseProfile);
+    const spread = getConfidenceSpread(confidence);
+    const tcap = {
+        min: attackerScore * spread.min,
+        mode: attackerScore,
+        max: Math.min(100, attackerScore * spread.max),
     };
+    const rs = { min: defenseScore * spread.min, mode: defenseScore, max: Math.min(100, defenseScore * spread.max) };
+    const persistence = attackerProfile.persistence || 0;
+
+    const tcapRng = mulberry32(deriveIterationSeed(baseSeed, iteration, ROLE_TCAP));
+    const rsRng = mulberry32(deriveIterationSeed(baseSeed, iteration, ROLE_RS));
+    const escRng = mulberry32(deriveIterationSeed(baseSeed, iteration, ROLE_ESCALATION));
+
+    const tcapSample = getPertRandom(tcap.min, tcap.mode, tcap.max, 4, tcapRng);
+    const rsSample = getPertRandom(rs.min, rs.mode, rs.max, 4, rsRng);
+
+    let effectiveTcap = tcapSample;
+    if (rsSample > tcapSample && escRng() < persistence / 100) {
+        effectiveTcap = Math.min(100, tcapSample * (1 + escRng() * MAX_ESCALATION));
+    }
+
+    return tullockSuccessProbability(effectiveTcap, rsSample);
 }
 
 /**
@@ -168,22 +254,25 @@ function calculateLossMagnitudeRange(mode, confidence) {
  * @param {'alto'|'medio'|'bajo'} confidence
  */
 function calculateReduccionALEFromProfiles(attackerProfile, currentDefenseProfile, targetDefenseProfile, confidence) {
-    // "Números aleatorios comunes": las dos corridas comparten la MISMA semilla, así que
-    // cualquier ruido de muestreo se cancela simétricamente entre ellas — sin esto, comparar dos
-    // corridas con Math.random() independiente podía dar una reducción falsa (positiva o
-    // negativa) incluso con el mismo Nivel de Defensa en los dos lados, por puro ruido
-    // estadístico, no porque de verdad hubiera una diferencia.
+    // "Números aleatorios comunes" de verdad: cada iteración i usa streams de rng
+    // INDEPENDIENTES por rol (ver pairedVulnerabilitySample), sembrados por (semilla, i, rol) en
+    // vez de compartir una sola secuencia consumida en orden — necesario porque getPertRandom usa
+    // rejection sampling, que consume un número variable de tiradas según alpha/beta (distintos
+    // entre el perfil de defensa actual y el objetivo); con un solo rng compartido eso
+    // desincronizaba las dos corridas desde la primera iteración, reintroduciendo el ruido que la
+    // técnica pretendía cancelar (ver el comentario completo en pairedVulnerabilitySample).
     const COMPARISON_SEED = 20260810;
-    const currentSummary = summarizeVulnerabilitySamples(
-        sampleVulnerabilityFromProfiles(attackerProfile, currentDefenseProfile, confidence),
-        2000,
-        mulberry32(COMPARISON_SEED),
-    );
-    const targetSummary = summarizeVulnerabilitySamples(
-        sampleVulnerabilityFromProfiles(attackerProfile, targetDefenseProfile, confidence),
-        2000,
-        mulberry32(COMPARISON_SEED),
-    );
+    const COMPARISON_ITERATIONS = 2000;
+    const currentSamples = new Array(COMPARISON_ITERATIONS);
+    const targetSamples = new Array(COMPARISON_ITERATIONS);
+    for (let i = 0; i < COMPARISON_ITERATIONS; i++) {
+        currentSamples[i] =
+            pairedVulnerabilitySample(attackerProfile, currentDefenseProfile, confidence, COMPARISON_SEED, i) * 100;
+        targetSamples[i] =
+            pairedVulnerabilitySample(attackerProfile, targetDefenseProfile, confidence, COMPARISON_SEED, i) * 100;
+    }
+    const currentSummary = summarizePercentiles(currentSamples);
+    const targetSummary = summarizePercentiles(targetSamples);
     if (currentSummary.mode <= 0) return { currentSummary, targetSummary, reductionPercent: 0 };
     const reduccion = Math.round((1 - targetSummary.mode / currentSummary.mode) * 100);
     return { currentSummary, targetSummary, reductionPercent: Math.max(0, Math.min(100, reduccion)) };
@@ -293,6 +382,7 @@ module.exports = {
     tullockSuccessProbability,
     sampleVulnerabilityFromProfiles,
     summarizeVulnerabilitySamples,
+    pairedVulnerabilitySample,
     calculateLossMagnitudeRange,
     calculateReduccionALEFromProfiles,
     calculateResidualFromSimulation,

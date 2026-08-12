@@ -122,4 +122,57 @@ test.describe('Árbol de Riesgos en Cascada', () => {
         expect(membersText).toContain('E2E Familia — Hijo');
         await expect(page.locator('#risk-tree-family-sim-ale')).not.toHaveText('');
     });
+
+    test('Simular Familia: una respuesta de red vieja de OTRO riesgo que llega TARDE no pisa el resultado del riesgo recién pedido (condición de carrera)', async ({
+        page,
+    }) => {
+        // Regresión: si el usuario pide "Simular Familia" para un riesgo, y ANTES de que llegue
+        // la respuesta abre el detalle de OTRO riesgo y también pide "Simular Familia", no hay
+        // garantía de que las respuestas HTTP lleguen en el orden en que se pidieron — mismo
+        // patrón que autocalc-race-condition.spec.js, aplicado a simulateFamily
+        // (risk-cascade-tree.js).
+        await connectAndBoot(page);
+        await runFullFairAnalysis(page, 'E2E Familia — Carrera A');
+        await connectAndBoot(page); // página fresca, evita el modal de "Nuevo Análisis"
+        await runFullFairAnalysis(page, 'E2E Familia — Carrera B');
+
+        await page.click('#nav-risk-tree');
+        await page.waitForSelector('#risk-cascade-tree-container');
+        await page.waitForTimeout(300);
+
+        // La petición de "Carrera A" se demora artificialmente 1.5s — tiempo de sobra para que la
+        // de "Carrera B" (pedida después, sin demora) responda primero.
+        await page.route('**/simulate-family', async (route) => {
+            if (route.request().url().includes(encodeURIComponent('E2E Familia — Carrera A'))) {
+                await new Promise((resolve) => setTimeout(resolve, 1500));
+            }
+            await route.continue();
+        });
+
+        await page.locator('.risk-tree-card', { hasText: 'E2E Familia — Carrera A' }).click();
+        await page.waitForSelector('#risktree-detail-simulate-family-btn');
+        await page.click('#risktree-detail-simulate-family-btn'); // dispara la petición demorada de A, sin esperar
+        await page.waitForTimeout(50); // la petición de A ya salió (y quedó demorada)
+
+        await page.locator('.risk-tree-card', { hasText: 'E2E Familia — Carrera B' }).click();
+        await page.waitForSelector('#risktree-detail-simulate-family-btn');
+        await Promise.all([
+            page.waitForResponse(
+                (r) =>
+                    r.url().includes('/simulate-family') &&
+                    r.url().includes(encodeURIComponent('E2E Familia — Carrera B')),
+                { timeout: 15000 },
+            ),
+            page.click('#risktree-detail-simulate-family-btn'),
+        ]);
+        await expect(page.locator('#risk-tree-family-sim-body')).toBeVisible({ timeout: 15000 });
+
+        // Espera a que la respuesta demorada de A también haya tenido tiempo de llegar — sin el
+        // guardián, pisaría en silencio los datos de B que ya se mostraron correctamente.
+        await page.waitForTimeout(2000);
+
+        const membersText = await page.locator('#risk-tree-family-sim-members').textContent();
+        expect(membersText).toContain('E2E Familia — Carrera B');
+        expect(membersText).not.toContain('E2E Familia — Carrera A');
+    });
 });

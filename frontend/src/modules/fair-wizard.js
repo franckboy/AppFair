@@ -770,10 +770,27 @@ export const FairWizard = {
         document.getElementById('fair-risk-type').value = entry.riskType || 'amenaza';
         this.toggleRiskTypeLabels();
 
-        // El Registro no guarda todavía qué Perfil de Atacante/Defensa se usó (solo el
-        // resultado: los rangos de TEF/Vulnerabilidad) — el selector se queda en su valor
-        // por defecto y su resumen de texto no reflejará el perfil original, pero los
-        // números reales (lo que de verdad alimenta la simulación) sí son los guardados.
+        // Bug real corregido: resetForm(false) de arriba pone estos 8 campos en blanco/default
+        // (Amenaza, Efecto, Horizonte, Fuente/Confianza/Notas de Datos, Perfil de Atacante/
+        // Defensa) y antes NUNCA se volvían a leer de `entry` — si el usuario re-simulaba y
+        // guardaba (el flujo que el propio toast de abajo recomienda), saveToRiskRegister()
+        // los sobreescribía en el backend con esos valores por defecto, borrando en silencio lo
+        // documentado en el análisis original. El Registro SÍ guarda estos campos (ver
+        // backend/src/routes/register.js) — restaurarlos aquí es el mismo criterio que ya sigue
+        // restoreFairAnalysis() (el camino de borrador en localStorage) para los mismos campos.
+        document.getElementById('fair-threat').value = entry.threat && entry.threat !== '—' ? entry.threat : '';
+        document.getElementById('fair-effect').value = entry.effect || 'material';
+        document.getElementById('fair-time-horizon').value = entry.timeHorizon || '1';
+        document.getElementById('fair-data-source').value = entry.dataSource || App.OrgDefaults.defaults.dataSource;
+        document.getElementById('fair-data-confidence').value =
+            entry.dataConfidence || App.OrgDefaults.defaults.dataConfidence;
+        document.getElementById('fair-data-notes').value = entry.dataNotes || '';
+        // attackerKey/defenseKey son necesarios además para que Tratamiento calcule bien la
+        // Reducción de ALE (updateReduccionALEAuto compara el Nivel de Defensa GUARDADO contra
+        // uno objetivo) — dejarlos en su default corrompía ese cálculo en otra página, sin
+        // ninguna señal visible de que el dato de origen ya no correspondía al riesgo real.
+        if (entry.attackerKey) document.getElementById('fair-attacker-profile').value = entry.attackerKey;
+        if (entry.defenseKey) document.getElementById('fair-defense-profile').value = entry.defenseKey;
         this.updateAttackerDefenseSummary();
 
         if (entry.tef) {

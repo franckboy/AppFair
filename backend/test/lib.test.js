@@ -19,6 +19,7 @@ const {
     calculateReduccionALEFromProfiles,
     calculateResidualFromSimulation,
     calculateInherentRiskFromSimulation,
+    pairedVulnerabilitySample,
 } = require('../src/lib/autocalc');
 const { solveNashEquilibrium } = require('../src/lib/nashEquilibrium');
 const {
@@ -748,6 +749,55 @@ test('calculateReduccionALEFromProfiles: mismo objetivo que el actual da 0% exac
     assert.strictEqual(reductionPercent, 0);
 });
 
+// pairedVulnerabilitySample: regresión del bug real de "números aleatorios comunes" (ver el
+// comentario completo en autocalc.js) — antes, comparar Defensa actual vs. objetivo compartía una
+// sola secuencia de rng consumida en orden, pero getPertRandom usa rejection sampling (consume un
+// número VARIABLE de tiradas según alpha/beta) — como alpha/beta de RS dependen de defenseScore
+// (distinto entre actual y objetivo), la primera diferencia en tiradas ya desincronizaba el resto
+// de cada corrida, reintroduciendo el ruido que la técnica pretendía cancelar.
+test('pairedVulnerabilitySample: el componente TCap sale IDÉNTICO entre dos Defensas distintas (mismo atacante/semilla/iteración) — ancla el mecanismo de streams independientes', () => {
+    // Perfiles de Defensa sintéticos que promedian 0 (calculateProfileAverage) pero con FORMA
+    // distinta (2 vs. 3 atributos) — degeneran RS a exactamente 0 en ambos casos (spread.min/max
+    // multiplican 0), así que la Vulnerabilidad resultante (Tullock de TCap vs. RS=0) refleja
+    // PURAMENTE el componente TCap. Si TCap de verdad usa un stream independiente y sembrado por
+    // (semilla, iteración, rol) — no por posición en una secuencia compartida — el resultado debe
+    // ser idéntico sin importar que RS haya sido calculado con parámetros/forma distintos.
+    const attacker = attackerProfiles.organizado;
+    const defenseA = { x: 0, y: 0 };
+    const defenseB = { p: 0, q: 0, r: 0 };
+    for (const iteration of [0, 1, 50, 1999]) {
+        const sampleA = pairedVulnerabilitySample(attacker, defenseA, 'medio', 20260810, iteration);
+        const sampleB = pairedVulnerabilitySample(attacker, defenseB, 'medio', 20260810, iteration);
+        assert.strictEqual(
+            sampleA,
+            sampleB,
+            `iteración ${iteration}: TCap debería ser idéntico sin importar la forma de RS`,
+        );
+    }
+});
+
+test('pairedVulnerabilitySample: es puro y determinista — mismos argumentos dan EXACTO el mismo resultado en llamadas repetidas', () => {
+    const a = pairedVulnerabilitySample(attackerProfiles.organizado, defenseProfiles.basica, 'medio', 20260810, 42);
+    const b = pairedVulnerabilitySample(attackerProfiles.organizado, defenseProfiles.basica, 'medio', 20260810, 42);
+    assert.strictEqual(a, b);
+});
+
+test('calculateReduccionALEFromProfiles: reductionPercent sube de forma monótona al mejorar la Defensa banda por banda (básica < estándar < avanzada < élite)', () => {
+    // Mismo criterio que ya prueba sampleVulnerabilityFromProfiles (ver el test de monotonicidad
+    // de más arriba) — confirma que el mecanismo de números aleatorios comunes corregido produce
+    // resultados consistentes, sin saltos erráticos por ruido residual, en un caso real con las 4
+    // bandas de Defensa (no solo el caso degenerado "mismo objetivo que el actual").
+    const attacker = attackerProfiles['empleado-desleal'];
+    const target = (defense) =>
+        calculateReduccionALEFromProfiles(attacker, defenseProfiles.basica, defense, 'medio').reductionPercent;
+    const rEstandar = target(defenseProfiles.estandar);
+    const rAvanzada = target(defenseProfiles.avanzada);
+    const rElite = target(defenseProfiles.elite);
+    assert.ok(rEstandar <= rAvanzada, `${rEstandar} debería ser <= ${rAvanzada}`);
+    assert.ok(rAvanzada <= rElite, `${rAvanzada} debería ser <= ${rElite}`);
+    assert.ok(rElite > 0, 'esperaba alguna reducción real al pasar de básica a élite');
+});
+
 // calculateResidualFromSimulation: residual REAL de Mitigar (ALE y CVaR), re-simulando con el
 // Nivel de Defensa Objetivo — reemplaza escalar currentALE/currentCVaR por el mismo
 // reductionPercent, aproximación que ya no es exacta con el modelo TCap vs. RS + Tullock (ver el
@@ -1303,6 +1353,34 @@ test('evaluateMitigarConTransferir: con annualLosses, cada rama del residual pue
     assert.strictEqual(result.branches[1].value, 57000);
     // Total = 0.9*90000 + 0.1*57000 = 81000 + 5700 = 86700.
     assert.strictEqual(result.value, 86700);
+});
+
+test('evaluateMitigarConTransferir: usa mitigar.residualALE real (no reductionPercent clampeado a 0) cuando el residual es PEOR que el actual (regresión)', () => {
+    // Regresión del bug real: antes se derivaba aleAfterMitigar de reductionPercent (entero
+    // REDONDEADO y ACOTADO a [0,100]), nunca de mitigar.residualALE — cuando el Nivel de Defensa
+    // Objetivo resulta PEOR que el actual, reductionPercent se acota a 0 y la rama combinada
+    // asumía "sin cambio" (aleAfterMitigar = currentALE) en vez de reflejar el residual real
+    // (150000, peor que los 100000 actuales). Se aísla el efecto con annualLosses=null (misma
+    // técnica que el primer test de este bloque) para que transferir quede siempre dominado por
+    // aceptar y el único efecto medido sea el de aleAfterMitigar/scaleFactor.
+    const result = evaluateMitigarConTransferir({
+        currentALE: 100000,
+        annualLosses: null,
+        mitigar: { cost: 10000, reductionPercent: 0, residualALE: 150000, reliability: 'alta' },
+        transferir: { premium: 5000, reliability: 'alta', deductible: 0, limit: 0, unlimited: false },
+    });
+    // Rama "mitigar funciona" (p=0.9, baseALE=150000 real): aceptar = 100000-150000-10000 = -60000
+    // (transferir siempre -65000, dominado) → gana aceptar (-60000).
+    // Rama "mitigar falla" (p=0.1, baseALE=100000): aceptar = 100000-100000-10000 = -10000
+    // (transferir siempre -15000, dominado) → gana aceptar (-10000).
+    // Total = 0.9*(-60000) + 0.1*(-10000) = -54000 - 1000 = -55000. Con el bug (aleAfterMitigar
+    // congelado en 100000 por el clamp de reductionPercent), el resultado hubiera sido -10000 —
+    // una diferencia de 45000, ocultando por completo el deterioro real de la defensa.
+    assert.strictEqual(result.branches[0].bestOption, 'aceptar');
+    assert.strictEqual(result.branches[0].value, -60000);
+    assert.strictEqual(result.branches[1].bestOption, 'aceptar');
+    assert.strictEqual(result.branches[1].value, -10000);
+    assert.strictEqual(result.value, -55000);
 });
 
 test('evaluateTreatmentStrategies: NO evalúa la combinación Mitigar+Transferir si falta el costo de cualquiera de las dos', () => {
