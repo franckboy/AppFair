@@ -64,6 +64,10 @@ export const FairRegister = {
             state.fair.riskRegister = state.fair.riskRegister || [];
             state.fair.concentratedRisks = state.fair.concentratedRisks || [];
         }
+        // La barra persistente de riesgo (App.RiskSummaryBar) vive fuera de la página Registro —
+        // se refresca aquí siempre, sin importar `render`, para que quede al día sin importar
+        // por dónde haya entrado el usuario (mismo criterio que populateTriggeredByOptions arriba).
+        App.RiskSummaryBar.render();
         if (render) this.renderRiskRegister();
     },
 

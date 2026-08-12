@@ -115,6 +115,35 @@
             </nav>
         </header>
 
+        <!-- Barra persistente de riesgo: fuera de #fair-wizard-wrapper (persiste a través de
+             TODAS las páginas, no solo Análisis de Riesgo) pero dentro de #main-nav-boot-scope
+             en el sentido de que api.js la oculta junto con el resto de la app mientras el
+             backend no está conectado (ver App.Api.showBootGate/hideBootGate). 3 mosaicos:
+             Riesgo Actual y Riesgo Residual del PORTAFOLIO completo (ya calculados del lado del
+             servidor, ver GET /api/register — App.RiskSummaryBar los toma de
+             state.fair.registerInherentPortfolio/registerResidualPortfolio, sin llamada de red
+             propia) + el riesgo que se está analizando AHORA MISMO en el wizard de FAIR (el ALE
+             de la última simulación corrida en esta sesión, ver state.fair.simulatedALE/
+             lastEvaluation) — oculto si no hay ninguna simulación en curso. Cada mosaico navega
+             a la página correspondiente al hacer clic (ver App.RiskSummaryBar.init). -->
+        <div id="risk-summary-bar" class="hidden grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
+            <div id="risk-summary-actual" class="p-3 rounded-lg border-l-4 shadow-sm cursor-pointer bg-gray-50 border-gray-400 text-gray-700">
+                <p class="text-xs uppercase font-semibold opacity-75">Riesgo Actual (Portafolio)</p>
+                <p id="risk-summary-actual-value" class="text-lg font-bold">—</p>
+                <p id="risk-summary-actual-detail" class="text-xs truncate"></p>
+            </div>
+            <div id="risk-summary-residual" class="p-3 rounded-lg border-l-4 shadow-sm cursor-pointer bg-gray-50 border-gray-400 text-gray-700">
+                <p class="text-xs uppercase font-semibold opacity-75">Riesgo Residual (Portafolio)</p>
+                <p id="risk-summary-residual-value" class="text-lg font-bold">—</p>
+                <p id="risk-summary-residual-detail" class="text-xs truncate"></p>
+            </div>
+            <div id="risk-summary-current" class="hidden p-3 rounded-lg border-l-4 shadow-sm cursor-pointer bg-gray-50 border-gray-400 text-gray-700">
+                <p class="text-xs uppercase font-semibold opacity-75">Estás analizando ahora</p>
+                <p id="risk-summary-current-value" class="text-lg font-bold">—</p>
+                <p id="risk-summary-current-detail" class="text-xs truncate"></p>
+            </div>
+        </div>
+
         <!-- Gate obligatorio de primer uso: bloquea el resto de la app hasta que Contexto
              Organizacional tenga al menos misión o naturaleza del negocio — RIMS RA.1-2015 lo pide
              como paso previo a cualquier apreciación de riesgos, no como una configuración opcional

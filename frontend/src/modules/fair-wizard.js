@@ -1355,12 +1355,14 @@ export const FairWizard = {
             document.getElementById('simulation-results-container').classList.add('hidden');
             document.getElementById('fair-treatment-cta').classList.add('hidden');
             document.getElementById('fair-riskmgmt-cta').classList.add('hidden');
+            state.fair.simulatedALE = 0;
             state.fair.lastAnnualLosses = null;
             state.fair.lastEvaluation = null;
             state.fair.lastSeed = null;
             state.fair.reviewHistory = [];
             localStorage.removeItem('fairLastAnalysis');
             document.getElementById('fair-resume-banner').classList.add('hidden');
+            App.RiskSummaryBar.render();
             if (state.fair.fairResultsChart) {
                 state.fair.fairResultsChart.destroy();
                 state.fair.fairResultsChart = null;
@@ -1558,6 +1560,7 @@ export const FairWizard = {
         state.fair.lastAnnualLosses = annualLosses;
         state.fair.lastEvaluation = evaluation;
         state.fair.lastSeed = result.usedSeed;
+        App.RiskSummaryBar.render();
 
         const currency = 'USD';
         const currencySymbol = '$';
@@ -1897,6 +1900,7 @@ export const FairWizard = {
                         <p class="text-sm mt-1">${data.results.evaluation.justification}</p>
                     `;
                 }
+                App.RiskSummaryBar.render();
 
                 if (data.results.sensitivity) {
                     state.fair.lastSensitivity = data.results.sensitivity;

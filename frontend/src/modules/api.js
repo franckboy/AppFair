@@ -124,7 +124,7 @@ export const Api = {
     showBootGate(message) {
         document.querySelectorAll('.nav-requires-boot').forEach((btn) => (btn.disabled = true));
         document
-            .querySelectorAll('#fairAnalysisPage, #registerPage, #assetsPage')
+            .querySelectorAll('#fairAnalysisPage, #registerPage, #assetsPage, #risk-summary-bar')
             .forEach((el) => el.classList.add('hidden'));
         document.getElementById('boot-gate-message').textContent = message;
         document.getElementById('boot-gate').classList.remove('hidden');
