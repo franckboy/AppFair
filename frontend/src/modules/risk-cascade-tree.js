@@ -393,16 +393,47 @@ export const RiskCascadeTree = {
         this._syncZoomLabel();
     },
 
-    // Colapsa/expande la rama de `riskName` — oculta (o vuelve a mostrar) todos sus
-    // descendientes, calculados con collectReachable sobre las ARISTAS salientes de riskName (ya
-    // no un `childrenOf.get()` de un solo padre por nodo).
+    // Qué nodos deben verse AHORA MISMO, dado el estado de colapso de CADA rama (no solo la que
+    // se acaba de tocar) — un nodo con más de una causa puede seguir siendo alcanzable por un
+    // padre expandido aunque OTRO de sus padres esté colapsado (ej. "Incendio en Bodega" con dos
+    // causas: colapsar solo una de ellas no debe esconderlo, la otra sigue mostrándolo). Recorre
+    // desde las raíces reales + los mismos "puntos de entrada" de ciclos sin raíz externa que ya
+    // usa buildCyElements (esos nunca se ocultan, se muestran siempre con su advertencia), sin
+    // avanzar hacia los hijos de un nodo cuyo `collapsed` esté activo — así un nodo solo queda
+    // fuera de `visible` si TODOS los caminos hacia él pasan por alguna rama colapsada.
+    computeVisibility() {
+        const { nodes, edges } = this.buildGraph();
+        const roots = nodes.filter((n) => !edges.some((e) => e.target === n.id));
+        const reachableFromRoots = this.collectReachable(
+            roots.map((n) => n.id),
+            edges,
+        );
+        const cycleEntryNames = nodes.filter((n) => !reachableFromRoots.has(n.id)).map((n) => n.id);
+        const startNames = [...roots.map((n) => n.id), ...cycleEntryNames];
+
+        const visible = new Set();
+        const stack = [...startNames];
+        while (stack.length) {
+            const name = stack.pop();
+            if (visible.has(name)) continue;
+            visible.add(name);
+            if (this._cy.getElementById(name).data('collapsed')) continue;
+            edges.filter((e) => e.source === name).forEach((e) => stack.push(e.target));
+        }
+        return visible;
+    },
+
+    // Colapsa/expande la rama de `riskName` — persiste el nuevo estado en el propio nodo
+    // (`collapsed`) y recalcula la visibilidad de TODO el grafo con computeVisibility(), no solo
+    // de los descendientes de `riskName`: con múltiples causas, tocar solo esa rama podía
+    // esconder (o volver a mostrar) un nodo que en realidad sigue (o no) dependiendo de OTRO
+    // padre — ver el comentario de computeVisibility.
     //
-    // Todo el estado se escribe en `data()` (`collapsed` en el propio nodo, `hiddenByCollapse` en
-    // sus descendientes y las aristas que los alcanzan) — nunca se parchea el DOM ya pintado.
-    // Motivo real, no preferencia de estilo: cytoscape-node-html-label vuelve a pintar una
-    // tarjeta desde cero (tpl(data), ver cardHtml) cada vez que su nodo dispara un evento
-    // "style"/"data" en Cytoscape — y layout(...).run() dispara justo esos eventos en CUALQUIER
-    // nodo que reposicione, no solo en los que toggleClass tocó a propósito (confirmado leyendo
+    // Todo el estado se escribe en `data()` (`collapsed`/`hiddenByCollapse`) — nunca se parchea
+    // el DOM ya pintado. Motivo real, no preferencia de estilo: cytoscape-node-html-label vuelve
+    // a pintar una tarjeta desde cero (tpl(data), ver cardHtml) cada vez que su nodo dispara un
+    // evento "style"/"data" en Cytoscape — y layout(...).run() dispara justo esos eventos en
+    // CUALQUIER nodo que reposicione, no solo en los que se tocan a propósito (confirmado leyendo
     // su fuente: updateDataOrStyleCyHandler, con su propio setTimeout(fn, 0), reacciona a ambos).
     // Parchear el DOM directamente después de correr el layout es una carrera imposible de ganar
     // de forma confiable (no hay forma de saber cuántas de esas repinturas quedan pendientes ni
@@ -410,17 +441,23 @@ export const RiskCascadeTree = {
     // importar cuándo o por qué se repinte una tarjeta, cardHtml() siempre lee la verdad vigente.
     toggleBranch(riskName, btnEl) {
         if (!this._cy) return;
-        const { edges } = this.buildGraph();
-        const descendants = this.collectReachable([riskName], edges);
-        descendants.delete(riskName);
         const willCollapse = btnEl.getAttribute('aria-expanded') !== 'false';
-
         this._cy.getElementById(riskName).data('collapsed', willCollapse);
+
+        const visible = this.computeVisibility();
         this._cy.nodes().forEach((node) => {
-            if (descendants.has(node.id())) node.data('hiddenByCollapse', willCollapse);
+            node.data('hiddenByCollapse', !visible.has(node.id()));
         });
         this._cy.edges().forEach((edge) => {
-            if (descendants.has(edge.data('target'))) edge.data('hiddenByCollapse', willCollapse);
+            const source = edge.data('source');
+            const target = edge.data('target');
+            // Una arista se oculta si cualquiera de sus dos extremos no es visible, O si su
+            // ORIGEN está colapsado — esto último es lo que evita que "Incendio en Bodega" (ver
+            // arriba) se dibuje con una arista fantasma desde la causa colapsada, aunque el nodo
+            // en sí siga visible por la otra causa.
+            const hidden =
+                !visible.has(source) || !visible.has(target) || this._cy.getElementById(source).data('collapsed');
+            edge.data('hiddenByCollapse', hidden);
         });
 
         // Corre el layout SOLO sobre lo que sigue visible — así los hermanos de la rama

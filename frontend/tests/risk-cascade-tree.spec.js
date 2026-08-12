@@ -270,4 +270,61 @@ test.describe('Árbol de Riesgos en Cascada', () => {
         const orphanEntry = register.risks.find((r) => r.riskName === 'E2E Vínculo — Nieto Huérfano');
         expect(orphanEntry.triggeredBy).toEqual([]);
     });
+
+    test('REGRESIÓN: colapsar UNA de las dos causas de un riesgo no lo esconde si la OTRA sigue expandida', async ({
+        page,
+    }) => {
+        // Bug real: toggleBranch() ocultaba los descendientes de la rama tocada sin fijarse si
+        // ese mismo nodo seguía siendo alcanzable por OTRO padre todavía expandido — con un solo
+        // padre por tarjeta esto no podía pasar nunca, pero con múltiples causas sí. Ver
+        // App.RiskCascadeTree.computeVisibility.
+        await connectAndBoot(page);
+        await runFullFairAnalysis(page, 'E2E Multi-Colapso — Causa A');
+        await connectAndBoot(page);
+        await runFullFairAnalysis(page, 'E2E Multi-Colapso — Causa B');
+        await connectAndBoot(page);
+
+        await page.fill('#fair-riskName', 'E2E Multi-Colapso — Hijo Compartido');
+        await page.click('#fair-triggered-by-add-btn');
+        await page.selectOption(
+            '#fair-triggered-by-body [data-trigger-row]:nth-child(1) [data-field="riskName"]',
+            'E2E Multi-Colapso — Causa A',
+        );
+        await page.click('#fair-triggered-by-add-btn');
+        await page.selectOption(
+            '#fair-triggered-by-body [data-trigger-row]:nth-child(2) [data-field="riskName"]',
+            'E2E Multi-Colapso — Causa B',
+        );
+        await runFullFairAnalysis(page, 'E2E Multi-Colapso — Hijo Compartido');
+
+        await page.click('#nav-risk-tree');
+        await page.waitForSelector('#risk-cascade-tree-container');
+        await page.waitForTimeout(300);
+
+        const causaA = page.locator('.risk-tree-card', { hasText: 'E2E Multi-Colapso — Causa A' });
+        const causaB = page.locator('.risk-tree-card', { hasText: 'E2E Multi-Colapso — Causa B' });
+        const hijo = page.locator('.risk-tree-card', { hasText: 'E2E Multi-Colapso — Hijo Compartido' });
+        await expect(hijo).toBeVisible();
+
+        // Colapsar SOLO "Causa A" — "Hijo Compartido" debe seguir visible por "Causa B".
+        await causaA.locator('[data-tree-toggle]').click();
+        await page.waitForTimeout(300);
+        await expect(hijo).toBeVisible();
+
+        // Colapsar TAMBIÉN "Causa B" — ahora sí, ninguna rama lo mantiene visible.
+        await causaB.locator('[data-tree-toggle]').click();
+        await page.waitForTimeout(300);
+        await expect(hijo).toBeHidden();
+
+        // Expandir SOLO "Causa B" ("Causa A" se queda colapsada) — vuelve a verse igual, porque
+        // basta con que UNA de las dos ramas esté expandida (no hace falta expandir ambas).
+        await causaB.locator('[data-tree-toggle]').click();
+        await page.waitForTimeout(300);
+        await expect(hijo).toBeVisible();
+
+        // Expandir "Causa A" también — sigue visible (las dos ramas expandidas a la vez).
+        await causaA.locator('[data-tree-toggle]').click();
+        await page.waitForTimeout(300);
+        await expect(hijo).toBeVisible();
+    });
 });
