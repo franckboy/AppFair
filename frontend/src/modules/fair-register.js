@@ -14,6 +14,7 @@ import {
     showToast,
     pertMean,
 } from './utils.js';
+import { STRATEGY_LABELS } from './treatment.js';
 
 // ============================================================
 // App.FairRegister — el Registro de Riesgos consolidado: guardar/borrar
@@ -97,6 +98,14 @@ export const FairRegister = {
     // App.FairWizard.openCriteriaOverrideEditor) — mismo mecanismo que ya usa /api/simulate,
     // para que "Riesgo Inherente" se clasifique contra el MISMO criterio que se usó de verdad
     // para evaluar ese riesgo, no siempre el global.
+    //
+    // FALLBACK SOLO PARA RIESGOS LEGADO: para cualquier riesgo simulado después de que
+    // entry.inherentSeverity existiera, computeFairRiskEquivalents prefiere ese valor YA
+    // CALCULADO por el backend (evaluateFairThreat, POST /api/simulate) — este banding manual
+    // solo se usa cuando ese campo no está persistido todavía (riesgos guardados antes de este
+    // cambio). No se elimina porque, a diferencia del backend, esta copia SOLO recibe `ale`
+    // (nunca cvar95) — no puede detectar "Crítico por cola de riesgo", una limitación conocida y
+    // aceptada para el caso legado, no para el camino nuevo.
     classifyAleAgainstCriteria(ale, criteriaOverride = null) {
         const criteria = criteriaOverride
             ? { ...state.config.riskCriteria, ...criteriaOverride }
@@ -158,10 +167,19 @@ export const FairRegister = {
             residualMoney: fmt(entry.ale),
             residualSeverity: entry.severity || null,
             inherentMoney: inherentAle != null ? fmt(inherentAle) : null,
+            // Preferir la clasificación YA CALCULADA por el backend (entry.inherentSeverity, ver
+            // evaluateFairThreat en POST /api/simulate) — bug real corregido: classifyAleAgainstCriteria
+            // reimplementaba este banding a mano, pero solo miraba el ALE, nunca el CVaR95, así
+            // que nunca podía detectar "Crítico por cola de riesgo" (cvar95 > aleCritico aunque
+            // el ale no lo supere). Cae a la copia local SOLO para riesgos guardados antes de que
+            // este campo existiera (con o sin inherentALE real) — mismo criterio de
+            // retrocompatibilidad que el resto de esta función, sin forzar una migración.
             inherentSeverity:
-                inherentAle != null
-                    ? this.classifyAleAgainstCriteria(inherentAle, entry.riskCriteriaOverride || null)
-                    : null,
+                inherentAle == null
+                    ? null
+                    : hasRealInherent && entry.inherentSeverity
+                      ? entry.inherentSeverity
+                      : this.classifyAleAgainstCriteria(inherentAle, entry.riskCriteriaOverride || null),
             controlEffectiveness,
         };
     },
@@ -236,7 +254,7 @@ export const FairRegister = {
     // simulación exitosa (PUT /api/register/:riskName). Idempotente por id/sourceRiskId
     // cuando se conocen (ver findRegisterEntryIndex en el backend) — riskName en la URL es
     // solo el punto de entrada, no la identidad real de la entrada.
-    async saveToRiskRegister(summary, evaluation) {
+    async saveToRiskRegister(summary, evaluation, inherentEvaluation = null) {
         const riskName = document.getElementById('fair-riskName').value.trim();
         if (!riskName) return;
 
@@ -335,6 +353,16 @@ export const FairRegister = {
                     // hereda de existingEntry como sí hace treatmentDecision).
                     inherentALE: summary.inherentALE,
                     inherentCVaR: summary.inherentCVaR,
+                    // Clasificación del Riesgo Inherente, ya calculada por el backend
+                    // (evaluateFairThreat, ver POST /api/simulate) — null para Oportunidad, mismo
+                    // ciclo de vida que inherentALE/inherentCVaR arriba. Reemplaza la copia local
+                    // classifyAleAgainstCriteria (bug real: esa copia solo miraba inherentALE,
+                    // nunca inherentCVaR, así que nunca detectaba "Crítico por cola de riesgo").
+                    inherentEvaluationLevel: inherentEvaluation ? inherentEvaluation.level : null,
+                    inherentEvaluationClasses: inherentEvaluation
+                        ? severityToClasses(inherentEvaluation.severity)
+                        : null,
+                    inherentSeverity: inherentEvaluation ? inherentEvaluation.severity : null,
                     evaluationLevel: evaluation.level,
                     evaluationClasses: severityToClasses(evaluation.severity),
                     // El texto de evaluationLevel no siempre contiene literalmente la
@@ -719,6 +747,29 @@ export const FairRegister = {
             d ? new Date(d).toLocaleDateString('es-MX', { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
         const bodies = ['quick-concentrated-table-body'].map((id) => document.getElementById(id)).filter(Boolean);
 
+        // Filtros por Etapa/Evaluación (selects estáticos, ver el listener en
+        // App.FairWizard.init) — filtran SOLO qué se dibuja, nunca la lista completa
+        // (state.fair.concentratedRisks): item.number ya viene asignado en buildConcentratedList
+        // según la posición en la lista COMPLETA, así que una fila filtrada conserva su mismo
+        // número de siempre en vez de renumerarse — más fácil de ubicar de nuevo al quitar el
+        // filtro. Evaluación no aplica a Triage (sin fairEntry, sin severity todavía) — un
+        // filtro específico los excluye, igual que ya hace evalCell mostrando '—' para ellos.
+        const stageFilter = document.getElementById('quick-concentrated-filter-stage')?.value || '';
+        const evalFilter = document.getElementById('quick-concentrated-filter-eval')?.value || '';
+        const filteredList = list.filter((item) => {
+            if (stageFilter && item.stage !== stageFilter) return false;
+            if (evalFilter && (!item.fairEntry || item.fairEntry.severity !== evalFilter)) return false;
+            return true;
+        });
+
+        const countEl = document.getElementById('quick-concentrated-filter-count');
+        if (countEl) {
+            countEl.textContent =
+                (stageFilter || evalFilter) && list.length > 0
+                    ? `Mostrando ${filteredList.length} de ${list.length}`
+                    : '';
+        }
+
         if (list.length === 0) {
             bodies.forEach((tb) => {
                 tb.innerHTML =
@@ -726,13 +777,32 @@ export const FairRegister = {
             });
             return;
         }
+        if (filteredList.length === 0) {
+            bodies.forEach((tb) => {
+                tb.innerHTML =
+                    '<tr><td colspan="12" class="text-center py-4 text-gray-500">Ningún riesgo coincide con el filtro elegido.</td></tr>';
+            });
+            return;
+        }
 
-        const rowsHTML = list
+        const rowsHTML = filteredList
             .map((item) => {
                 const stageBadge =
                     item.stage === 'fair'
                         ? `<span class="px-2 py-1 rounded text-xs bg-blue-50 text-blue-700 border-l-4 border-blue-500">Analizado (FAIR)</span>`
                         : `<span class="px-2 py-1 rounded text-xs bg-gray-100 text-gray-700 border-l-4 border-gray-400">Triage</span>`;
+
+                // Señal de que este riesgo ya tiene una Decisión de Tratamiento adoptada (ver
+                // App.Treatment.adoptStrategy) — antes esta tabla se quedaba en 2 pisos
+                // (Inherente/Actual) sin ninguna señal de que Gestión de Riesgos/Tratamiento ya
+                // tienen un 3er piso (Residual, el resultado real post-tratamiento) para este
+                // riesgo. No se agrega una columna nueva (ya son 12) — el residual real completo
+                // vive un clic más allá, en Tratamiento/Gestión de Riesgos; acá solo la señal +
+                // el monto en el tooltip, para saber de un vistazo cuáles ya se decidieron.
+                const decision = item.fairEntry && item.fairEntry.treatmentDecision;
+                const treatedBadge = decision
+                    ? `<span class="ml-1 px-2 py-1 rounded text-xs bg-green-50 text-green-700 border-l-4 border-green-500" title="${sanitizeHTML(STRATEGY_LABELS[decision.strategy] || decision.strategy)} — Residual: ${fmt(decision.residualALE)}${decision.decidedAt ? ` (decidido el ${new Date(decision.decidedAt).toLocaleDateString('es-MX')})` : ''}">✔ Tratado</span>`
+                    : '';
 
                 const evalCell = item.fairEntry
                     ? `<span class="px-2 py-1 rounded text-xs border-l-4 ${item.fairEntry.evaluationClasses}">${item.fairEntry.evaluationLevel}</span>`
@@ -789,7 +859,7 @@ export const FairRegister = {
                     <td class="py-2 text-center">${checkboxCell}</td>
                     <td class="text-center text-gray-500">${item.number}</td>
                     <td class="risk-name-cell">${sanitizeHTML(item.riskName)}</td>
-                    <td>${stageBadge}</td>
+                    <td>${stageBadge}${treatedBadge}</td>
                     <td>${inherenteCell}</td>
                     <td>${item.controlEffectiveness || '—'}</td>
                     <td>${residualCell}</td>

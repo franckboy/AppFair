@@ -330,6 +330,82 @@ test('POST /api/simulate: riskType oportunidad da summary.inherentALE/inherentCV
     assert.strictEqual(res.body.summary.inherentCVaR, null);
 });
 
+// inherentEvaluation: bug real corregido — App.FairRegister.classifyAleAgainstCriteria (frontend)
+// reimplementaba este banding a mano, pero solo miraba inherentALE, nunca inherentCVaR, así que
+// nunca podía disparar el caso "Crítico por cola de riesgo" (cvar95 > aleCritico aunque ale no lo
+// supere, ver evaluateFairThreat) para el Riesgo Inherente. Ahora se calcula una sola vez aquí.
+test('POST /api/simulate: riskType amenaza incluye inherentEvaluation (level/severity/justification) clasificado contra los Criterios de Riesgo', async () => {
+    const res = await request(app)
+        .post('/api/simulate')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            iterations: 200,
+            seed: 1,
+            tef: { min: 5, mode: 10, max: 18 },
+            vuln: { min: 20, mode: 40, max: 60 },
+            lossMagnitudes: { respuesta: { min: 5000, mode: 20000, max: 50000 } },
+            riskType: 'amenaza',
+        });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(typeof res.body.inherentEvaluation.level, 'string');
+    assert.ok(['bajo', 'medio', 'alto', 'critico'].includes(res.body.inherentEvaluation.severity));
+    assert.strictEqual(typeof res.body.inherentEvaluation.justification, 'string');
+});
+
+test('POST /api/simulate: riskType oportunidad da inherentEvaluation null', async () => {
+    const res = await request(app)
+        .post('/api/simulate')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            iterations: 200,
+            seed: 1,
+            tef: { min: 5, mode: 10, max: 18 },
+            vuln: { min: 20, mode: 40, max: 60 },
+            lossMagnitudes: { respuesta: { min: 5000, mode: 20000, max: 50000 } },
+            riskType: 'oportunidad',
+        });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.inherentEvaluation, null);
+});
+
+test('POST /api/simulate: inherentEvaluation detecta "Crítico (riesgo de cola)" (cvar95 > aleCritico aunque ale no lo supere) — el caso real que la copia del frontend nunca podía ver', async () => {
+    // Magnitudes chicas a propósito: el override de riskCriteria que arma este test nunca puede
+    // superar el aleCritico GLOBAL vigente (ver validateRiskCriteriaOverride), y otras pruebas de
+    // este archivo dejan ese global en 5000 (ver la migración de criterios más arriba) — se
+    // mantiene inherentALE/inherentCVaR bien por debajo de eso, sin tocar el global, para no
+    // afectar pruebas posteriores que sí dependen de su valor documentado.
+    const body = {
+        iterations: 3000,
+        seed: 42,
+        tef: { min: 0.5, mode: 1, max: 2 },
+        vuln: { min: 20, mode: 40, max: 60 },
+        // Magnitud muy sesgada a la derecha (mode chico, max grande) para que la lognormal deje
+        // un hueco real entre el promedio (inherentALE) y el CVaR95 (inherentCVaR) — condición
+        // necesaria para que el caso "cola de riesgo" sea alcanzable con un solo aleCritico.
+        lossMagnitudes: { respuesta: { min: 200, mode: 800, max: 4000 } },
+        riskType: 'amenaza',
+    };
+    // Primera corrida (sin override de criterios) solo para leer inherentALE/inherentCVaR reales
+    // con esta semilla — la simulación es reproducible (misma semilla -> mismos números).
+    const probe = await request(app).post('/api/simulate').set('X-API-Key', TEST_API_KEY).send(body);
+    assert.strictEqual(probe.status, 200);
+    const { inherentALE, inherentCVaR } = probe.body.summary;
+    assert.ok(
+        inherentCVaR > inherentALE,
+        `el caso necesita un hueco real: cvar95 (${inherentCVaR}) > ale (${inherentALE})`,
+    );
+
+    // aleCritico a mitad de camino entre inherentALE e inherentCVaR: ale NO lo supera, cvar95 SÍ.
+    const aleCritico = (inherentALE + inherentCVaR) / 2;
+    const res = await request(app)
+        .post('/api/simulate')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ...body, riskCriteria: { aleAceptablePercent: 20, aleCritico } });
+    assert.strictEqual(res.status, 200);
+    assert.match(res.body.inherentEvaluation.level, /riesgo de cola/i);
+    assert.strictEqual(res.body.inherentEvaluation.severity, 'critico');
+});
+
 // --- POST /api/simulate/evaluate (reclasifica un ALE/CVaR95 ya conocido, sin Monte Carlo —
 // usado por Gestión de Riesgos para reclasificar el Residual Canónico de un riesgo tratado) ---
 
@@ -714,6 +790,42 @@ test('PUT /api/register/:riskName: inherentALE/inherentCVaR negativos responden 
     assert.strictEqual(validRes.status, 200);
     assert.strictEqual(validRes.body.entry.inherentALE, 90000);
     assert.strictEqual(validRes.body.entry.inherentCVaR, 150000);
+
+    await request(app)
+        .delete(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY);
+});
+
+test('PUT /api/register/:riskName: persiste inherentEvaluationLevel/inherentEvaluationClasses/inherentSeverity junto con inherentALE', async () => {
+    const riskName = 'Riesgo con clasificación de inherente';
+
+    const res = await request(app)
+        .put(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            ale: 10000,
+            cvar95: 15000,
+            evaluationLevel: 'Aceptable',
+            inherentALE: 90000,
+            inherentCVaR: 150000,
+            inherentEvaluationLevel: 'Crítico — Requiere Acción Inmediata',
+            inherentEvaluationClasses: 'bg-red-50 text-red-700 border-red-500',
+            inherentSeverity: 'critico',
+        });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.entry.inherentEvaluationLevel, 'Crítico — Requiere Acción Inmediata');
+    assert.strictEqual(res.body.entry.inherentEvaluationClasses, 'bg-red-50 text-red-700 border-red-500');
+    assert.strictEqual(res.body.entry.inherentSeverity, 'critico');
+
+    // Ausentes -> null, mismo criterio que inherentALE/inherentCVaR (riesgos guardados antes de
+    // que existiera esto, u Oportunidad).
+    const nullRes = await request(app)
+        .put(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ale: 10000, cvar95: 15000, evaluationLevel: 'Aceptable' });
+    assert.strictEqual(nullRes.body.entry.inherentEvaluationLevel, null);
+    assert.strictEqual(nullRes.body.entry.inherentEvaluationClasses, null);
+    assert.strictEqual(nullRes.body.entry.inherentSeverity, null);
 
     await request(app)
         .delete(`/api/register/${encodeURIComponent(riskName)}`)

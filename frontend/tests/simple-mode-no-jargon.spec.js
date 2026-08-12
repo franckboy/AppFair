@@ -119,6 +119,19 @@ test.describe('Modo Simple: sin jerga técnica en ninguna página', () => {
             containerSelector: '#risk-tree-family-simulation',
             excludeSelectors: ['#risk-tree-family-sim-members'], // lista riesgos incluidos/excluidos por nombre
         });
+
+        // Riesgos Guardados (#historySection, en Análisis de Riesgo) — hueco real de cobertura
+        // encontrado en una auditoría: vive FUERA de #fair-step-4 (el wizard), así que las
+        // verificaciones de arriba nunca lo tocaban. La columna CVaR95 ya se traduce por
+        // STATIC_LABELS (quick-concentrated-th-cvar), pero nada lo confirmaba automáticamente.
+        await page.click('#nav-fair');
+        await page.waitForTimeout(500);
+        await assertNoJargon(page, 'Riesgos Guardados', {
+            containerSelector: '#historySection',
+            // .risk-name-cell son nombres de riesgo de OTROS archivos de test (ej. "E2E Pareto
+            // Residual — ...", "E2E Tratamiento — CVaR Residual"), no jerga generada por la app.
+            excludeSelectors: ['.risk-name-cell'],
+        });
     });
 
     test('Modo Técnico sigue mostrando el lenguaje técnico de siempre (no se perdió nada al agregar Modo Simple)', async ({
@@ -148,5 +161,9 @@ test.describe('Modo Simple: sin jerga técnica en ninguna página', () => {
         await page.click('#nav-register');
         await page.waitForTimeout(500);
         await expect(page.locator('#fair-register-pareto-title')).toContainText('Pareto');
+
+        await page.click('#nav-fair');
+        await page.waitForTimeout(500);
+        await expect(page.locator('#quick-concentrated-th-cvar')).toContainText('CVaR 95%');
     });
 });

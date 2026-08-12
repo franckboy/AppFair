@@ -144,6 +144,19 @@ function createSimulateRouter(store) {
                     ? { inherentALE: null, inherentCVaR: null }
                     : calculateInherentRiskFromSimulation(tef, lossMagnitudes);
 
+            // Clasifica el Riesgo Inherente contra los MISMOS Criterios de Riesgo que ya
+            // clasifican el actual (evaluateFairThreat) — bug real corregido: antes esto se
+            // reimplementaba en el frontend (App.FairRegister.classifyAleAgainstCriteria), una
+            // copia que solo miraba `ale` y nunca `cvar95` — así que el caso de "Crítico por cola
+            // de riesgo" (cvar95 > aleCritico aunque ale no lo supere, ver evaluateFairThreat más
+            // arriba) podía clasificar el Inherente de forma más optimista de lo real. Se calcula
+            // una sola vez aquí y se persiste (ver PUT /api/register), para que el frontend nunca
+            // tenga que reimplementar el banding — misma filosofía que POST /api/simulate/evaluate.
+            const inherentEvaluation =
+                riskType === 'oportunidad'
+                    ? null
+                    : evaluateFairThreat(inherent.inherentALE, inherent.inherentCVaR, criteria, formatCurrency);
+
             res.json({
                 usedSeed,
                 iterations,
@@ -162,6 +175,9 @@ function createSimulateRouter(store) {
                     inherentCVaR: inherent.inherentCVaR,
                 },
                 evaluation,
+                // Clasificación del Riesgo Inherente (ver el comentario junto a inherentEvaluation
+                // arriba) — null para Oportunidad, igual que inherentALE/inherentCVaR.
+                inherentEvaluation,
                 sensitivity: sensitivity.slice(0, 10),
                 // El arreglo completo de pérdidas se regresa aparte (puede ser grande) para que el
                 // cliente decida si lo necesita, ej. para la estrategia de Transferir/Seguro.

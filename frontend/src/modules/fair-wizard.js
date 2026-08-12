@@ -380,6 +380,16 @@ export const FairWizard = {
             .addEventListener('change', (e) =>
                 App.FairRegister.toggleSelectAll('quick-concentrated-table-body', e.target.checked),
             );
+        // Filtros por Etapa/Evaluación de Riesgos Guardados (ver renderConcentratedTable, que lee
+        // estos mismos selects) — re-dibuja con el filtro nuevo sin volver a pedir nada al
+        // backend, la lista completa ya vive en memoria (state.fair.concentratedRisks).
+        ['quick-concentrated-filter-stage', 'quick-concentrated-filter-eval'].forEach((id) => {
+            document
+                .getElementById(id)
+                .addEventListener('change', () =>
+                    App.FairRegister.renderConcentratedTable(state.fair.concentratedRisks),
+                );
+        });
         document
             .getElementById('fair-deep-analysis-btn')
             .addEventListener('click', () => App.FairRegister.showDeepAnalysis('quick-concentrated-table-body'));
@@ -1543,7 +1553,7 @@ export const FairWizard = {
     },
 
     async displaySimulationResults(result) {
-        const { summary, evaluation, sensitivity, annualLosses } = result;
+        const { summary, evaluation, inherentEvaluation, sensitivity, annualLosses } = result;
         state.fair.simulatedALE = summary.average;
         state.fair.lastAnnualLosses = annualLosses;
         state.fair.lastEvaluation = evaluation;
@@ -1677,7 +1687,7 @@ export const FairWizard = {
             },
         });
 
-        await App.FairRegister.saveToRiskRegister(summary, evaluation);
+        await App.FairRegister.saveToRiskRegister(summary, evaluation, inherentEvaluation);
 
         // Tratamiento (Mitigar/Transferir/Evitar/Aceptar) ya no vive en el wizard — ver
         // #treatmentPage / App.Treatment. No aplica a una Oportunidad (ISO 31000, 6.5 asume que

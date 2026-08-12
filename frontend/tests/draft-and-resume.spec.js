@@ -101,3 +101,52 @@ test.describe('Reanudar un análisis guardado (REGRESIÓN)', () => {
         expect(matches[0].id).toBe(originalId);
     });
 });
+
+test.describe('Filtrar Riesgos Guardados por Etapa', () => {
+    test('el filtro de Etapa muestra solo Triage o solo Analizado (FAIR), sin perder los demás riesgos de la lista', async ({
+        page,
+    }) => {
+        await connectAndBoot(page);
+
+        // Un riesgo Triage puro (solo "Guardar", sin completar el wizard) y uno Analizado (FAIR).
+        await page.fill('#fair-riskName', 'E2E Filtro — Solo Triage');
+        await Promise.all([
+            page.waitForResponse((r) => r.url().includes('/api/risks') && r.request().method() === 'POST', {
+                timeout: 10000,
+            }),
+            page.click('#fair-save-draft-btn'),
+        ]);
+        await page.waitForTimeout(800);
+
+        await connectAndBoot(page);
+        await runFullFairAnalysis(page, 'E2E Filtro — Analizado FAIR');
+
+        await page.click('#nav-fair');
+        await page.waitForTimeout(500);
+
+        const triageRow = page.locator('#quick-concentrated-table-body tr', { hasText: 'E2E Filtro — Solo Triage' });
+        const fairRow = page.locator('#quick-concentrated-table-body tr', { hasText: 'E2E Filtro — Analizado FAIR' });
+        await expect(triageRow).toBeVisible();
+        await expect(fairRow).toBeVisible();
+
+        // Filtrar por "Analizado (FAIR)" oculta el Triage, conserva el analizado.
+        await page.selectOption('#quick-concentrated-filter-stage', 'fair');
+        await page.waitForTimeout(200);
+        await expect(triageRow).toBeHidden();
+        await expect(fairRow).toBeVisible();
+        await expect(page.locator('#quick-concentrated-filter-count')).toContainText('de');
+
+        // Filtrar por "Triage" hace lo opuesto.
+        await page.selectOption('#quick-concentrated-filter-stage', 'triage');
+        await page.waitForTimeout(200);
+        await expect(triageRow).toBeVisible();
+        await expect(fairRow).toBeHidden();
+
+        // "Todas" restaura ambos, sin contador.
+        await page.selectOption('#quick-concentrated-filter-stage', '');
+        await page.waitForTimeout(200);
+        await expect(triageRow).toBeVisible();
+        await expect(fairRow).toBeVisible();
+        await expect(page.locator('#quick-concentrated-filter-count')).toHaveText('');
+    });
+});

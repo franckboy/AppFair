@@ -114,6 +114,32 @@ describe('FairRegister.computeFairRiskEquivalents', () => {
         expect(result.inherentMoney).toBe('$0');
         expect(result.controlEffectiveness).toBeNull();
     });
+
+    it('con entry.inherentSeverity persistido, lo usa DIRECTO en vez de reclasificar con classifyAleAgainstCriteria (bug real corregido)', () => {
+        // aleCritico=250000, aleAceptablePercent=20 -> aleAceptable=50000, aleMedio=150000.
+        // classifyAleAgainstCriteria(60000) daría 'medio' (50000 < 60000 <= 150000) — pero el
+        // backend YA clasificó este riesgo como 'critico' de verdad (ej. por CVaR95 > aleCritico,
+        // el caso "cola de riesgo" que la copia local nunca puede ver porque solo recibe el ALE).
+        // Con inherentSeverity persistido, debe ganar ese valor real, no el recalculado a mano.
+        const result = FairRegister.computeFairRiskEquivalents({
+            ale: 10000,
+            severity: 'bajo',
+            inherentALE: 60000,
+            inherentSeverity: 'critico',
+        });
+        expect(result.inherentMoney).toBe('$60,000');
+        expect(result.inherentSeverity).toBe('critico');
+    });
+
+    it('con entry.inherentALE real pero SIN inherentSeverity (riesgo guardado antes de que existiera ese campo), cae a classifyAleAgainstCriteria', () => {
+        const result = FairRegister.computeFairRiskEquivalents({
+            ale: 10000,
+            severity: 'bajo',
+            inherentALE: 60000,
+        });
+        // 60000 > aleAceptable (50000) y <= aleMedio (150000) -> 'medio', vía la copia local.
+        expect(result.inherentSeverity).toBe('medio');
+    });
 });
 
 describe('FairRegister.buildConcentratedList', () => {
