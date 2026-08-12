@@ -1124,13 +1124,24 @@ export const FairRegister = {
                         borderColor: '#B22222',
                         backgroundColor: '#B22222',
                         yAxisID: 'y1',
-                        tension: 0.1,
+                        // Bug real corregido: con tension > 0 (curva Bezier), un punto que hace
+                        // meseta cerca del 100% (típico del % acumulado, que por definición se
+                        // achata hacia el final) hace que la curva SOBREPASE el valor más alto
+                        // entre dos puntos — visualmente "se sale" por arriba del cuadro, aunque
+                        // ningún dato real exceda 100. El % acumulado tampoco es una cantidad que
+                        // deba interpolarse suavizada (cada segmento representa un salto discreto
+                        // al sumar un riesgo más) — una línea recta es además más correcta.
+                        tension: 0,
                     },
                 ],
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
+                // El punto más alto suele caer justo en max:100 del eje y1 (borde superior del
+                // área de dibujo) — sin este margen, la mitad de su marcador (radio ~3px) queda
+                // pegada al borde del cuadro y se ve como si "se saliera" de él.
+                layout: { padding: { top: 10 } },
                 scales: {
                     y: {
                         position: 'left',
