@@ -1552,14 +1552,18 @@ export const FairWizard = {
     // pasaría si" — nunca alimenta la simulación real, botón explícito, no autocálculo.
     async calculateNashEquilibrium() {
         if (!state.fair.attackerKey || !state.fair.defenseKey) {
-            Modal.alert('Completa el Paso 1 (Perfil de Atacante y Defensa) antes de calcular el Equilibrio de Nash.');
+            Modal.alert(
+                'Completa el Paso 1 (Perfil de Atacante y Defensa) antes de calcular cuánto le conviene esforzarse a cada lado.',
+            );
             return;
         }
         const m = getSafeNumber(document.getElementById('nash-m'));
         const costAttacker = getSafeNumber(document.getElementById('nash-cost-attacker'));
         const costDefense = getSafeNumber(document.getElementById('nash-cost-defense'));
         if (m <= 0 || costAttacker <= 0 || costDefense <= 0) {
-            Modal.alert('Factor de Decisividad y ambos costos por unidad de esfuerzo deben ser mayores a 0.');
+            Modal.alert(
+                'Los 3 campos (qué tan decisivo es el esfuerzo, y el costo de esforzarse más para cada lado) deben ser mayores a 0.',
+            );
             return;
         }
 
