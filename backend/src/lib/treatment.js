@@ -287,19 +287,26 @@ function evaluateTreatmentStrategies(
     };
 
     // 2. Transferir (Seguro)
-    let retainedALE = currentALE;
-    if (
-        annualLosses &&
-        annualLosses.length > 0 &&
-        (transferir.deductible > 0 || transferir.limit > 0 || transferir.unlimited)
-    ) {
-        retainedALE = calculateInsuranceRetainedALE(
-            annualLosses,
-            transferir.deductible || 0,
-            transferir.limit || 0,
-            !!transferir.unlimited,
-        );
-    }
+    const hasInsuranceTerms = transferir.deductible > 0 || transferir.limit > 0 || !!transferir.unlimited;
+    const hasAnnualLosses = Array.isArray(annualLosses) && annualLosses.length > 0;
+    // Bug real corregido: cuando SÍ hay deducible/límite/sin-límite capturado pero NO hay
+    // annualLosses (el Registro solo persiste un histograma de 20 barras, no las 10,000 pérdidas
+    // crudas — ver el JSDoc de calculateInsuranceRetainedALE), este bloque caía en silencio a
+    // "retainedALE = currentALE" → avoidedLoss = $0, como si el seguro de verdad no ahorrara
+    // nada. Eso es un resultado FALSO, no la ausencia de uno: una cobertura ilimitada sobre un
+    // deducible bajo NUNCA da $0 de pérdida evitada. Ahora ese caso se distingue explícitamente
+    // (transferirCalculable = false) de "no hay términos de seguro capturados todavía" (donde
+    // avoidedLoss = $0 sí es la respuesta real, no un hueco de datos).
+    const transferirCalculable = !hasInsuranceTerms || hasAnnualLosses;
+    const retainedALE =
+        hasInsuranceTerms && hasAnnualLosses
+            ? calculateInsuranceRetainedALE(
+                  annualLosses,
+                  transferir.deductible || 0,
+                  transferir.limit || 0,
+                  !!transferir.unlimited,
+              )
+            : currentALE;
     const avoidedTransferir = currentALE - retainedALE;
     // Mismo bug que Mitigar (ver comentario ahí): avoidedTransferir puede ser > 0 en cuanto se
     // captura deducible/límite, sin que el usuario haya escrito todavía la prima anual (0 por
@@ -310,19 +317,25 @@ function evaluateTreatmentStrategies(
             : avoidedTransferir - transferir.premium;
     results.transferir = {
         cost: transferir.premium,
-        residualALE: retainedALE,
-        avoidedLoss: avoidedTransferir,
-        netBenefit: netBenefitTransferir,
+        residualALE: transferirCalculable ? retainedALE : null,
+        avoidedLoss: transferirCalculable ? avoidedTransferir : null,
+        netBenefit: transferirCalculable ? netBenefitTransferir : null,
         reliability: transferir.reliability,
         delayDays: transferir.delayDays,
-        verdict:
-            transferir.premium > 0
-                ? getInvestmentVerdict(transferir.premium, netBenefitTransferir + transferir.premium, formatCurrency)
-                : {
-                      verdict: 'sin_datos',
-                      rosi: null,
-                      message: 'Ingresa la prima anual del seguro para ver si conviene transferir este riesgo.',
-                  },
+        verdict: !transferirCalculable
+            ? {
+                  verdict: 'sin_datos',
+                  rosi: null,
+                  message:
+                      'Definiste un deducible/límite de cobertura, pero no se puede calcular la Pérdida Evitada sin los datos completos de la simulación (el Registro solo guarda un resumen, no los 10,000 escenarios). Vuelve a simular este riesgo desde Análisis FAIR para obtener una cotización exacta.',
+              }
+            : transferir.premium > 0
+              ? getInvestmentVerdict(transferir.premium, netBenefitTransferir + transferir.premium, formatCurrency)
+              : {
+                    verdict: 'sin_datos',
+                    rosi: null,
+                    message: 'Ingresa la prima anual del seguro para ver si conviene transferir este riesgo.',
+                },
     };
 
     // 3. Evitar (elimina la fuente del riesgo → residual = 0 por definición, SI funciona)
@@ -385,7 +398,14 @@ function evaluateTreatmentStrategies(
     // capturado" salía seguido, no solo en un caso raro. Ninguna estrategia es gratis en la
     // práctica (mantener un control, pagar una prima, o eliminar la fuente del riesgo), así que
     // todas comparten la misma regla: solo cuenta como activa si tiene un costo real capturado.
-    const activeStrategies = Object.entries(results).filter(([key, r]) => key !== 'aceptar' && r.cost > 0);
+    // `netBenefit !== null` excluye a Transferir cuando no es calculable (ver
+    // transferirCalculable arriba): con cost > 0 pero netBenefit desconocido, comparar `null`
+    // contra un número real coerciona `null` a 0 en JS (`null > -500` es `true`) — dejarlo
+    // competir podía hacer que un beneficio negativo real perdiera contra un "desconocido" que
+    // nunca debió participar en la comparación.
+    const activeStrategies = Object.entries(results).filter(
+        ([key, r]) => key !== 'aceptar' && r.cost > 0 && r.netBenefit !== null,
+    );
 
     let recommendation;
     if (activeStrategies.length === 0) {
