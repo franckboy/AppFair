@@ -5,6 +5,7 @@ import { App } from './modules/app-namespace.js';
 // necesitaba se movió a su propio módulo) — solo arma App.init()/continueInit(), que llaman
 // this.X.metodo() sobre lo que estos imports dejan registrado.
 import './modules/api.js';
+import './modules/risk-summary-bar.js';
 import './modules/navigation.js';
 import './modules/criteria.js';
 import './modules/autocomplete.js';
@@ -66,6 +67,7 @@ document.addEventListener('DOMContentLoaded', () => {
             this.RiskCascadeTree.init();
             this.Treatment.init();
             this.RiskManagement.init();
+            this.RiskSummaryBar.init();
             this.FairAnalysis.init();
             // Página de entrada por defecto — necesario porque OrgContext.showGate() oculta
             // #fairAnalysisPage mientras el gate está abierto (ver App.OrgContext.showGate) y
