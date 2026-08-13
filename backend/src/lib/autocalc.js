@@ -171,11 +171,18 @@ function tullockSuccessProbability(attackerStrength, defenseStrength, m = TULLOC
 // `nulo` (alfa = 1,00) es el default y es un NO-OP exacto: las seis anclas de calibración se
 // emitieron sin modificador de acceso, así que siguen valiendo tal cual y ningún riesgo ya
 // guardado cambia de números.
+// Los factores se suavizaron respecto a la primera propuesta (1,00 / 0,80 / 0,50 / 0,25) porque
+// con m=6,83 un alfa multiplicativo se amplifica muchísimo: cortar la Resistencia a un cuarto
+// multiplica las probabilidades por ~4^6,83, y el cuadrante del insider privilegiado se aplanaba
+// en ~99,5 % contra CUALQUIER defensa. Doctrinalmente eso no es falso —contra un administrador con
+// llaves maestras la respuesta es segregación de funciones y mínimo privilegio, no una barda más
+// alta— pero dejaba a la app sin poder distinguir nada en esa esquina, que es donde más falta hace
+// decidir. Con esta escala el insider sigue siendo severo y la defensa conserva sensibilidad.
 const ACCESS_LEVELS = {
     nulo: { alpha: 1.0, name: 'Nulo / Externo' },
-    bajo: { alpha: 0.8, name: 'Bajo / Perimetral' },
-    medio: { alpha: 0.5, name: 'Medio / Operativo' },
-    alto: { alpha: 0.25, name: 'Alto / Privilegiado' },
+    bajo: { alpha: 0.85, name: 'Bajo / Perimetral' },
+    medio: { alpha: 0.65, name: 'Medio / Operativo' },
+    alto: { alpha: 0.5, name: 'Alto / Privilegiado' },
 };
 const DEFAULT_ACCESS_LEVEL = 'nulo';
 
@@ -477,9 +484,23 @@ function calculateReduccionALEFromProfiles(
     const targetSamples = new Array(COMPARISON_ITERATIONS);
     for (let i = 0; i < COMPARISON_ITERATIONS; i++) {
         currentSamples[i] =
-            pairedVulnerabilitySample(attackerProfile, currentDefenseProfile, confidence, COMPARISON_SEED, i, accessLevel) * 100;
+            pairedVulnerabilitySample(
+                attackerProfile,
+                currentDefenseProfile,
+                confidence,
+                COMPARISON_SEED,
+                i,
+                accessLevel,
+            ) * 100;
         targetSamples[i] =
-            pairedVulnerabilitySample(attackerProfile, targetDefenseProfile, confidence, COMPARISON_SEED, i, accessLevel) * 100;
+            pairedVulnerabilitySample(
+                attackerProfile,
+                targetDefenseProfile,
+                confidence,
+                COMPARISON_SEED,
+                i,
+                accessLevel,
+            ) * 100;
     }
     const currentSummary = summarizePercentiles(currentSamples);
     const targetSummary = summarizePercentiles(targetSamples);
