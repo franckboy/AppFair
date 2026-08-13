@@ -163,4 +163,52 @@ function summarizeLosses(losses, exceedanceThreshold) {
     return { average: avg, median, min, max, p90, cvar95, probExceedance, iterations: n };
 }
 
-module.exports = { runMonteCarloSimulation, calculateSensitivity, summarizeLosses, pearsonCorrelation };
+// Escalera de probabilidades de excedencia para la Curva de Excedencia de Pérdidas, en %.
+// Deliberadamente MÁS DENSA en la cola (de 10% hacia abajo) en vez de equiespaciada: la parte
+// que de verdad se mira al decidir es "¿qué tan probable es una pérdida que me duela?", y con
+// puntos equiespaciados en dinero esa zona quedaría con dos o tres puntos mientras se
+// desperdicia resolución en el tramo alto de probabilidad, que es plano y poco informativo.
+const LEC_EXCEEDANCE_PROBABILITIES = [
+    100, 99, 98, 97, 96, 95, 90, 85, 80, 75, 70, 65, 60, 55, 50, 45, 40, 35, 30, 25, 20, 15, 10, 7.5, 5, 4, 3, 2, 1.5,
+    1, 0.75, 0.5, 0.25, 0.1,
+];
+
+/**
+ * Curva de Excedencia de Pérdidas (LEC) — para cada umbral en dinero, la probabilidad de que la
+ * pérdida anual lo SUPERE. Es la entrega insignia de FAIR: responde "¿qué probabilidad hay de
+ * perder más de X en un año?", que es la pregunta con la que se decide, a diferencia del ALE
+ * (un solo promedio) o del histograma (la forma de la distribución, sin leerse en probabilidades
+ * acumuladas).
+ *
+ * Se construye al revés de como se lee: para cada probabilidad de la escalera se busca el umbral
+ * que se excede con ESA probabilidad, o sea el cuantil (1 − p) de la distribución simulada. Así
+ * los puntos quedan repartidos sobre el eje de probabilidad (donde se quiere control) y no sobre
+ * el de dinero (donde el rango depende del riesgo y no se puede fijar de antemano).
+ *
+ * Devuelve ~34 puntos en vez de las 10,000 pérdidas crudas justamente para poder PERSISTIRSE en
+ * el Registro (mismo criterio que el histograma de 20 barras, ver chartLabels/chartData en
+ * routes/register.js) y que el Registro y el PDF puedan volver a dibujarla sin re-simular.
+ *
+ * @param {number[]} losses Pérdidas anuales simuladas — NO necesita venir ordenado.
+ * @param {number[]} [probabilities] Escalera de probabilidades de excedencia (%), de mayor a menor.
+ * @returns {Array<{loss:number, probability:number}>} Vacío si no hay pérdidas.
+ */
+function buildLossExceedanceCurve(losses, probabilities = LEC_EXCEEDANCE_PROBABILITIES) {
+    if (!Array.isArray(losses) || losses.length === 0) return [];
+    const sorted = [...losses].sort((a, b) => a - b);
+    const n = sorted.length;
+    return probabilities.map((probability) => {
+        const cuantil = 1 - probability / 100;
+        const idx = Math.min(n - 1, Math.max(0, Math.floor(cuantil * (n - 1))));
+        return { loss: sorted[idx], probability };
+    });
+}
+
+module.exports = {
+    runMonteCarloSimulation,
+    calculateSensitivity,
+    summarizeLosses,
+    pearsonCorrelation,
+    buildLossExceedanceCurve,
+    LEC_EXCEEDANCE_PROBABILITIES,
+};

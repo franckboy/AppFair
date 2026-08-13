@@ -1996,3 +1996,89 @@ test('DELETE /api/risks/:id borra en cascada la entrada del Registro vinculada, 
         .delete(`/api/register/${encodeURIComponent(standaloneName)}`)
         .set('X-API-Key', TEST_API_KEY);
 });
+
+// --- Curva de Excedencia de Pérdidas persistida en el Registro ---
+
+test('PUT /api/register/:riskName persiste la Curva de Excedencia de Pérdidas y se lee de vuelta', async () => {
+    const riskName = 'Robo en bodega HTTP (curva LEC)';
+    const lossExceedanceCurve = [
+        { loss: 1000, probability: 100 },
+        { loss: 50000, probability: 50 },
+        { loss: 400000, probability: 1 },
+    ];
+    const inherentLossExceedanceCurve = [
+        { loss: 3000, probability: 100 },
+        { loss: 150000, probability: 50 },
+    ];
+    const putRes = await request(app)
+        .put(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ale: 60000, cvar95: 120000, lossExceedanceCurve, inherentLossExceedanceCurve });
+    assert.strictEqual(putRes.status, 200);
+    assert.deepStrictEqual(putRes.body.entry.lossExceedanceCurve, lossExceedanceCurve);
+    assert.deepStrictEqual(putRes.body.entry.inherentLossExceedanceCurve, inherentLossExceedanceCurve);
+
+    const getRes = await request(app).get('/api/register').set('X-API-Key', TEST_API_KEY);
+    const saved = getRes.body.risks.find((r) => r.riskName === riskName);
+    assert.deepStrictEqual(saved.lossExceedanceCurve, lossExceedanceCurve);
+
+    await request(app)
+        .delete(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY);
+});
+
+test('PUT /api/register/:riskName sin curva la guarda como null (riesgos anteriores a esta función)', async () => {
+    const riskName = 'Riesgo sin curva LEC HTTP';
+    const putRes = await request(app)
+        .put(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ale: 5000, cvar95: 9000 });
+    assert.strictEqual(putRes.status, 200);
+    assert.strictEqual(putRes.body.entry.lossExceedanceCurve, null);
+
+    await request(app)
+        .delete(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY);
+});
+
+test('PUT /api/register/:riskName rechaza una curva con puntos inválidos con 400', async () => {
+    const negativo = await request(app)
+        .put(`/api/register/${encodeURIComponent('Riesgo curva inválida HTTP')}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ale: 0, lossExceedanceCurve: [{ loss: -1, probability: 50 }] });
+    assert.strictEqual(negativo.status, 400);
+
+    const fueraDeRango = await request(app)
+        .put(`/api/register/${encodeURIComponent('Riesgo curva inválida HTTP')}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ale: 0, lossExceedanceCurve: [{ loss: 100, probability: 150 }] });
+    assert.strictEqual(fueraDeRango.status, 400);
+
+    const noEsArreglo = await request(app)
+        .put(`/api/register/${encodeURIComponent('Riesgo curva inválida HTTP')}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ale: 0, lossExceedanceCurve: 'no soy un arreglo' });
+    assert.strictEqual(noEsArreglo.status, 400);
+});
+
+test('POST /api/simulate devuelve la Curva de Excedencia de Pérdidas, coherente con el ALE simulado', async () => {
+    const res = await request(app)
+        .post('/api/simulate')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            iterations: 5000,
+            seed: 8080,
+            tef: { min: 1, mode: 2, max: 4 },
+            vuln: { min: 30, mode: 50, max: 70 },
+            lossMagnitudes: { productividad: { min: 10000, mode: 40000, max: 100000 } },
+        });
+    assert.strictEqual(res.status, 200);
+    const curva = res.body.lossExceedanceCurve;
+    assert.ok(Array.isArray(curva) && curva.length > 20, 'debe venir una curva dibujable');
+    // El ALE (promedio) tiene que caer dentro del rango de umbrales que cubre la curva.
+    const montos = curva.map((p) => p.loss);
+    assert.ok(res.body.summary.average >= Math.min(...montos), 'el ALE queda por debajo de la curva');
+    assert.ok(res.body.summary.average <= Math.max(...montos), 'el ALE se sale por arriba de la curva');
+    // Amenaza: también debe venir la curva del Riesgo Inherente para poder superponerlas.
+    assert.ok(Array.isArray(res.body.inherentLossExceedanceCurve), 'falta la curva del Inherente');
+});

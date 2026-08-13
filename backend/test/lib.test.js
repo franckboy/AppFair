@@ -11,7 +11,12 @@ const {
     triangularVariance,
     solveLognormalSigmaSquared,
 } = require('../src/lib/random');
-const { runMonteCarloSimulation, summarizeLosses, pearsonCorrelation } = require('../src/lib/simulation');
+const {
+    runMonteCarloSimulation,
+    summarizeLosses,
+    pearsonCorrelation,
+    buildLossExceedanceCurve,
+} = require('../src/lib/simulation');
 const {
     tullockSuccessProbability,
     sampleVulnerabilityFromProfiles,
@@ -2214,4 +2219,70 @@ test('isoProcessClauses/rimsClauses: cada entrada trae title y summary no vacío
             assert.ok(typeof entry.summary === 'string' && entry.summary.length > 0, `${code}.summary`);
         });
     });
+});
+
+// --- Curva de Excedencia de Pérdidas (LEC) ---
+
+test('buildLossExceedanceCurve: la probabilidad baja mientras el umbral en dinero sube (monótona en ambos ejes)', () => {
+    const losses = Array.from({ length: 5000 }, (_, i) => i + 1); // 1..5000, distribución conocida
+    const curva = buildLossExceedanceCurve(losses);
+    assert.ok(curva.length > 20, 'debe devolver una curva con suficientes puntos para dibujarse');
+    for (let i = 1; i < curva.length; i++) {
+        assert.ok(
+            curva[i].probability < curva[i - 1].probability,
+            `la probabilidad debe ir bajando: ${curva[i - 1].probability} -> ${curva[i].probability}`,
+        );
+        assert.ok(
+            curva[i].loss >= curva[i - 1].loss,
+            `el umbral en dinero no puede bajar al bajar la probabilidad: ${curva[i - 1].loss} -> ${curva[i].loss}`,
+        );
+    }
+});
+
+test('buildLossExceedanceCurve: cada punto coincide con la probabilidad EMPÍRICA de excederlo (prueba cruzada)', () => {
+    // El invariante que de verdad importa: si la curva dice "5% de probabilidad de perder más de
+    // $X", entonces contar cuántas de las 10,000 pérdidas simuladas superan $X debe dar ~5%. Sin
+    // esto, la curva podría verse bien dibujada y estar corrida un cuantil.
+    const { annualLosses } = runMonteCarloSimulation({
+        iterations: 10000,
+        seed: 31415,
+        tef: { min: 0.5, mode: 2, max: 5 },
+        vuln: { min: 20, mode: 50, max: 80 },
+        lossMagnitudes: { productividad: { min: 10000, mode: 50000, max: 200000 } },
+    });
+    const curva = buildLossExceedanceCurve(annualLosses);
+    const n = annualLosses.length;
+    curva.forEach(({ loss, probability }) => {
+        const empirica = (annualLosses.filter((l) => l > loss).length / n) * 100;
+        assert.ok(
+            Math.abs(empirica - probability) < 1,
+            `en $${Math.round(loss)} la curva dice ${probability}% pero la cuenta real da ${empirica.toFixed(2)}%`,
+        );
+    });
+});
+
+test('buildLossExceedanceCurve: es consistente con el probExceedance que la app ya calculaba por separado', () => {
+    // summarizeLosses(losses, umbral).probExceedance y la curva son dos caminos distintos hacia
+    // el mismo número. Si divergen, uno de los dos está mal — y como el umbral de excedencia sale
+    // de los Criterios de Riesgo del usuario, ese número ya se le muestra en pantalla.
+    const { annualLosses } = runMonteCarloSimulation({
+        iterations: 10000,
+        seed: 2718,
+        tef: { min: 1, mode: 3, max: 6 },
+        vuln: { min: 30, mode: 60, max: 90 },
+        lossMagnitudes: { reemplazo: { min: 20000, mode: 80000, max: 300000 } },
+    });
+    const curva = buildLossExceedanceCurve(annualLosses);
+    // Se toma un punto intermedio de la curva como umbral y se pide el número por el otro camino.
+    const punto = curva[Math.floor(curva.length / 2)];
+    const { probExceedance } = summarizeLosses(annualLosses, punto.loss);
+    assert.ok(
+        Math.abs(probExceedance - punto.probability) < 1,
+        `la curva dice ${punto.probability}% en $${Math.round(punto.loss)}, summarizeLosses dice ${probExceedance.toFixed(2)}%`,
+    );
+});
+
+test('buildLossExceedanceCurve: sin pérdidas devuelve una curva vacía, no truena', () => {
+    assert.deepStrictEqual(buildLossExceedanceCurve([]), []);
+    assert.deepStrictEqual(buildLossExceedanceCurve(null), []);
 });

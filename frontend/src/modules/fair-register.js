@@ -467,6 +467,11 @@ export const FairRegister = {
                     evitar,
                     aceptarJustificacion,
                     treatmentDecision,
+                    // Curva de Excedencia de Pérdidas de esta corrida (ver
+                    // buildLossExceedanceCurve en el backend). Sin mandarla acá se perdería: este
+                    // PUT reconstruye la entrada completa, así que lo que no viaja se borra.
+                    lossExceedanceCurve: state.fair.lastLossExceedanceCurve || null,
+                    inherentLossExceedanceCurve: state.fair.lastInherentLossExceedanceCurve || null,
                     chartLabels: chart ? chart.data.labels : null,
                     chartData: chart ? chart.data.datasets[0].data : null,
                 },

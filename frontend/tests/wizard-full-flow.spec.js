@@ -197,3 +197,47 @@ test.describe('Análisis FAIR completo', () => {
         expect(entry.defenseKey).toBe('basica');
     });
 });
+
+test.describe('Curva de Excedencia de Pérdidas (LEC)', () => {
+    test('se dibuja en el Paso 4 con las dos etapas y los umbrales, y se persiste en el Registro', async ({ page }) => {
+        await connectAndBoot(page);
+        const riskName = 'E2E LEC — Robo con Violencia';
+        await runFullFairAnalysis(page, riskName);
+
+        await expect(page.locator('#fair-lec-container')).toBeVisible();
+
+        // Cuatro series: Actual, Inherente, y los dos umbrales de Criterios de Riesgo. Sin los
+        // umbrales la curva es solo un dibujo bonito — es su cruce con la curva lo que responde
+        // "¿con qué probabilidad me paso de lo que dije tolerar?".
+        const grafico = await page.evaluate(() => {
+            const chart = Chart.getChart('fair-lec-chart');
+            if (!chart) return null;
+            return {
+                series: chart.data.datasets.map((d) => d.label),
+                puntosActual: chart.data.datasets[0].data.length,
+                // La curva debe ir hacia abajo: a más dinero, menos probabilidad de excederlo.
+                monotona: chart.data.datasets[0].data.every(
+                    (p, i, arr) => i === 0 || (p.x >= arr[i - 1].x && p.y <= arr[i - 1].y),
+                ),
+            };
+        });
+        expect(grafico).not.toBeNull();
+        expect(grafico.puntosActual).toBeGreaterThan(20);
+        expect(grafico.monotona).toBe(true);
+        expect(grafico.series.length).toBe(4);
+
+        // Persistida: sin esto la curva viviría solo en la sesión donde se simuló y desaparecería
+        // del Registro (las 10,000 pérdidas crudas no se guardan, ver buildLossExceedanceCurve).
+        const guardada = await page.evaluate(async (nombre) => {
+            const res = await fetch('http://localhost:3000/api/register', { headers: { 'X-API-Key': 'test-e2e-key' } });
+            const data = await res.json();
+            const entry = data.risks.find((r) => r.riskName === nombre);
+            return {
+                puntos: entry.lossExceedanceCurve ? entry.lossExceedanceCurve.length : 0,
+                inherente: entry.inherentLossExceedanceCurve ? entry.inherentLossExceedanceCurve.length : 0,
+            };
+        }, riskName);
+        expect(guardada.puntos).toBeGreaterThan(20);
+        expect(guardada.inherente).toBeGreaterThan(20);
+    });
+});

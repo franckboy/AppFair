@@ -270,6 +270,13 @@ function createRegisterRouter(store) {
                 // volver a dibujar el mismo gráfico en un reporte futuro.
                 chartLabels = null,
                 chartData = null,
+                // Curva de Excedencia de Pérdidas (ver buildLossExceedanceCurve en lib/simulation.js):
+                // ~34 puntos {loss, probability}, no los 10,000 crudos — mismo criterio que el
+                // histograma de arriba. Sin migración para lo ya guardado: un riesgo anterior a
+                // esto la recalcula la próxima vez que se simule, y la vista se oculta mientras
+                // tanto (mismo patrón que inherentALE).
+                lossExceedanceCurve = null,
+                inherentLossExceedanceCurve = null,
             } = req.body;
 
             if (typeof ale !== 'number') {
@@ -348,6 +355,35 @@ function createRegisterRouter(store) {
                 }
             }
 
+            // Validación ligera de las curvas (mismo criterio que el resto de este PUT: se
+            // rechaza lo que rompería el dibujo, no se re-deriva el dato). Se acepta null/ausente
+            // para los riesgos que todavía no la traen.
+            for (const [nombre, curva] of [
+                ['lossExceedanceCurve', lossExceedanceCurve],
+                ['inherentLossExceedanceCurve', inherentLossExceedanceCurve],
+            ]) {
+                if (curva === null || curva === undefined) continue;
+                if (!Array.isArray(curva)) {
+                    return res.status(400).json({ error: `${nombre} debe ser un arreglo de puntos o null.` });
+                }
+                const invalido = curva.some(
+                    (p) =>
+                        !p ||
+                        typeof p.loss !== 'number' ||
+                        !Number.isFinite(p.loss) ||
+                        p.loss < 0 ||
+                        typeof p.probability !== 'number' ||
+                        !Number.isFinite(p.probability) ||
+                        p.probability < 0 ||
+                        p.probability > 100,
+                );
+                if (invalido) {
+                    return res.status(400).json({
+                        error: `${nombre}: cada punto necesita loss >= 0 y probability entre 0 y 100.`,
+                    });
+                }
+            }
+
             const overrideError = validateRiskCriteriaOverride(riskCriteriaOverride, criteria);
             if (overrideError) return res.status(400).json({ error: overrideError });
 
@@ -422,6 +458,8 @@ function createRegisterRouter(store) {
                 treatmentDecision,
                 chartLabels,
                 chartData,
+                lossExceedanceCurve,
+                inherentLossExceedanceCurve,
                 date: new Date().toISOString(),
             };
 

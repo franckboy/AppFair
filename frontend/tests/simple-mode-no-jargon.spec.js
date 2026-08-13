@@ -9,7 +9,7 @@ const { test, expect, connectAndBoot, runFullFairAnalysis } = require('./helpers
 // los acrónimos FA/ENC, y la justificación técnica del backend insertada tal cual en los
 // banners de evaluación).
 const JARGON_PATTERN =
-    /\bCVaR\b|\bALE\b|\bP90\b|\bTEF\b|\bLEF\b|Beta-PERT|Monte Carlo|\bFA\b|\bENC\b|Pareto|correlaci[oó]n/i;
+    /\bCVaR\b|\bALE\b|\bP90\b|\bTEF\b|\bLEF\b|\bLEC\b|Beta-PERT|Monte Carlo|\bFA\b|\bENC\b|Pareto|correlaci[oó]n|Excedencia/i;
 
 // Toda la suite E2E comparte un único backend durante la corrida completa (ver
 // playwright.config.js) — para cuando este spec corre, el Registro ya acumuló riesgos de OTROS

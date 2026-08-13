@@ -2,7 +2,7 @@
 
 const { confidenceSpreadFactors } = require('../data/profiles');
 const { getPertRandom, mulberry32 } = require('./random');
-const { runMonteCarloSimulation, summarizeLosses } = require('./simulation');
+const { runMonteCarloSimulation, summarizeLosses, buildLossExceedanceCurve } = require('./simulation');
 
 /**
  * Promedio simple de los atributos numéricos de un perfil (Atacante o Defensa).
@@ -373,7 +373,15 @@ function calculateInherentRiskFromSimulation(tef, lossMagnitudes) {
         sampleVuln: () => 1,
     });
     const summary = summarizeLosses(annualLosses);
-    return { inherentALE: summary.average, inherentCVaR: summary.cvar95 };
+    // La curva del Inherente se devuelve junto al ALE/CVaR para poder superponerla a la del
+    // riesgo Actual: dos curvas juntas enseñan de un vistazo cuánto separan tus controles el
+    // "sin nada" del "con lo que hay hoy", que es la lectura que el waterfall da en un solo
+    // número.
+    return {
+        inherentALE: summary.average,
+        inherentCVaR: summary.cvar95,
+        inherentLossExceedanceCurve: buildLossExceedanceCurve(annualLosses),
+    };
 }
 
 module.exports = {
