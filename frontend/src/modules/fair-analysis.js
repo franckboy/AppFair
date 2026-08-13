@@ -10,6 +10,11 @@ export const FairAnalysis = {
         App.FairWizard.bindEvents();
         App.FairRegister.loadRiskRegister(false);
         App.FairWizard.applyOrgDefaults();
+        // El interruptor de amenaza deliberada arranca DESMARCADO (ver #fair-deliberate-threat),
+        // así que el estado inicial del formulario ya es "no deliberada" — hay que aplicar ese
+        // modo al arrancar, no solo cuando el usuario lo alterna, o el Paso 2 quedaría pidiendo
+        // un perfil de atacante para algo que no tiene adversario.
+        App.FairWizard.applyDeliberateThreatMode();
         App.FairWizard.checkForResumableAnalysis();
     },
     loadRiskRegister(render = true) {

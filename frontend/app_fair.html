@@ -333,6 +333,7 @@
 
                             <div class="fair-section bg-blue-50">
                                 <h4><span id="attacker-defense-section-title">Perfil del Atacante y Nivel de Defensa</span> <i class="fas fa-info-circle text-blue-500 cursor-pointer ml-1" title="Estos perfiles son una referencia para calibrar tu estimado de Frecuencia. No sobrescriben nada automáticamente."></i></h4>
+                                <div id="fair-attacker-defense-section">
                                 <p class="description-text mb-4">Elige el perfil que mejor describa a este atacante y tu nivel de defensa actual. Es informativo y opcional: te ayuda a calibrar el rango de Frecuencia de abajo, pero tú mantienes el control de los números finales.</p>
                                 <p id="fair-threat-reminder" class="description-text mb-2 hidden"></p>
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -356,9 +357,10 @@
                                         </select>
                                     </div>
                                 </div>
+                                </div>
                                 <div class="input-group mt-2">
                                     <label class="flex items-center">
-                                        <input type="checkbox" id="fair-deliberate-threat" class="form-checkbox mr-2">
+                                        <input type="checkbox" id="fair-deliberate-threat" class="form-checkbox mr-2" checked>
                                         ¿Es una amenaza deliberada (con intención propia, no accidental)?
                                     </label>
                                 </div>
@@ -397,8 +399,8 @@
 
                             <div class="fair-section">
                                 <h4><span id="vuln-header">Vulnerabilidad (%)</span> <i id="vuln-info" class="fas fa-info-circle text-blue-500 cursor-pointer ml-1" title="La probabilidad (en %) de que un evento de amenaza resulte en un evento de pérdida (ej. que el intento de robo o intrusión tenga éxito)."></i></h4>
-                                <p class="description-text mb-2">Se calcula sola a partir del Perfil de Atacante/Defensa que elegiste arriba y tu Nivel de Confianza — no necesitas escribir nada aquí, a menos que prefieras ajustarla tú mismo.</p>
-                                <div class="input-group mb-3">
+                                <p id="vuln-section-desc" class="description-text mb-2">Se calcula sola a partir del Perfil de Atacante/Defensa que elegiste arriba y tu Nivel de Confianza — no necesitas escribir nada aquí, a menos que prefieras ajustarla tú mismo.</p>
+                                <div id="vuln-manual-override-container" class="input-group mb-3">
                                     <label class="flex items-center">
                                         <input type="checkbox" id="vuln-manual-override" class="form-checkbox mr-2">
                                         Ajustar Vulnerabilidad manualmente (en vez de calcularla automáticamente)

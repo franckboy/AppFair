@@ -331,6 +331,13 @@ export const UIMode = {
         if (state.fair && state.fair.lastLossExceedanceCurve && App.FairWizard) {
             App.FairWizard.renderLossExceedanceCurve();
         }
+
+        // Una amenaza NO deliberada renombra la Vulnerabilidad (no hay adversario contra quien
+        // contender, ver applyDeliberateThreatMode) — ese texto pisa al del diccionario de
+        // arriba, así que tiene que aplicarse al final.
+        if (App.FairWizard && App.FairWizard.applyDeliberateThreatLabels) {
+            App.FairWizard.applyDeliberateThreatLabels();
+        }
     },
 
     // Aparte de applyLabels() porque su texto lleva un valor calculado (el umbral en
