@@ -282,10 +282,20 @@ function createRegisterRouter(store) {
                 // de POST /api/simulate, vía el frontend. `null` = guardado antes de que existiera
                 // el sello, es decir, con la calibración vieja.
                 calibrationVersion = null,
+                // Si la amenaza la provoca alguien a propósito. Cuando es false no hay adversario
+                // (sismo, incendio accidental, falla de equipo), así que el riesgo se analizó sin
+                // Perfil de Atacante/Defensa y con la Vulnerabilidad capturada a mano. Default
+                // true: es el caso principal de una app de seguridad patrimonial, y coincide con
+                // cómo abre el formulario. Sin esto, un riesgo no deliberado volvía a abrirse como
+                // deliberado al retomarlo, resucitando unos perfiles que nunca se eligieron.
+                isDeliberate = true,
             } = req.body;
 
             if (calibrationVersion !== null && (!Number.isInteger(calibrationVersion) || calibrationVersion < 1)) {
                 return res.status(400).json({ error: 'calibrationVersion debe ser un entero >= 1 o null.' });
+            }
+            if (typeof isDeliberate !== 'boolean') {
+                return res.status(400).json({ error: 'isDeliberate debe ser booleano.' });
             }
             if (typeof ale !== 'number') {
                 return res.status(400).json({ error: 'ale (número) es requerido.' });
@@ -469,6 +479,7 @@ function createRegisterRouter(store) {
                 lossExceedanceCurve,
                 inherentLossExceedanceCurve,
                 calibrationVersion,
+                isDeliberate,
                 date: new Date().toISOString(),
             };
 
