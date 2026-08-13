@@ -182,7 +182,7 @@ rs   = { min: R_eff × spread.min, mode: R_eff, max: min(100, R_eff × spread.ma
 ```
 
 TCap **no** lleva tope: el eje de contienda no es un porcentaje. RS **sí** conserva el tope en 100
-(ver §8, deuda conocida).
+(ver §9.2, deuda conocida).
 
 ### 5.3 Resolución de una iteración
 
@@ -396,7 +396,102 @@ baja frecuencia y alto impacto.
 
 ---
 
-## 8. Invariantes verificados por la suite
+## 8. Agregación de portafolio
+
+Todo lo anterior describe **un riesgo**. Esta capa responde la pregunta del comité: _¿cuánto expone
+la organización entera, y qué tan mal puede ir un año?_
+
+Motor: `backend/src/lib/portfolioSimulation.js`. Ruta: `GET /api/register/portfolio-simulation`.
+
+### 8.1 Por qué no basta con sumar
+
+El **ALE sí se puede sumar** — la esperanza es lineal, `E[X+Y] = E[X] + E[Y]`. Un **percentil no**:
+`p90(X+Y) ≠ p90(X) + p90(Y)`.
+
+CVaR es una medida coherente y por tanto **subaditiva**: `CVaR(X+Y) ≤ CVaR(X) + CVaR(Y)`. Sumar los
+CVaR individuales **sobrestima** la cola salvo que todos los riesgos se materialicen el mismo año.
+Era conservador, no peligroso, pero tenía un costo real: la app no podía mostrar **ningún** beneficio
+de diversificación, así que 20 riesgos independientes aparecían con una cola tan gorda como si los
+20 ocurrieran a la vez.
+
+Medido con riesgos idénticos e independientes:
+
+| Riesgos | Suma de CVaR95 | CVaR95 conjunto | Sobrestimación |
+| ------- | -------------- | --------------- | -------------- |
+| 1       | 58.848         | 58.848          | 0 %            |
+| 2       | 118.563        | 93.404          | 21 %           |
+| 5       | 297.250        | 183.902         | 38 %           |
+| 20      | 1.190.290      | 583.373         | **51 %**       |
+
+### 8.2 Simulación conjunta
+
+```
+para cada riesgo r utilizable:
+    annualLosses_r = runMonteCarloSimulation(r, semilla = base + índice × 7919)
+    para i en 1..10.000:  portfolioLosses[i] += annualLosses_r[i]
+```
+
+Sumar **por iteración** es la diferencia: cada índice `i` es "un año posible" vivido por todos los
+riesgos a la vez, y de esa distribución conjunta salen percentiles reales.
+
+- **Semilla derivada por posición** (`base + índice × 7919`): reproducible, y distinta por riesgo.
+  Con la misma semilla para todos, los riesgos quedarían perfectamente correlacionados por accidente
+  y el resultado volvería a ser la suma que se está corrigiendo.
+- **Semilla base fija** (`20260813`): una cifra de portafolio que baila sin que cambien los datos es
+  imposible de auditar.
+- **Se excluyen y se reportan** las oportunidades y los riesgos sin `tef`/`vuln`/`lossMagnitudes`
+  (`skippedCount`, `skippedRiskNames`) — nunca se cuentan como cero en silencio.
+
+### 8.3 Correlación: el Árbol de Cascada
+
+La independencia es una hipótesis fuerte: dos riesgos que comparten causa —un apagón que dispara
+robo **y** parada de producción— caen juntos, y asumirlos independientes **subestima** la cola.
+
+La correlación **no se estima ni se inventa**: sale de las dependencias que el analista ya declaró
+en el Árbol de Riesgos en Cascada (`triggeredBy`, con su probabilidad por arista). No hay matriz de
+correlaciones ajustada ni cópula: son las aristas dibujadas por el usuario, con sus probabilidades.
+
+```
+para i en 1..10.000:
+    activos = padres con  U(0,1) < 1 − e^(−LEF_i)      # ocurrió este año
+    alcanzados = walkMarkovChain(activos, aristas)      # a quién arrastran
+    para cada alcanzado que NO sea un padre activo:
+        portfolioLosses[i] += magnitud_i
+```
+
+**Dos reglas que no son negociables:**
+
+1. **Se SUMA sobre la base independiente, nunca la reemplaza.** Un portafolio sin dependencias
+   declaradas da **exactamente** los mismos números que antes de existir esta capa — verificado con
+   igualdad estricta y fijado con un test. Conectar la cascada no reescribe ninguna evaluación
+   existente en silencio.
+2. **Un descendiente arrastrado aporta solo su MAGNITUD**, no `LEF × Magnitud`. Misma regla que ya
+   sigue `cascadeSimulation.js`: la compuerta de cascada ya decidió "ocurrió este año", y volver a
+   multiplicar por su `lef_i` descontaría la frecuencia dos veces. Para un riesgo raro pero severo
+   —el perfil típico de un riesgo patrimonial— ese doble descuento subestima el aporte en órdenes de
+   magnitud.
+
+Efecto medido (5 riesgos, 3 aristas):
+
+|                              | sin cascada | con cascada |
+| ---------------------------- | ----------- | ----------- |
+| ALE                          | 113.842     | 136.974     |
+| CVaR95                       | 183.902     | **239.418** |
+| Beneficio de diversificación | 113.348     | **57.832**  |
+
+Riesgos acoplados diversifican la mitad. Ese es exactamente el efecto que la independencia no podía
+capturar.
+
+### 8.4 Qué se muestra
+
+Gestión de Riesgos presenta la cifra conjunta **junto a** la suma conservadora, con cuánto menos es y
+por qué — nunca en su lugar. Cambiar el número de golpe dejaría a un analista sin cómo explicar en
+un comité por qué su exposición cayó a la mitad. Si hay dependencias declaradas, la línea lo dice.
+
+El texto es sensible al Modo Simple: `CVaR95`/`p90` son jerga vetada ahí (ver
+`simple-mode-no-jargon.spec.js`), así que en ese modo se dicen las mismas dos cifras en palabras.
+
+## 9. Invariantes verificados por la suite
 
 `backend/test/lib.test.js` convierte el criterio experto en regresión ejecutable: nadie puede tocar
 `m`, el eje de contienda, los factores de acceso ni los atributos de un perfil sin que la suite
@@ -415,7 +510,7 @@ calibración podría acertar las 8 anclas y aun así producir absurdos en el res
 es exactamente lo que pasaba con los ajustes de forma libre antes de restringir la monotonía del
 eje.
 
-### 8.1 Versionado de calibración
+### 9.1 Versionado de calibración
 
 `VULNERABILITY_CALIBRATION_VERSION = 4`. Se sube cada vez que cambie `m`, el eje de contienda, el
 piso o los atributos de un perfil.
@@ -431,7 +526,7 @@ con una versión anterior **no se recalculan solos**: en una herramienta de GRC,
 silencio la evaluación guardada de un analista destruye la trazabilidad de por qué se decidió lo
 que se decidió. Se marcan con `⟳ Recalibrar` y el analista decide cuáles vuelve a simular.
 
-### 8.2 Deuda conocida
+### 9.2 Deuda conocida
 
 - **Tope de 100 en el triángulo de Resistencia.** Muerde en defensa avanzada (73,3 × 1,4 = 102,6) y
   élite (90,8 × 1,4 = 127,1). Liberarlo desviaría `estado-nación vs élite` de 45,0 % a 40,4 %,
@@ -447,7 +542,7 @@ que se decidió. Se marcan con `⟳ Recalibrar` y el analista decide cuáles vue
 
 ---
 
-## 9. Deslinde: el Equilibrio de Nash está FUERA de la ruta crítica
+## 10. Deslinde: el Equilibrio de Nash está FUERA de la ruta crítica
 
 **El Equilibrio de Nash es un panel exploratorio "qué pasaría si". No participa —ni directa ni
 indirectamente— en el cálculo de la Vulnerabilidad, el LEF, el ALE ni ninguna métrica del Registro.**
@@ -482,7 +577,7 @@ del Paso 2, y la interfaz lo advierte de forma explícita.
 
 ---
 
-## 10. Registro de decisiones de modelado
+## 11. Registro de decisiones de modelado
 
 Decisiones tomadas con su razón, para que quien retome esto no las revierta por desconocimiento.
 
