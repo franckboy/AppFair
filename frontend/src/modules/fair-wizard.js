@@ -80,8 +80,14 @@ export const FairWizard = {
             data.dataConfidence || App.OrgDefaults.defaults.dataConfidence;
         if (data.attackerKey) document.getElementById('fair-attacker-profile').value = data.attackerKey;
         if (data.defenseKey) document.getElementById('fair-defense-profile').value = data.defenseKey;
-        document.getElementById('fair-deliberate-threat').checked = !!data.isDeliberate;
+        document.getElementById('fair-deliberate-threat').checked =
+            // Un riesgo guardado ANTES de que este interruptor gobernara la Vulnerabilidad trae
+            // isDeliberate=false por el default viejo, pero si tiene attackerKey es porque SÍ se
+            // analizó con perfiles — abrirlo en modo no deliberado escondería los perfiles con los
+            // que de verdad se calculó. Se infiere de la evidencia, sin migrar datos.
+            !!data.isDeliberate || !!data.attackerKey;
         document.getElementById('fair-deliberate-ponderation-container').classList.toggle('hidden', !data.isDeliberate);
+        this.applyDeliberateThreatMode();
         if (data.deliberateThreatPonderation) {
             document.getElementById('fair-deliberate-ponderation').value = data.deliberateThreatPonderation;
             document.getElementById('fair-deliberate-ponderation-value').textContent =
@@ -544,6 +550,67 @@ export const FairWizard = {
         const checked = document.getElementById('fair-deliberate-threat').checked;
         document.getElementById('fair-deliberate-ponderation-container').classList.toggle('hidden', !checked);
         state.fair.isDeliberate = checked;
+        this.applyDeliberateThreatMode();
+    },
+
+    // Una amenaza NO deliberada (sismo, incendio accidental, error humano) no tiene adversario, y
+    // el modelo de Vulnerabilidad de la app sí lo asume: compara Capacidad de Amenaza contra
+    // Fuerza de Resistencia como una contienda, e incluso deja que un atacante persistente ESCALE
+    // su sofisticación cuando la defensa va ganando (ver sampleVulnerabilityFromProfiles en el
+    // backend). Un sismo no sube su magnitud porque el edificio aguantó.
+    //
+    // Por eso, sin deliberación, se pide la Vulnerabilidad DIRECTA: los perfiles se ocultan, no se
+    // mandan al simular (el backend ya tolera su ausencia y muestrea del rango capturado) y los
+    // tres campos quedan editables. No es un mecanismo nuevo: es el mismo camino que ya existía
+    // tras el checkbox "Ajustar manualmente", ahora activado solo en vez de depender de que el
+    // usuario sepa que ahí debe marcarlo.
+    applyDeliberateThreatMode() {
+        const deliberada = document.getElementById('fair-deliberate-threat').checked;
+        const seccionPerfiles = document.getElementById('fair-attacker-defense-section');
+        if (seccionPerfiles) seccionPerfiles.classList.toggle('hidden', !deliberada);
+        // El checkbox de ajuste manual sobra cuando la Vulnerabilidad SIEMPRE es manual — dejarlo
+        // visible sería un control que no hace nada.
+        const contenedorOverride = document.getElementById('vuln-manual-override-container');
+        if (contenedorOverride) contenedorOverride.classList.toggle('hidden', !deliberada);
+
+        if (!deliberada) {
+            this.setVulnManualOverride(true);
+        }
+        // applyLabels() vuelve a pintar vuln-header desde su diccionario, así que el texto
+        // específico de "no deliberada" se aplica DESPUÉS, desde applyDeliberateThreatLabels —
+        // que también se llama al final de applyLabels() para que sobreviva a un cambio de Modo
+        // Simple/Técnico.
+        App.UIMode.applyLabels();
+    },
+
+    // Solo el texto: sin adversario, esto ya no es "Vulnerabilidad" en el sentido de FAIR
+    // (¿supera el atacante mi resistencia?), sino directamente la probabilidad de que el evento
+    // termine en pérdida. Separado de applyDeliberateThreatMode porque App.UIMode.applyLabels lo
+    // invoca al final de cada aplicación de etiquetas — llamar al otro desde ahí recursaría.
+    applyDeliberateThreatLabels() {
+        const casilla = document.getElementById('fair-deliberate-threat');
+        if (!casilla) return;
+        const deliberada = casilla.checked;
+        const simple = App.UIMode.mode === 'simple';
+
+        const desc = document.getElementById('vuln-section-desc');
+        if (desc) {
+            desc.textContent = deliberada
+                ? simple
+                    ? 'Se calcula sola con el perfil de atacante y tu nivel de defensa — no necesitas escribir nada aquí, salvo que prefieras ajustarla tú.'
+                    : 'Se calcula sola a partir del Perfil de Atacante/Defensa que elegiste arriba y tu Nivel de Confianza — no necesitas escribir nada aquí, a menos que prefieras ajustarla tú mismo.'
+                : simple
+                  ? 'Como esto no lo provoca nadie a propósito, no hay perfil de atacante que valga: escribe directamente qué tan probable es que el evento te cause pérdida.'
+                  : 'Amenaza no deliberada: no hay adversario, así que no se deriva de perfiles. Captura directamente la probabilidad de que el evento resulte en pérdida.';
+        }
+        if (!deliberada) {
+            const encabezado = document.getElementById('vuln-header');
+            if (encabezado) {
+                encabezado.textContent = simple
+                    ? 'Si pasa, ¿qué tan probable es que te cause pérdida?'
+                    : 'Probabilidad de que el evento cause pérdida (%)';
+            }
+        }
     },
 
     // Punto de partida automático para TEF (Paso 2) — se recalcula sola mientras el usuario no
@@ -664,8 +731,14 @@ export const FairWizard = {
 
         if (data.attackerKey) document.getElementById('fair-attacker-profile').value = data.attackerKey;
         if (data.defenseKey) document.getElementById('fair-defense-profile').value = data.defenseKey;
-        document.getElementById('fair-deliberate-threat').checked = !!data.isDeliberate;
+        document.getElementById('fair-deliberate-threat').checked =
+            // Un riesgo guardado ANTES de que este interruptor gobernara la Vulnerabilidad trae
+            // isDeliberate=false por el default viejo, pero si tiene attackerKey es porque SÍ se
+            // analizó con perfiles — abrirlo en modo no deliberado escondería los perfiles con los
+            // que de verdad se calculó. Se infiere de la evidencia, sin migrar datos.
+            !!data.isDeliberate || !!data.attackerKey;
         document.getElementById('fair-deliberate-ponderation-container').classList.toggle('hidden', !data.isDeliberate);
+        this.applyDeliberateThreatMode();
         if (data.deliberateThreatPonderation) {
             document.getElementById('fair-deliberate-ponderation').value = data.deliberateThreatPonderation;
             document.getElementById('fair-deliberate-ponderation-value').textContent =
@@ -1481,6 +1554,7 @@ export const FairWizard = {
         const lossMagnitudes = this.buildLossMagnitudesFromDom();
         const riskType = document.getElementById('fair-risk-type').value;
         const currency = 'USD';
+        const deliberada = document.getElementById('fair-deliberate-threat').checked;
 
         try {
             const result = await App.Api.request('/api/simulate', {
@@ -1494,10 +1568,15 @@ export const FairWizard = {
                     // en backend/src/lib/autocalc.js) necesita estos 4 campos — sin
                     // attackerKey/defenseKey (Análisis Rápido, o riesgos previos a este cambio) el
                     // backend cae solo al `vuln` de arriba, retrocompatible al 100%.
-                    attackerKey: state.fair.attackerKey,
-                    defenseKey: state.fair.defenseKey,
+                    // Amenaza NO deliberada: los perfiles no viajan. No hay adversario que
+                    // pueda escalar ni contra quien contender, así que el backend debe muestrear
+                    // la Vulnerabilidad del rango capturado a mano y no del modelo TCap/RS (ver
+                    // applyDeliberateThreatMode). `undefined` es justo lo que /api/simulate
+                    // interpreta como "no vienen" — mandar null daría 400.
+                    attackerKey: deliberada ? state.fair.attackerKey : undefined,
+                    defenseKey: deliberada ? state.fair.defenseKey : undefined,
                     confidence: document.getElementById('fair-data-confidence').value,
-                    vulnManualOverride: document.getElementById('vuln-manual-override').checked,
+                    vulnManualOverride: !deliberada || document.getElementById('vuln-manual-override').checked,
                     lossMagnitudes,
                     riskType,
                     currency,
@@ -1992,13 +2071,19 @@ export const FairWizard = {
             document.getElementById('fair-data-notes').value = data.dataNotes || '';
             document.getElementById('fair-attacker-profile').value = data.attackerKey || 'empleado-desleal';
             document.getElementById('fair-defense-profile').value = data.defenseKey || 'estandar';
-            document.getElementById('fair-deliberate-threat').checked = !!data.isDeliberate;
+            document.getElementById('fair-deliberate-threat').checked =
+                // Un riesgo guardado ANTES de que este interruptor gobernara la Vulnerabilidad trae
+                // isDeliberate=false por el default viejo, pero si tiene attackerKey es porque SÍ se
+                // analizó con perfiles — abrirlo en modo no deliberado escondería los perfiles con los
+                // que de verdad se calculó. Se infiere de la evidencia, sin migrar datos.
+                !!data.isDeliberate || !!data.attackerKey;
             document
                 .getElementById('fair-deliberate-ponderation-container')
                 .classList.toggle('hidden', !data.isDeliberate);
             const ponderacion = parseFloat(data.deliberateThreatPonderation) || 0.7;
             document.getElementById('fair-deliberate-ponderation').value = ponderacion;
             document.getElementById('fair-deliberate-ponderation-value').textContent = `x${ponderacion.toFixed(2)}`;
+            this.applyDeliberateThreatMode();
             this.updateAttackerDefenseSummary();
 
             if (data.tef) {
