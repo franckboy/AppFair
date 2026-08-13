@@ -14,9 +14,13 @@ test.describe('Análisis FAIR completo', () => {
         await expect(row).toContainText('Analizado (FAIR)');
 
         // Riesgo Actual y CVaR 95% deben mostrar un monto en dólares, no un placeholder vacío.
+        // índices: 0 checkbox, 1 #, 2 riesgo, 3 etapa, 4 inherente, 5 efectividad, 6 actual,
+        // 7 residual, 8 activo, 9 cvar, 10 evaluación.
         const cells = row.locator('td');
         await expect(cells.nth(6)).toContainText('$'); // Riesgo Actual
-        await expect(cells.nth(8)).toContainText('$'); // CVaR 95%
+        await expect(cells.nth(9)).toContainText('$'); // CVaR 95%
+        // Recién analizado y sin decisión de Tratamiento: la etapa Residual todavía no existe.
+        await expect(cells.nth(7)).toContainText('sin tratar');
     });
 
     test('el asistente siempre abre en el Paso 1 al recargar — no salta directo al Paso 4', async ({ page }) => {

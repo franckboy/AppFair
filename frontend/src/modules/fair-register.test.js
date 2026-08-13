@@ -61,23 +61,58 @@ describe('FairRegister.computeFairRiskEquivalents', () => {
         // Rango asimétrico min 10 / moda 20 / max 45, lambda=4 → media = (10+4·20+45)/6 =
         // 22.5%, distinta de la moda (20%) a propósito, para probar que sí se usa la media
         // (la que realmente simula el backend con getPertRandom) y no la moda.
-        // ale residual = 10,000 / 0.225 = 44,444.44...
+        // ale actual = 10,000 / 0.225 = 44,444.44...
         const result = FairRegister.computeFairRiskEquivalents({
             ale: 10000,
             severity: 'bajo',
             vuln: { min: 10, mode: 20, max: 45 },
         });
-        expect(result.residualMoney).toBe('$10,000');
+        expect(result.actualMoney).toBe('$10,000');
         expect(result.inherentMoney).toBe('$44,444');
         expect(result.controlEffectiveness).toBe('77.5%');
-        expect(result.residualSeverity).toBe('bajo');
+        expect(result.actualSeverity).toBe('bajo');
         // 44,444 <= 50,000 (20% de aleCritico=250000 → aleAceptable derivado) → bajo
         expect(result.inherentSeverity).toBe('bajo');
     });
 
-    it('sin datos de Vulnerabilidad, no calcula el equivalente inherente (solo el residual)', () => {
+    it('el Riesgo Residual sale de la decisión de Tratamiento adoptada, y es null mientras no se decida nada', () => {
+        // Sin decisión: null, no "igual al actual". Es una distinción real — ISO 31000 exige que
+        // tratar un riesgo (incluso aceptarlo) sea una decisión documentada, así que "sin tratar"
+        // y "tratado con residual = actual" son estados distintos.
+        const sinDecidir = FairRegister.computeFairRiskEquivalents({ ale: 10000, severity: 'bajo' });
+        expect(sinDecidir.residualMoney).toBeNull();
+        expect(sinDecidir.residualSeverity).toBeNull();
+        expect(sinDecidir.residualStrategy).toBeNull();
+
+        // Con decisión adoptada: el residual real, clasificado contra el mismo criterio.
+        const tratado = FairRegister.computeFairRiskEquivalents({
+            ale: 10000,
+            severity: 'bajo',
+            treatmentDecision: { strategy: 'mitigar', residualALE: 4000 },
+        });
+        expect(tratado.actualMoney).toBe('$10,000');
+        expect(tratado.residualMoney).toBe('$4,000');
+        expect(tratado.residualStrategy).toBe('mitigar');
+        expect(tratado.residualSeverity).toBe('bajo');
+    });
+
+    it('el Riesgo Residual respeta el Apetito de Riesgo propio del riesgo (riskCriteriaOverride)', () => {
+        // Contra el criterio global (aleCritico 250,000) un residual de 60,000 es "bajo"; con un
+        // override mucho más estricto para ESE riesgo, el mismo monto pasa a "crítico". Las tres
+        // etapas deben clasificarse contra el mismo criterio para poder compararse entre sí.
+        const conOverride = FairRegister.computeFairRiskEquivalents({
+            ale: 100000,
+            severity: 'critico',
+            riskCriteriaOverride: { aleCritico: 50000, aleAceptablePercent: 20 },
+            treatmentDecision: { strategy: 'mitigar', residualALE: 60000 },
+        });
+        expect(conOverride.residualMoney).toBe('$60,000');
+        expect(conOverride.residualSeverity).toBe('critico');
+    });
+
+    it('sin datos de Vulnerabilidad, no calcula el equivalente inherente (solo el actual)', () => {
         const result = FairRegister.computeFairRiskEquivalents({ ale: 10000, severity: 'bajo' });
-        expect(result.residualMoney).toBe('$10,000');
+        expect(result.actualMoney).toBe('$10,000');
         expect(result.inherentMoney).toBeNull();
         expect(result.inherentSeverity).toBeNull();
         expect(result.controlEffectiveness).toBeNull();
@@ -99,7 +134,7 @@ describe('FairRegister.computeFairRiskEquivalents', () => {
             vuln: { min: 10, mode: 20, max: 45 },
             inherentALE: 60000,
         });
-        expect(result.residualMoney).toBe('$10,000');
+        expect(result.actualMoney).toBe('$10,000');
         expect(result.inherentMoney).toBe('$60,000');
         // Efectividad = (60000-10000)/60000 = 83.3%, NO el 77.5% que daría la aproximación vieja.
         expect(result.controlEffectiveness).toBe('83.3%');
@@ -153,7 +188,7 @@ describe('FairRegister.buildConcentratedList', () => {
         expect(list).toHaveLength(1);
         expect(list[0].stage).toBe('triage');
         expect(list[0].riesgoInherente).toBe(5000);
-        expect(list[0].riesgoResidual).toBe(3000);
+        expect(list[0].riesgoActual).toBe(3000);
     });
 
     it('fusiona en una sola fila un riesgo de triage con su entrada de FAIR (por sourceRiskId)', () => {

@@ -45,16 +45,22 @@ test.describe('Criterios de Riesgo aplicados de forma consistente', () => {
         });
         const cells = row.locator('td');
         // índices: 0 checkbox, 1 #, 2 riesgo, 3 etapa, 4 inherente, 5 efectividad, 6 actual,
-        // 7 activo, 8 cvar, 9 evaluación.
-        const residualClass = await cells.nth(6).locator('span').getAttribute('class');
-        const evalClass = await cells.nth(9).locator('span').getAttribute('class');
+        // 7 residual, 8 activo, 9 cvar, 10 evaluación.
+        const actualClass = await cells.nth(6).locator('span').getAttribute('class');
+        const evalClass = await cells.nth(10).locator('span').getAttribute('class');
 
-        expect(residualClass).toBe(evalClass);
+        expect(actualClass).toBe(evalClass);
 
         // Riesgo Inherente debe tener SU PROPIA clasificación (siempre visible, puede coincidir
         // o no con la de Actual dependiendo de la Vulnerabilidad).
         const inherenteText = await cells.nth(4).textContent();
         expect(inherenteText.trim()).not.toBe('');
         expect(inherenteText.trim()).not.toBe('—');
+
+        // Este riesgo no se ha tratado, así que la etapa Residual todavía no existe para él —
+        // debe decirlo explícitamente en vez de repetir el Actual (ver el comentario de las tres
+        // etapas en fair-register.js).
+        const residualText = await cells.nth(7).textContent();
+        expect(residualText).toContain('sin tratar');
     });
 });

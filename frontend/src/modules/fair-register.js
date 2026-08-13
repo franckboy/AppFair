@@ -168,9 +168,27 @@ export const FairRegister = {
               ? `${(100 - vulnMean).toFixed(1)}%`
               : null;
 
+        // Riesgo RESIDUAL de verdad: el que queda después de ADOPTAR una decisión de Tratamiento
+        // (ver App.Treatment.adoptStrategy). Es null mientras no se haya decidido nada, y esa
+        // ausencia es información real, no un hueco: ISO 31000 exige que tratar un riesgo sea una
+        // decisión documentada y deliberada, así que "sin decidir" no es lo mismo que "residual =
+        // actual". Se clasifica contra el MISMO criterio (incluido el override del riesgo) que ya
+        // usan el Inherente y el Actual, para que las tres etapas sean comparables entre sí.
+        const decision = entry.treatmentDecision || null;
+        const residualAle = decision && typeof decision.residualALE === 'number' ? decision.residualALE : null;
+
         return {
-            residualMoney: fmt(entry.ale),
-            residualSeverity: entry.severity || null,
+            // OJO con el nombre: esto es el ALE ACTUAL (con los controles vigentes), la SEGUNDA
+            // etapa del waterfall — antes se llamaba `residualMoney`, heredado de cuando la app
+            // solo tenía dos etapas (Inherente → Residual) y no existía la decisión de
+            // Tratamiento. Se renombró para que "residual" signifique una sola cosa en todo el
+            // código, igual que ya se hizo con la columna visible de la tabla.
+            actualMoney: fmt(entry.ale),
+            actualSeverity: entry.severity || null,
+            residualMoney: residualAle != null ? fmt(residualAle) : null,
+            residualSeverity:
+                residualAle != null ? this.classifyAleAgainstCriteria(residualAle, entry.riskCriteriaOverride) : null,
+            residualStrategy: decision ? decision.strategy : null,
             inherentMoney: inherentAle != null ? fmt(inherentAle) : null,
             // Preferir la clasificación YA CALCULADA por el backend (entry.inherentSeverity, ver
             // evaluateFairThreat en POST /api/simulate) — bug real corregido: classifyAleAgainstCriteria
@@ -209,8 +227,11 @@ export const FairRegister = {
                 quickAle: risk.ale || null,
                 riesgoInherente: fairEquiv ? fairEquiv.inherentMoney : risk.ri || null,
                 riesgoInherenteSeverity: fairEquiv ? fairEquiv.inherentSeverity : null,
-                riesgoResidual: fairEquiv ? fairEquiv.residualMoney : risk.rrt || null,
+                riesgoActual: fairEquiv ? fairEquiv.actualMoney : risk.rrt || null,
+                riesgoActualSeverity: fairEquiv ? fairEquiv.actualSeverity : null,
+                riesgoResidual: fairEquiv ? fairEquiv.residualMoney : null,
                 riesgoResidualSeverity: fairEquiv ? fairEquiv.residualSeverity : null,
+                riesgoResidualStrategy: fairEquiv ? fairEquiv.residualStrategy : null,
                 controlEffectiveness: fairEquiv ? fairEquiv.controlEffectiveness : null,
                 asset: (fairEntry && fairEntry.asset) || (risk.fullData && risk.fullData.asset) || '—',
                 fairEntry,
@@ -236,8 +257,11 @@ export const FairRegister = {
                     quickAle: null,
                     riesgoInherente: fairEquiv ? fairEquiv.inherentMoney : null,
                     riesgoInherenteSeverity: fairEquiv ? fairEquiv.inherentSeverity : null,
+                    riesgoActual: fairEquiv ? fairEquiv.actualMoney : null,
+                    riesgoActualSeverity: fairEquiv ? fairEquiv.actualSeverity : null,
                     riesgoResidual: fairEquiv ? fairEquiv.residualMoney : null,
                     riesgoResidualSeverity: fairEquiv ? fairEquiv.residualSeverity : null,
+                    riesgoResidualStrategy: fairEquiv ? fairEquiv.residualStrategy : null,
                     controlEffectiveness: fairEquiv ? fairEquiv.controlEffectiveness : null,
                     asset: reg.asset,
                     fairEntry: reg,
@@ -819,14 +843,22 @@ export const FairRegister = {
                         ? `<span class="px-2 py-1 rounded text-xs border-l-4 ${severityToClasses(severity)}">${text}</span>`
                         : text || '—';
 
+                // Las tres etapas del riesgo, en el mismo renglón y en orden:
+                //   Inherente  — sin ningún control (vulnerabilidad al 100%).
+                //   Actual     — con los controles vigentes; es entry.ale, el que alimenta la
+                //                Matriz, el Pareto del Registro y la columna "Evaluación".
+                //   Residual   — lo que queda DESPUÉS de adoptar una decisión de Tratamiento.
+                //                "—" mientras no se haya decidido nada: no es un hueco de datos,
+                //                es que todavía no existe esa etapa para ese riesgo.
                 const inherenteCell = moneyBadge(item.riesgoInherente, item.riesgoInherenteSeverity);
-                // Columna "Riesgo Actual" (antes "Riesgo Residual" — renombrada para no chocar con
-                // el vocabulario de Gestión de Riesgos, donde "Residual" significa específicamente
-                // el resultado DESPUÉS de adoptar una decisión de Tratamiento; acá siempre es
-                // entry.ale, el ALE con los controles vigentes, sin importar si ya se decidió algo
-                // en Tratamiento). Antes existía además una columna "Impacto" que mostraba este
-                // MISMO número (fmt(entry.ale)) por separado — se quitó por ser un duplicado.
-                const residualCell = moneyBadge(item.riesgoResidual, item.riesgoResidualSeverity);
+                const actualCell = moneyBadge(item.riesgoActual, item.riesgoActualSeverity);
+                const residualCell = item.riesgoResidual
+                    ? `${moneyBadge(item.riesgoResidual, item.riesgoResidualSeverity)}${
+                          item.riesgoResidualStrategy
+                              ? `<span class="block text-xs text-gray-500 mt-1">${sanitizeHTML(STRATEGY_LABELS[item.riesgoResidualStrategy] || item.riesgoResidualStrategy)}</span>`
+                              : ''
+                      }`
+                    : '<span class="text-gray-400">— sin tratar</span>';
                 const cvarCell = item.fairEntry ? fmt(item.fairEntry.cvar95) : '—';
                 const dateCell = formatDate(item.fairEntry ? item.fairEntry.date : item.createdAt);
 
@@ -865,6 +897,7 @@ export const FairRegister = {
                     <td>${stageBadge}${treatedBadge}</td>
                     <td>${inherenteCell}</td>
                     <td>${item.controlEffectiveness || '—'}</td>
+                    <td>${actualCell}</td>
                     <td>${residualCell}</td>
                     <td>${sanitizeHTML(item.asset)}</td>
                     <td>${cvarCell}</td>
