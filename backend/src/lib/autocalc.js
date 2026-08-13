@@ -122,7 +122,9 @@ const VULNERABILITY_FLOOR = 0.005;
 //   2 = eje de contienda calibrado con 6 anclas de experto, m=6,8254, piso de 0,5 %.
 //   3 = el Nivel de Confianza deja de mover la media (ver confidenceMeanCorrection): solo abre o
 //       cierra el abanico. Cambia los números de todo riesgo capturado con confianza alta o baja.
-const VULNERABILITY_CALIBRATION_VERSION = 3;
+//   4 = los factores alfa del Nivel de Acceso pasan de juicio directo a despejados por anclas
+//       estructurales. Solo cambia los números de riesgos con acceso distinto de 'nulo'.
+const VULNERABILITY_CALIBRATION_VERSION = 4;
 
 /**
  * Función de Éxito de Contienda de Tullock — probabilidad de que el lado "atacante" gane un
@@ -171,18 +173,31 @@ function tullockSuccessProbability(attackerStrength, defenseStrength, m = TULLOC
 // `nulo` (alfa = 1,00) es el default y es un NO-OP exacto: las seis anclas de calibración se
 // emitieron sin modificador de acceso, así que siguen valiendo tal cual y ningún riesgo ya
 // guardado cambia de números.
-// Los factores se suavizaron respecto a la primera propuesta (1,00 / 0,80 / 0,50 / 0,25) porque
-// con m=6,83 un alfa multiplicativo se amplifica muchísimo: cortar la Resistencia a un cuarto
-// multiplica las probabilidades por ~4^6,83, y el cuadrante del insider privilegiado se aplanaba
-// en ~99,5 % contra CUALQUIER defensa. Doctrinalmente eso no es falso —contra un administrador con
-// llaves maestras la respuesta es segregación de funciones y mínimo privilegio, no una barda más
-// alta— pero dejaba a la app sin poder distinguir nada en esa esquina, que es donde más falta hace
-// decidir. Con esta escala el insider sigue siendo severo y la defensa conserva sensibilidad.
+// Los factores alfa están DESPEJADOS, no elegidos a ojo — mismo criterio que `m`.
+//
+// Se anclan sobre una sola pareja fija (organizado vs. estándar, C=56,911 y ENC=55,0) variando
+// únicamente el Nivel de Acceso. Al mantener C y R constantes, ambos se cancelan y la variación de
+// Vulnerabilidad es función pura de alfa: cada ancla despeja su factor de forma unívoca, y la
+// monotonía sale por construcción. La pareja se eligió por estar en la zona central de la sigmoide
+// de Tullock, donde m=6,8254 tiene su mejor resolución — anclar cerca del piso de 0,5 % daría
+// factores hipersensibles al ruido.
+//
+//   acceso nulo   -> 60 %  (es el ancla base #3, ya existente)  -> alfa 1,000
+//   acceso bajo   -> 72 %                                        -> alfa 0,878
+//   acceso medio  -> 88 %                                        -> alfa 0,703
+//   acceso alto   -> 96 %                                        -> alfa 0,568
+//
+// Un intento anterior de anclar el acceso cruzando distintos atacantes y defensas resultó
+// MUTUAMENTE INCOMPATIBLE: los alfa despejados salían 0,614 (bajo), 0,777 (medio) y 0,686 (alto),
+// o sea no monótonos — "bajo/perimetral" habría mordido más que "alto/privilegiado". La causa era
+// anclar en celdas pegadas al piso de 0,5 %, donde mover la Vulnerabilidad unos décimos exige
+// recortes enormes de alfa. De ahí la regla: el acceso se ancla sobre una pareja fija en la zona
+// central, nunca cruzando celdas.
 const ACCESS_LEVELS = {
     nulo: { alpha: 1.0, name: 'Nulo / Externo' },
-    bajo: { alpha: 0.85, name: 'Bajo / Perimetral' },
-    medio: { alpha: 0.65, name: 'Medio / Operativo' },
-    alto: { alpha: 0.5, name: 'Alto / Privilegiado' },
+    bajo: { alpha: 0.878, name: 'Bajo / Perimetral' },
+    medio: { alpha: 0.703, name: 'Medio / Operativo' },
+    alto: { alpha: 0.568, name: 'Alto / Privilegiado' },
 };
 const DEFAULT_ACCESS_LEVEL = 'nulo';
 

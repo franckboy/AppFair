@@ -127,9 +127,9 @@ R_eff = ENC × α
 | Clave   | Nombre              | α                  |
 | ------- | ------------------- | ------------------ |
 | `nulo`  | Nulo / Externo      | **1,00** (default) |
-| `bajo`  | Bajo / Perimetral   | 0,85               |
-| `medio` | Medio / Operativo   | 0,65               |
-| `alto`  | Alto / Privilegiado | 0,50               |
+| `bajo`  | Bajo / Perimetral   | **0,878**          |
+| `medio` | Medio / Operativo   | **0,703**          |
+| `alto`  | Alto / Privilegiado | **0,568**          |
 
 **Por qué modula R y no C.** Bajo Tullock solo cuenta la razón `C/R`, así que `R·α` y `C/α` son casi
 equivalentes — pero no del todo: el triángulo de Resistencia tiene un tope duro en 100 que ya muerde
@@ -137,10 +137,27 @@ con defensa avanzada y élite, así que escalar R hacia abajo lo libera mientras
 Medido contra defensa élite, las dos rutas difieren hasta **4,7 puntos**, y modular R da el
 resultado conservador.
 
-**Por qué α no baja de 0,50.** Con `m = 6,8254` un α multiplicativo se amplifica muchísimo: cortar
-R a un cuarto multiplica las probabilidades por ~`4^6,8254` ≈ 21.000. Con la escala inicial
-(α = 0,25) el cuadrante del insider privilegiado se aplanaba en ~99,5 % contra **cualquier**
-defensa, y la app perdía capacidad de distinguir justo donde más falta hace decidir.
+**Los α están despejados, no elegidos.** Se anclan sobre **una sola pareja fija** —`organizado`
+(C = 56,911) vs `estándar` (ENC = 55,0)— variando únicamente el Nivel de Acceso. Al mantener C y R
+constantes, ambos se cancelan y la variación de Vulnerabilidad es función pura de α: cada ancla
+despeja su factor de forma unívoca, y la monotonía sale por construcción.
+
+| Acceso | Ancla de Vulnerabilidad    | α despejado |
+| ------ | -------------------------- | ----------- |
+| nulo   | 60 % (es el ancla base #3) | 1,000       |
+| bajo   | 72 %                       | 0,878       |
+| medio  | 88 %                       | 0,703       |
+| alto   | 96 %                       | 0,568       |
+
+La pareja se eligió por estar en la **zona central de la sigmoide**, donde `m = 6,8254` tiene su
+mejor resolución.
+
+**Por qué NO se ancla cruzando celdas.** Un intento anterior usó tres combinaciones distintas de
+atacante y defensa. Los α despejados salieron **0,614** (bajo), **0,777** (medio) y **0,686** (alto)
+— **no monótonos**: "bajo/perimetral" habría desarmado más controles que "alto/privilegiado". La
+causa fue anclar en celdas pegadas al piso de 0,5 %, donde mover la Vulnerabilidad unos décimos
+exige recortes enormes de α. **Regla: el acceso se ancla sobre una pareja fija en la zona central,
+nunca cruzando celdas.**
 
 **`α = 1,00` es un no-op exacto**, y por eso las ocho anclas siguen valiendo sin recalibrar.
 
@@ -400,7 +417,7 @@ eje.
 
 ### 8.1 Versionado de calibración
 
-`VULNERABILITY_CALIBRATION_VERSION = 3`. Se sube cada vez que cambie `m`, el eje de contienda, el
+`VULNERABILITY_CALIBRATION_VERSION = 4`. Se sube cada vez que cambie `m`, el eje de contienda, el
 piso o los atributos de un perfil.
 
 | Versión | Cambio                                                            |
@@ -422,8 +439,11 @@ que se decidió. Se marcan con `⟳ Recalibrar` y el analista decide cuáles vue
   Mantenido a propósito hasta que se pague ese re-ajuste.
 - **La Persistencia se cuenta dos veces** (dentro de FA y en la escalada). Absorbido por la
   calibración; documentado en el código.
-- **El acceso no tiene anclas propias.** Los α son juicio experto directo, no despejados de
-  observaciones como `m`.
+- **El tope de 100 se conserva a propósito.** Quitarlo no es un ajuste de un nodo: rompe también
+  `organizado vs élite` (15,0 % → 13,7 %), y ese perfil está en el nodo FA=60, no en el superior.
+  Como `organizado` tiene dos anclas y un solo nodo, sin el tope ya no caben las dos a la vez —
+  habría que **re-derivar `m`**, porque el tope estaba activo en una de las dos anclas que lo
+  determinan y no en la otra. Es una recalibración completa, no un parche.
 
 ---
 

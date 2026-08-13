@@ -21,6 +21,7 @@ const {
     tullockSuccessProbability,
     attackerContestStrength,
     ATTACKER_CONTEST_CALIBRATION,
+    ACCESS_LEVELS,
     VULNERABILITY_FLOOR,
     sampleVulnerabilityFromProfiles,
     summarizeVulnerabilitySamples,
@@ -854,6 +855,49 @@ test('CALIBRACIÓN: la Vulnerabilidad simulada reproduce las 6 anclas de juicio 
             `${attacker} vs ${defense}: ancla ${expected}%, el modelo dio ${avg.toFixed(2)}%`,
         );
     }
+});
+
+// Anclas ESTRUCTURALES del Nivel de Acceso: una sola pareja (organizado vs. estándar) variando
+// únicamente alfa. Al quedar C y R constantes, ambos se cancelan y cada ancla despeja su factor de
+// forma unívoca — por eso los alfa de ACCESS_LEVELS no son juicio directo sino valores derivados.
+const ACCESS_ANCHORS = [
+    { access: 'nulo', expected: 60 },
+    { access: 'bajo', expected: 72 },
+    { access: 'medio', expected: 88 },
+    { access: 'alto', expected: 96 },
+];
+
+test('CALIBRACIÓN: los factores de Nivel de Acceso reproducen sus anclas estructurales', () => {
+    for (const { access, expected } of ACCESS_ANCHORS) {
+        const sampler = sampleVulnerabilityFromProfiles(
+            attackerProfiles.organizado,
+            defenseProfiles.estandar,
+            'medio',
+            access,
+        );
+        let sum = 0;
+        const rng = mulberry32(0x5eed);
+        for (let i = 0; i < 60000; i++) sum += sampler(rng);
+        const avg = (sum / 60000) * 100;
+        assert.ok(
+            Math.abs(avg - expected) <= 1.5,
+            `acceso ${access}: ancla ${expected}%, el modelo dio ${avg.toFixed(2)}%`,
+        );
+    }
+});
+
+test('CALIBRACIÓN: más acceso siempre baja la resistencia efectiva, nunca la sube', () => {
+    // Monotonía estricta de los factores. Un intento anterior de anclar el acceso cruzando
+    // distintos atacantes y defensas producía alfa NO monótonos (bajo 0,614 mordía más que alto
+    // 0,686), porque anclaba en celdas pegadas al piso de 0,5 %. Este test cierra esa puerta.
+    const orden = ['nulo', 'bajo', 'medio', 'alto'];
+    for (let i = 1; i < orden.length; i++) {
+        assert.ok(
+            ACCESS_LEVELS[orden[i]].alpha < ACCESS_LEVELS[orden[i - 1]].alpha,
+            `alfa de ${orden[i]} (${ACCESS_LEVELS[orden[i]].alpha}) debería ser menor que el de ${orden[i - 1]}`,
+        );
+    }
+    assert.strictEqual(ACCESS_LEVELS.nulo.alpha, 1, 'acceso nulo debe ser un no-op exacto');
 });
 
 test('CALIBRACIÓN: la grilla completa Atacante x Defensa es monótona en ambos ejes', () => {
