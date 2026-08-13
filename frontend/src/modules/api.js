@@ -98,6 +98,7 @@ export const Api = {
             state.quick.hazardStandards = profiles.hazardStandards;
             state.quick.isoProcessClauses = profiles.isoProcessClauses;
             state.config.calibrationVersion = profiles.calibrationVersion ?? null;
+            state.config.accessLevels = profiles.accessLevels || null;
             state.quick.assets = assetsRes.assets;
             state.config.riskCriteria = criteria;
             App.OrgDefaults.defaults = { ...App.OrgDefaults.defaults, ...orgDefaults };

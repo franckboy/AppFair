@@ -319,6 +319,11 @@ export const FairWizard = {
         document.getElementById('fair-step4-back').addEventListener('click', () => this.navigateWizard(3));
         document.getElementById('run-simulation-btn').addEventListener('click', () => this.runMonteCarloSimulation());
         document.getElementById('nash-calculate-btn').addEventListener('click', () => this.calculateNashEquilibrium());
+        document.getElementById('fair-access-level').addEventListener('change', () => {
+            state.fair.accessLevel = document.getElementById('fair-access-level').value;
+            this.renderAccessLevelEffect();
+            this.updateAttackerDefenseSummary();
+        });
         document.getElementById('fair-reset-btn').addEventListener('click', () => this.resetForm());
         document.getElementById('fair-duplicate-btn').addEventListener('click', () => this.duplicateFromTemplate());
         document.getElementById('fair-resume-banner-btn').addEventListener('click', () => this.restoreFairAnalysis());
@@ -511,7 +516,12 @@ export const FairWizard = {
         try {
             data = await App.Api.request('/api/autocalc/vulnerability', {
                 method: 'POST',
-                body: { attackerKey: state.fair.attackerKey, defenseKey: state.fair.defenseKey, confidence },
+                body: {
+                    attackerKey: state.fair.attackerKey,
+                    defenseKey: state.fair.defenseKey,
+                    confidence,
+                    accessLevel: document.getElementById('fair-access-level').value,
+                },
             });
         } catch (err) {
             if (requestId !== this._vulnRequestId) return; // ver el guardián documentado arriba, junto a FairWizard
@@ -572,10 +582,47 @@ export const FairWizard = {
     // tres campos quedan editables. No es un mecanismo nuevo: es el mismo camino que ya existía
     // tras el checkbox "Ajustar manualmente", ahora activado solo en vez de depender de que el
     // usuario sepa que ahí debe marcarlo.
+    // Puebla el selector de Nivel de Acceso desde el catálogo que sirve el backend (ver
+    // ACCESS_LEVELS en lib/autocalc.js) — no se duplica la tabla aquí para que no puedan
+    // desincronizarse los factores.
+    populateAccessLevels() {
+        const select = document.getElementById('fair-access-level');
+        const niveles = state.config.accessLevels;
+        if (!select || !niveles) return;
+        const previo = state.fair.accessLevel || 'nulo';
+        select.innerHTML = Object.entries(niveles)
+            .map(([key, nivel]) => `<option value="${key}">${nivel.name}</option>`)
+            .join('');
+        select.value = niveles[previo] ? previo : 'nulo';
+        this.renderAccessLevelEffect();
+    },
+
+    renderAccessLevelEffect() {
+        const select = document.getElementById('fair-access-level');
+        const desc = document.getElementById('fair-access-level-desc');
+        const niveles = state.config.accessLevels;
+        if (!select || !desc || !niveles) return;
+        const nivel = niveles[select.value];
+        if (!nivel) return;
+        const restante = Math.round(nivel.alpha * 100);
+        desc.textContent =
+            restante === 100
+                ? 'Tiene que atravesar toda tu defensa: se interpone completa.'
+                : `Solo el ${restante}% de tu defensa alcanza a interponerse — el resto se lo salta por estar ya adentro.`;
+    },
+
     applyDeliberateThreatMode() {
+        // El catálogo de niveles llega en el arranque (App.Api.bootstrap), después de init() —
+        // poblar aquí cubre tanto el primer render como retomar un riesgo, sin un hook aparte.
+        this.populateAccessLevels();
         const deliberada = document.getElementById('fair-deliberate-threat').checked;
         const seccionPerfiles = document.getElementById('fair-attacker-defense-section');
         if (seccionPerfiles) seccionPerfiles.classList.toggle('hidden', !deliberada);
+        // Sin adversario no hay "acceso del atacante" que declarar: un incendio no tiene
+        // credenciales. Vive fuera de la sección de perfiles (igual que el propio interruptor,
+        // que no puede esconderse a sí mismo), así que se oculta explícitamente aquí.
+        const acceso = document.getElementById('fair-access-level-container');
+        if (acceso) acceso.classList.toggle('hidden', !deliberada);
         // El checkbox de ajuste manual sobra cuando la Vulnerabilidad SIEMPRE es manual — dejarlo
         // visible sería un control que no hace nada.
         const contenedorOverride = document.getElementById('vuln-manual-override-container');
@@ -941,6 +988,8 @@ export const FairWizard = {
         // riesgo NO deliberado desde el Registro lo reabría como si tuviera adversario — con los
         // perfiles a la vista y la Vulnerabilidad en automático, justo lo contrario de cómo se
         // analizó. El checkbox no se restauraba en ningún punto de esta función.
+        state.fair.accessLevel = entry.accessLevel || 'nulo';
+        this.populateAccessLevels();
         const esDeliberada = this.inferDeliberateThreat(entry);
         document.getElementById('fair-deliberate-threat').checked = esDeliberada;
         document.getElementById('fair-deliberate-ponderation-container').classList.toggle('hidden', !esDeliberada);
@@ -1593,6 +1642,7 @@ export const FairWizard = {
                     // applyDeliberateThreatMode). `undefined` es justo lo que /api/simulate
                     // interpreta como "no vienen" — mandar null daría 400.
                     attackerKey: deliberada ? state.fair.attackerKey : undefined,
+                    accessLevel: deliberada ? document.getElementById('fair-access-level').value : undefined,
                     defenseKey: deliberada ? state.fair.defenseKey : undefined,
                     confidence: document.getElementById('fair-data-confidence').value,
                     vulnManualOverride: !deliberada || document.getElementById('vuln-manual-override').checked,
