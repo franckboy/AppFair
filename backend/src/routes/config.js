@@ -12,6 +12,7 @@ const {
 } = require('../data/profiles');
 const { hazardStandards, isoProcessClauses, rimsClauses } = require('../data/standardsReference');
 const { normalizeRiskCriteria } = require('../lib/riskCriteria');
+const { VULNERABILITY_CALIBRATION_VERSION } = require('../lib/autocalc');
 const { asyncHandler } = require('../middleware/asyncHandler');
 
 function createConfigRouter(store) {
@@ -32,6 +33,11 @@ function createConfigRouter(store) {
             hazardStandards,
             isoProcessClauses,
             rimsClauses,
+            // Versión vigente del modelo de Vulnerabilidad (ver lib/autocalc.js). El frontend la
+            // compara contra el sello guardado en cada riesgo para avisar cuáles se calcularon
+            // con una calibración anterior. Se expone desde aquí, y no como constante duplicada
+            // en el frontend, para que no puedan quedar desincronizadas.
+            calibrationVersion: VULNERABILITY_CALIBRATION_VERSION,
         });
     });
 

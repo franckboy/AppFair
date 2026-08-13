@@ -21,19 +21,106 @@ function getConfidenceSpread(confidence) {
     return confidenceSpreadFactors[confidence] || confidenceSpreadFactors.medio;
 }
 
-// "Factor de decisividad" de la Función de Éxito de Contienda de Tullock (ver
-// tullockSuccessProbability abajo) que usa el cálculo automático de Vulnerabilidad/Monte Carlo
-// en vivo — m=1 es el caso base de la literatura de economía de conflicto (la ventaja de fuerza
-// pesa de forma proporcional). Valor curado a mano, documentado como tal (no viene de evidencia
-// real todavía) — el script de calibración en tools/bayesian-calibration/ es el mecanismo para
-// revisarlo con datos reales más adelante. Deliberadamente INDEPENDIENTE del `m` que el usuario
-// puede elegir en la sección de Equilibrio de Nash (nashEquilibrium.js): ese es un análisis
-// exploratorio "qué pasaría si", nunca debe poder cambiar en silencio el resultado de la
-// simulación real.
-const TULLOCK_M = 1;
+// ---------------------------------------------------------------------------------------------
+// CALIBRACIÓN DE VULNERABILIDAD — metodología propia de AppFair
+// ---------------------------------------------------------------------------------------------
+// `m` y el eje de contienda de abajo NO son valores curados a ojo: salen de seis anclas de juicio
+// experto en seguridad patrimonial, emitidas por separado y ajustadas después contra la media
+// SIMULADA (no contra la fórmula central — ver la nota de sesgo más abajo):
+//
+//     oportunista      vs. básica    ->  5 %       organizado     vs. estándar  -> 60 %
+//     vandalismo       vs. básica    -> 35 %       organizado     vs. élite     -> 15 %
+//     empleado desleal vs. avanzada  -> 30 %       estado-nación  vs. élite     -> 45 %
+//
+// `m` NO se eligió: queda determinado algebraicamente por las dos anclas de `organizado`, que
+// comparten atacante contra dos defensas distintas — el eje de contienda se cancela y solo
+// sobrevive `m`. El valor anterior (m=1, "caso base de la literatura") comprimía toda la grilla
+// de 5x4 combinaciones al rango 17,7 %-76,3 %: pasar de defensa básica a élite apenas dividía la
+// Vulnerabilidad a la mitad, así que la app subvaloraba sistemáticamente la inversión en
+// seguridad, y eso alimentaba directo a Mitigar. Con esta calibración el rango real es 0,5 %-99,8 %.
+//
+// Sigue siendo deliberadamente INDEPENDIENTE del `m` que el usuario puede elegir en la sección de
+// Equilibrio de Nash (nashEquilibrium.js): ese es un análisis exploratorio "qué pasaría si", nunca
+// debe poder cambiar en silencio el resultado de la simulación real.
+//
+// Nada de esto lo prescribe ISO 31000, ISO 28000 ni ASIS: esas normas aportan el marco de proceso
+// (contexto, identificación, análisis, evaluación, tratamiento), no estas cifras ni estas
+// fórmulas. Es metodología cuantitativa propia de AppFair y así debe documentarse.
+const TULLOCK_M = 6.8254;
+
+// Eje de contienda: traduce el promedio SEMÁNTICO de un Perfil de Atacante (Motivación, Recursos,
+// Capacidad, Persistencia, Sofisticación) a la escala en la que de verdad compite contra la
+// Defensa. Hacía falta porque las dos escalas nunca se calibraron una contra otra — se venían
+// comparando como si un punto de atacante valiera lo mismo que un punto de defensa, y no es así.
+//
+// Los cuatro nodos salen de las seis anclas de arriba. El nodo FA=60 está SOBREDETERMINADO (tres
+// anclas lo fijan, un solo parámetro lo absorbe) y aun así el peor residuo de todo el conjunto es
+// de 0,44 puntos porcentuales — eso es validación, no ajuste: nada obligaba a que cuadraran.
+const ATTACKER_CONTEST_CALIBRATION = [
+    { profileScore: 0, contestStrength: 0 },
+    { profileScore: 18, contestStrength: 14.614 }, // intruso oportunista
+    { profileScore: 43, contestStrength: 22.682 }, // vandalismo / hurtos comunes
+    { profileScore: 60, contestStrength: 56.911 }, // empleado desleal y crimen organizado
+    { profileScore: 90, contestStrength: 75.748 }, // terrorista o espía
+];
+
+/**
+ * Traduce el promedio de un Perfil de Atacante al eje de contienda (ver
+ * ATTACKER_CONTEST_CALIBRATION). Interpolación lineal monótona entre nodos; por encima del último
+ * nodo extiende la pendiente del tramo final.
+ *
+ * Se aplica UNA SOLA VEZ, al promedio del perfil — nunca a cada muestra de Monte Carlo. Aplicarla
+ * por muestra metía un sesgo de Jensen de hasta 11 puntos porcentuales (la curva es convexa, así
+ * que el promedio de la curva supera a la curva del promedio) y descalibraba el modelo respecto a
+ * las anclas. La banda de incertidumbre PERT se abre DESPUÉS, ya sobre el eje de contienda.
+ *
+ * @param {number} profileScore Promedio del Perfil de Atacante, 0-100.
+ * @returns {number} Fuerza en el eje de contienda. NO es un porcentaje y puede pasar de 100.
+ */
+function attackerContestStrength(profileScore) {
+    const score = Math.max(0, profileScore);
+    const nodes = ATTACKER_CONTEST_CALIBRATION;
+    for (let i = 1; i < nodes.length; i++) {
+        if (score <= nodes[i].profileScore) {
+            const prev = nodes[i - 1];
+            const span = nodes[i].profileScore - prev.profileScore;
+            const t = (score - prev.profileScore) / span;
+            return prev.contestStrength + t * (nodes[i].contestStrength - prev.contestStrength);
+        }
+    }
+    const last = nodes[nodes.length - 1];
+    const prev = nodes[nodes.length - 2];
+    const slope = (last.contestStrength - prev.contestStrength) / (last.profileScore - prev.profileScore);
+    return last.contestStrength + slope * (score - last.profileScore);
+}
+
 // Cuánto puede escalar su sofisticación un atacante que decide no retirarse ante un desafío —
 // 0-30% de refuerzo sobre su Capacidad de Amenaza de esta iteración.
+//
+// Nota honesta: esto cuenta la Persistencia dos veces, porque ya es uno de los cinco atributos que
+// promedia el Factor de Amenaza. Se conserva a propósito. Se midió la calibración con y sin esta
+// escalada: ambas ajustan las seis anclas con residuo prácticamente nulo y producen grillas
+// equivalentes (la calibración absorbe el efecto por completo), así que quitarla sería un cambio
+// de modelo sin beneficio medible y con riesgo de regresión en funciones vecinas.
 const MAX_ESCALATION = 0.3;
+
+// Ninguna defensa es perfecta. Sin este piso, las combinaciones más desparejas (oportunista contra
+// defensa élite) daban 0,0 %, que afirma invulnerabilidad — una afirmación que ninguna evaluación
+// de seguridad puede sostener.
+const VULNERABILITY_FLOOR = 0.005;
+
+// Versión del modelo de Vulnerabilidad. Se sube CADA vez que cambie `TULLOCK_M`,
+// `ATTACKER_CONTEST_CALIBRATION`, `VULNERABILITY_FLOOR` o los atributos de un Perfil de Atacante,
+// porque cualquiera de esas cosas cambia los números de una simulación.
+//
+// Cada simulación sella su resultado con esta versión y el Registro la guarda. Los riesgos
+// guardados con una versión anterior NO se recalculan solos: en una herramienta de GRC,
+// sobrescribir en silencio la evaluación guardada de un analista destruye la trazabilidad de por
+// qué se decidió lo que se decidió. Se marcan como desactualizados y el analista decide cuáles
+// vuelve a simular.
+//   1 = Tullock m=1 sobre el promedio crudo del perfil, sin piso (hasta agosto de 2026).
+//   2 = eje de contienda calibrado con 6 anclas de experto, m=6,8254, piso de 0,5 %.
+const VULNERABILITY_CALIBRATION_VERSION = 2;
 
 /**
  * Función de Éxito de Contienda de Tullock — probabilidad de que el lado "atacante" gane un
@@ -57,58 +144,79 @@ function tullockSuccessProbability(attackerStrength, defenseStrength, m = TULLOC
 }
 
 /**
- * Vulnerabilidad (%) = P(Capacidad de Amenaza > Fuerza de Resistencia) — dos distribuciones
- * INDEPENDIENTES que se comparan (vía Tullock, ver tullockSuccessProbability arriba), nunca una
- * que descuenta a la otra. Reemplaza la fórmula vieja (`attackerScore * (1 - defenseScore/100)`),
- * que hacía que subir el Nivel de Defensa bajara directamente el número que representa la
- * Motivación/Recursos/Capacidad/Persistencia/Sofisticación del atacante — conceptualmente
- * equivocado: tu defensa no cambia quién es el atacante ni qué tan decidido está, cambia qué tan
- * probable es que te tenga éxito.
+ * Arma los dos triángulos de la contienda a partir de los perfiles. Factorizado porque
+ * sampleVulnerabilityFromProfiles y pairedVulnerabilitySample necesitan EXACTAMENTE los mismos
+ * triángulos y antes los construían con código duplicado — con dos copias, cualquier ajuste de
+ * calibración se aplicaba bien en una y se olvidaba en la otra.
+ *
+ * TCap vive en el eje de CONTIENDA (ver attackerContestStrength) y RS en la escala cruda de la
+ * Defensa: ahí es donde se calibraron las anclas. TCap no lleva tope en 100 — el eje de contienda
+ * no es un porcentaje.
+ */
+function buildContestTriangles(attackerProfile, defenseProfile, confidence) {
+    const contestStrength = attackerContestStrength(calculateProfileAverage(attackerProfile));
+    const defenseScore = calculateProfileAverage(defenseProfile);
+    const spread = getConfidenceSpread(confidence);
+    return {
+        tcap: {
+            min: contestStrength * spread.min,
+            mode: contestStrength,
+            max: contestStrength * spread.max,
+        },
+        rs: { min: defenseScore * spread.min, mode: defenseScore, max: Math.min(100, defenseScore * spread.max) },
+        persistence: attackerProfile.persistence || 0,
+    };
+}
+
+/**
+ * Resuelve UNA iteración de la contienda a partir de muestras ya sorteadas de TCap y RS: aplica la
+ * escalada por persistencia y devuelve la probabilidad de éxito de Tullock con el piso.
+ * Compartida por el sampler y por el muestreo pareado, para que no puedan divergir.
+ */
+function resolveContest(tcapSample, rsSample, persistence, escalationRoll, escalationAmount) {
+    // Escalada NO determinista: si la defensa va ganando ESTA iteración, un atacante persistente
+    // tiene una probabilidad (proporcional a su PROPIA Persistencia, nunca a nada de la defensa)
+    // de escalar su sofisticación en vez de desistir — un desafío que lo motiva más, no lo
+    // disuade. Un atacante de Persistencia baja (oportunista) casi nunca escala; uno de
+    // Persistencia alta (organizado, estado-nación) escala seguido. Se vuelve a tirar cada
+    // iteración — nunca un `if` seco.
+    let effectiveTcap = tcapSample;
+    if (rsSample > tcapSample && escalationRoll < persistence / 100) {
+        effectiveTcap = tcapSample * (1 + escalationAmount * MAX_ESCALATION);
+    }
+    return Math.max(VULNERABILITY_FLOOR, tullockSuccessProbability(effectiveTcap, rsSample));
+}
+
+/**
+ * Vulnerabilidad = probabilidad de que un evento de amenaza se convierta en pérdida, modelada como
+ * una contienda entre la Capacidad de Amenaza (TCap) y la Fuerza de Resistencia (RS) resuelta con
+ * la Función de Éxito de Contienda de Tullock (ver tullockSuccessProbability arriba). Son dos
+ * distribuciones INDEPENDIENTES que se comparan, nunca una que descuenta a la otra: tu defensa no
+ * cambia quién es el atacante ni qué tan decidido está, cambia qué tan probable es que te tenga
+ * éxito. (Reemplazó a `attackerScore * (1 - defenseScore/100)`, que sí hacía eso último.)
+ *
+ * TCap no es el promedio crudo del perfil: pasa primero por el eje de contienda calibrado
+ * (attackerContestStrength), porque la escala del Atacante y la de la Defensa no son comparables
+ * punto a punto.
  *
  * Devuelve un SAMPLER, no un número — compatible directo con el parámetro `sampleVuln` que
- * `runMonteCarloSimulation` (simulation.js) ya acepta desde la Tarea #25 de esta sesión,
- * exactamente para este propósito (ver el comentario ahí). Cada llamada al sampler es una
- * iteración: nunca es una fórmula fija, es una simulación real con su propia incertidumbre.
+ * `runMonteCarloSimulation` (simulation.js) acepta exactamente para este propósito. Cada llamada
+ * al sampler es una iteración: nunca es una fórmula fija, es una simulación real con su propia
+ * incertidumbre.
  *
  * @param {Object} attackerProfile Perfil de Atacante completo (ver profiles.js) — se necesita
- *   `persistence` además del promedio, para la escalada de abajo.
+ *   `persistence` además del promedio, para la escalada.
  * @param {Object} defenseProfile Perfil de Defensa completo.
  * @param {'alto'|'medio'|'bajo'} confidence
  * @returns {(rng: () => number) => number} Sampler que devuelve un decimal en [0,1] por llamada.
  */
 function sampleVulnerabilityFromProfiles(attackerProfile, defenseProfile, confidence) {
-    const attackerScore = calculateProfileAverage(attackerProfile);
-    const defenseScore = calculateProfileAverage(defenseProfile);
-    const spread = getConfidenceSpread(confidence);
-    // Triángulos de Capacidad de Amenaza (TCap) y Fuerza de Resistencia (RS) — cada uno sale
-    // SOLO de su propio perfil. Ninguno se calcula a partir del otro.
-    const tcap = {
-        min: attackerScore * spread.min,
-        mode: attackerScore,
-        max: Math.min(100, attackerScore * spread.max),
-    };
-    const rs = { min: defenseScore * spread.min, mode: defenseScore, max: Math.min(100, defenseScore * spread.max) };
-    const persistence = attackerProfile.persistence || 0;
+    const { tcap, rs, persistence } = buildContestTriangles(attackerProfile, defenseProfile, confidence);
 
     return (rng) => {
         const tcapSample = getPertRandom(tcap.min, tcap.mode, tcap.max, 4, rng);
         const rsSample = getPertRandom(rs.min, rs.mode, rs.max, 4, rng);
-
-        // Escalada NO determinista: si la defensa va ganando ESTA iteración, un atacante
-        // persistente tiene una probabilidad (proporcional a su PROPIA Persistencia, nunca a
-        // nada de la defensa) de escalar su sofisticación en vez de desistir — un desafío que
-        // lo motiva más, no lo disuade. Un atacante de Persistencia baja (oportunista) casi
-        // nunca escala; uno de Persistencia alta (organizado, estado-nación) escala seguido. Se
-        // vuelve a tirar cada iteración — nunca un `if` seco.
-        let effectiveTcap = tcapSample;
-        if (rsSample > tcapSample && rng() < persistence / 100) {
-            effectiveTcap = Math.min(100, tcapSample * (1 + rng() * MAX_ESCALATION));
-        }
-
-        // Probabilidad de éxito de ESTA iteración: Función de Éxito de Contienda de Tullock
-        // sobre TCap final vs. RS — 50% cuando están parejos (a cualquier escala), sin techo/
-        // piso duro artificial.
-        return tullockSuccessProbability(effectiveTcap, rsSample);
+        return resolveContest(tcapSample, rsSample, persistence, rng(), rng());
     };
 }
 
@@ -196,16 +304,7 @@ function deriveIterationSeed(baseSeed, iteration, roleSalt) {
  *   sampler de sampleVulnerabilityFromProfiles.
  */
 function pairedVulnerabilitySample(attackerProfile, defenseProfile, confidence, baseSeed, iteration) {
-    const attackerScore = calculateProfileAverage(attackerProfile);
-    const defenseScore = calculateProfileAverage(defenseProfile);
-    const spread = getConfidenceSpread(confidence);
-    const tcap = {
-        min: attackerScore * spread.min,
-        mode: attackerScore,
-        max: Math.min(100, attackerScore * spread.max),
-    };
-    const rs = { min: defenseScore * spread.min, mode: defenseScore, max: Math.min(100, defenseScore * spread.max) };
-    const persistence = attackerProfile.persistence || 0;
+    const { tcap, rs, persistence } = buildContestTriangles(attackerProfile, defenseProfile, confidence);
 
     const tcapRng = mulberry32(deriveIterationSeed(baseSeed, iteration, ROLE_TCAP));
     const rsRng = mulberry32(deriveIterationSeed(baseSeed, iteration, ROLE_RS));
@@ -214,12 +313,7 @@ function pairedVulnerabilitySample(attackerProfile, defenseProfile, confidence, 
     const tcapSample = getPertRandom(tcap.min, tcap.mode, tcap.max, 4, tcapRng);
     const rsSample = getPertRandom(rs.min, rs.mode, rs.max, 4, rsRng);
 
-    let effectiveTcap = tcapSample;
-    if (rsSample > tcapSample && escRng() < persistence / 100) {
-        effectiveTcap = Math.min(100, tcapSample * (1 + escRng() * MAX_ESCALATION));
-    }
-
-    return tullockSuccessProbability(effectiveTcap, rsSample);
+    return resolveContest(tcapSample, rsSample, persistence, escRng(), escRng());
 }
 
 /**
@@ -388,6 +482,11 @@ module.exports = {
     calculateProfileAverage,
     getConfidenceSpread,
     tullockSuccessProbability,
+    attackerContestStrength,
+    ATTACKER_CONTEST_CALIBRATION,
+    TULLOCK_M,
+    VULNERABILITY_FLOOR,
+    VULNERABILITY_CALIBRATION_VERSION,
     sampleVulnerabilityFromProfiles,
     summarizeVulnerabilitySamples,
     pairedVulnerabilitySample,

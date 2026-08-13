@@ -3,7 +3,11 @@
 const express = require('express');
 const { runMonteCarloSimulation, summarizeLosses, buildLossExceedanceCurve } = require('../lib/simulation');
 const { evaluateFairThreat, evaluateFairOpportunity } = require('../lib/evaluation');
-const { sampleVulnerabilityFromProfiles, calculateInherentRiskFromSimulation } = require('../lib/autocalc');
+const {
+    sampleVulnerabilityFromProfiles,
+    calculateInherentRiskFromSimulation,
+    VULNERABILITY_CALIBRATION_VERSION,
+} = require('../lib/autocalc');
 const { defaultRiskCriteria, lossFormsKeys, attackerProfiles, defenseProfiles } = require('../data/profiles');
 const { normalizeRiskCriteria, validateRiskCriteriaOverride } = require('../lib/riskCriteria');
 const {
@@ -162,6 +166,11 @@ function createSimulateRouter(store) {
                 iterations,
                 currency: 'USD',
                 riskType,
+                // Sello del modelo de Vulnerabilidad que produjo estos números (ver
+                // VULNERABILITY_CALIBRATION_VERSION en lib/autocalc.js). El frontend lo reenvía
+                // tal cual al Registro, así cada riesgo guardado sabe con qué calibración se
+                // calculó y la app puede avisar cuáles quedaron desactualizados.
+                calibrationVersion: VULNERABILITY_CALIBRATION_VERSION,
                 summary: {
                     average: summary.average,
                     median: summary.median,

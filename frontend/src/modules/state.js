@@ -7,6 +7,10 @@ import { getSafeNumber, LOSS_FORMS_KEYS } from './utils.js';
 export const state = {
     config: {
         SIMULATION_ITERATIONS: 10000,
+        // Versión vigente del modelo de Vulnerabilidad, servida por el backend en el arranque
+        // (GET /api/config/profiles). Se compara contra entry.calibrationVersion para marcar los
+        // riesgos calculados con una calibración anterior. null hasta que el bootstrap responda.
+        calibrationVersion: null,
         // Criterios de Riesgo (Contexto — ISO 31000, cláusula 6.3.4).
         // Estos valores definen qué se considera un riesgo aceptable, alto o crítico
         // para esta organización. Son editables desde "Criterios de Riesgo" en el menú
@@ -96,6 +100,10 @@ export const state = {
         // cambiar de Modo Simple/Técnico sin volver a simular.
         lastLossExceedanceCurve: null,
         lastInherentLossExceedanceCurve: null,
+        // Sello del modelo de Vulnerabilidad que produjo la última simulación (lo emite
+        // POST /api/simulate). Viaja tal cual al Registro para que cada riesgo guardado sepa con
+        // qué calibración se calculó.
+        lastCalibrationVersion: null,
         simulatedALE: 0,
         pendingRisks: [],
         riskRegister: [],

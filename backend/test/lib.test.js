@@ -19,6 +19,9 @@ const {
 } = require('../src/lib/simulation');
 const {
     tullockSuccessProbability,
+    attackerContestStrength,
+    ATTACKER_CONTEST_CALIBRATION,
+    VULNERABILITY_FLOOR,
     sampleVulnerabilityFromProfiles,
     summarizeVulnerabilitySamples,
     calculateReduccionALEFromProfiles,
@@ -810,6 +813,101 @@ function averageVulnerability(attackerProfile, defenseProfile, confidence, itera
     for (let i = 0; i < iterations; i++) sum += sampler(rng);
     return (sum / iterations) * 100;
 }
+
+// ---------------------------------------------------------------------------------------------
+// CALIBRACIÓN: las seis anclas de juicio experto, convertidas en regresión ejecutable.
+// ---------------------------------------------------------------------------------------------
+// Estas seis celdas de la grilla Atacante x Defensa son el criterio de un experto en seguridad
+// patrimonial, y son de donde salen TULLOCK_M y ATTACKER_CONTEST_CALIBRATION (ver autocalc.js).
+// Este test es el candado: nadie puede tocar `m`, el eje de contienda ni los atributos de un
+// Perfil de Atacante sin que la suite avise que el modelo dejó de coincidir con ese criterio.
+//
+// El nodo FA=60 del eje está SOBREDETERMINADO — tres de las seis anclas lo fijan y solo hay un
+// parámetro para absorberlas — así que estos residuos no son un ajuste garantizado, son una
+// comprobación real. Medido: peor residuo 0,43 puntos porcentuales.
+const CALIBRATION_ANCHORS = [
+    { attacker: 'oportunista', defense: 'basica', expected: 5 },
+    { attacker: 'vandalismo', defense: 'basica', expected: 35 },
+    { attacker: 'empleado-desleal', defense: 'avanzada', expected: 30 },
+    { attacker: 'organizado', defense: 'estandar', expected: 60 },
+    { attacker: 'organizado', defense: 'elite', expected: 15 },
+    { attacker: 'estado-nacion', defense: 'elite', expected: 45 },
+];
+
+test('CALIBRACIÓN: la Vulnerabilidad simulada reproduce las 6 anclas de juicio experto', () => {
+    for (const { attacker, defense, expected } of CALIBRATION_ANCHORS) {
+        const avg = averageVulnerability(
+            attackerProfiles[attacker],
+            defenseProfiles[defense],
+            'medio',
+            60000,
+            mulberry32(0x5eed),
+        );
+        assert.ok(
+            Math.abs(avg - expected) <= 1.5,
+            `${attacker} vs ${defense}: ancla ${expected}%, el modelo dio ${avg.toFixed(2)}%`,
+        );
+    }
+});
+
+test('CALIBRACIÓN: la grilla completa Atacante x Defensa es monótona en ambos ejes', () => {
+    // Ordenados de menos a más fuerte. Sin esto, la calibración podría acertar las 6 anclas y aun
+    // así producir absurdos en las 14 celdas que ningún ancla toca (que es lo que pasaba con los
+    // ajustes libres antes de restringir la monotonía del eje de contienda).
+    const attackers = ['oportunista', 'vandalismo', 'empleado-desleal', 'organizado', 'estado-nacion'];
+    const defenses = ['basica', 'estandar', 'avanzada', 'elite'];
+    const grid = attackers.map((a) =>
+        defenses.map((d) =>
+            averageVulnerability(attackerProfiles[a], defenseProfiles[d], 'medio', 20000, mulberry32(0x5eed)),
+        ),
+    );
+
+    grid.forEach((row, i) => {
+        for (let j = 1; j < row.length; j++) {
+            assert.ok(
+                row[j] <= row[j - 1] + 0.05,
+                `${attackers[i]}: más defensa debería bajar la vulnerabilidad, ${defenses[j - 1]}=${row[j - 1].toFixed(1)}% -> ${defenses[j]}=${row[j].toFixed(1)}%`,
+            );
+        }
+    });
+    for (let i = 1; i < grid.length; i++) {
+        for (let j = 0; j < defenses.length; j++) {
+            assert.ok(
+                grid[i][j] >= grid[i - 1][j] - 0.05,
+                `${defenses[j]}: ${attackers[i]} (${grid[i][j].toFixed(1)}%) debería ser >= ${attackers[i - 1]} (${grid[i - 1][j].toFixed(1)}%)`,
+            );
+        }
+    }
+});
+
+test('CALIBRACIÓN: ninguna combinación da 0% — ninguna defensa es invulnerable', () => {
+    const avg = averageVulnerability(
+        attackerProfiles.oportunista,
+        defenseProfiles.elite,
+        'medio',
+        20000,
+        mulberry32(0x5eed),
+    );
+    // 1e-9 de tolerancia: el promedio acumula 20.000 sumas de 0,005 y cae en 0,49999... por
+    // redondeo de punto flotante, no porque alguna muestra haya bajado del piso.
+    assert.ok(avg >= VULNERABILITY_FLOOR * 100 - 1e-9, `esperaba al menos el piso, dio ${avg.toFixed(3)}%`);
+    assert.ok(avg < 2, `el piso no debe inflar el resultado, dio ${avg.toFixed(3)}%`);
+});
+
+test('attackerContestStrength: monótona creciente y anclada en los nodos calibrados', () => {
+    for (const { profileScore, contestStrength } of ATTACKER_CONTEST_CALIBRATION) {
+        assert.ok(
+            Math.abs(attackerContestStrength(profileScore) - contestStrength) < 1e-9,
+            `el nodo ${profileScore} debería dar exactamente ${contestStrength}`,
+        );
+    }
+    let prev = -Infinity;
+    for (let score = 0; score <= 100; score += 0.5) {
+        const value = attackerContestStrength(score);
+        assert.ok(value >= prev, `no monótona en ${score}: ${value} < ${prev}`);
+        prev = value;
+    }
+});
 
 test('sampleVulnerabilityFromProfiles: atacante fuerte + defensa débil = vulnerabilidad promedio alta', () => {
     const avg = averageVulnerability(attackerProfiles['estado-nacion'], defenseProfiles.basica, 'medio');

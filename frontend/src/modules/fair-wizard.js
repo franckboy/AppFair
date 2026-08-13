@@ -1795,6 +1795,7 @@ export const FairWizard = {
         const { summary, evaluation, inherentEvaluation, sensitivity, annualLosses } = result;
         state.fair.lastLossExceedanceCurve = result.lossExceedanceCurve || null;
         state.fair.lastInherentLossExceedanceCurve = result.inherentLossExceedanceCurve || null;
+        state.fair.lastCalibrationVersion = result.calibrationVersion ?? null;
         state.fair.simulatedALE = summary.average;
         state.fair.lastAnnualLosses = annualLosses;
         state.fair.lastEvaluation = evaluation;

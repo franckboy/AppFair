@@ -10,6 +10,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const request = require('supertest');
 const { timingSafeEqualStrings } = require('../src/middleware/apiKeyAuth');
+const { VULNERABILITY_CALIBRATION_VERSION } = require('../src/lib/autocalc');
 
 const TEST_API_KEY = 'test-key-for-http-integration-tests';
 process.env.API_KEY = TEST_API_KEY;
@@ -2039,6 +2040,58 @@ test('PUT /api/register/:riskName sin curva la guarda como null (riesgos anterio
     await request(app)
         .delete(`/api/register/${encodeURIComponent(riskName)}`)
         .set('X-API-Key', TEST_API_KEY);
+});
+
+// El sello de calibración (ver VULNERABILITY_CALIBRATION_VERSION en lib/autocalc.js) permite
+// distinguir un riesgo calculado con el modelo de Vulnerabilidad vigente de uno calculado con una
+// calibración anterior, sin recalcularlo en silencio.
+test('PUT /api/register/:riskName persiste calibrationVersion, y null cuando no viene', async () => {
+    const conSello = 'Riesgo con sello de calibración HTTP';
+    const putRes = await request(app)
+        .put(`/api/register/${encodeURIComponent(conSello)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ale: 5000, cvar95: 9000, calibrationVersion: 2 });
+    assert.strictEqual(putRes.status, 200);
+    assert.strictEqual(putRes.body.entry.calibrationVersion, 2);
+
+    const sinSello = 'Riesgo sin sello de calibración HTTP';
+    const viejo = await request(app)
+        .put(`/api/register/${encodeURIComponent(sinSello)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ale: 5000, cvar95: 9000 });
+    assert.strictEqual(viejo.status, 200);
+    assert.strictEqual(viejo.body.entry.calibrationVersion, null);
+
+    for (const name of [conSello, sinSello]) {
+        await request(app)
+            .delete(`/api/register/${encodeURIComponent(name)}`)
+            .set('X-API-Key', TEST_API_KEY);
+    }
+});
+
+test('PUT /api/register/:riskName rechaza un calibrationVersion inválido con 400', async () => {
+    for (const calibrationVersion of [0, -1, 1.5, 'dos']) {
+        const res = await request(app)
+            .put(`/api/register/${encodeURIComponent('Riesgo sello inválido HTTP')}`)
+            .set('X-API-Key', TEST_API_KEY)
+            .send({ ale: 0, calibrationVersion });
+        assert.strictEqual(res.status, 400, `calibrationVersion=${calibrationVersion} debería rechazarse`);
+    }
+});
+
+test('POST /api/simulate sella su resultado con la versión de calibración vigente', async () => {
+    const res = await request(app)
+        .post('/api/simulate')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            tef: { min: 1, mode: 2, max: 4 },
+            vuln: { min: 10, mode: 20, max: 30 },
+            lossMagnitudes: { respuesta: { min: 1000, mode: 5000, max: 10000 } },
+            iterations: 1000,
+            seed: 42,
+        });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.calibrationVersion, VULNERABILITY_CALIBRATION_VERSION);
 });
 
 test('PUT /api/register/:riskName rechaza una curva con puntos inválidos con 400', async () => {

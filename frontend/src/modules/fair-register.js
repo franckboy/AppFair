@@ -472,6 +472,7 @@ export const FairRegister = {
                     // PUT reconstruye la entrada completa, así que lo que no viaja se borra.
                     lossExceedanceCurve: state.fair.lastLossExceedanceCurve || null,
                     inherentLossExceedanceCurve: state.fair.lastInherentLossExceedanceCurve || null,
+                    calibrationVersion: state.fair.lastCalibrationVersion ?? null,
                     chartLabels: chart ? chart.data.labels : null,
                     chartData: chart ? chart.data.datasets[0].data : null,
                 },
@@ -836,6 +837,17 @@ export const FairRegister = {
                     ? `<span class="ml-1 px-2 py-1 rounded text-xs bg-green-50 text-green-700 border-l-4 border-green-500" title="${sanitizeHTML(STRATEGY_LABELS[decision.strategy] || decision.strategy)} — Residual: ${fmt(decision.residualALE)}${decision.decidedAt ? ` (decidido el ${new Date(decision.decidedAt).toLocaleDateString('es-MX')})` : ''}">✔ Tratado</span>`
                     : '';
 
+                // Señal de calibración desactualizada: este riesgo se calculó con una versión
+                // anterior del modelo de Vulnerabilidad (ver VULNERABILITY_CALIBRATION_VERSION en
+                // backend/src/lib/autocalc.js), así que sus números ya no son comparables con los
+                // de un riesgo recién simulado. No se recalcula solo a propósito — sobrescribir en
+                // silencio una evaluación guardada rompe la trazabilidad; el analista decide.
+                const vigente = state.config.calibrationVersion;
+                const staleBadge =
+                    item.fairEntry && vigente != null && (item.fairEntry.calibrationVersion ?? 0) < vigente
+                        ? `<span class="ml-1 px-2 py-1 rounded text-xs bg-orange-50 text-orange-800 border-l-4 border-orange-500" title="Calculado con una calibración anterior del modelo de Vulnerabilidad. Vuelve a simularlo desde Análisis FAIR para actualizar sus números.">⟳ Recalibrar</span>`
+                        : '';
+
                 const evalCell = item.fairEntry
                     ? `<span class="px-2 py-1 rounded text-xs border-l-4 ${item.fairEntry.evaluationClasses}">${item.fairEntry.evaluationLevel}</span>`
                     : '—';
@@ -899,7 +911,7 @@ export const FairRegister = {
                     <td class="py-2 text-center">${checkboxCell}</td>
                     <td class="text-center text-gray-500">${item.number}</td>
                     <td class="risk-name-cell">${sanitizeHTML(item.riskName)}</td>
-                    <td>${stageBadge}${treatedBadge}</td>
+                    <td>${stageBadge}${treatedBadge}${staleBadge}</td>
                     <td>${inherenteCell}</td>
                     <td>${item.controlEffectiveness || '—'}</td>
                     <td>${actualCell}</td>
