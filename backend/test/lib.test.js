@@ -831,6 +831,12 @@ const CALIBRATION_ANCHORS = [
     { attacker: 'empleado-desleal', defense: 'avanzada', expected: 30 },
     { attacker: 'organizado', defense: 'estandar', expected: 60 },
     { attacker: 'organizado', defense: 'elite', expected: 15 },
+    // Anclas de VALIDACIÓN: se emitieron DESPUÉS de fijar m y el eje de contienda, para
+    // comprobar que la escala de Defensa (el promedio crudo de sus 6 atributos, nunca calibrada
+    // aparte) fuera internamente consistente. El modelo ya predecía 98,5 % y 30,8 % antes de que
+    // existieran estos dos números — no se ajustó nada para acertarlas.
+    { attacker: 'organizado', defense: 'basica', expected: 98 },
+    { attacker: 'organizado', defense: 'avanzada', expected: 30 },
     { attacker: 'estado-nacion', defense: 'elite', expected: 45 },
 ];
 

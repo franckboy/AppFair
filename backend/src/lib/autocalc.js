@@ -120,7 +120,9 @@ const VULNERABILITY_FLOOR = 0.005;
 // vuelve a simular.
 //   1 = Tullock m=1 sobre el promedio crudo del perfil, sin piso (hasta agosto de 2026).
 //   2 = eje de contienda calibrado con 6 anclas de experto, m=6,8254, piso de 0,5 %.
-const VULNERABILITY_CALIBRATION_VERSION = 2;
+//   3 = el Nivel de Confianza deja de mover la media (ver confidenceMeanCorrection): solo abre o
+//       cierra el abanico. Cambia los números de todo riesgo capturado con confianza alta o baja.
+const VULNERABILITY_CALIBRATION_VERSION = 3;
 
 /**
  * Función de Éxito de Contienda de Tullock — probabilidad de que el lado "atacante" gane un
@@ -153,10 +155,87 @@ function tullockSuccessProbability(attackerStrength, defenseStrength, m = TULLOC
  * Defensa: ahí es donde se calibraron las anclas. TCap no lleva tope en 100 — el eje de contienda
  * no es un porcentaje.
  */
-function buildContestTriangles(attackerProfile, defenseProfile, confidence) {
-    const contestStrength = attackerContestStrength(calculateProfileAverage(attackerProfile));
-    const defenseScore = calculateProfileAverage(defenseProfile);
+// Las seis anclas de calibración se emitieron con Nivel de Confianza MEDIO, así que ese es el
+// nivel de referencia: es el único en el que el modelo está anclado a un juicio experto.
+const REFERENCE_CONFIDENCE = 'medio';
+
+/**
+ * Media de Vulnerabilidad de una configuración dada, con muestreo FIJO y sembrado. Es
+ * determinista a propósito (misma entrada, mismo número siempre): se usa para calibrar, y una
+ * calibración que cambiara de corrida en corrida haría irreproducible la simulación que alimenta.
+ */
+function estimateMeanVulnerability(contestStrength, defenseScore, persistence, spread, iterations = 2000) {
+    const rng = mulberry32(0x5eed);
+    const tcapMin = contestStrength * spread.min;
+    const tcapMax = contestStrength * spread.max;
+    const rsMin = defenseScore * spread.min;
+    const rsMax = Math.min(100, defenseScore * spread.max);
+    let sum = 0;
+    for (let i = 0; i < iterations; i++) {
+        const tcapSample = getPertRandom(tcapMin, contestStrength, tcapMax, 4, rng);
+        const rsSample = getPertRandom(rsMin, defenseScore, rsMax, 4, rng);
+        sum += resolveContest(tcapSample, rsSample, persistence, rng(), rng());
+    }
+    return sum / iterations;
+}
+
+// La corrección se memoiza por configuración: pairedVulnerabilitySample (ver abajo) reconstruye
+// los triángulos en CADA iteración de Monte Carlo, así que sin esta caché el costo de calibrar se
+// multiplicaría por 10,000.
+const _confidenceCorrectionCache = new Map();
+
+/**
+ * Factor que se aplica a la Capacidad de Amenaza para que la Vulnerabilidad MEDIA no dependa del
+ * Nivel de Confianza — solo su dispersión.
+ *
+ * El problema que resuelve: la confianza es incertidumbre EPISTÉMICA (habla de qué tan seguro está
+ * el analista de su propio estimado), pero al ensanchar la banda PERT movía también el centro,
+ * porque Tullock con m=6,83 es muy convexo y las iteraciones donde el atacante sale alto dominan
+ * el promedio (desigualdad de Jensen). Medido antes de este arreglo: declarar confianza baja subía
+ * la Vulnerabilidad de un oportunista contra defensa básica de 5,0 % a 11,8 % — 4,7 veces más
+ * vulnerable por admitir que no estás seguro de tus datos, que es exactamente al revés de lo que
+ * significa no estar seguro.
+ *
+ * Se resuelve por bisección (la media crece de forma monótona con el factor) hasta que la media de
+ * ESTE nivel de confianza coincide con la del nivel de referencia. La banda sigue siendo más ancha
+ * o más angosta: cambia el abanico, no el centro.
+ */
+function confidenceMeanCorrection(contestStrength, defenseScore, persistence, confidence) {
+    if (confidence === REFERENCE_CONFIDENCE || contestStrength <= 0) return 1;
+    const key = `${contestStrength}|${defenseScore}|${persistence}|${confidence}`;
+    const cached = _confidenceCorrectionCache.get(key);
+    if (cached !== undefined) return cached;
+
     const spread = getConfidenceSpread(confidence);
+    const target = estimateMeanVulnerability(
+        contestStrength,
+        defenseScore,
+        persistence,
+        getConfidenceSpread(REFERENCE_CONFIDENCE),
+    );
+
+    let lo = 0.2;
+    let hi = 5;
+    for (let i = 0; i < 24; i++) {
+        const mid = (lo + hi) / 2;
+        if (estimateMeanVulnerability(contestStrength * mid, defenseScore, persistence, spread) < target) {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    const factor = (lo + hi) / 2;
+    _confidenceCorrectionCache.set(key, factor);
+    return factor;
+}
+
+function buildContestTriangles(attackerProfile, defenseProfile, confidence) {
+    const rawStrength = attackerContestStrength(calculateProfileAverage(attackerProfile));
+    const defenseScore = calculateProfileAverage(defenseProfile);
+    const persistence = attackerProfile.persistence || 0;
+    const spread = getConfidenceSpread(confidence);
+    // Re-centrado: el Nivel de Confianza abre o cierra el abanico, nunca mueve la media.
+    const contestStrength = rawStrength * confidenceMeanCorrection(rawStrength, defenseScore, persistence, confidence);
     return {
         tcap: {
             min: contestStrength * spread.min,
@@ -164,7 +243,7 @@ function buildContestTriangles(attackerProfile, defenseProfile, confidence) {
             max: contestStrength * spread.max,
         },
         rs: { min: defenseScore * spread.min, mode: defenseScore, max: Math.min(100, defenseScore * spread.max) },
-        persistence: attackerProfile.persistence || 0,
+        persistence,
     };
 }
 
