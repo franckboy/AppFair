@@ -1023,9 +1023,10 @@
                         <div id="riskmgmt-portfolio-section" class="p-4 rounded-lg mb-4 border-l-4 hidden">
                             <h4 class="font-semibold mb-1">
                                 Riesgo Residual del Portafolio
-                                <i id="riskmgmt-portfolio-info" class="fas fa-info-circle text-blue-500 cursor-pointer ml-1" title="Suma del ALE/CVaR95 VIGENTE de cada Amenaza del Registro: el residual de su decisión de Tratamiento si ya se adoptó una estrategia, o el ACTUAL (con el Nivel de Defensa vigente) si todavía no. También muestra el waterfall completo — Riesgo Inherente (sin ningún control) → Actual → Residual — y la Efectividad de Controles en dólares reales. El CVaR95 total es una cota conservadora (nunca subestima) — sumar los CVaR95 de riesgos independientes no es matemáticamente exacto."></i>
+                                <i id="riskmgmt-portfolio-info" class="fas fa-info-circle text-blue-500 cursor-pointer ml-1" title="Suma del ALE/CVaR95 VIGENTE de cada Amenaza del Registro: el residual de su decisión de Tratamiento si ya se adoptó una estrategia, o el ACTUAL (con el Nivel de Defensa vigente) si todavía no. También muestra el waterfall completo — Riesgo Inherente (sin ningún control) → Actual → Residual — y la Efectividad de Controles en dólares reales. El CVaR95 de arriba es la SUMA de los individuales: una cota conservadora que nunca subestima, pero que sobrestima la cola porque supone que todos los riesgos ocurren el mismo año. Debajo se muestra el valor REAL, obtenido simulando el portafolio completo a la vez."></i>
                             </h4>
                             <p id="riskmgmt-portfolio-detail" class="text-sm mb-1"></p>
+                            <p id="riskmgmt-portfolio-mc" class="text-sm mb-1 hidden"></p>
                             <p id="riskmgmt-portfolio-waterfall" class="text-sm mb-1 hidden"></p>
                             <p id="riskmgmt-portfolio-effectiveness" class="text-sm mb-1 hidden"></p>
                             <p class="text-sm">

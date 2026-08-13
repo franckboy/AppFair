@@ -389,3 +389,34 @@ test.describe('Gestión de Riesgos (página aparte)', () => {
         );
     });
 });
+
+// El CVaR95 del portafolio que se muestra arriba es la SUMA de los individuales: una cota
+// conservadora que sobrestima la cola porque supone que todos los riesgos ocurren el mismo año.
+// Esta línea trae el valor REAL, simulando el portafolio completo a la vez.
+test('el portafolio muestra el CVaR95 simulado en conjunto, menor que la suma de los individuales', async ({
+    page,
+}) => {
+    await connectAndBoot(page);
+    for (const nombre of ['E2E MC Portafolio A', 'E2E MC Portafolio B', 'E2E MC Portafolio C']) {
+        await runFullFairAnalysis(page, nombre);
+        await connectAndBoot(page);
+    }
+
+    const mc = await page.evaluate(async () => {
+        const res = await fetch('http://localhost:3000/api/register/portfolio-simulation', {
+            headers: { 'X-API-Key': 'test-e2e-key' },
+        });
+        return res.json();
+    });
+    expect(mc.includedCount).toBeGreaterThanOrEqual(3);
+    // La comprobación que da sentido a todo: la cola conjunta no es la suma de las colas.
+    expect(mc.summary.cvar95).toBeLessThan(mc.sumOfIndividualCVaR);
+    expect(mc.diversificationBenefit).toBeGreaterThan(0);
+
+    await page.click('#nav-riskmgmt');
+    await page.waitForTimeout(1500);
+    const linea = page.locator('#riskmgmt-portfolio-mc');
+    await expect(linea).toBeVisible();
+    await expect(linea).toContainText('Simulando el portafolio completo a la vez');
+    await expect(linea).toContainText('CVaR95');
+});
