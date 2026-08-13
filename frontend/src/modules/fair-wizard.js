@@ -1603,8 +1603,115 @@ export const FairWizard = {
         }
     },
 
+    // Curva de Excedencia de Pérdidas (LEC) — la entrega insignia de FAIR. A diferencia del
+    // histograma (que enseña la FORMA de la distribución), responde directamente "¿qué
+    // probabilidad hay de perder más de X en un año?", que es la pregunta con la que se decide.
+    // Se superponen los dos umbrales que el usuario ya declaró en Criterios de Riesgo: donde la
+    // curva los cruza está su probabilidad de pasarse de lo que dijo tolerar.
+    renderLossExceedanceCurve() {
+        const contenedor = document.getElementById('fair-lec-container');
+        const curva = state.fair.lastLossExceedanceCurve;
+        if (!contenedor) return;
+        if (!Array.isArray(curva) || curva.length === 0) {
+            contenedor.classList.add('hidden');
+            return;
+        }
+        contenedor.classList.remove('hidden');
+        const simple = App.UIMode.mode === 'simple';
+
+        const criterios = state.config.riskCriteria || {};
+        const aleCritico = typeof criterios.aleCritico === 'number' ? criterios.aleCritico : null;
+        const aleAceptable =
+            aleCritico != null && typeof criterios.aleAceptablePercent === 'number'
+                ? aleCritico * (criterios.aleAceptablePercent / 100)
+                : null;
+
+        const punto = (p) => ({ x: p.loss, y: p.probability });
+        const datasets = [
+            {
+                label: simple ? 'Con tus controles de hoy' : 'Riesgo Actual',
+                data: curva.map(punto),
+                borderColor: '#2563eb',
+                backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                fill: true,
+                tension: 0.2,
+                pointRadius: 0,
+            },
+        ];
+        // La curva del Inherente solo existe para Amenaza (ver calculateInherentRiskFromSimulation).
+        const inherente = state.fair.lastInherentLossExceedanceCurve;
+        if (Array.isArray(inherente) && inherente.length > 0) {
+            datasets.push({
+                label: simple ? 'Si no tuvieras ningún control' : 'Riesgo Inherente',
+                data: inherente.map(punto),
+                borderColor: '#9ca3af',
+                borderDash: [6, 4],
+                fill: false,
+                tension: 0.2,
+                pointRadius: 0,
+            });
+        }
+        // Los umbrales se dibujan como series verticales de 2 puntos en vez de con un plugin de
+        // anotaciones — evita sumar otra dependencia por CDN solo para dos líneas rectas.
+        const umbral = (valor, etiqueta, color) => ({
+            label: etiqueta,
+            data: [
+                { x: valor, y: 0 },
+                { x: valor, y: 100 },
+            ],
+            borderColor: color,
+            borderDash: [4, 4],
+            borderWidth: 2,
+            fill: false,
+            pointRadius: 0,
+        });
+        if (aleAceptable != null) {
+            datasets.push(umbral(aleAceptable, simple ? 'Lo que aceptas perder' : 'Pérdida Aceptable', '#16a34a'));
+        }
+        if (aleCritico != null) {
+            datasets.push(umbral(aleCritico, simple ? 'Tu límite' : 'Pérdida Crítica', '#dc2626'));
+        }
+
+        const ctx = document.getElementById('fair-lec-chart').getContext('2d');
+        if (state.fair.fairLecChart) state.fair.fairLecChart.destroy();
+        state.fair.fairLecChart = new Chart(ctx, {
+            type: 'line',
+            data: { datasets },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: {
+                        type: 'linear',
+                        title: { display: true, text: simple ? 'Si pierdes más de…' : 'Pérdida Anual (USD)' },
+                        ticks: { callback: (v) => formatCurrency(v) },
+                    },
+                    y: {
+                        min: 0,
+                        max: 100,
+                        title: {
+                            display: true,
+                            text: simple ? '…qué tan probable es (%)' : 'Probabilidad de excederlo (%)',
+                        },
+                        ticks: { callback: (v) => `${v}%` },
+                    },
+                },
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            label: (c) =>
+                                `${c.dataset.label}: ${c.parsed.y.toFixed(1)}% de perder más de ${formatCurrency(c.parsed.x)}`,
+                        },
+                    },
+                },
+            },
+        });
+    },
+
     async displaySimulationResults(result) {
         const { summary, evaluation, inherentEvaluation, sensitivity, annualLosses } = result;
+        state.fair.lastLossExceedanceCurve = result.lossExceedanceCurve || null;
+        state.fair.lastInherentLossExceedanceCurve = result.inherentLossExceedanceCurve || null;
         state.fair.simulatedALE = summary.average;
         state.fair.lastAnnualLosses = annualLosses;
         state.fair.lastEvaluation = evaluation;
@@ -1728,6 +1835,8 @@ export const FairWizard = {
                 },
             },
         });
+
+        this.renderLossExceedanceCurve();
 
         await App.FairRegister.saveToRiskRegister(summary, evaluation, inherentEvaluation);
 

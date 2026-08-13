@@ -90,6 +90,12 @@ export const state = {
     },
     fair: {
         fairResultsChart: null,
+        fairLecChart: null,
+        // Curvas de Excedencia de Pérdidas de la última simulación (Actual e Inherente) — se
+        // guardan para poder mandarlas al Registro en saveToRiskRegister y para redibujarlas al
+        // cambiar de Modo Simple/Técnico sin volver a simular.
+        lastLossExceedanceCurve: null,
+        lastInherentLossExceedanceCurve: null,
         simulatedALE: 0,
         pendingRisks: [],
         riskRegister: [],

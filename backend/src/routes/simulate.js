@@ -1,7 +1,7 @@
 'use strict';
 
 const express = require('express');
-const { runMonteCarloSimulation, summarizeLosses } = require('../lib/simulation');
+const { runMonteCarloSimulation, summarizeLosses, buildLossExceedanceCurve } = require('../lib/simulation');
 const { evaluateFairThreat, evaluateFairOpportunity } = require('../lib/evaluation');
 const { sampleVulnerabilityFromProfiles, calculateInherentRiskFromSimulation } = require('../lib/autocalc');
 const { defaultRiskCriteria, lossFormsKeys, attackerProfiles, defenseProfiles } = require('../data/profiles');
@@ -179,6 +179,13 @@ function createSimulateRouter(store) {
                 // arriba) — null para Oportunidad, igual que inherentALE/inherentCVaR.
                 inherentEvaluation,
                 sensitivity: sensitivity.slice(0, 10),
+                // Curva de Excedencia de Pérdidas (ver buildLossExceedanceCurve): ~34 puntos, lo
+                // bastante compacta para guardarse en el Registro y volver a dibujarse sin
+                // re-simular — a diferencia de annualLosses, que se manda pero no se persiste.
+                lossExceedanceCurve: buildLossExceedanceCurve(annualLosses),
+                // La del Riesgo Inherente (sin ningún control) para poder superponerlas. null en
+                // Oportunidad, igual que el resto de los campos inherentes.
+                inherentLossExceedanceCurve: inherent.inherentLossExceedanceCurve || null,
                 // El arreglo completo de pérdidas se regresa aparte (puede ser grande) para que el
                 // cliente decida si lo necesita, ej. para la estrategia de Transferir/Seguro.
                 annualLosses,

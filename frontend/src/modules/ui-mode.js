@@ -160,6 +160,9 @@ export const UIMode = {
             'riskmgmt-residual-ale-label': 'ALE:',
             'riskmgmt-residual-cvar-label': 'CVaR95:',
             'fair-register-pareto-title': 'Análisis 80-20 (Pareto) — sobre el Riesgo Actual',
+            'fair-lec-title': 'Curva de Excedencia de Pérdidas (LEC)',
+            'fair-lec-desc':
+                'Para cada monto, la probabilidad de que la pérdida de un año lo supere. Las líneas verticales marcan tu Pérdida Aceptable y tu Pérdida Crítica: donde la curva las cruza, ahí está la probabilidad de pasarte de lo que dijiste tolerar.',
             'fair-sensitivity-title': 'Análisis de Sensibilidad',
             'fair-sensitivity-desc':
                 'Qué tanto influye cada variable en el resultado final (correlación con la pérdida simulada). Enfoca tu esfuerzo de mejorar datos en las variables de arriba — son las que más mueven el resultado.',
@@ -184,6 +187,9 @@ export const UIMode = {
             'riskmgmt-residual-ale-label': 'Pérdida Promedio:',
             'riskmgmt-residual-cvar-label': 'Peor Caso Típico:',
             'fair-register-pareto-title': 'Los Riesgos Que Más Pesan Hoy (antes de tratarlos)',
+            'fair-lec-title': '¿Qué tan probable es perder más de cierta cantidad?',
+            'fair-lec-desc':
+                'Elige un monto en la línea de abajo y la curva te dice qué tan probable es perder más que eso en un año. Las dos líneas verticales son lo que dijiste que aceptas perder y tu límite: donde la curva las cruza, ésa es tu probabilidad de pasarte.',
             'fair-sensitivity-title': '¿Qué Es lo Que Más Cambia Tu Resultado?',
             'fair-sensitivity-desc':
                 'Mejora primero la información de estos factores — son los que más mueven tu estimado.',
@@ -317,6 +323,13 @@ export const UIMode = {
         // ningún dato del usuario que perder, y así usa sensitivityLabel() de una.
         if (state.fair && state.fair.lastSensitivity && App.FairAnalysis && App.FairAnalysis.renderSensitivity) {
             App.FairAnalysis.renderSensitivity(state.fair.lastSensitivity);
+        }
+
+        // La Curva de Excedencia lleva sus etiquetas DENTRO del <canvas> (ejes, leyenda,
+        // tooltips), que applyLabels no puede tocar con textContent — hay que redibujarla. Es de
+        // solo lectura, así que no se pierde nada del usuario al reconstruirla.
+        if (state.fair && state.fair.lastLossExceedanceCurve && App.FairWizard) {
+            App.FairWizard.renderLossExceedanceCurve();
         }
     },
 

@@ -96,6 +96,9 @@ module.exports = [
                 document: 'readonly',
                 fetch: 'readonly',
                 localStorage: 'readonly',
+                // Chart.js se carga por <script src> en app_fair.html — dentro de page.evaluate
+                // es un global legítimo del navegador (ver el test de la Curva de Excedencia).
+                Chart: 'readonly',
             },
         },
         rules: {
