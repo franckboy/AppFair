@@ -147,9 +147,16 @@ export const RiskManagement = {
             data.includedCount > 1 && ahorro > 0
                 ? ` — ${formatCurrency(ahorro)} menos que la suma (${pct.toFixed(0)}%), porque no todos los riesgos ocurren el mismo año.`
                 : '.';
+        // Modo Simple prohíbe los acrónimos (ver simple-mode-no-jargon.spec.js): se dice lo mismo
+        // en palabras. Los dos textos describen exactamente las mismas dos cifras.
+        const simple = App.UIMode.mode === 'simple';
+        const cifras = simple
+            ? `en el 5% de años peores se perderían <strong>${formatCurrency(data.summary.cvar95)}</strong> en promedio, ` +
+              `y 1 de cada 10 años pasaría de <strong>${formatCurrency(data.summary.p90)}</strong>`
+            : `CVaR95 <strong>${formatCurrency(data.summary.cvar95)}</strong>, p90 <strong>${formatCurrency(data.summary.p90)}</strong>`;
         el.innerHTML =
             `<strong>Simulando el portafolio completo a la vez</strong> (${data.includedCount} amenazas): ` +
-            `CVaR95 <strong>${formatCurrency(data.summary.cvar95)}</strong>, p90 <strong>${formatCurrency(data.summary.p90)}</strong>${nota}` +
+            `${cifras}${nota}` +
             (data.skippedCount > 0
                 ? ` <span class="text-gray-500">(${data.skippedCount} sin datos suficientes para simular)</span>`
                 : '');
