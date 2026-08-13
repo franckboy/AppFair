@@ -131,6 +131,12 @@ test.describe('Amenaza no deliberada', () => {
         await runFullFairAnalysis(page, 'E2E — Nash con adversario');
 
         await expect(page.locator('#fair-nash-container')).toBeVisible();
+        // El formulario vive detrás de un botón: es una exploración aparte, no parte de los
+        // resultados de la evaluación.
+        await expect(page.locator('#fair-nash-panel')).toBeHidden();
+        await page.click('#fair-nash-open-btn');
+        await page.waitForTimeout(300);
+        await expect(page.locator('#fair-nash-panel')).toBeVisible();
         await page.fill('#nash-cost-attacker', '500');
         await page.fill('#nash-cost-defense', '800');
         await Promise.all([
@@ -139,6 +145,15 @@ test.describe('Amenaza no deliberada', () => {
         ]);
         await expect(page.locator('#nash-results')).toBeVisible();
         await expect(page.locator('#nash-fixed-vuln')).not.toHaveText('');
+
+        // Al cerrar, el panel vuelve a su sitio: si se quedara dentro del modal, la próxima
+        // apertura no lo encontraría.
+        await page.click('#nash-modal-close-btn');
+        await page.waitForTimeout(300);
+        await expect(page.locator('#fair-nash-panel')).toBeHidden();
+        await page.click('#fair-nash-open-btn');
+        await page.waitForTimeout(300);
+        await expect(page.locator('#nash-results')).toBeVisible();
     });
 });
 

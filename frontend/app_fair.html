@@ -566,34 +566,41 @@
                                     <i class="fas fa-info-circle text-blue-500 cursor-pointer ml-1" title="Arriba asumiste un esfuerzo fijo (el de los perfiles que elegiste). Acá en cambio el atacante y tu defensa AJUSTAN cuánto esfuerzo poner, cada uno buscando el mejor resultado posible para sí mismo, según cuánto hay en juego y cuánto le cuesta a cada uno esforzarse más."></i>
                                 </h4>
                                 <p class="description-text mb-3">Arriba calculaste el riesgo asumiendo que el atacante y tu defensa ya decidieron cuánto esfuerzo poner. Acá en cambio cada lado AJUSTA su esfuerzo buscando lo mejor para sí mismo — útil para explorar "qué pasaría si ambos reaccionan de forma inteligente". No cambia el resultado de la simulación de arriba.</p>
-                                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-                                    <div class="input-group">
-                                        <label for="nash-m">¿Qué tan seguro es que gane quien se esfuerce más?</label>
-                                        <input type="number" id="nash-m" class="form-input" value="1" min="0.1" step="0.1">
+                                <p class="description-text mb-3">Arriba calculaste el riesgo asumiendo que el atacante y tu defensa ya decidieron cuánto esfuerzo poner. Acá en cambio cada lado AJUSTA su esfuerzo buscando lo mejor para sí mismo. <strong>No cambia el resultado de la simulación de arriba</strong> — es una exploración aparte.</p>
+                                <button type="button" id="fair-nash-open-btn" class="btn btn-secondary text-sm"><i class="fas fa-chess mr-2"></i>Explorar: ¿y si ambos ajustan su esfuerzo?</button>
+                                <!-- El formulario vive aquí pero se MUEVE al cuerpo del modal al abrirlo (ver
+                                     App.FairWizard.openNashModal). Se mueve el nodo, no se re-genera el HTML: así los ids
+                                     y los listeners ya registrados en init() sobreviven intactos. -->
+                                <div id="fair-nash-panel" class="hidden">
+                                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                        <div class="input-group">
+                                            <label for="nash-m">¿Qué tan seguro es que gane quien se esfuerce más?</label>
+                                            <input type="number" id="nash-m" class="form-input" value="1" min="0.1" step="0.1">
+                                        </div>
+                                        <div class="input-group">
+                                            <label for="nash-cost-attacker">¿Cuánto le cuesta al atacante aumentar su esfuerzo?</label>
+                                            <input type="number" id="nash-cost-attacker" class="form-input" placeholder="Ej. 500" min="0" step="any">
+                                        </div>
+                                        <div class="input-group">
+                                            <label for="nash-cost-defense">¿Cuánto te cuesta a ti aumentar tu esfuerzo de defensa?</label>
+                                            <input type="number" id="nash-cost-defense" class="form-input" placeholder="Ej. 500" min="0" step="any">
+                                        </div>
                                     </div>
-                                    <div class="input-group">
-                                        <label for="nash-cost-attacker">¿Cuánto le cuesta al atacante aumentar su esfuerzo?</label>
-                                        <input type="number" id="nash-cost-attacker" class="form-input" placeholder="Ej. 500" min="0" step="any">
+                                    <p class="description-text mt-1 mb-3">Sobre el primer campo: con 1 (normal), quien se esfuerza el doble tiene el doble de ventaja. Por debajo de 1, esforzarse casi no cambia el resultado (se parece más a un volado). Por encima de 1, el que se esfuerza más gana casi siempre, aunque sea por poco margen. Sobre los otros dos campos: no hace falta que sea dinero real — un número que refleje qué tan caro/difícil es, para cada lado, esforzarse un poco más (mientras más alto, más caro).</p>
+                                    <button type="button" id="nash-calculate-btn" class="btn btn-secondary text-sm">Calcular cuánto le conviene esforzarse a cada lado</button>
+    
+                                    <div id="nash-results" class="hidden mt-4 pt-4 border-t border-gray-200">
+                                        <div id="nash-not-converged-warning" class="hidden mb-3 p-2 bg-yellow-100 text-yellow-800 text-sm rounded">⚠️ La iteración no convergió — estos números son la mejor aproximación encontrada, no una certeza matemática (más probable si pusiste el primer campo muy alto).</div>
+                                        <ul class="space-y-1 text-sm">
+                                            <li class="flex justify-between"><span>Cuánto esfuerzo le conviene poner al atacante:</span> <strong id="nash-attacker-effort"></strong></li>
+                                            <li class="flex justify-between"><span>Cuánto esfuerzo te conviene poner a ti:</span> <strong id="nash-defense-effort"></strong></li>
+                                            <li class="flex justify-between"><span>Probabilidad de que el ataque funcione, en este escenario:</span> <strong id="nash-equilibrium-vuln"></strong></li>
+                                            <li class="flex justify-between"><span>Probabilidad de que funcione con tus perfiles actuales, a esfuerzo fijo <em class="text-gray-500">(usa el primer campo de arriba, no la calibración del Paso 2 — por eso puede no coincidir con lo que viste ahí)</em>:</span> <strong id="nash-fixed-vuln"></strong></li>
+                                            <li class="flex justify-between"><span>Cuánto hay en juego (lo que perderías si el ataque funciona):</span> <strong id="nash-value-at-stake"></strong></li>
+                                            <li class="flex justify-between"><span>Lo que el atacante ganaría, después de sus costos:</span> <strong id="nash-attacker-payoff"></strong></li>
+                                            <li class="flex justify-between"><span>Lo que te costaría a ti en total (pérdida esperada + tu costo de defensa):</span> <strong id="nash-defense-loss"></strong></li>
+                                        </ul>
                                     </div>
-                                    <div class="input-group">
-                                        <label for="nash-cost-defense">¿Cuánto te cuesta a ti aumentar tu esfuerzo de defensa?</label>
-                                        <input type="number" id="nash-cost-defense" class="form-input" placeholder="Ej. 500" min="0" step="any">
-                                    </div>
-                                </div>
-                                <p class="description-text mt-1 mb-3">Sobre el primer campo: con 1 (normal), quien se esfuerza el doble tiene el doble de ventaja. Por debajo de 1, esforzarse casi no cambia el resultado (se parece más a un volado). Por encima de 1, el que se esfuerza más gana casi siempre, aunque sea por poco margen. Sobre los otros dos campos: no hace falta que sea dinero real — un número que refleje qué tan caro/difícil es, para cada lado, esforzarse un poco más (mientras más alto, más caro).</p>
-                                <button type="button" id="nash-calculate-btn" class="btn btn-secondary text-sm">Calcular cuánto le conviene esforzarse a cada lado</button>
-
-                                <div id="nash-results" class="hidden mt-4 pt-4 border-t border-gray-200">
-                                    <div id="nash-not-converged-warning" class="hidden mb-3 p-2 bg-yellow-100 text-yellow-800 text-sm rounded">⚠️ La iteración no convergió — estos números son la mejor aproximación encontrada, no una certeza matemática (más probable si pusiste el primer campo muy alto).</div>
-                                    <ul class="space-y-1 text-sm">
-                                        <li class="flex justify-between"><span>Cuánto esfuerzo le conviene poner al atacante:</span> <strong id="nash-attacker-effort"></strong></li>
-                                        <li class="flex justify-between"><span>Cuánto esfuerzo te conviene poner a ti:</span> <strong id="nash-defense-effort"></strong></li>
-                                        <li class="flex justify-between"><span>Probabilidad de que el ataque funcione, en este escenario:</span> <strong id="nash-equilibrium-vuln"></strong></li>
-                                        <li class="flex justify-between"><span>Probabilidad de que funcione con tus perfiles actuales, a esfuerzo fijo <em class="text-gray-500">(usa el primer campo de arriba, no la calibración del Paso 2 — por eso puede no coincidir con lo que viste ahí)</em>:</span> <strong id="nash-fixed-vuln"></strong></li>
-                                        <li class="flex justify-between"><span>Cuánto hay en juego (lo que perderías si el ataque funciona):</span> <strong id="nash-value-at-stake"></strong></li>
-                                        <li class="flex justify-between"><span>Lo que el atacante ganaría, después de sus costos:</span> <strong id="nash-attacker-payoff"></strong></li>
-                                        <li class="flex justify-between"><span>Lo que te costaría a ti en total (pérdida esperada + tu costo de defensa):</span> <strong id="nash-defense-loss"></strong></li>
-                                    </ul>
                                 </div>
                             </div>
 
