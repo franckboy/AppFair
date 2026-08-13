@@ -351,8 +351,10 @@ test('runFamilyCascadeSimulation: un hijo con DOS padres se activa según 1-(1-p
 });
 
 test('runFamilyCascadeSimulation: con DOS padres de probability:0, la propia frecuencia (pOwn) del hijo NO se cuenta dos veces (regresión)', () => {
-    // Regresión del bug real que este diseño evita: sin el guardián pOwnConsumedThisIteration,
-    // un hijo con N padres recibiría N tiradas de su propia frecuencia esa misma iteración
+    // Regresión del bug real que este diseño evita: si la frecuencia propia se tirara dentro del
+    // recorrido de la cascada (una vez por cada padre activo, en vez de una sola vez por
+    // iteración antes de recorrer nada — ver los "auto-iniciadores" en cascadeSimulation.js), un
+    // hijo con N padres recibiría N tiradas de su propia frecuencia esa misma iteración
     // (1-(1-pOwn)^N en vez de pOwn), sobreestimando su activación cuanto más padres tenga. Se
     // aísla el efecto con probability:0 en TODAS las aristas de cascada (el hijo solo puede
     // activarse por su propio LEF) y se compara la tasa de activación con 1 padre vs. 2 padres
@@ -395,6 +397,53 @@ test('runFamilyCascadeSimulation: con DOS padres de probability:0, la propia fre
     assert.ok(
         Math.abs(resultUno.activationRates['Hijo'] - resultDos.activationRates['Hijo']) < 3,
         `1 padre (${resultUno.activationRates['Hijo']}%) y 2 padres de probability:0 (${resultDos.activationRates['Hijo']}%) deberían converger a la misma tasa — pOwn no debe contarse dos veces`,
+    );
+});
+
+test('runFamilyCascadeSimulation: la frecuencia propia de un riesgo vale a CUALQUIER profundidad, aunque su padre no ocurra (regresión)', () => {
+    // Regresión de un bug real y grave: la frecuencia propia se evaluaba DENTRO del recorrido de
+    // la cascada, en la misma compuerta que la probabilidad de arista — o sea, solo se tiraba si
+    // el padre ya se había activado. Como la raíz siempre está activa, sus hijos DIRECTOS salían
+    // bien y toda la suite (que solo probaba ese caso) pasaba en verde; pero de la SEGUNDA
+    // generación en adelante, un riesgo perdía su frecuencia propia por completo cuando su padre
+    // no ocurría ese año. Medido antes del arreglo: un nieto con LEF=1 (≈63% por 1-e^(-1))
+    // activaba 0.005% de las veces, y un nieto con ALE propio de $1,000,000/año aportaba ~$50 a
+    // la familia. El error iba siempre hacia SUBESTIMAR el riesgo, y empeoraba con la
+    // profundidad del árbol.
+    //
+    // Se aísla con probability:0 en TODAS las aristas (nadie se activa por cascada, solo por su
+    // propia frecuencia) y un intermedio con frecuencia casi nula (nunca ocurre) — así lo único
+    // que puede activar al nieto es su propia frecuencia, la vía que el bug ignoraba.
+    const conFrecuenciaPropia = (name, lef, causes) => ({
+        riskName: name,
+        riskType: 'amenaza',
+        tef: { min: lef, mode: lef, max: lef },
+        vuln: { min: 100, mode: 100, max: 100 },
+        lossMagnitudes: { productividad: { min: 1000, mode: 1000, max: 1000 } },
+        triggeredBy: causes || [],
+    });
+    const register = [
+        conFrecuenciaPropia('Raiz', 0.0001),
+        conFrecuenciaPropia('Intermedio', 0.0001, [{ riskName: 'Raiz', probability: 0 }]),
+        conFrecuenciaPropia('Nieto', 1.0, [{ riskName: 'Intermedio', probability: 0 }]),
+    ];
+    const result = runFamilyCascadeSimulation({
+        rootRiskName: 'Raiz',
+        register,
+        iterations: 20000,
+        seed: 1234,
+    });
+
+    // El intermedio casi nunca ocurre — confirma que el nieto NO se está activando por cascada.
+    assert.ok(
+        result.activationRates['Intermedio'] < 1,
+        `el Intermedio debería activarse casi nunca (fue ${result.activationRates['Intermedio']}%)`,
+    );
+    // 1 - e^(-1) = 63.2%: la probabilidad de al menos un evento al año con LEF=1 (Poisson).
+    const esperado = (1 - Math.exp(-1)) * 100;
+    assert.ok(
+        Math.abs(result.activationRates['Nieto'] - esperado) < 3,
+        `el Nieto (profundidad 2) debería activarse ~${esperado.toFixed(1)}% por su propia frecuencia aunque su padre no ocurra, pero fue ${result.activationRates['Nieto']}%`,
     );
 });
 
