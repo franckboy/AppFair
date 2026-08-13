@@ -15,6 +15,7 @@ const { defaultRiskCriteria } = require('../data/profiles');
 const { normalizeRiskCriteria, validateRiskCriteriaOverride } = require('../lib/riskCriteria');
 const { asyncHandler } = require('../middleware/asyncHandler');
 const { ACCESS_LEVELS, DEFAULT_ACCESS_LEVEL } = require('../lib/autocalc');
+const { simulatePortfolio, PORTFOLIO_ITERATIONS } = require('../lib/portfolioSimulation');
 
 // La app solo calcula en USD (ver la nota equivalente en simulate.js/assets.js).
 function makeCurrencyFormatter() {
@@ -108,6 +109,31 @@ function createRegisterRouter(store) {
      * evaluationJustification, probExceedance, sensitivity, securityPlan,
      * tef, vuln, lossMagnitudes, seed, riskType }
      */
+    // GET /api/register/portfolio-simulation
+    // Monte Carlo ACOPLADO del portafolio (ver lib/portfolioSimulation.js). Ruta aparte, y no
+    // dentro del GET / de arriba, porque re-simula cada riesgo completo: es cara (10.000
+    // iteraciones por riesgo) y no tiene por qué pagarse cada vez que se pinta la tabla.
+    //
+    // Devuelve percentiles REALES del portafolio, no la suma de los individuales: el ALE sí se
+    // puede sumar (la esperanza es lineal) pero un percentil no. `sumOfIndividualCVaR` y
+    // `diversificationBenefit` se devuelven para poder mostrar de cuánto era la sobrestimación.
+    router.get(
+        '/portfolio-simulation',
+        asyncHandler(async (req, res) => {
+            const risks = (await store.get('riskRegister')) || [];
+            const result = simulatePortfolio(risks);
+            const criteria = normalizeRiskCriteria((await store.get('riskCriteria')) || defaultRiskCriteria);
+
+            // Clasificación del portafolio contra los Criterios de Riesgo, con el MISMO evaluador
+            // que clasifica un riesgo individual — nunca se reimplementan los umbrales aquí.
+            const evaluation = result.summary
+                ? evaluateFairThreat(result.summary.average, result.summary.cvar95, criteria, makeCurrencyFormatter())
+                : null;
+
+            res.json({ ...result, evaluation, iterations: PORTFOLIO_ITERATIONS });
+        }),
+    );
+
     router.put(
         '/:riskName',
         asyncHandler(async (req, res) => {

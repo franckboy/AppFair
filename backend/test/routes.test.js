@@ -2135,3 +2135,43 @@ test('POST /api/simulate devuelve la Curva de Excedencia de Pérdidas, coherente
     // Amenaza: también debe venir la curva del Riesgo Inherente para poder superponerlas.
     assert.ok(Array.isArray(res.body.inherentLossExceedanceCurve), 'falta la curva del Inherente');
 });
+
+// Monte Carlo acoplado del portafolio (ver lib/portfolioSimulation.js) — la ruta que reemplaza la
+// suma de CVaR individuales por percentiles reales de la distribución conjunta.
+test('GET /api/register/portfolio-simulation devuelve percentiles reales y el beneficio de diversificación', async () => {
+    const base = {
+        riskType: 'amenaza',
+        vulnManualOverride: true,
+        tef: { min: 1, mode: 2, max: 4 },
+        vuln: { min: 20, mode: 40, max: 60 },
+        lossMagnitudes: { respuesta: { min: 5000, mode: 20000, max: 60000 } },
+        ale: 20000,
+        cvar95: 50000,
+    };
+    const nombres = ['Portafolio MC A', 'Portafolio MC B', 'Portafolio MC C'];
+    for (const riskName of nombres) {
+        await request(app)
+            .put(`/api/register/${encodeURIComponent(riskName)}`)
+            .set('X-API-Key', TEST_API_KEY)
+            .send(base);
+    }
+
+    const res = await request(app).get('/api/register/portfolio-simulation').set('X-API-Key', TEST_API_KEY);
+    assert.strictEqual(res.status, 200);
+    assert.ok(res.body.includedCount >= 3, `esperaba al menos los 3 riesgos, dio ${res.body.includedCount}`);
+    assert.ok(res.body.summary.average > 0);
+    // La comprobación que da sentido a toda la ruta: la cola conjunta NO es la suma de las colas.
+    assert.ok(
+        res.body.summary.cvar95 <= res.body.sumOfIndividualCVaR,
+        `CVaR conjunto ${res.body.summary.cvar95} debería ser <= suma ${res.body.sumOfIndividualCVaR}`,
+    );
+    assert.ok(res.body.diversificationBenefit > 0, 'con 3 riesgos independientes debe haber diversificación');
+    assert.ok(Array.isArray(res.body.lossExceedanceCurve) && res.body.lossExceedanceCurve.length > 0);
+    assert.ok(res.body.evaluation && typeof res.body.evaluation.level === 'string');
+
+    for (const riskName of nombres) {
+        await request(app)
+            .delete(`/api/register/${encodeURIComponent(riskName)}`)
+            .set('X-API-Key', TEST_API_KEY);
+    }
+});
