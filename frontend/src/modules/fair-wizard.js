@@ -80,13 +80,9 @@ export const FairWizard = {
             data.dataConfidence || App.OrgDefaults.defaults.dataConfidence;
         if (data.attackerKey) document.getElementById('fair-attacker-profile').value = data.attackerKey;
         if (data.defenseKey) document.getElementById('fair-defense-profile').value = data.defenseKey;
-        document.getElementById('fair-deliberate-threat').checked =
-            // Un riesgo guardado ANTES de que este interruptor gobernara la Vulnerabilidad trae
-            // isDeliberate=false por el default viejo, pero si tiene attackerKey es porque SÍ se
-            // analizó con perfiles — abrirlo en modo no deliberado escondería los perfiles con los
-            // que de verdad se calculó. Se infiere de la evidencia, sin migrar datos.
-            !!data.isDeliberate || !!data.attackerKey;
-        document.getElementById('fair-deliberate-ponderation-container').classList.toggle('hidden', !data.isDeliberate);
+        const esDeliberada = this.inferDeliberateThreat(data);
+        document.getElementById('fair-deliberate-threat').checked = esDeliberada;
+        document.getElementById('fair-deliberate-ponderation-container').classList.toggle('hidden', !esDeliberada);
         this.applyDeliberateThreatMode();
         if (data.deliberateThreatPonderation) {
             document.getElementById('fair-deliberate-ponderation').value = data.deliberateThreatPonderation;
@@ -546,6 +542,18 @@ export const FairWizard = {
         App.UIMode.applyLabels();
     },
 
+    // ¿Este dato guardado corresponde a una amenaza deliberada? No basta con leer la bandera:
+    //   - Un borrador del Paso 1 NO la persiste (ver saveDraftToRisksList) — llega ausente.
+    //   - Un riesgo guardado antes de que el interruptor gobernara la Vulnerabilidad la trae en
+    //     false, porque entonces solo afectaba al TEF sugerido y venía desmarcado por default.
+    // Ninguno de los dos casos significa "el usuario declaró que no hay adversario", y tratarlos
+    // así escondería los perfiles con los que ese riesgo de verdad se analizó. Solo un false
+    // EXPLÍCITO y sin perfiles cuenta como decisión real de "no deliberada".
+    inferDeliberateThreat(data) {
+        if (data.isDeliberate === undefined || data.isDeliberate === null) return true;
+        return !!data.isDeliberate || !!data.attackerKey;
+    },
+
     toggleDeliberateThreatFair() {
         const checked = document.getElementById('fair-deliberate-threat').checked;
         document.getElementById('fair-deliberate-ponderation-container').classList.toggle('hidden', !checked);
@@ -731,13 +739,9 @@ export const FairWizard = {
 
         if (data.attackerKey) document.getElementById('fair-attacker-profile').value = data.attackerKey;
         if (data.defenseKey) document.getElementById('fair-defense-profile').value = data.defenseKey;
-        document.getElementById('fair-deliberate-threat').checked =
-            // Un riesgo guardado ANTES de que este interruptor gobernara la Vulnerabilidad trae
-            // isDeliberate=false por el default viejo, pero si tiene attackerKey es porque SÍ se
-            // analizó con perfiles — abrirlo en modo no deliberado escondería los perfiles con los
-            // que de verdad se calculó. Se infiere de la evidencia, sin migrar datos.
-            !!data.isDeliberate || !!data.attackerKey;
-        document.getElementById('fair-deliberate-ponderation-container').classList.toggle('hidden', !data.isDeliberate);
+        const esDeliberada = this.inferDeliberateThreat(data);
+        document.getElementById('fair-deliberate-threat').checked = esDeliberada;
+        document.getElementById('fair-deliberate-ponderation-container').classList.toggle('hidden', !esDeliberada);
         this.applyDeliberateThreatMode();
         if (data.deliberateThreatPonderation) {
             document.getElementById('fair-deliberate-ponderation').value = data.deliberateThreatPonderation;
@@ -2071,15 +2075,9 @@ export const FairWizard = {
             document.getElementById('fair-data-notes').value = data.dataNotes || '';
             document.getElementById('fair-attacker-profile').value = data.attackerKey || 'empleado-desleal';
             document.getElementById('fair-defense-profile').value = data.defenseKey || 'estandar';
-            document.getElementById('fair-deliberate-threat').checked =
-                // Un riesgo guardado ANTES de que este interruptor gobernara la Vulnerabilidad trae
-                // isDeliberate=false por el default viejo, pero si tiene attackerKey es porque SÍ se
-                // analizó con perfiles — abrirlo en modo no deliberado escondería los perfiles con los
-                // que de verdad se calculó. Se infiere de la evidencia, sin migrar datos.
-                !!data.isDeliberate || !!data.attackerKey;
-            document
-                .getElementById('fair-deliberate-ponderation-container')
-                .classList.toggle('hidden', !data.isDeliberate);
+            const esDeliberada = this.inferDeliberateThreat(data);
+            document.getElementById('fair-deliberate-threat').checked = esDeliberada;
+            document.getElementById('fair-deliberate-ponderation-container').classList.toggle('hidden', !esDeliberada);
             const ponderacion = parseFloat(data.deliberateThreatPonderation) || 0.7;
             document.getElementById('fair-deliberate-ponderation').value = ponderacion;
             document.getElementById('fair-deliberate-ponderation-value').textContent = `x${ponderacion.toFixed(2)}`;
