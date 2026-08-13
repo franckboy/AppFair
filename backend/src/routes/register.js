@@ -277,8 +277,16 @@ function createRegisterRouter(store) {
                 // tanto (mismo patrón que inherentALE).
                 lossExceedanceCurve = null,
                 inherentLossExceedanceCurve = null,
+                // Sello del modelo de Vulnerabilidad con el que se calculó este riesgo (ver
+                // VULNERABILITY_CALIBRATION_VERSION en lib/autocalc.js). Llega desde la respuesta
+                // de POST /api/simulate, vía el frontend. `null` = guardado antes de que existiera
+                // el sello, es decir, con la calibración vieja.
+                calibrationVersion = null,
             } = req.body;
 
+            if (calibrationVersion !== null && (!Number.isInteger(calibrationVersion) || calibrationVersion < 1)) {
+                return res.status(400).json({ error: 'calibrationVersion debe ser un entero >= 1 o null.' });
+            }
             if (typeof ale !== 'number') {
                 return res.status(400).json({ error: 'ale (número) es requerido.' });
             }
@@ -460,6 +468,7 @@ function createRegisterRouter(store) {
                 chartData,
                 lossExceedanceCurve,
                 inherentLossExceedanceCurve,
+                calibrationVersion,
                 date: new Date().toISOString(),
             };
 

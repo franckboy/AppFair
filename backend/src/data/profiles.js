@@ -11,7 +11,15 @@ const attackerProfiles = {
     // Motivación también se baja de 70 a 55: sigue siendo notable (impulso, presión de grupo,
     // ganancia rápida) pero ya no supera a un actor premeditado como el Crimen Organizado.
     'vandalismo': { name: 'Vandalismo / Hurtos Comunes', motivation: 55, resources: 40, capacity: 50, persistence: 30, sophistication: 40 },
-    'empleado-desleal': { name: 'Empleado Desleal', motivation: 80, resources: 60, capacity: 70, persistence: 70, sophistication: 60 },
+    // Recalibrado contra anclas de experto (ver ATTACKER_CONTEST_CALIBRATION en autocalc.js): el
+    // perfil anterior (FA 68) afirmaba que un empleado descontento tiene MÁS Capacidad (70 vs 60)
+    // y MÁS Sofisticación (60 vs 50) que una organización criminal profesional, algo que no se
+    // sostiene. El error de fondo es que la ventaja real de un insider es el ACCESO — ya está
+    // adentro — y el promedio FA no tiene ninguna dimensión de acceso, así que "está adentro" se
+    // había colado dentro de "es capaz". Se baja Recursos, Capacidad, Persistencia y Sofisticación
+    // por debajo del Crimen Organizado, y se CONSERVA Motivación en 80 (la más alta de los cinco
+    // perfiles): el agravio personal sí es el rasgo definitorio de esta amenaza. FA queda en 60,0.
+    'empleado-desleal': { name: 'Empleado Desleal', motivation: 80, resources: 52, capacity: 58, persistence: 62, sophistication: 48 },
     // Sesgo real encontrado: con persistence=40, el Crimen Organizado quedaba MENOS persistente
     // que el Vandalismo (60) — invertido respecto a la realidad de seguridad patrimonial, donde
     // un grupo organizado (robo de mercancía, bandas de asalto a instalaciones) case el objetivo,

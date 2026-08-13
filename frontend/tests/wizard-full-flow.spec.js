@@ -36,6 +36,48 @@ test.describe('Análisis FAIR completo', () => {
         await expect(page.locator('#fair-riskName')).toHaveValue('');
     });
 
+    // El sello de calibración (ver VULNERABILITY_CALIBRATION_VERSION en backend/src/lib/autocalc.js)
+    // distingue un riesgo calculado con el modelo de Vulnerabilidad vigente de uno calculado con
+    // una calibración anterior. Los viejos NO se recalculan solos — se marcan y el analista decide.
+    test('un riesgo recién simulado queda sellado con la calibración vigente; uno viejo se marca "Recalibrar"', async ({
+        page,
+    }) => {
+        await connectAndBoot(page);
+        await runFullFairAnalysis(page, 'E2E — Calibración Vigente');
+
+        const { vigente, entry } = await page.evaluate(async () => {
+            const headers = { 'X-API-Key': 'test-e2e-key' };
+            const profiles = await (await fetch('http://localhost:3000/api/config/profiles', { headers })).json();
+            const register = await (await fetch('http://localhost:3000/api/register', { headers })).json();
+            return {
+                vigente: profiles.calibrationVersion,
+                entry: register.risks.find((r) => r.riskName === 'E2E — Calibración Vigente'),
+            };
+        });
+        expect(vigente).toBeGreaterThanOrEqual(2);
+        expect(entry.calibrationVersion).toBe(vigente);
+
+        // Un riesgo guardado SIN sello representa lo que ya estaba en el Registro antes de esta
+        // recalibración: debe aparecer marcado, sin que nadie le haya tocado los números.
+        await page.evaluate(async () => {
+            await fetch('http://localhost:3000/api/register/' + encodeURIComponent('E2E — Calibración Vieja'), {
+                method: 'PUT',
+                headers: { 'X-API-Key': 'test-e2e-key', 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ale: 12345, cvar95: 20000, riskType: 'amenaza' }),
+            });
+        });
+
+        await page.reload({ waitUntil: 'networkidle' });
+        await page.click('#nav-fair');
+        await page.waitForTimeout(600);
+
+        const vieja = page.locator('#quick-concentrated-table-body tr', { hasText: 'E2E — Calibración Vieja' });
+        await expect(vieja.getByText('Recalibrar')).toBeVisible();
+
+        const vigenteRow = page.locator('#quick-concentrated-table-body tr', { hasText: 'E2E — Calibración Vigente' });
+        await expect(vigenteRow.getByText('Recalibrar')).toHaveCount(0);
+    });
+
     test('vulnManualOverride se persiste en el Registro y se restaura fiel al retomar un riesgo (no siempre "manual")', async ({
         page,
     }) => {

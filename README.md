@@ -142,6 +142,75 @@ estadística en `backend/test/lib.test.js` — no solo casos puntuales, sino que
 escala (200,000 muestras) que la media/varianza muestral converge a la fórmula teórica de cada
 distribución, igual que ya se hacía para la triangular.
 
+## Calibración de la Vulnerabilidad
+
+`backend/src/lib/autocalc.js` — en FAIR, la Vulnerabilidad es la probabilidad de que un evento de
+amenaza se convierta en pérdida. AppFair la modela como una **contienda** entre la Capacidad de
+Amenaza del atacante y la Fuerza de Resistencia de la defensa, resuelta con la Función de Éxito de
+Contienda de Tullock: `TCap^m / (TCap^m + RS^m)`.
+
+**Esto es metodología propia de AppFair.** ISO 31000, ISO 28000 y ASIS aportan el marco de proceso
+(contexto, identificación, análisis, evaluación, tratamiento, controles), pero **no prescriben esta
+fórmula ni estos porcentajes**, y la documentación de la app no debe afirmar lo contrario.
+
+### De dónde salen los números
+
+`TULLOCK_M` y `ATTACKER_CONTEST_CALIBRATION` no son valores elegidos a ojo. Salen de seis anclas de
+juicio experto en seguridad patrimonial — seis celdas de la grilla Atacante × Defensa cuya
+Vulnerabilidad se declaró por separado:
+
+| Atacante                    | Defensa  | Vulnerabilidad |
+| --------------------------- | -------- | -------------- |
+| Intruso oportunista         | Básica   | 5 %            |
+| Vandalismo / hurtos comunes | Básica   | 35 %           |
+| Empleado desleal            | Avanzada | 30 %           |
+| Grupo criminal organizado   | Estándar | 60 %           |
+| Grupo criminal organizado   | Élite    | 15 %           |
+| Terrorista o espía          | Élite    | 45 %           |
+
+`m` **no se eligió**: queda determinado algebraicamente por las dos anclas de crimen organizado,
+que comparten atacante contra dos defensas distintas — el eje de contienda se cancela y solo
+sobrevive `m`.
+
+### Por qué hizo falta un "eje de contienda"
+
+Las escalas de Atacante y de Defensa nunca se habían calibrado una contra otra: se comparaban como
+si un punto de atacante valiera lo mismo que un punto de defensa. `attackerContestStrength()`
+traduce el promedio semántico del Perfil de Atacante (Motivación, Recursos, Capacidad,
+Persistencia, Sofisticación) a la escala en la que de verdad compite. Se aplica **una sola vez, al
+promedio del perfil** — aplicarlo por muestra de Monte Carlo metía un sesgo de Jensen de hasta 11
+puntos porcentuales, porque la curva es convexa.
+
+### Qué arregló
+
+Con el modelo anterior (`m = 1`), la grilla completa de 5×4 combinaciones quedaba comprimida entre
+17,7 % y 76,3 %: pasar de defensa básica a élite apenas dividía la Vulnerabilidad a la mitad, así
+que **la app subvaloraba sistemáticamente la inversión en seguridad**, y eso alimentaba directo a
+la estrategia de Mitigar. El rango real ahora es 0,5 % – 99,8 %.
+
+La calibración también obligó a corregir el Perfil de Atacante `empleado-desleal`, que afirmaba que
+un empleado descontento tiene más Capacidad y más Sofisticación que una organización criminal
+profesional. El error de fondo: la ventaja real de un insider es el **acceso** — ya está adentro —
+y el promedio del perfil no tiene ninguna dimensión de acceso.
+
+### Cómo se verifica
+
+`backend/test/lib.test.js` convierte las seis anclas en una regresión ejecutable: nadie puede
+cambiar `m`, el eje de contienda ni los atributos de un Perfil de Atacante sin que la suite avise
+que el modelo dejó de coincidir con el criterio experto. El nodo del eje correspondiente a un
+Factor de Amenaza de 60 está **sobredeterminado** (tres de las seis anclas lo fijan, un solo
+parámetro las absorbe) y aun así el peor residuo del conjunto es de 0,43 puntos porcentuales — eso
+es comprobación, no ajuste. Otros dos tests verifican que las 14 celdas que ningún ancla toca sean
+monótonas en ambos ejes, y que ninguna combinación dé 0 % (ninguna defensa es invulnerable).
+
+### Riesgos guardados con una calibración anterior
+
+`VULNERABILITY_CALIBRATION_VERSION` sella cada simulación, y el Registro guarda ese sello por
+riesgo. Los riesgos calculados con una versión anterior **no se recalculan solos**: en una
+herramienta de GRC, sobrescribir en silencio la evaluación guardada de un analista destruye la
+trazabilidad de por qué se decidió lo que se decidió. Se marcan con `⟳ Recalibrar` en el Registro y
+el analista decide cuáles vuelve a simular.
+
 ## Estilo de código
 
 ```bash
