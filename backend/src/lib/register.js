@@ -224,6 +224,19 @@ function calculateResidualParetoAnalysis(risks) {
  * solos la próxima vez que se vuelvan a simular (sin migración/backfill, mismo criterio ya usado
  * con vulnManualOverride). `totalInherentALE`/`totalInherentCVaR` son `null` si NINGÚN riesgo
  * tiene el dato todavía — no se muestra un total parcial disfrazado de completo.
+ *
+ * `comparableActualALE` existe precisamente por ese hueco: es el ALE Actual sumado SOLO sobre los
+ * riesgos que además tienen `inherentALE`, o sea la MISMA canasta que `totalInherentALE`. Es el
+ * único total contra el que tiene sentido restar el Inherente (Efectividad de Controles, ver
+ * App.RiskManagement.renderPortfolio) — restarle `totalActualALE`, que cubre TODAS las amenazas,
+ * mezcla dos canastas distintas.
+ *
+ * Bug real corregido: esa resta cruzada daba porcentajes de efectividad negativos y un waterfall
+ * imposible (Riesgo Inherente MENOR que el Actual, cuando por definición el inherente —sin ningún
+ * control— nunca puede ser menor). Medido con 3 amenazas, una sin `inherentALE`: la app reportaba
+ * −133.3% de efectividad cuando la real era +66.7%, o sea le decía al usuario que sus controles
+ * empeoraban el riesgo. Con cobertura completa (`inherentMissingCount === 0`) ambos totales
+ * coinciden, que es por lo que el error pasaba desapercibido en los casos limpios.
  * @param {Array<{riskType?:string, ale:number, cvar95?:number, inherentALE?:number|null, inherentCVaR?:number|null}>} risks
  */
 function calculateInherentPortfolio(risks) {
@@ -235,6 +248,7 @@ function calculateInherentPortfolio(risks) {
     let totalActualALE = 0;
     let totalActualCVaR = 0;
     let actualCvarCount = 0;
+    let comparableActualALE = 0;
 
     threats.forEach((r) => {
         totalActualALE += r.ale;
@@ -245,6 +259,7 @@ function calculateInherentPortfolio(risks) {
         if (typeof r.inherentALE === 'number') {
             totalInherentALE += r.inherentALE;
             inherentRiskCount += 1;
+            comparableActualALE += r.ale;
         }
         if (typeof r.inherentCVaR === 'number') {
             totalInherentCVaR += r.inherentCVaR;
@@ -258,6 +273,7 @@ function calculateInherentPortfolio(risks) {
         inherentMissingCount: threats.length - inherentRiskCount,
         totalActualALE,
         totalActualCVaR: actualCvarCount > 0 ? totalActualCVaR : null,
+        comparableActualALE: inherentRiskCount > 0 ? comparableActualALE : null,
         totalRiskCount: threats.length,
     };
 }

@@ -1074,6 +1074,52 @@ test('calculateInherentPortfolio: mezcla de riesgos con/sin inherentALE persisti
     assert.strictEqual(portfolio.totalActualALE, 50000 + 30000);
     assert.strictEqual(portfolio.totalActualCVaR, 90000 + 60000);
     assert.strictEqual(portfolio.totalRiskCount, 2);
+    // El Actual COMPARABLE cubre solo el riesgo que además tiene inherentALE — es contra este
+    // (no contra totalActualALE) que se resta el Inherente para la Efectividad de Controles.
+    assert.strictEqual(portfolio.comparableActualALE, 50000);
+});
+
+test('calculateInherentPortfolio: la Efectividad de Controles usa la MISMA canasta, no un Actual que incluye riesgos sin Inherente (regresión)', () => {
+    // Regresión de un bug real: la efectividad se calculaba como
+    // (totalInherentALE - totalActualALE) / totalInherentALE, restando un Inherente que solo
+    // cubría los riesgos con el dato persistido contra un Actual que cubría TODAS las amenazas.
+    // Con cualquier riesgo sin inherentALE (los guardados antes de que existiera el cálculo, o
+    // los que no se han vuelto a simular), el resultado salía negativo — le decía al usuario que
+    // sus controles EMPEORABAN el riesgo — y el waterfall mostraba un Riesgo Inherente MENOR que
+    // el Actual, algo imposible por definición (el inherente es "sin ningún control").
+    const risks = [
+        { riskName: 'A', riskType: 'amenaza', ale: 100000, cvar95: 200000, inherentALE: 300000, inherentCVaR: 500000 },
+        { riskName: 'B', riskType: 'amenaza', ale: 50000, cvar95: 90000, inherentALE: 150000, inherentCVaR: 250000 },
+        // Sin inherentALE, y con un ALE actual grande — es el que invertía el signo.
+        { riskName: 'C', riskType: 'amenaza', ale: 900000, cvar95: 1500000 },
+    ];
+    const portfolio = calculateInherentPortfolio(risks);
+
+    assert.strictEqual(portfolio.totalInherentALE, 450000);
+    assert.strictEqual(portfolio.comparableActualALE, 150000); // solo A y B
+    assert.strictEqual(portfolio.totalActualALE, 1050000); // las 3, para la barra de resumen
+
+    const efectividad =
+        ((portfolio.totalInherentALE - portfolio.comparableActualALE) / portfolio.totalInherentALE) * 100;
+    assert.ok(
+        Math.abs(efectividad - 66.67) < 0.01,
+        `la efectividad debería ser ~66.7% (los controles reducen el riesgo), pero fue ${efectividad.toFixed(1)}%`,
+    );
+    // El Inherente NUNCA puede quedar por debajo del Actual con el que se compara.
+    assert.ok(
+        portfolio.totalInherentALE >= portfolio.comparableActualALE,
+        'el Riesgo Inherente (sin ningún control) no puede ser menor que el Actual de esa misma canasta',
+    );
+});
+
+test('calculateInherentPortfolio: con cobertura completa, el Actual comparable y el total coinciden (el caso limpio no cambia)', () => {
+    const risks = [
+        { riskName: 'A', riskType: 'amenaza', ale: 100000, cvar95: 200000, inherentALE: 300000, inherentCVaR: 500000 },
+        { riskName: 'B', riskType: 'amenaza', ale: 50000, cvar95: 90000, inherentALE: 150000, inherentCVaR: 250000 },
+    ];
+    const portfolio = calculateInherentPortfolio(risks);
+    assert.strictEqual(portfolio.inherentMissingCount, 0);
+    assert.strictEqual(portfolio.comparableActualALE, portfolio.totalActualALE);
 });
 
 test('calculateInherentPortfolio: ningún riesgo tiene inherentALE — totales inherentes null, actuales siguen sumando', () => {
