@@ -141,3 +141,71 @@ test.describe('Amenaza no deliberada', () => {
         await expect(page.locator('#nash-fixed-vuln')).not.toHaveText('');
     });
 });
+
+// Pérdida = Frecuencia x Vulnerabilidad x Magnitud: basta con que uno de los tres quede en cero
+// para que el análisis entero valga 0. El caso más fácil de topar es justo el no deliberado — sin
+// Perfil de Atacante no hay Frecuencia sugerida.
+test.describe('Avisos de datos incompletos', () => {
+    test('un análisis que da ALE 0 lo avisa y nombra el factor en cero, en vez de guardarse en silencio', async ({
+        page,
+    }) => {
+        await connectAndBoot(page);
+        await page.fill('#fair-riskName', 'E2E — Análisis sin magnitud');
+        await page.click('#fair-step1-next');
+        await page.waitForTimeout(400);
+        await page.uncheck('#fair-deliberate-threat');
+        await page.waitForTimeout(400);
+        await page.fill('#vuln-min', '10');
+        await page.fill('#vuln-mode', '25');
+        await page.fill('#vuln-max', '40');
+        await page.click('#fair-step2-next');
+        await page.waitForTimeout(400);
+        // Se deja la Magnitud de Pérdida en cero a propósito.
+        await page.click('#fair-step3-next');
+        await page.waitForTimeout(400);
+        await Promise.all([
+            page.waitForResponse((r) => r.url().includes('/api/simulate'), { timeout: 15000 }),
+            page.click('#run-simulation-btn'),
+        ]);
+        await page.waitForTimeout(1200);
+
+        const aviso = page.locator('#fair-zero-ale-warning');
+        await expect(aviso).toBeVisible();
+        await expect(aviso).toContainText('Magnitud de Pérdida');
+    });
+
+    test('la Frecuencia acepta decimales — un sismo cada 20 años es 0,05 al año, no 0', async ({ page }) => {
+        await connectAndBoot(page);
+        await page.fill('#fair-riskName', 'E2E — Sismo cada 20 años');
+        await page.click('#fair-step1-next');
+        await page.waitForTimeout(400);
+        await page.uncheck('#fair-deliberate-threat');
+        await page.waitForTimeout(400);
+
+        // Antes, type="number" sin step usaba step="1": 0.05 era inválido y el oninput lo borraba.
+        await page.fill('#tef-min', '0.02');
+        await page.fill('#tef-mode', '0.05');
+        await page.fill('#tef-max', '0.1');
+        await expect(page.locator('#tef-mode')).toHaveValue('0.05');
+
+        await page.fill('#vuln-min', '40');
+        await page.fill('#vuln-mode', '60');
+        await page.fill('#vuln-max', '80');
+        await page.click('#fair-step2-next');
+        await page.waitForTimeout(400);
+        await page.check('#lm-manual-override');
+        await page.waitForTimeout(300);
+        await page.fill('#lm-respuesta-min', '100000');
+        await page.fill('#lm-respuesta-mode', '500000');
+        await page.fill('#lm-respuesta-max', '2000000');
+        await page.click('#fair-step3-next');
+        await page.waitForTimeout(400);
+        const [resp] = await Promise.all([
+            page.waitForResponse((r) => r.url().includes('/api/simulate'), { timeout: 15000 }),
+            page.click('#run-simulation-btn'),
+        ]);
+        expect(resp.request().postDataJSON().tef).toMatchObject({ min: 0.02, mode: 0.05, max: 0.1 });
+        await page.waitForTimeout(1200);
+        await expect(page.locator('#fair-zero-ale-warning')).toBeHidden();
+    });
+});

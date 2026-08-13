@@ -1806,8 +1806,41 @@ export const FairWizard = {
         });
     },
 
+    // Pérdida = Frecuencia x Vulnerabilidad x Magnitud, así que basta con que UNO de los tres
+    // factores quede en cero para que todo el análisis valga 0 — y hasta ahora eso pasaba sin decir
+    // nada: el riesgo se guardaba en el Registro con ALE 0, entraba al Pareto y a la matriz como si
+    // de verdad no costara nada, y el usuario no tenía forma de saber que solo le faltó llenar un
+    // campo. El caso más fácil de topar es una amenaza NO deliberada: sin Perfil de Atacante no hay
+    // Frecuencia sugerida, así que ese campo se queda vacío si nadie lo llena.
+    //
+    // Es un AVISO, no un bloqueo: nombra el factor culpable y deja seguir, por si se está
+    // explorando a propósito.
+    renderZeroAleWarning(summary) {
+        const el = document.getElementById('fair-zero-ale-warning');
+        if (!el) return;
+        if (!summary || summary.average !== 0) {
+            el.classList.add('hidden');
+            return;
+        }
+
+        const modo = (prefix) => getSafeNumber(document.getElementById(`${prefix}-mode`));
+        const culpables = [];
+        if (modo('tef') === 0) culpables.push('la Frecuencia');
+        if (modo('vuln') === 0) culpables.push('la Vulnerabilidad');
+        if (LOSS_FORMS_KEYS.every((key) => modo(`lm-${key}`) === 0)) {
+            culpables.push('la Magnitud de Pérdida (ninguna categoría tiene monto)');
+        }
+
+        const detalle = culpables.length
+            ? `Está en cero: <strong>${culpables.join('</strong>, <strong>')}</strong>.`
+            : 'Revisa que Frecuencia, Vulnerabilidad y Magnitud de Pérdida tengan valores.';
+        el.innerHTML = `⚠️ La pérdida anual esperada dio <strong>$0</strong>, así que este análisis todavía no dice nada. ${detalle} Complétalo y vuelve a simular — si lo guardas así, el riesgo entra al Registro, al Pareto y a la matriz como si no costara nada.`;
+        el.classList.remove('hidden');
+    },
+
     async displaySimulationResults(result) {
         const { summary, evaluation, inherentEvaluation, sensitivity, annualLosses } = result;
+        this.renderZeroAleWarning(summary);
         state.fair.lastLossExceedanceCurve = result.lossExceedanceCurve || null;
         state.fair.lastInherentLossExceedanceCurve = result.inherentLossExceedanceCurve || null;
         state.fair.lastCalibrationVersion = result.calibrationVersion ?? null;
