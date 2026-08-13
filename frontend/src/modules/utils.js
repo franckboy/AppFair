@@ -277,18 +277,69 @@ export const buildHistogramBins = (losses, maxLoss, numBins = 20) => {
 // en Análisis Rápido: marcar una amenaza como deliberada y pesarla más nunca debería sugerir
 // MENOS frecuencia que el punto de partida neutral (BASE_MODE, ponderación=0) — solo puede
 // sugerir igual o más.
-export const computeSuggestedTef = (attackerProfile, attackerKey, ponderacion, isDeliberate) => {
-    const frequencyFactor = (attackerProfile.motivation + attackerProfile.persistence) / 2;
-    const attackerThreatFactor = frequencyFactor / 100;
-    const multiplier = isDeliberate ? 1 + attackerThreatFactor * ponderacion : 1;
+// Frecuencia de Eventos de Amenaza (intentos al año) sugerida por Perfil de Atacante.
+//
+// Anclas de juicio experto en seguridad patrimonial, sobre escenarios concretos:
+//   - Hurto oportunista en bodega urbana ......... 12-24 intentos/año (base 18)
+//   - Robo de carga por crimen organizado ........  1-2  intentos/año (base 1,2)
+//   - Terrorismo / sabotaje industrial ...........  0,02 intentos/año (1 cada 50 años)
+//
+// La relación con la capacidad del atacante es INVERSA, y eso corrige una premisa equivocada del
+// modelo anterior (que partía de 10 intentos/año para todos y los SUBÍA con la Motivación y la
+// Persistencia). La frecuencia con la que TU activo recibe intentos no la manda cuánto empeño pone
+// cada atacante: la mandan cuántos actores de ese tipo hay sueltos y qué tan indiscriminados son.
+// Un oportunista prueba puertas todo el tiempo; un actor estatal monta una campaña dirigida cada
+// varios años. La Motivación y la Persistencia sí importan, pero para si el intento TIENE ÉXITO —
+// eso ya lo modela la Vulnerabilidad.
+const TEF_ANCHORS_BY_PROFILE_SCORE = [
+    { profileScore: 18, eventsPerYear: 18 }, // intruso oportunista
+    { profileScore: 60, eventsPerYear: 1.2 }, // crimen organizado (y empleado desleal, mismo FA)
+    { profileScore: 90, eventsPerYear: 0.02 }, // terrorista o espía
+];
 
-    const BASE_MODE = 10; // punto de partida neutral (amenaza no deliberada, o ponderación=0)
-    const mode = Math.max(1, Math.round(BASE_MODE * multiplier));
+/** Interpola la frecuencia base en escala LOGARÍTMICA — las anclas abarcan tres órdenes de
+ * magnitud (18 a 0,02), así que interpolar linealmente aplastaría todo el extremo bajo. */
+function anchoredEventsPerYear(profileScore) {
+    const nodes = TEF_ANCHORS_BY_PROFILE_SCORE;
+    const logs = nodes.map((n) => Math.log(n.eventsPerYear));
+    if (profileScore <= nodes[0].profileScore) return nodes[0].eventsPerYear;
+    for (let i = 1; i < nodes.length; i++) {
+        if (profileScore <= nodes[i].profileScore) {
+            const t = (profileScore - nodes[i - 1].profileScore) / (nodes[i].profileScore - nodes[i - 1].profileScore);
+            return Math.exp(logs[i - 1] + t * (logs[i] - logs[i - 1]));
+        }
+    }
+    return nodes[nodes.length - 1].eventsPerYear;
+}
+
+// Sensibilidad neutra del deslizador: con este valor la sugerencia es exactamente el ancla.
+const TEF_PONDERATION_NEUTRAL = 0.7;
+
+/** Redondea conservando información en el extremo bajo: 18 se queda en 18, pero 0,02 NO puede
+ * redondearse a 0 — el modelo anterior tenía un piso rígido en 1 evento/año que hacía imposible
+ * expresar una amenaza de baja frecuencia y alto impacto. */
+function roundFrequency(value) {
+    if (value >= 10) return Math.round(value);
+    if (value >= 1) return Math.round(value * 10) / 10;
+    return Math.round(value * 1000) / 1000;
+}
+
+export const computeSuggestedTef = (attackerProfile, attackerKey, ponderacion, isDeliberate) => {
+    const attributes = Object.entries(attackerProfile)
+        .filter(([key]) => key !== 'name')
+        .map(([, value]) => value);
+    const profileScore = attributes.length ? attributes.reduce((sum, v) => sum + v, 0) / attributes.length : 0;
+
+    const base = anchoredEventsPerYear(profileScore);
+    // El deslizador ya no deriva de Motivación/Persistencia (ver arriba): ahora solo sube o baja la
+    // sugerencia alrededor del ancla, y en su posición neutra la deja tal cual.
+    const multiplier = isDeliberate ? Math.max(0.1, ponderacion / TEF_PONDERATION_NEUTRAL) : 1;
+    const mode = roundFrequency(base * multiplier);
 
     return {
-        min: Math.max(1, Math.round(mode * 0.5)),
+        min: roundFrequency(mode * 0.75),
         mode,
-        max: Math.round(mode * 1.8),
+        max: roundFrequency(mode * 1.5),
         explanation: `Sugerido según el Perfil "${attackerProfile.name || attackerKey}"${isDeliberate ? ' y la sensibilidad de ajuste elegida' : ''} — es un punto de partida, no un cálculo exacto. Edítalo si tienes un dato mejor (histórico, benchmark del sector, etc.).`,
     };
 };

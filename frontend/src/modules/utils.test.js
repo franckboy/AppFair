@@ -348,38 +348,91 @@ describe('buildHistogramBins', () => {
 });
 
 describe('computeSuggestedTef', () => {
-    // Riesgo ficticio: "Robo de mercancía en la bodega", perfil "Empleado Desleal"
-    // (motivación 80, persistencia 70) — mismo ejemplo usado para explicar esta función.
-    const empleadoDesleal = { name: 'Empleado Desleal', motivation: 80, persistence: 70 };
+    // Anclas de juicio experto (ver TEF_ANCHORS_BY_PROFILE_SCORE en utils.js): la frecuencia de
+    // INTENTOS es inversa a la capacidad del atacante — un oportunista prueba puertas todo el
+    // tiempo, un actor estatal monta una campaña dirigida cada varios años.
+    const oportunista = {
+        name: 'Intruso Oportunista',
+        motivation: 30,
+        resources: 10,
+        capacity: 20,
+        persistence: 20,
+        sophistication: 10,
+    };
+    const organizado = {
+        name: 'Grupo Criminal Organizado',
+        motivation: 65,
+        resources: 60,
+        capacity: 60,
+        persistence: 65,
+        sophistication: 50,
+    };
+    const estadoNacion = {
+        name: 'Terrorista o Espía',
+        motivation: 90,
+        resources: 90,
+        capacity: 90,
+        persistence: 90,
+        sophistication: 90,
+    };
 
-    it('con amenaza deliberada y ponderación 1, sugiere min 9 / más probable 18 / max 32', () => {
-        const result = computeSuggestedTef(empleadoDesleal, 'empleado-desleal', 1, true);
-        expect(result.min).toBe(9);
-        expect(result.mode).toBe(18);
-        expect(result.max).toBe(32);
-        expect(result.explanation).toContain('Empleado Desleal');
+    it('con el deslizador en neutro reproduce el ancla de hurto oportunista (18 intentos/año)', () => {
+        expect(computeSuggestedTef(oportunista, 'oportunista', 0.7, true).mode).toBe(18);
     });
 
-    it('sin marcar "amenaza deliberada", ignora la ponderación (multiplicador queda en 1)', () => {
-        const result = computeSuggestedTef(empleadoDesleal, 'empleado-desleal', 1, false);
-        expect(result).toMatchObject({ min: 5, mode: 10, max: 18 });
+    it('reproduce el ancla de robo de carga por crimen organizado (1,2 intentos/año)', () => {
+        expect(computeSuggestedTef(organizado, 'organizado', 0.7, true).mode).toBe(1.2);
     });
 
-    it('con ponderación 0, deliberada o no da el mismo resultado (el punto de partida neutral)', () => {
-        const deliberada = computeSuggestedTef(empleadoDesleal, 'empleado-desleal', 0, true);
-        const noDeliberada = computeSuggestedTef(empleadoDesleal, 'empleado-desleal', 0, false);
-        expect(deliberada).toMatchObject({ min: 5, mode: 10, max: 18 });
-        expect(noDeliberada).toMatchObject({ min: 5, mode: 10, max: 18 });
+    it('reproduce el ancla de amenaza catastrófica (0,02 = 1 cada 50 años) SIN piso en 1', () => {
+        const result = computeSuggestedTef(estadoNacion, 'estado-nacion', 0.7, true);
+        expect(result.mode).toBe(0.02);
+        // El modelo anterior tenía Math.max(1, ...), que hacía imposible expresar una amenaza de
+        // baja frecuencia y alto impacto: cualquier sugerencia se aplastaba a 1 evento/año.
+        expect(result.min).toBeLessThan(1);
+        expect(result.max).toBeLessThan(1);
     });
 
-    it('un atacante más motivado/persistente nunca sugiere MENOS frecuencia que uno más débil', () => {
-        const debil = computeSuggestedTef({ name: 'Débil', motivation: 20, persistence: 20 }, 'debil', 1, true);
-        const fuerte = computeSuggestedTef({ name: 'Fuerte', motivation: 90, persistence: 90 }, 'fuerte', 1, true);
-        expect(fuerte.mode).toBeGreaterThan(debil.mode);
+    it('un atacante MÁS capaz sugiere MENOS intentos al año, no más (premisa corregida)', () => {
+        // El modelo anterior asumía lo contrario: partía de 10 intentos/año para todos y los subía
+        // con Motivación y Persistencia. La frecuencia con la que TU activo recibe intentos la
+        // manda cuántos actores de ese tipo hay y qué tan indiscriminados son — no el empeño de
+        // cada uno, que es lo que determina si el intento tiene ÉXITO (eso es la Vulnerabilidad).
+        const oport = computeSuggestedTef(oportunista, 'oportunista', 0.7, true).mode;
+        const org = computeSuggestedTef(organizado, 'organizado', 0.7, true).mode;
+        const estado = computeSuggestedTef(estadoNacion, 'estado-nacion', 0.7, true).mode;
+        expect(oport).toBeGreaterThan(org);
+        expect(org).toBeGreaterThan(estado);
+    });
+
+    it('el rango respeta min <= mode <= max en los tres órdenes de magnitud', () => {
+        for (const [perfil, key] of [
+            [oportunista, 'oportunista'],
+            [organizado, 'organizado'],
+            [estadoNacion, 'estado-nacion'],
+        ]) {
+            const r = computeSuggestedTef(perfil, key, 0.7, true);
+            expect(r.min).toBeLessThanOrEqual(r.mode);
+            expect(r.mode).toBeLessThanOrEqual(r.max);
+        }
+    });
+
+    it('el deslizador sube y baja la sugerencia alrededor del ancla', () => {
+        const bajo = computeSuggestedTef(oportunista, 'oportunista', 0.35, true).mode;
+        const neutro = computeSuggestedTef(oportunista, 'oportunista', 0.7, true).mode;
+        const alto = computeSuggestedTef(oportunista, 'oportunista', 1.4, true).mode;
+        expect(bajo).toBeLessThan(neutro);
+        expect(alto).toBeGreaterThan(neutro);
+    });
+
+    it('sin amenaza deliberada ignora el deslizador y deja el ancla del perfil', () => {
+        const conDeslizador = computeSuggestedTef(oportunista, 'oportunista', 2, false).mode;
+        const neutro = computeSuggestedTef(oportunista, 'oportunista', 0.7, true).mode;
+        expect(conDeslizador).toBe(neutro);
     });
 
     it('usa la key del atacante en la explicación si el perfil no tiene name', () => {
-        const result = computeSuggestedTef({ motivation: 50, persistence: 50 }, 'perfil-sin-nombre', 1, true);
+        const result = computeSuggestedTef({ motivation: 50, persistence: 50 }, 'perfil-sin-nombre', 0.7, true);
         expect(result.explanation).toContain('perfil-sin-nombre');
     });
 });
