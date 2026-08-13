@@ -17,6 +17,7 @@ const {
     pearsonCorrelation,
     buildLossExceedanceCurve,
 } = require('../src/lib/simulation');
+const { simulatePortfolio } = require('../src/lib/portfolioSimulation');
 const {
     tullockSuccessProbability,
     attackerContestStrength,
@@ -2433,4 +2434,101 @@ test('buildLossExceedanceCurve: es consistente con el probExceedance que la app 
 test('buildLossExceedanceCurve: sin pérdidas devuelve una curva vacía, no truena', () => {
     assert.deepStrictEqual(buildLossExceedanceCurve([]), []);
     assert.deepStrictEqual(buildLossExceedanceCurve(null), []);
+});
+
+// ---------------------------------------------------------------------------------------------
+// Monte Carlo ACOPLADO del portafolio (ver lib/portfolioSimulation.js)
+// ---------------------------------------------------------------------------------------------
+// Antes, el CVaR95 y el p90 del portafolio se obtenían SUMANDO los de cada riesgo. El ALE sí se
+// puede sumar (la esperanza es lineal) pero un percentil no. Estos tests fijan esa distinción.
+function makePortfolioRisk(riskName, overrides = {}) {
+    return {
+        riskName,
+        riskType: 'amenaza',
+        vulnManualOverride: true,
+        tef: { min: 1, mode: 2, max: 4 },
+        vuln: { min: 20, mode: 40, max: 60 },
+        lossMagnitudes: { respuesta: { min: 5000, mode: 20000, max: 60000 } },
+        ...overrides,
+    };
+}
+
+test('simulatePortfolio: el ALE del portafolio SÍ es la suma de los ALE individuales (esperanza lineal)', () => {
+    const uno = simulatePortfolio([makePortfolioRisk('P1')]);
+    const cinco = simulatePortfolio([1, 2, 3, 4, 5].map((i) => makePortfolioRisk(`P${i}`)));
+    const esperado = uno.summary.average * 5;
+    assert.ok(
+        Math.abs(cinco.summary.average - esperado) / esperado < 0.05,
+        `esperaba ~${esperado.toFixed(0)}, dio ${cinco.summary.average.toFixed(0)}`,
+    );
+});
+
+test('simulatePortfolio: el CVaR95 conjunto es SUBADITIVO — nunca supera la suma de los individuales', () => {
+    // CVaR es una medida coherente: CVaR(X+Y) <= CVaR(X) + CVaR(Y). Sumar los individuales
+    // sobrestima la cola salvo que todos los riesgos se materialicen el mismo año.
+    for (const n of [2, 5, 20]) {
+        const risks = Array.from({ length: n }, (_, i) => makePortfolioRisk(`P${i}`));
+        const r = simulatePortfolio(risks);
+        assert.ok(
+            r.summary.cvar95 <= r.sumOfIndividualCVaR,
+            `n=${n}: conjunto ${r.summary.cvar95.toFixed(0)} > suma ${r.sumOfIndividualCVaR.toFixed(0)}`,
+        );
+        assert.ok(r.diversificationBenefit >= 0, `n=${n}: el beneficio de diversificación no puede ser negativo`);
+    }
+});
+
+test('simulatePortfolio: el beneficio de diversificación CRECE al agregar riesgos independientes', () => {
+    // Este es el efecto que el método anterior hacía invisible: 20 riesgos independientes no tienen
+    // una cola 20 veces más gorda que uno solo.
+    const frac = (n) => {
+        const r = simulatePortfolio(Array.from({ length: n }, (_, i) => makePortfolioRisk(`P${i}`)));
+        return r.diversificationBenefit / r.sumOfIndividualCVaR;
+    };
+    const dos = frac(2);
+    const veinte = frac(20);
+    assert.ok(
+        veinte > dos,
+        `20 riesgos (${(veinte * 100).toFixed(1)}%) debería diversificar más que 2 (${(dos * 100).toFixed(1)}%)`,
+    );
+});
+
+test('simulatePortfolio: un solo riesgo no diversifica nada — conjunto e individual coinciden', () => {
+    const r = simulatePortfolio([makePortfolioRisk('Solo')]);
+    assert.strictEqual(r.summary.cvar95, r.sumOfIndividualCVaR);
+    assert.strictEqual(r.diversificationBenefit, 0);
+});
+
+test('simulatePortfolio: es reproducible — misma entrada, mismo resultado exacto', () => {
+    // Una cifra de portafolio que baila sin que cambien los datos es imposible de auditar.
+    const risks = [makePortfolioRisk('A'), makePortfolioRisk('B')];
+    assert.strictEqual(simulatePortfolio(risks).summary.cvar95, simulatePortfolio(risks).summary.cvar95);
+});
+
+test('simulatePortfolio: excluye oportunidades y riesgos sin insumos, y los reporta', () => {
+    const r = simulatePortfolio([
+        makePortfolioRisk('Completo'),
+        makePortfolioRisk('Oportunidad', { riskType: 'oportunidad' }),
+        { riskName: 'Sin insumos', riskType: 'amenaza', ale: 5000 },
+    ]);
+    assert.strictEqual(r.includedCount, 1);
+    assert.strictEqual(r.skippedCount, 1);
+    assert.deepStrictEqual(r.skippedRiskNames, ['Sin insumos']);
+});
+
+test('simulatePortfolio: sin ningún riesgo utilizable devuelve summary null en vez de ceros falsos', () => {
+    const r = simulatePortfolio([{ riskName: 'Vacío', riskType: 'amenaza' }]);
+    assert.strictEqual(r.summary, null);
+    assert.strictEqual(r.includedCount, 0);
+    assert.deepStrictEqual(r.lossExceedanceCurve, []);
+});
+
+test('simulatePortfolio: la curva de excedencia del portafolio es monótona decreciente en pérdida', () => {
+    const r = simulatePortfolio([makePortfolioRisk('A'), makePortfolioRisk('B'), makePortfolioRisk('C')]);
+    assert.ok(r.lossExceedanceCurve.length > 0);
+    for (let i = 1; i < r.lossExceedanceCurve.length; i++) {
+        assert.ok(
+            r.lossExceedanceCurve[i].loss >= r.lossExceedanceCurve[i - 1].loss,
+            'menos probabilidad de excedencia debe corresponder a más pérdida',
+        );
+    }
 });

@@ -389,3 +389,57 @@ test.describe('Gestión de Riesgos (página aparte)', () => {
         );
     });
 });
+
+// El CVaR95 del portafolio que se muestra arriba es la SUMA de los individuales: una cota
+// conservadora que sobrestima la cola porque supone que todos los riesgos ocurren el mismo año.
+// Esta línea trae el valor REAL, simulando el portafolio completo a la vez.
+test('el portafolio muestra el CVaR95 simulado en conjunto, menor que la suma de los individuales', async ({
+    page,
+}) => {
+    await connectAndBoot(page);
+
+    // Se siembran por API en vez de con runFullFairAnalysis: ese helper no captura Magnitud de
+    // Pérdida, así que sus riesgos valen $0 y el portafolio no tendría cola que comparar.
+    const mc = await page.evaluate(async () => {
+        const headers = { 'X-API-Key': 'test-e2e-key', 'Content-Type': 'application/json' };
+        const base = {
+            riskType: 'amenaza',
+            vulnManualOverride: true,
+            tef: { min: 1, mode: 2, max: 4 },
+            vuln: { min: 20, mode: 40, max: 60 },
+            lossMagnitudes: { respuesta: { min: 5000, mode: 20000, max: 60000 } },
+            ale: 20000,
+            cvar95: 50000,
+        };
+        for (const riskName of ['E2E MC Portafolio A', 'E2E MC Portafolio B', 'E2E MC Portafolio C']) {
+            await fetch('http://localhost:3000/api/register/' + encodeURIComponent(riskName), {
+                method: 'PUT',
+                headers,
+                body: JSON.stringify(base),
+            });
+        }
+        const res = await fetch('http://localhost:3000/api/register/portfolio-simulation', {
+            headers: { 'X-API-Key': 'test-e2e-key' },
+        });
+        return res.json();
+    });
+
+    expect(mc.includedCount).toBeGreaterThanOrEqual(3);
+    expect(mc.summary.cvar95).toBeGreaterThan(0);
+    // La comprobación que da sentido a todo: la cola conjunta no es la suma de las colas.
+    expect(mc.summary.cvar95).toBeLessThan(mc.sumOfIndividualCVaR);
+    expect(mc.diversificationBenefit).toBeGreaterThan(0);
+
+    // connectAndBoot en vez de page.reload: recargar deja la pantalla de conexión y la navegación
+    // inhabilitada. Hace falta volver a arrancar para que el Registro traiga los riesgos sembrados.
+    await connectAndBoot(page);
+    await page.click('#nav-risk-mgmt');
+    await page.waitForTimeout(500);
+    // El resumen del portafolio se pinta al elegir un riesgo (ver App.RiskManagement.selectRisk).
+    await page.selectOption('#riskmgmt-risk-select', 'E2E MC Portafolio A');
+    await page.waitForTimeout(2500);
+    const linea = page.locator('#riskmgmt-portfolio-mc');
+    await expect(linea).toBeVisible();
+    await expect(linea).toContainText('Simulando el portafolio completo a la vez');
+    await expect(linea).toContainText('menos que la suma');
+});
