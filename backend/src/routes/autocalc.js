@@ -23,7 +23,7 @@ function createAutocalcRouter() {
     // sampleVulnerabilityFromProfiles (backend/src/lib/autocalc.js). El atacante y la defensa
     // nunca se descuentan entre sí; cada uno viene solo de su propio perfil.
     router.post('/vulnerability', (req, res) => {
-        const { attackerKey, defenseKey, confidence = 'medio' } = req.body;
+        const { attackerKey, defenseKey, confidence = 'medio', accessLevel } = req.body;
         const attackerProfile = attackerProfiles[attackerKey];
         const defenseProfile = defenseProfiles[defenseKey];
         if (!attackerProfile || !defenseProfile) {
@@ -32,7 +32,7 @@ function createAutocalcRouter() {
         const attackerScore = calculateProfileAverage(attackerProfile);
         const defenseScore = calculateProfileAverage(defenseProfile);
         const summary = summarizeVulnerabilitySamples(
-            sampleVulnerabilityFromProfiles(attackerProfile, defenseProfile, confidence),
+            sampleVulnerabilityFromProfiles(attackerProfile, defenseProfile, confidence, accessLevel),
         );
         res.json({ ...summary, attackerScore, defenseScore });
     });
@@ -69,6 +69,7 @@ function createAutocalcRouter() {
             currentDefenseKey,
             targetDefenseKey,
             confidence = 'medio',
+            accessLevel,
             currentALE,
             tef,
             lossMagnitudes,
@@ -95,6 +96,7 @@ function createAutocalcRouter() {
                 tef,
                 lossMagnitudes,
                 currentALE,
+                accessLevel,
             );
             return res.json({ currentScore, targetScore, reductionPercent, residualALE, residualCVaR });
         }
@@ -104,6 +106,7 @@ function createAutocalcRouter() {
             currentProfile,
             targetProfile,
             confidence,
+            accessLevel,
         );
         res.json({ currentScore, targetScore, reductionPercent, residualALE: null, residualCVaR: null });
     });

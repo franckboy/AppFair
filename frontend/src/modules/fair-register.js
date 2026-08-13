@@ -480,6 +480,7 @@ export const FairRegister = {
                     inherentLossExceedanceCurve: state.fair.lastInherentLossExceedanceCurve || null,
                     calibrationVersion: state.fair.lastCalibrationVersion ?? null,
                     isDeliberate: deliberada,
+                    accessLevel: deliberada ? document.getElementById('fair-access-level').value : 'nulo',
                     chartLabels: chart ? chart.data.labels : null,
                     chartData: chart ? chart.data.datasets[0].data : null,
                 },

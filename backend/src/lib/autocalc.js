@@ -155,6 +155,35 @@ function tullockSuccessProbability(attackerStrength, defenseStrength, m = TULLOC
  * Defensa: ahí es donde se calibraron las anclas. TCap no lleva tope en 100 — el eje de contienda
  * no es un porcentaje.
  */
+// Nivel de Acceso / Proximidad — modificador POR RIESGO, no del Perfil de Atacante.
+//
+// El mismo empleado desleal tiene acceso total a su bodega y ninguno al centro de datos, así que
+// vive en la evaluación del riesgo concreto, no en el perfil (que se comparte entre riesgos). El
+// acceso NO cambia quién es el atacante ni de qué es capaz: cambia cuánto de tu defensa llega
+// realmente a interponerse, porque quien ya está adentro se salta salvaguardas enteras.
+//
+// Por eso modula la Fuerza de Resistencia (R_efectiva = R x alfa) y nunca la Capacidad de Amenaza.
+// Bajo Tullock las dos operaciones son casi equivalentes —solo cuenta la razón C/R— pero NO del
+// todo: el triángulo de Resistencia tiene un tope duro en 100 que ya muerde con defensa avanzada y
+// élite, así que escalar R hacia abajo lo libera mientras que subir C no. Medido: contra defensa
+// élite las dos rutas difieren hasta 4,7 puntos, y modular R da el resultado más conservador.
+//
+// `nulo` (alfa = 1,00) es el default y es un NO-OP exacto: las seis anclas de calibración se
+// emitieron sin modificador de acceso, así que siguen valiendo tal cual y ningún riesgo ya
+// guardado cambia de números.
+const ACCESS_LEVELS = {
+    nulo: { alpha: 1.0, name: 'Nulo / Externo' },
+    bajo: { alpha: 0.8, name: 'Bajo / Perimetral' },
+    medio: { alpha: 0.5, name: 'Medio / Operativo' },
+    alto: { alpha: 0.25, name: 'Alto / Privilegiado' },
+};
+const DEFAULT_ACCESS_LEVEL = 'nulo';
+
+function getAccessAlpha(accessLevel) {
+    const level = ACCESS_LEVELS[accessLevel] || ACCESS_LEVELS[DEFAULT_ACCESS_LEVEL];
+    return level.alpha;
+}
+
 // Las seis anclas de calibración se emitieron con Nivel de Confianza MEDIO, así que ese es el
 // nivel de referencia: es el único en el que el modelo está anclado a un juicio experto.
 const REFERENCE_CONFIDENCE = 'medio';
@@ -229,9 +258,11 @@ function confidenceMeanCorrection(contestStrength, defenseScore, persistence, co
     return factor;
 }
 
-function buildContestTriangles(attackerProfile, defenseProfile, confidence) {
+function buildContestTriangles(attackerProfile, defenseProfile, confidence, accessLevel) {
     const rawStrength = attackerContestStrength(calculateProfileAverage(attackerProfile));
-    const defenseScore = calculateProfileAverage(defenseProfile);
+    // El alfa de acceso se aplica ANTES de abrir el triángulo (y antes del tope de 100), para que
+    // la banda de incertidumbre se abra alrededor de la Resistencia que de verdad se interpone.
+    const defenseScore = calculateProfileAverage(defenseProfile) * getAccessAlpha(accessLevel);
     const persistence = attackerProfile.persistence || 0;
     const spread = getConfidenceSpread(confidence);
     // Re-centrado: el Nivel de Confianza abre o cierra el abanico, nunca mueve la media.
@@ -289,8 +320,8 @@ function resolveContest(tcapSample, rsSample, persistence, escalationRoll, escal
  * @param {'alto'|'medio'|'bajo'} confidence
  * @returns {(rng: () => number) => number} Sampler que devuelve un decimal en [0,1] por llamada.
  */
-function sampleVulnerabilityFromProfiles(attackerProfile, defenseProfile, confidence) {
-    const { tcap, rs, persistence } = buildContestTriangles(attackerProfile, defenseProfile, confidence);
+function sampleVulnerabilityFromProfiles(attackerProfile, defenseProfile, confidence, accessLevel) {
+    const { tcap, rs, persistence } = buildContestTriangles(attackerProfile, defenseProfile, confidence, accessLevel);
 
     return (rng) => {
         const tcapSample = getPertRandom(tcap.min, tcap.mode, tcap.max, 4, rng);
@@ -382,8 +413,8 @@ function deriveIterationSeed(baseSeed, iteration, roleSalt) {
  * @returns {number} decimal en [0,1] — misma Vulnerabilidad de una iteración que devolvería el
  *   sampler de sampleVulnerabilityFromProfiles.
  */
-function pairedVulnerabilitySample(attackerProfile, defenseProfile, confidence, baseSeed, iteration) {
-    const { tcap, rs, persistence } = buildContestTriangles(attackerProfile, defenseProfile, confidence);
+function pairedVulnerabilitySample(attackerProfile, defenseProfile, confidence, baseSeed, iteration, accessLevel) {
+    const { tcap, rs, persistence } = buildContestTriangles(attackerProfile, defenseProfile, confidence, accessLevel);
 
     const tcapRng = mulberry32(deriveIterationSeed(baseSeed, iteration, ROLE_TCAP));
     const rsRng = mulberry32(deriveIterationSeed(baseSeed, iteration, ROLE_RS));
@@ -426,7 +457,13 @@ function calculateLossMagnitudeRange(mode, confidence) {
  * @param {Object} targetDefenseProfile
  * @param {'alto'|'medio'|'bajo'} confidence
  */
-function calculateReduccionALEFromProfiles(attackerProfile, currentDefenseProfile, targetDefenseProfile, confidence) {
+function calculateReduccionALEFromProfiles(
+    attackerProfile,
+    currentDefenseProfile,
+    targetDefenseProfile,
+    confidence,
+    accessLevel,
+) {
     // "Números aleatorios comunes" de verdad: cada iteración i usa streams de rng
     // INDEPENDIENTES por rol (ver pairedVulnerabilitySample), sembrados por (semilla, i, rol) en
     // vez de compartir una sola secuencia consumida en orden — necesario porque getPertRandom usa
@@ -440,9 +477,9 @@ function calculateReduccionALEFromProfiles(attackerProfile, currentDefenseProfil
     const targetSamples = new Array(COMPARISON_ITERATIONS);
     for (let i = 0; i < COMPARISON_ITERATIONS; i++) {
         currentSamples[i] =
-            pairedVulnerabilitySample(attackerProfile, currentDefenseProfile, confidence, COMPARISON_SEED, i) * 100;
+            pairedVulnerabilitySample(attackerProfile, currentDefenseProfile, confidence, COMPARISON_SEED, i, accessLevel) * 100;
         targetSamples[i] =
-            pairedVulnerabilitySample(attackerProfile, targetDefenseProfile, confidence, COMPARISON_SEED, i) * 100;
+            pairedVulnerabilitySample(attackerProfile, targetDefenseProfile, confidence, COMPARISON_SEED, i, accessLevel) * 100;
     }
     const currentSummary = summarizePercentiles(currentSamples);
     const targetSummary = summarizePercentiles(targetSamples);
@@ -493,6 +530,7 @@ function calculateResidualFromSimulation(
     tef,
     lossMagnitudes,
     currentALE,
+    accessLevel,
 ) {
     const { annualLosses } = runMonteCarloSimulation({
         iterations: RESIDUAL_SIMULATION_ITERATIONS,
@@ -500,7 +538,7 @@ function calculateResidualFromSimulation(
         tef,
         vuln: UNUSED_VULN_PLACEHOLDER,
         lossMagnitudes,
-        sampleVuln: sampleVulnerabilityFromProfiles(attackerProfile, targetDefenseProfile, confidence),
+        sampleVuln: sampleVulnerabilityFromProfiles(attackerProfile, targetDefenseProfile, confidence, accessLevel),
     });
     const summary = summarizeLosses(annualLosses);
     const residualALE = summary.average;
@@ -563,6 +601,9 @@ module.exports = {
     tullockSuccessProbability,
     attackerContestStrength,
     ATTACKER_CONTEST_CALIBRATION,
+    ACCESS_LEVELS,
+    DEFAULT_ACCESS_LEVEL,
+    getAccessAlpha,
     TULLOCK_M,
     VULNERABILITY_FLOOR,
     VULNERABILITY_CALIBRATION_VERSION,

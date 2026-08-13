@@ -14,6 +14,7 @@ const { evaluateFairThreat } = require('../lib/evaluation');
 const { defaultRiskCriteria } = require('../data/profiles');
 const { normalizeRiskCriteria, validateRiskCriteriaOverride } = require('../lib/riskCriteria');
 const { asyncHandler } = require('../middleware/asyncHandler');
+const { ACCESS_LEVELS, DEFAULT_ACCESS_LEVEL } = require('../lib/autocalc');
 
 // La app solo calcula en USD (ver la nota equivalente en simulate.js/assets.js).
 function makeCurrencyFormatter() {
@@ -289,6 +290,10 @@ function createRegisterRouter(store) {
                 // cómo abre el formulario. Sin esto, un riesgo no deliberado volvía a abrirse como
                 // deliberado al retomarlo, resucitando unos perfiles que nunca se eligieron.
                 isDeliberate = true,
+                // Nivel de Acceso / Proximidad (ver ACCESS_LEVELS en lib/autocalc.js) — propiedad
+                // del RIESGO, no del Perfil de Atacante: el mismo empleado desleal tiene acceso
+                // total a su bodega y ninguno al centro de datos.
+                accessLevel = DEFAULT_ACCESS_LEVEL,
             } = req.body;
 
             if (calibrationVersion !== null && (!Number.isInteger(calibrationVersion) || calibrationVersion < 1)) {
@@ -296,6 +301,11 @@ function createRegisterRouter(store) {
             }
             if (typeof isDeliberate !== 'boolean') {
                 return res.status(400).json({ error: 'isDeliberate debe ser booleano.' });
+            }
+            if (!Object.prototype.hasOwnProperty.call(ACCESS_LEVELS, accessLevel)) {
+                return res
+                    .status(400)
+                    .json({ error: `accessLevel debe ser uno de: ${Object.keys(ACCESS_LEVELS).join(', ')}.` });
             }
             if (typeof ale !== 'number') {
                 return res.status(400).json({ error: 'ale (número) es requerido.' });
@@ -480,6 +490,7 @@ function createRegisterRouter(store) {
                 inherentLossExceedanceCurve,
                 calibrationVersion,
                 isDeliberate,
+                accessLevel,
                 date: new Date().toISOString(),
             };
 

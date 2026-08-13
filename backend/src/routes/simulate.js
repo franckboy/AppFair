@@ -71,6 +71,9 @@ function createSimulateRouter(store) {
                 attackerKey,
                 defenseKey,
                 confidence = 'medio',
+                // Nivel de Acceso / Proximidad del riesgo (ver ACCESS_LEVELS en lib/autocalc.js) —
+                // modula la Fuerza de Resistencia. Ausente = 'nulo', que es un no-op exacto.
+                accessLevel,
                 vulnManualOverride = false,
                 lossMagnitudes = {},
                 riskType = 'amenaza',
@@ -103,7 +106,12 @@ function createSimulateRouter(store) {
                     return res.status(400).json({ error: 'attackerKey o defenseKey inválido.' });
                 }
                 if (!vulnManualOverride) {
-                    sampleVuln = sampleVulnerabilityFromProfiles(attackerProfile, defenseProfile, confidence);
+                    sampleVuln = sampleVulnerabilityFromProfiles(
+                        attackerProfile,
+                        defenseProfile,
+                        confidence,
+                        accessLevel,
+                    );
                 }
             }
 
