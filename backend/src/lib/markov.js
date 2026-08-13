@@ -53,18 +53,27 @@ function sampleActivatedTransitions(transitions, rng) {
  * vueltas para siempre; `maxDepth` es una segunda protección, por si el grafo tiene una cadena
  * genuinamente larga sin ciclos.
  *
- * @param {string} rootState
+ * @param {string|string[]} rootStates Estado(s) YA activo(s) desde donde arranca el recorrido.
+ *   Se acepta una lista porque un estado puede volverse activo por su cuenta, sin que nadie lo
+ *   haya disparado en cascada (ver los "auto-iniciadores" en cascadeSimulation.js: un riesgo con
+ *   frecuencia propia puede ocurrir aunque su padre no ocurra ese año). Duplicados se ignoran.
  * @param {(state: string) => Array<{state: string, probability: number}>} getTransitions Dado un
  *   estado, devuelve sus transiciones de salida — quien llama decide de dónde salen esos datos.
  * @param {() => number} rng
  * @param {number} [maxDepth=20]
  * @returns {string[]} Todos los estados activados en esta corrida, en el orden en que se
- *   activaron — `rootState` siempre va primero.
+ *   activaron — los `rootStates` siempre van primero, en el orden recibido.
  */
-function walkMarkovChain(rootState, getTransitions, rng, maxDepth = 20) {
-    const activated = [rootState];
-    const seen = new Set([rootState]);
-    let frontier = [rootState];
+function walkMarkovChain(rootStates, getTransitions, rng, maxDepth = 20) {
+    const roots = Array.isArray(rootStates) ? rootStates : [rootStates];
+    const activated = [];
+    const seen = new Set();
+    roots.forEach((state) => {
+        if (seen.has(state)) return;
+        seen.add(state);
+        activated.push(state);
+    });
+    let frontier = [...activated];
     let depth = 0;
 
     while (frontier.length > 0 && depth < maxDepth) {

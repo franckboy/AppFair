@@ -140,50 +140,70 @@ function runFamilyCascadeSimulation({ rootRiskName, register, iterations, seed }
     const includedRiskNames = [...perRisk.keys()];
     const activationCounts = new Map(order.map((n) => [n, 0]));
 
-    // P(activado en esta iteración) para un riesgo que NO es la raíz: 1 − (1−P_cascada)×(1−P_propia).
-    // P_cascada sale de la probabilidad de ESA arista (triggeredBy[].probability, 0-100%);
-    // P_propia sale de convertir la tasa LEF de ESA iteración en "probabilidad de al menos un
-    // evento este año" (proceso de Poisson: 1 − e^(−LEF)) — un riesgo sin FAIR propio (excluido)
-    // no tiene LEF, así que su P_propia es 0 (solo puede activarse por cascada).
+    // Un riesgo que NO es la raíz se activa en una iteración si ocurre POR SU CUENTA
+    // (P_propia) o si alguno de sus padres activos lo dispara en cascada (P_cascada) — la
+    // combinación de ambas vías da 1 − (1−P_propia)×Π(1−P_cascada_i).
     //
-    // Con múltiples padres, un mismo hijo puede recibir más de un intento de activación en la
-    // MISMA iteración (uno por cada padre activo esa vuelta) — walkMarkovChain ya reintenta un
-    // hijo una vez por cada padre que lo activa, y como cada intento es una prueba de Bernoulli
-    // independiente contra rng(), la combinación matemática de "se activó en cualquiera de los
-    // intentos" ya da 1 − Π(1−p_cascada_i) sin tocar nada del motor de markov.js. Lo único que
-    // hay que evitar es que P_propia se cuele en MÁS de un intento — `pOwnConsumedThisIteration`
-    // (reseteado en cada iteración Monte Carlo) marca qué riesgos ya "gastaron" su propia
-    // frecuencia esa vuelta; los intentos siguientes del mismo hijo, esa misma iteración, compiten
-    // solo con su propio P_cascada. Sin esto, un hijo con N padres recibiría N tiradas de su
-    // propia frecuencia (sobreestimación real, no solo un detalle de redondeo).
-    const combinedProbability = (childRiskName, edgeProbability, iterationIndex, pOwnConsumedThisIteration) => {
-        const pCascade = Math.max(0, Math.min(1, (edgeProbability ?? 0) / 100));
-        const analyzed = perRisk.get(childRiskName);
-        const useOwn = !!analyzed && !pOwnConsumedThisIteration.has(childRiskName);
-        if (useOwn) pOwnConsumedThisIteration.add(childRiskName);
-        const pOwn = useOwn ? 1 - Math.exp(-Math.max(0, analyzed.lefSamples[iterationIndex])) : 0;
-        return Math.max(0, Math.min(1, 1 - (1 - pCascade) * (1 - pOwn)));
+    // Las dos vías se evalúan en momentos distintos, y eso es lo que hace que el resultado sea
+    // correcto a CUALQUIER profundidad del árbol:
+    //
+    //   1. P_propia se tira UNA sola vez por riesgo por iteración, ANTES de recorrer la cascada
+    //      (ver `selfStarters` abajo). Los riesgos que salen sorteados entran al recorrido como
+    //      puntos de partida adicionales, junto a la raíz. P_propia convierte la tasa LEF de ESA
+    //      iteración en "probabilidad de al menos un evento este año" (proceso de Poisson:
+    //      1 − e^(−LEF)); un riesgo sin FAIR propio (excluido) no tiene LEF, así que su P_propia
+    //      es 0 y solo puede activarse por cascada.
+    //
+    //      Bug real corregido: antes P_propia se evaluaba DENTRO del recorrido, mezclada en la
+    //      misma compuerta que P_cascada — o sea, solo si el padre ya se había activado. La raíz
+    //      siempre está activa, así que sus hijos DIRECTOS quedaban bien, pero de la segunda
+    //      generación en adelante la frecuencia propia se perdía por completo cuando el padre no
+    //      ocurría: un nieto con ALE propio de $1,000,000/año aportaba ~$0 a la familia
+    //      (activación medida: 0.005% en vez del ~63% que le corresponde por 1−e^(−1)). El error
+    //      iba siempre hacia SUBESTIMAR el riesgo, y era peor mientras más profundo el árbol.
+    //
+    //   2. P_cascada se evalúa arista por arista durante el recorrido. Con múltiples padres, un
+    //      mismo hijo recibe un intento por cada padre activo esa vuelta; como cada intento es
+    //      una prueba de Bernoulli independiente contra rng(), "se activó en cualquiera de los
+    //      intentos" ya da 1 − Π(1−P_cascada_i) sin tocar el motor de markov.js.
+    //
+    // Sacar P_propia del recorrido también elimina, por construcción, el riesgo de que se cuente
+    // más de una vez cuando un hijo tiene varios padres (antes hacía falta llevar esa cuenta a
+    // mano con un Set por iteración).
+    const ownProbability = (riskName, iterationIndex) => {
+        const analyzed = perRisk.get(riskName);
+        if (!analyzed) return 0;
+        return Math.max(0, Math.min(1, 1 - Math.exp(-Math.max(0, analyzed.lefSamples[iterationIndex]))));
     };
+
+    // La raíz nunca entra acá: walkMarkovChain siempre la incluye, y su annualLosses[i] ya lleva
+    // su propia frecuencia (ver el reparto de pérdidas más abajo).
+    const selfStartCandidates = order.filter((name) => name !== rootRiskName);
+
+    const getTransitions = (nodeName) =>
+        (childrenOf.get(nodeName) || []).map((c) => ({
+            state: c.riskName,
+            probability: Math.max(0, Math.min(1, (c.probability ?? 0) / 100)),
+        }));
 
     const familyAnnualLosses = new Array(iterations);
     for (let i = 0; i < iterations; i++) {
-        const pOwnConsumedThisIteration = new Set();
-        const getTransitions = (nodeName) =>
-            (childrenOf.get(nodeName) || []).map((c) => ({
-                state: c.riskName,
-                probability: combinedProbability(c.riskName, c.probability, i, pOwnConsumedThisIteration),
-            }));
-        const activatedNames = walkMarkovChain(rootRiskName, getTransitions, masterRng);
+        // Se consume un número aleatorio por candidato SIEMPRE (aunque su P_propia sea 0), para
+        // que el stream del rng no dependa de qué riesgos tengan FAIR completo — así la corrida
+        // sigue siendo reproducible con la misma semilla.
+        const selfStarters = selfStartCandidates.filter((name) => masterRng() < ownProbability(name, i));
+        const activatedNames = walkMarkovChain([rootRiskName, ...selfStarters], getTransitions, masterRng);
 
         let total = 0;
         activatedNames.forEach((name) => {
             activationCounts.set(name, activationCounts.get(name) + 1);
             const analyzed = perRisk.get(name);
             if (!analyzed) return;
-            // La raíz nunca pasa por combinedProbability (walkMarkovChain siempre la incluye) —
+            // La raíz nunca pasa por ninguna compuerta (walkMarkovChain siempre la incluye) —
             // su annualLosses[i] (LEF×Magnitud, el mismo cálculo actuarial de siempre) es lo
             // correcto tal cual. Un riesgo NO-raíz sí pasó por una compuerta que ya "gastó" su
-            // propio lef_i para decidir si el evento ocurrió este año (pOwn arriba); sumar
+            // propio lef_i para decidir si el evento ocurrió este año (sea como auto-iniciador
+            // vía ownProbability, o por cascada desde un padre activo); sumar
             // analyzed.annualLosses[i] aquí volvería a multiplicar por ese mismo lef_i — la
             // frecuencia se descontaría dos veces, y para un riesgo raro pero severo (lef_i chico,
             // el perfil típico de un riesgo físico/patrimonial) el aporte queda subestimado en
