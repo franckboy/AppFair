@@ -147,6 +147,13 @@ export const RiskManagement = {
             data.includedCount > 1 && ahorro > 0
                 ? ` — ${formatCurrency(ahorro)} menos que la suma (${pct.toFixed(0)}%), porque no todos los riesgos ocurren el mismo año.`
                 : '.';
+        // Si hay dependencias declaradas en el Árbol de Cascada, la simulación ya las usó: los
+        // riesgos encadenados caen juntos y eso engorda la cola. Decirlo explícitamente, porque
+        // cambia cómo se lee el número de arriba.
+        const cascada =
+            data.cascadeEdgeCount > 0
+                ? ` <span class="text-gray-600">Incluye ${data.cascadeEdgeCount} ${data.cascadeEdgeCount === 1 ? 'dependencia declarada' : 'dependencias declaradas'} en el Árbol de Cascada: esos riesgos caen juntos, y por eso diversifican menos.</span>`
+                : '';
         // Modo Simple prohíbe los acrónimos (ver simple-mode-no-jargon.spec.js): se dice lo mismo
         // en palabras. Los dos textos describen exactamente las mismas dos cifras.
         const simple = App.UIMode.mode === 'simple';
@@ -156,7 +163,7 @@ export const RiskManagement = {
             : `CVaR95 <strong>${formatCurrency(data.summary.cvar95)}</strong>, p90 <strong>${formatCurrency(data.summary.p90)}</strong>`;
         el.innerHTML =
             `<strong>Simulando el portafolio completo a la vez</strong> (${data.includedCount} amenazas): ` +
-            `${cifras}${nota}` +
+            `${cifras}${nota}${cascada}` +
             (data.skippedCount > 0
                 ? ` <span class="text-gray-500">(${data.skippedCount} sin datos suficientes para simular)</span>`
                 : '');
