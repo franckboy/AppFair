@@ -1,6 +1,9 @@
 'use strict';
 
 const { runMonteCarloSimulation, summarizeLosses, buildLossExceedanceCurve } = require('./simulation');
+const { mulberry32 } = require('./random');
+const { walkMarkovChain } = require('./markov');
+const { normalizeTriggeredBy } = require('./register');
 const { sampleVulnerabilityFromProfiles } = require('./autocalc');
 const { attackerProfiles, defenseProfiles } = require('../data/profiles');
 
@@ -89,11 +92,33 @@ function simulatePortfolio(risks, { iterations = PORTFOLIO_ITERATIONS, seed = PO
     const portfolioLosses = new Array(iterations).fill(0);
     let sumOfIndividualCVaR = 0;
 
+    // Dependencias declaradas por el usuario en el Árbol de Riesgos en Cascada. Cada arista dice
+    // "si ocurre el padre, con esta probabilidad le sigue el hijo" — es la ÚNICA fuente de
+    // correlación del portafolio, y viene de su criterio, no de un supuesto estadístico nuestro.
+    const byName = new Map(usable.map((r) => [r.riskName, r]));
+    const childrenOf = new Map();
+    normalizeTriggeredBy(usable).forEach((risk) => {
+        (risk.triggeredBy || []).forEach(({ riskName: parent, probability }) => {
+            if (!byName.has(parent) || parent === risk.riskName) return;
+            if (!childrenOf.has(parent)) childrenOf.set(parent, []);
+            childrenOf.get(parent).push({
+                state: risk.riskName,
+                probability: Math.max(0, Math.min(1, (probability ?? 0) / 100)),
+            });
+        });
+    });
+    const hasCascade = childrenOf.size > 0;
+
+    // lefSamples por riesgo: hace falta para decidir, iteración por iteración, si el riesgo
+    // ocurrió "este año" y puede arrastrar a sus hijos.
+    const lefByRisk = new Map();
+    const magnitudeByRisk = new Map();
+
     usable.forEach((risk, index) => {
         // Semilla derivada por posición: reproducible, y distinta para cada riesgo (con la misma
         // semilla para todos, los riesgos quedarían perfectamente correlacionados por accidente y
         // el resultado sería idéntico a la suma que estamos corrigiendo).
-        const { annualLosses } = runMonteCarloSimulation({
+        const { annualLosses, lefSamples, magnitudeSamples } = runMonteCarloSimulation({
             iterations,
             seed: seed + index * 7919,
             tef: risk.tef,
@@ -103,7 +128,50 @@ function simulatePortfolio(risks, { iterations = PORTFOLIO_ITERATIONS, seed = PO
         });
         for (let i = 0; i < iterations; i++) portfolioLosses[i] += annualLosses[i];
         sumOfIndividualCVaR += summarizeLosses(annualLosses).cvar95;
+        if (hasCascade) {
+            lefByRisk.set(risk.riskName, lefSamples);
+            magnitudeByRisk.set(risk.riskName, magnitudeSamples);
+        }
     });
+
+    // --- Correlación por cascada -------------------------------------------------------------
+    // Hasta aquí cada riesgo se muestreó independiente. Ahora se AÑADE la pérdida de los riesgos
+    // que un padre arrastra al ocurrir: en esa iteración los dos caen juntos, y esa co-ocurrencia
+    // es exactamente lo que engorda la cola conjunta.
+    //
+    // Se SUMA sobre la base, nunca la reemplaza. Eso preserva un invariante que importa: un
+    // portafolio SIN dependencias declaradas da exactamente los mismos números que antes, así que
+    // conectar la cascada no reescribe en silencio ninguna evaluación existente.
+    //
+    // Un descendiente activado aporta solo su MAGNITUD, no LEF x Magnitud — misma regla que ya
+    // sigue cascadeSimulation.js: la compuerta de cascada ya decidió "ocurrió este año", y volver
+    // a multiplicar por su lef_i descontaría la frecuencia dos veces (para un riesgo raro pero
+    // severo eso subestima el aporte en órdenes de magnitud).
+    let cascadeAddedLoss = 0;
+    if (hasCascade) {
+        const cascadeRng = mulberry32(seed + 104729);
+        const parents = [...childrenOf.keys()];
+        const getTransitions = (name) => childrenOf.get(name) || [];
+        for (let i = 0; i < iterations; i++) {
+            // Un padre "ocurre este año" con probabilidad 1 - e^(-LEF), misma conversión de
+            // frecuencia a ocurrencia que usa el Árbol de Cascada.
+            const activos = parents.filter((name) => {
+                const lef = lefByRisk.get(name);
+                const p = lef ? 1 - Math.exp(-Math.max(0, lef[i])) : 0;
+                return cascadeRng() < p;
+            });
+            if (activos.length === 0) continue;
+            const alcanzados = walkMarkovChain(activos, getTransitions, cascadeRng);
+            alcanzados.forEach((name) => {
+                // Los padres ya aportaron su LEF x Magnitud arriba; solo se suma lo arrastrado.
+                if (activos.includes(name)) return;
+                const mag = magnitudeByRisk.get(name);
+                if (!mag) return;
+                portfolioLosses[i] += mag[i];
+                cascadeAddedLoss += mag[i];
+            });
+        }
+    }
 
     const summary = summarizeLosses(portfolioLosses);
     // Cuánto se estaba sobrestimando la cola con el método anterior. Es informativo, no un ajuste:
@@ -118,6 +186,8 @@ function simulatePortfolio(risks, { iterations = PORTFOLIO_ITERATIONS, seed = PO
         skippedRiskNames: skipped.map((r) => r.riskName),
         sumOfIndividualCVaR,
         diversificationBenefit,
+        cascadeEdgeCount: [...childrenOf.values()].reduce((n, c) => n + c.length, 0),
+        cascadeAddedALE: cascadeAddedLoss / iterations,
     };
 }
 

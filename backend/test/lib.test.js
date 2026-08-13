@@ -2532,3 +2532,68 @@ test('simulatePortfolio: la curva de excedencia del portafolio es monótona decr
         );
     }
 });
+
+// --- Correlación por cascada dentro del portafolio -------------------------------------------
+// El Árbol de Riesgos en Cascada es la ÚNICA fuente de correlación del portafolio: sale del
+// criterio del usuario (qué riesgo dispara a cuál y con qué probabilidad), no de un supuesto
+// estadístico nuestro.
+function makeCascadeFamilyPortfolio() {
+    return [
+        makePortfolioRisk('CA'),
+        makePortfolioRisk('CB', { triggeredBy: [{ riskName: 'CA', probability: 70 }] }),
+        makePortfolioRisk('CC', { triggeredBy: [{ riskName: 'CA', probability: 60 }] }),
+        makePortfolioRisk('CD', { triggeredBy: [{ riskName: 'CB', probability: 50 }] }),
+        makePortfolioRisk('CE'),
+    ];
+}
+
+test('simulatePortfolio: SIN dependencias declaradas da exactamente los mismos números que antes', () => {
+    // Invariante que protege toda evaluación ya existente: conectar la cascada no puede reescribir
+    // en silencio un portafolio que nunca declaró dependencias.
+    const risks = [1, 2, 3, 4, 5].map((i) => makePortfolioRisk(`N${i}`));
+    const conCampoVacio = risks.map((r) => ({ ...r, triggeredBy: [] }));
+    const a = simulatePortfolio(risks);
+    const b = simulatePortfolio(conCampoVacio);
+    assert.strictEqual(a.summary.cvar95, b.summary.cvar95);
+    assert.strictEqual(a.summary.average, b.summary.average);
+    assert.strictEqual(a.cascadeEdgeCount, 0);
+    assert.strictEqual(a.cascadeAddedALE, 0);
+});
+
+test('simulatePortfolio: la correlación declarada ENGORDA la cola conjunta', () => {
+    // Es el efecto que la independencia no podía capturar: cuando un padre arrastra a sus hijos,
+    // los tres caen el MISMO año, y esa co-ocurrencia es justo lo que hace la cola más pesada.
+    const sin = simulatePortfolio([1, 2, 3, 4, 5].map((i) => makePortfolioRisk(`S${i}`)));
+    const con = simulatePortfolio(makeCascadeFamilyPortfolio());
+    assert.ok(
+        con.summary.cvar95 > sin.summary.cvar95,
+        `con cascada ${con.summary.cvar95.toFixed(0)} debería superar a sin cascada ${sin.summary.cvar95.toFixed(0)}`,
+    );
+    assert.strictEqual(con.cascadeEdgeCount, 3);
+    assert.ok(con.cascadeAddedALE > 0, 'la cascada debe añadir pérdida esperada');
+});
+
+test('simulatePortfolio: la correlación REDUCE el beneficio de diversificación', () => {
+    // Riesgos acoplados diversifican menos que riesgos independientes — el resultado que hacía
+    // falta para no subestimar un portafolio con causas compartidas.
+    const sin = simulatePortfolio([1, 2, 3, 4, 5].map((i) => makePortfolioRisk(`S${i}`)));
+    const con = simulatePortfolio(makeCascadeFamilyPortfolio());
+    assert.ok(
+        con.diversificationBenefit < sin.diversificationBenefit,
+        `acoplado ${con.diversificationBenefit.toFixed(0)} debería diversificar menos que independiente ${sin.diversificationBenefit.toFixed(0)}`,
+    );
+});
+
+test('simulatePortfolio: una arista hacia un riesgo ausente del portafolio se ignora sin romper', () => {
+    // Vínculo por nombre y tolerante a roto, mismo criterio que el resto del Árbol de Cascada.
+    const r = simulatePortfolio([
+        makePortfolioRisk('X', { triggeredBy: [{ riskName: 'No existe', probability: 80 }] }),
+    ]);
+    assert.strictEqual(r.cascadeEdgeCount, 0);
+    assert.ok(r.summary.average > 0);
+});
+
+test('simulatePortfolio: sigue siendo reproducible con cascada declarada', () => {
+    const risks = makeCascadeFamilyPortfolio();
+    assert.strictEqual(simulatePortfolio(risks).summary.cvar95, simulatePortfolio(risks).summary.cvar95);
+});
