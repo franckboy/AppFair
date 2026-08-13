@@ -123,6 +123,20 @@ function calculateConsolidatedSensitivity(risks, topN = 8) {
  * No todas las decisiones tienen residualCVaR (ej. Transferir no lo calcula — ver
  * evaluateTreatmentStrategies) — esos riesgos se excluyen de la suma de CVaR (cvarSkippedCount)
  * pero SÍ entran en la suma de ALE, que sí está siempre disponible.
+ *
+ * `totalResidualCVaRFloor` existe por ese desfase: `totalResidualCVaR` cubre solo los riesgos con
+ * CVaR conocido, mientras que `totalResidualALE` cubre TODOS — clasificar el portafolio cruzando
+ * esos dos totales compara canastas distintas. Como el escalón de "Crítico por cola de riesgo"
+ * (ver evaluateFairThreat) es lo ÚNICO que mira el CVaR, ese desfase solo puede fallar en una
+ * dirección: dejar de marcar como Crítico un portafolio que sí lo es — o sea, SUBESTIMAR, que es
+ * la dirección peligrosa en una herramienta de riesgo.
+ *
+ * El piso sustituye cada CVaR desconocido por el residualALE de ESE riesgo, y por eso cubre la
+ * canasta completa. Es una sustitución conservadora y matemáticamente válida: el CVaR95 es el
+ * promedio del peor 5% de los escenarios, así que nunca puede quedar por debajo del promedio
+ * general (el ALE) de la misma distribución. Sigue siendo un piso, no el valor real — puede
+ * quedarse corto — pero nunca menos que tratar el dato faltante como cero, que es lo que hacía
+ * excluirlo de la suma.
  * @param {Array<{riskType?:string, ale:number, cvar95?:number, treatmentDecision?:{residualALE:number, residualCVaR?:number}|null}>} risks
  */
 function calculateResidualPortfolio(risks) {
@@ -130,6 +144,7 @@ function calculateResidualPortfolio(risks) {
 
     let totalResidualALE = 0;
     let totalResidualCVaR = 0;
+    let totalResidualCVaRFloor = 0;
     let cvarRiskCount = 0;
     let cvarSkippedCount = 0;
     let treatedCount = 0;
@@ -143,8 +158,10 @@ function calculateResidualPortfolio(risks) {
         const residualCVaR = decision ? decision.residualCVaR : r.cvar95;
         if (typeof residualCVaR === 'number') {
             totalResidualCVaR += residualCVaR;
+            totalResidualCVaRFloor += residualCVaR;
             cvarRiskCount += 1;
         } else {
+            totalResidualCVaRFloor += residualALE;
             cvarSkippedCount += 1;
         }
     });
@@ -152,6 +169,10 @@ function calculateResidualPortfolio(risks) {
     return {
         totalResidualALE,
         totalResidualCVaR: cvarRiskCount > 0 ? totalResidualCVaR : null,
+        // Cubre siempre las mismas amenazas que totalResidualALE — se usa para CLASIFICAR el
+        // portafolio, no para mostrarlo (el número que se muestra sigue siendo totalResidualCVaR,
+        // acompañado de la nota de cobertura que ya arma App.RiskManagement.renderPortfolio).
+        totalResidualCVaRFloor: threats.length > 0 ? totalResidualCVaRFloor : null,
         cvarRiskCount,
         cvarSkippedCount,
         treatedCount,
@@ -224,6 +245,19 @@ function calculateResidualParetoAnalysis(risks) {
  * solos la próxima vez que se vuelvan a simular (sin migración/backfill, mismo criterio ya usado
  * con vulnManualOverride). `totalInherentALE`/`totalInherentCVaR` son `null` si NINGÚN riesgo
  * tiene el dato todavía — no se muestra un total parcial disfrazado de completo.
+ *
+ * `comparableActualALE` existe precisamente por ese hueco: es el ALE Actual sumado SOLO sobre los
+ * riesgos que además tienen `inherentALE`, o sea la MISMA canasta que `totalInherentALE`. Es el
+ * único total contra el que tiene sentido restar el Inherente (Efectividad de Controles, ver
+ * App.RiskManagement.renderPortfolio) — restarle `totalActualALE`, que cubre TODAS las amenazas,
+ * mezcla dos canastas distintas.
+ *
+ * Bug real corregido: esa resta cruzada daba porcentajes de efectividad negativos y un waterfall
+ * imposible (Riesgo Inherente MENOR que el Actual, cuando por definición el inherente —sin ningún
+ * control— nunca puede ser menor). Medido con 3 amenazas, una sin `inherentALE`: la app reportaba
+ * −133.3% de efectividad cuando la real era +66.7%, o sea le decía al usuario que sus controles
+ * empeoraban el riesgo. Con cobertura completa (`inherentMissingCount === 0`) ambos totales
+ * coinciden, que es por lo que el error pasaba desapercibido en los casos limpios.
  * @param {Array<{riskType?:string, ale:number, cvar95?:number, inherentALE?:number|null, inherentCVaR?:number|null}>} risks
  */
 function calculateInherentPortfolio(risks) {
@@ -235,6 +269,7 @@ function calculateInherentPortfolio(risks) {
     let totalActualALE = 0;
     let totalActualCVaR = 0;
     let actualCvarCount = 0;
+    let comparableActualALE = 0;
 
     threats.forEach((r) => {
         totalActualALE += r.ale;
@@ -245,6 +280,7 @@ function calculateInherentPortfolio(risks) {
         if (typeof r.inherentALE === 'number') {
             totalInherentALE += r.inherentALE;
             inherentRiskCount += 1;
+            comparableActualALE += r.ale;
         }
         if (typeof r.inherentCVaR === 'number') {
             totalInherentCVaR += r.inherentCVaR;
@@ -258,6 +294,7 @@ function calculateInherentPortfolio(risks) {
         inherentMissingCount: threats.length - inherentRiskCount,
         totalActualALE,
         totalActualCVaR: actualCvarCount > 0 ? totalActualCVaR : null,
+        comparableActualALE: inherentRiskCount > 0 ? comparableActualALE : null,
         totalRiskCount: threats.length,
     };
 }

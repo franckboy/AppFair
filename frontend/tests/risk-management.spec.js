@@ -370,5 +370,22 @@ test.describe('Gestión de Riesgos (página aparte)', () => {
             `Riesgo Inherente: ${formatCurrency(inherentPortfolio.totalInherentALE)}`,
         );
         await expect(page.locator('#riskmgmt-portfolio-effectiveness')).toBeVisible();
+
+        // El Actual que el waterfall compara contra el Inherente debe ser comparableActualALE
+        // (solo los riesgos que además tienen Inherente calculado), NUNCA totalActualALE (todas
+        // las amenazas) — restar dos canastas distintas daba Efectividades de Controles negativas
+        // y un Riesgo Inherente menor que el Actual. Ver la regresión con números controlados en
+        // backend/test/lib.test.js ("la Efectividad de Controles usa la MISMA canasta").
+        //
+        // Acá se verifica el CABLEADO (que el panel pinte el total correcto), no la aritmética:
+        // el Registro es compartido por toda la suite y varios tests escriben `ale` por PUT
+        // directo sin recalcular `inherentALE` (ej. `{...entry, ale: 900000}` más arriba en este
+        // mismo archivo), así que la relación inherente ≥ actual no se sostiene sobre ESOS datos
+        // sintéticos. Sobre datos reales de la app sí se sostiene siempre — los dos campos
+        // siempre se escriben juntos, desde la misma simulación (ver saveToRiskRegister) — y eso
+        // es justo lo que verifica la aserción por riesgo unas líneas más arriba.
+        await expect(page.locator('#riskmgmt-portfolio-waterfall')).toContainText(
+            `Riesgo Actual: ${formatCurrency(inherentPortfolio.comparableActualALE)}`,
+        );
     });
 });

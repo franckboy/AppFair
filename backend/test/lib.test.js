@@ -1074,6 +1074,52 @@ test('calculateInherentPortfolio: mezcla de riesgos con/sin inherentALE persisti
     assert.strictEqual(portfolio.totalActualALE, 50000 + 30000);
     assert.strictEqual(portfolio.totalActualCVaR, 90000 + 60000);
     assert.strictEqual(portfolio.totalRiskCount, 2);
+    // El Actual COMPARABLE cubre solo el riesgo que además tiene inherentALE — es contra este
+    // (no contra totalActualALE) que se resta el Inherente para la Efectividad de Controles.
+    assert.strictEqual(portfolio.comparableActualALE, 50000);
+});
+
+test('calculateInherentPortfolio: la Efectividad de Controles usa la MISMA canasta, no un Actual que incluye riesgos sin Inherente (regresión)', () => {
+    // Regresión de un bug real: la efectividad se calculaba como
+    // (totalInherentALE - totalActualALE) / totalInherentALE, restando un Inherente que solo
+    // cubría los riesgos con el dato persistido contra un Actual que cubría TODAS las amenazas.
+    // Con cualquier riesgo sin inherentALE (los guardados antes de que existiera el cálculo, o
+    // los que no se han vuelto a simular), el resultado salía negativo — le decía al usuario que
+    // sus controles EMPEORABAN el riesgo — y el waterfall mostraba un Riesgo Inherente MENOR que
+    // el Actual, algo imposible por definición (el inherente es "sin ningún control").
+    const risks = [
+        { riskName: 'A', riskType: 'amenaza', ale: 100000, cvar95: 200000, inherentALE: 300000, inherentCVaR: 500000 },
+        { riskName: 'B', riskType: 'amenaza', ale: 50000, cvar95: 90000, inherentALE: 150000, inherentCVaR: 250000 },
+        // Sin inherentALE, y con un ALE actual grande — es el que invertía el signo.
+        { riskName: 'C', riskType: 'amenaza', ale: 900000, cvar95: 1500000 },
+    ];
+    const portfolio = calculateInherentPortfolio(risks);
+
+    assert.strictEqual(portfolio.totalInherentALE, 450000);
+    assert.strictEqual(portfolio.comparableActualALE, 150000); // solo A y B
+    assert.strictEqual(portfolio.totalActualALE, 1050000); // las 3, para la barra de resumen
+
+    const efectividad =
+        ((portfolio.totalInherentALE - portfolio.comparableActualALE) / portfolio.totalInherentALE) * 100;
+    assert.ok(
+        Math.abs(efectividad - 66.67) < 0.01,
+        `la efectividad debería ser ~66.7% (los controles reducen el riesgo), pero fue ${efectividad.toFixed(1)}%`,
+    );
+    // El Inherente NUNCA puede quedar por debajo del Actual con el que se compara.
+    assert.ok(
+        portfolio.totalInherentALE >= portfolio.comparableActualALE,
+        'el Riesgo Inherente (sin ningún control) no puede ser menor que el Actual de esa misma canasta',
+    );
+});
+
+test('calculateInherentPortfolio: con cobertura completa, el Actual comparable y el total coinciden (el caso limpio no cambia)', () => {
+    const risks = [
+        { riskName: 'A', riskType: 'amenaza', ale: 100000, cvar95: 200000, inherentALE: 300000, inherentCVaR: 500000 },
+        { riskName: 'B', riskType: 'amenaza', ale: 50000, cvar95: 90000, inherentALE: 150000, inherentCVaR: 250000 },
+    ];
+    const portfolio = calculateInherentPortfolio(risks);
+    assert.strictEqual(portfolio.inherentMissingCount, 0);
+    assert.strictEqual(portfolio.comparableActualALE, portfolio.totalActualALE);
 });
 
 test('calculateInherentPortfolio: ningún riesgo tiene inherentALE — totales inherentes null, actuales siguen sumando', () => {
@@ -1832,6 +1878,65 @@ test('calculateResidualPortfolio: una decisión Transferir (sin residualCVaR) se
     assert.strictEqual(portfolio.totalResidualCVaR, null);
     assert.strictEqual(portfolio.cvarRiskCount, 0);
     assert.strictEqual(portfolio.cvarSkippedCount, 1);
+    // El piso sí lo cubre, sustituyendo el CVaR desconocido por el residualALE de ese riesgo.
+    assert.strictEqual(portfolio.totalResidualCVaRFloor, 20000);
+});
+
+test('calculateResidualPortfolio: el piso de CVaR cubre TODAS las amenazas, no solo las que traen CVaR residual', () => {
+    const risks = [
+        {
+            riskName: 'Transferido (sin CVaR residual)',
+            riskType: 'amenaza',
+            ale: 400000,
+            cvar95: 900000,
+            treatmentDecision: { strategy: 'transferir', residualALE: 400000 },
+        },
+        { riskName: 'Sin tratar (con CVaR)', riskType: 'amenaza', ale: 150000, cvar95: 400000 },
+    ];
+    const portfolio = calculateResidualPortfolio(risks);
+    assert.strictEqual(portfolio.totalResidualALE, 550000);
+    assert.strictEqual(portfolio.totalResidualCVaR, 400000); // solo el que sí lo tiene
+    assert.strictEqual(portfolio.totalResidualCVaRFloor, 400000 + 400000); // residualALE + CVaR real
+    assert.strictEqual(portfolio.cvarSkippedCount, 1);
+    // El piso nunca puede quedar por debajo del ALE de la misma canasta (CVaR95 >= promedio).
+    assert.ok(portfolio.totalResidualCVaRFloor >= portfolio.totalResidualALE);
+});
+
+test('calculateResidualPortfolio: el piso de CVaR permite escalar a "Crítico por cola" un portafolio que cruzando canastas se quedaba en Alto (regresión)', () => {
+    // Regresión de un bug real: el portafolio se clasificaba con evaluateFairThreat(ALE de TODAS
+    // las amenazas, CVaR de SOLO las que lo tienen). Como el CVaR únicamente alimenta el escalón
+    // de "Crítico por cola de riesgo", ese desfase solo podía fallar hacia SUBESTIMAR: dejaba de
+    // marcar como Crítico un portafolio que sí lo era, en cuanto alguna decisión de Transferir
+    // (o Mitigar+Transferir) no aportaba su CVaR residual.
+    const fmt = (v) => `$${Math.round(v)}`;
+    const criteria = { aleCritico: 1000000, aleAceptablePercent: 20 };
+    const transferido = (n) => ({
+        riskName: `Transferido ${n}`,
+        riskType: 'amenaza',
+        ale: 400000,
+        cvar95: 900000,
+        treatmentDecision: { strategy: 'transferir', residualALE: 400000 },
+    });
+    const risks = [
+        transferido(1),
+        transferido(2),
+        { riskName: 'Sin tratar', riskType: 'amenaza', ale: 150000, cvar95: 400000 },
+    ];
+
+    const portfolio = calculateResidualPortfolio(risks);
+    // El ALE total (950k) queda por debajo del criterio Crítico (1M): sin el escalón de cola,
+    // este portafolio no se marca como Crítico.
+    assert.ok(portfolio.totalResidualALE < criteria.aleCritico);
+
+    const cruzado = evaluateFairThreat(portfolio.totalResidualALE, portfolio.totalResidualCVaR, criteria, fmt);
+    const conPiso = evaluateFairThreat(portfolio.totalResidualALE, portfolio.totalResidualCVaRFloor, criteria, fmt);
+
+    assert.strictEqual(cruzado.severity, 'alto', 'cruzando canastas el CVaR parcial (400k) no alcanza a escalar');
+    assert.strictEqual(
+        conPiso.severity,
+        'critico',
+        'con el piso completo (1.2M > 1M) sí debe escalar a Crítico por cola',
+    );
 });
 
 test('calculateResidualPortfolio: excluye riesgos tipo "oportunidad", igual que calculateParetoAnalysis', () => {

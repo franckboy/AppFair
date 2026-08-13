@@ -142,22 +142,35 @@ export const RiskManagement = {
         if (inherent && inherent.inherentRiskCount > 0) {
             const inherentLevel = inherent.evaluation ? ` (${inherent.evaluation.level})` : '';
             const residualLevel = portfolio.evaluation ? ` (${portfolio.evaluation.level})` : '';
-            waterfallEl.textContent =
-                `Riesgo Inherente: ${formatCurrency(inherent.totalInherentALE)}${inherentLevel} → ` +
-                `Riesgo Actual: ${formatCurrency(inherent.totalActualALE)} → ` +
-                `Riesgo Residual: ${formatCurrency(portfolio.totalResidualALE)}${residualLevel}`;
+            // El Actual que se compara contra el Inherente es SIEMPRE comparableActualALE (la
+            // misma canasta de riesgos que sí tienen Inherente calculado), nunca totalActualALE
+            // (todas las amenazas) — ver el comentario de calculateInherentPortfolio en el
+            // backend: mezclarlos daba efectividades negativas y un Inherente menor que el Actual.
+            // Con cobertura completa ambos valen lo mismo, así que el caso limpio no cambia.
+            const incompleto = inherent.inherentMissingCount > 0;
+            const comparableActual = inherent.comparableActualALE;
+            // La etapa Residual cubre TODAS las amenazas, así que solo se suma al waterfall
+            // cuando el Inherente también las cubre — si no, serían tres cifras sobre canastas
+            // distintas puestas en fila como si fueran la misma historia.
+            waterfallEl.textContent = incompleto
+                ? `Riesgo Inherente: ${formatCurrency(inherent.totalInherentALE)}${inherentLevel} → ` +
+                  `Riesgo Actual: ${formatCurrency(comparableActual)} ` +
+                  `(comparación sobre las ${inherent.inherentRiskCount} de ${inherent.totalRiskCount} amenazas que ya tienen Riesgo Inherente calculado)`
+                : `Riesgo Inherente: ${formatCurrency(inherent.totalInherentALE)}${inherentLevel} → ` +
+                  `Riesgo Actual: ${formatCurrency(comparableActual)} → ` +
+                  `Riesgo Residual: ${formatCurrency(portfolio.totalResidualALE)}${residualLevel}`;
             waterfallEl.classList.remove('hidden');
 
-            if (inherent.totalInherentALE > 0) {
+            if (inherent.totalInherentALE > 0 && typeof comparableActual === 'number') {
                 const effectiveness =
-                    ((inherent.totalInherentALE - inherent.totalActualALE) / inherent.totalInherentALE) * 100;
+                    ((inherent.totalInherentALE - comparableActual) / inherent.totalInherentALE) * 100;
                 effectivenessEl.textContent = `Efectividad de Controles: ${effectiveness.toFixed(1)}%`;
                 effectivenessEl.classList.remove('hidden');
             } else {
                 effectivenessEl.classList.add('hidden');
             }
 
-            if (inherent.inherentMissingCount > 0) {
+            if (incompleto) {
                 inherentNote.textContent = `Riesgo Inherente calculado para ${inherent.inherentRiskCount} de ${inherent.totalRiskCount} amenazas — el resto se estima la próxima vez que se vuelvan a simular.`;
                 inherentNote.classList.remove('hidden');
             } else {
