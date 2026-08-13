@@ -319,6 +319,7 @@ export const FairWizard = {
         document.getElementById('fair-step4-back').addEventListener('click', () => this.navigateWizard(3));
         document.getElementById('run-simulation-btn').addEventListener('click', () => this.runMonteCarloSimulation());
         document.getElementById('nash-calculate-btn').addEventListener('click', () => this.calculateNashEquilibrium());
+        document.getElementById('fair-nash-open-btn').addEventListener('click', () => this.openNashModal());
         document.getElementById('fair-access-level').addEventListener('change', () => {
             state.fair.accessLevel = document.getElementById('fair-access-level').value;
             this.renderAccessLevelEffect();
@@ -1692,6 +1693,37 @@ export const FairWizard = {
             })
             .join('');
         document.getElementById('fair-sensitivity-container').classList.remove('hidden');
+    },
+
+    // El Equilibrio de Nash es una exploración aparte, no parte de la evaluación: vive detrás de un
+    // botón y se abre en un modal. Antes ocupaba el bloque más grande del Paso 4 —3 campos, 2
+    // párrafos, botón y 7 filas de resultado— justo entre los resultados de la simulación, donde
+    // invitaba a leerlo como si alimentara el cálculo. Además sus tres campos piden datos que un
+    // responsable de seguridad no puede obtener de ninguna fuente (el costo del esfuerzo del
+    // atacante), así que toparse con ellos en el scroll natural se siente como un bloqueo.
+    //
+    // Se MUEVE el nodo al cuerpo del modal en vez de re-generar su HTML: así los ids y los
+    // listeners ya registrados en init() sobreviven intactos, sin re-cablear nada.
+    openNashModal() {
+        const panel = document.getElementById('fair-nash-panel');
+        const contenedor = document.getElementById('fair-nash-container');
+        if (!panel || !contenedor) return;
+
+        Modal.title.textContent = '¿Qué esfuerzo le conviene poner a cada lado?';
+        Modal.body.innerHTML = '';
+        Modal.body.appendChild(panel);
+        panel.classList.remove('hidden');
+        Modal.footer.innerHTML = `<button id="nash-modal-close-btn" class="btn btn-secondary">Cerrar</button>`;
+
+        const cerrar = () => {
+            // Devolver el panel a su sitio antes de cerrar: si se quedara dentro del modal, la
+            // próxima apertura no lo encontraría y los resultados se perderían al vaciar el cuerpo.
+            panel.classList.add('hidden');
+            contenedor.appendChild(panel);
+            Modal.hide();
+        };
+        document.getElementById('nash-modal-close-btn').addEventListener('click', cerrar, { once: true });
+        Modal.modal.classList.remove('hidden');
     },
 
     // Equilibrio de Nash del juego de contienda de Tullock (POST /api/autocalc/nash-equilibrium)
