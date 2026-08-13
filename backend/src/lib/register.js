@@ -123,6 +123,20 @@ function calculateConsolidatedSensitivity(risks, topN = 8) {
  * No todas las decisiones tienen residualCVaR (ej. Transferir no lo calcula — ver
  * evaluateTreatmentStrategies) — esos riesgos se excluyen de la suma de CVaR (cvarSkippedCount)
  * pero SÍ entran en la suma de ALE, que sí está siempre disponible.
+ *
+ * `totalResidualCVaRFloor` existe por ese desfase: `totalResidualCVaR` cubre solo los riesgos con
+ * CVaR conocido, mientras que `totalResidualALE` cubre TODOS — clasificar el portafolio cruzando
+ * esos dos totales compara canastas distintas. Como el escalón de "Crítico por cola de riesgo"
+ * (ver evaluateFairThreat) es lo ÚNICO que mira el CVaR, ese desfase solo puede fallar en una
+ * dirección: dejar de marcar como Crítico un portafolio que sí lo es — o sea, SUBESTIMAR, que es
+ * la dirección peligrosa en una herramienta de riesgo.
+ *
+ * El piso sustituye cada CVaR desconocido por el residualALE de ESE riesgo, y por eso cubre la
+ * canasta completa. Es una sustitución conservadora y matemáticamente válida: el CVaR95 es el
+ * promedio del peor 5% de los escenarios, así que nunca puede quedar por debajo del promedio
+ * general (el ALE) de la misma distribución. Sigue siendo un piso, no el valor real — puede
+ * quedarse corto — pero nunca menos que tratar el dato faltante como cero, que es lo que hacía
+ * excluirlo de la suma.
  * @param {Array<{riskType?:string, ale:number, cvar95?:number, treatmentDecision?:{residualALE:number, residualCVaR?:number}|null}>} risks
  */
 function calculateResidualPortfolio(risks) {
@@ -130,6 +144,7 @@ function calculateResidualPortfolio(risks) {
 
     let totalResidualALE = 0;
     let totalResidualCVaR = 0;
+    let totalResidualCVaRFloor = 0;
     let cvarRiskCount = 0;
     let cvarSkippedCount = 0;
     let treatedCount = 0;
@@ -143,8 +158,10 @@ function calculateResidualPortfolio(risks) {
         const residualCVaR = decision ? decision.residualCVaR : r.cvar95;
         if (typeof residualCVaR === 'number') {
             totalResidualCVaR += residualCVaR;
+            totalResidualCVaRFloor += residualCVaR;
             cvarRiskCount += 1;
         } else {
+            totalResidualCVaRFloor += residualALE;
             cvarSkippedCount += 1;
         }
     });
@@ -152,6 +169,10 @@ function calculateResidualPortfolio(risks) {
     return {
         totalResidualALE,
         totalResidualCVaR: cvarRiskCount > 0 ? totalResidualCVaR : null,
+        // Cubre siempre las mismas amenazas que totalResidualALE — se usa para CLASIFICAR el
+        // portafolio, no para mostrarlo (el número que se muestra sigue siendo totalResidualCVaR,
+        // acompañado de la nota de cobertura que ya arma App.RiskManagement.renderPortfolio).
+        totalResidualCVaRFloor: threats.length > 0 ? totalResidualCVaRFloor : null,
         cvarRiskCount,
         cvarSkippedCount,
         treatedCount,

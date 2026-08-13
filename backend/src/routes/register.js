@@ -59,9 +59,15 @@ function createRegisterRouter(store) {
             const consolidatedSensitivity = calculateConsolidatedSensitivity(risks);
             const residualPortfolio = calculateResidualPortfolio(risks);
             if (residualPortfolio.cvarRiskCount > 0) {
+                // Se clasifica con totalResidualCVaRFloor, NO con totalResidualCVaR: el primero
+                // cubre las mismas amenazas que totalResidualALE, el segundo solo las que tienen
+                // CVaR residual conocido (ver calculateResidualPortfolio). Cruzar los dos totales
+                // podía dejar de escalar a "Crítico por cola de riesgo" un portafolio que sí lo
+                // era, en cuanto alguna decisión de Transferir (o Mitigar+Transferir) no aportaba
+                // su CVaR — subestimando el riesgo, justo la dirección que no se debe fallar.
                 residualPortfolio.evaluation = evaluateFairThreat(
                     residualPortfolio.totalResidualALE,
-                    residualPortfolio.totalResidualCVaR,
+                    residualPortfolio.totalResidualCVaRFloor,
                     criteria,
                     makeCurrencyFormatter(),
                 );

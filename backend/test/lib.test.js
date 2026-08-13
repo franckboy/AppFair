@@ -1878,6 +1878,65 @@ test('calculateResidualPortfolio: una decisión Transferir (sin residualCVaR) se
     assert.strictEqual(portfolio.totalResidualCVaR, null);
     assert.strictEqual(portfolio.cvarRiskCount, 0);
     assert.strictEqual(portfolio.cvarSkippedCount, 1);
+    // El piso sí lo cubre, sustituyendo el CVaR desconocido por el residualALE de ese riesgo.
+    assert.strictEqual(portfolio.totalResidualCVaRFloor, 20000);
+});
+
+test('calculateResidualPortfolio: el piso de CVaR cubre TODAS las amenazas, no solo las que traen CVaR residual', () => {
+    const risks = [
+        {
+            riskName: 'Transferido (sin CVaR residual)',
+            riskType: 'amenaza',
+            ale: 400000,
+            cvar95: 900000,
+            treatmentDecision: { strategy: 'transferir', residualALE: 400000 },
+        },
+        { riskName: 'Sin tratar (con CVaR)', riskType: 'amenaza', ale: 150000, cvar95: 400000 },
+    ];
+    const portfolio = calculateResidualPortfolio(risks);
+    assert.strictEqual(portfolio.totalResidualALE, 550000);
+    assert.strictEqual(portfolio.totalResidualCVaR, 400000); // solo el que sí lo tiene
+    assert.strictEqual(portfolio.totalResidualCVaRFloor, 400000 + 400000); // residualALE + CVaR real
+    assert.strictEqual(portfolio.cvarSkippedCount, 1);
+    // El piso nunca puede quedar por debajo del ALE de la misma canasta (CVaR95 >= promedio).
+    assert.ok(portfolio.totalResidualCVaRFloor >= portfolio.totalResidualALE);
+});
+
+test('calculateResidualPortfolio: el piso de CVaR permite escalar a "Crítico por cola" un portafolio que cruzando canastas se quedaba en Alto (regresión)', () => {
+    // Regresión de un bug real: el portafolio se clasificaba con evaluateFairThreat(ALE de TODAS
+    // las amenazas, CVaR de SOLO las que lo tienen). Como el CVaR únicamente alimenta el escalón
+    // de "Crítico por cola de riesgo", ese desfase solo podía fallar hacia SUBESTIMAR: dejaba de
+    // marcar como Crítico un portafolio que sí lo era, en cuanto alguna decisión de Transferir
+    // (o Mitigar+Transferir) no aportaba su CVaR residual.
+    const fmt = (v) => `$${Math.round(v)}`;
+    const criteria = { aleCritico: 1000000, aleAceptablePercent: 20 };
+    const transferido = (n) => ({
+        riskName: `Transferido ${n}`,
+        riskType: 'amenaza',
+        ale: 400000,
+        cvar95: 900000,
+        treatmentDecision: { strategy: 'transferir', residualALE: 400000 },
+    });
+    const risks = [
+        transferido(1),
+        transferido(2),
+        { riskName: 'Sin tratar', riskType: 'amenaza', ale: 150000, cvar95: 400000 },
+    ];
+
+    const portfolio = calculateResidualPortfolio(risks);
+    // El ALE total (950k) queda por debajo del criterio Crítico (1M): sin el escalón de cola,
+    // este portafolio no se marca como Crítico.
+    assert.ok(portfolio.totalResidualALE < criteria.aleCritico);
+
+    const cruzado = evaluateFairThreat(portfolio.totalResidualALE, portfolio.totalResidualCVaR, criteria, fmt);
+    const conPiso = evaluateFairThreat(portfolio.totalResidualALE, portfolio.totalResidualCVaRFloor, criteria, fmt);
+
+    assert.strictEqual(cruzado.severity, 'alto', 'cruzando canastas el CVaR parcial (400k) no alcanza a escalar');
+    assert.strictEqual(
+        conPiso.severity,
+        'critico',
+        'con el piso completo (1.2M > 1M) sí debe escalar a Crítico por cola',
+    );
 });
 
 test('calculateResidualPortfolio: excluye riesgos tipo "oportunidad", igual que calculateParetoAnalysis', () => {
