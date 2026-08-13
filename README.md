@@ -144,6 +144,11 @@ distribución, igual que ya se hacía para la triangular.
 
 ## Calibración de la Vulnerabilidad
 
+> **Especificación técnica completa:** [`docs/modelo-de-riesgo.md`](docs/modelo-de-riesgo.md) —
+> ruta crítica paso a paso, las 8 anclas de juicio experto, el re-centrado por confianza, los
+> invariantes que verifica la suite, y el deslinde del Equilibrio de Nash. Esta sección es el
+> resumen; ese documento es la fuente normativa.
+
 `backend/src/lib/autocalc.js` — en FAIR, la Vulnerabilidad es la probabilidad de que un evento de
 amenaza se convierta en pérdida. AppFair la modela como una **contienda** entre la Capacidad de
 Amenaza del atacante y la Fuerza de Resistencia de la defensa, resuelta con la Función de Éxito de
