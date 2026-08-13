@@ -5,6 +5,7 @@ const { attackerProfiles, defenseProfiles, lossFormsKeys } = require('../data/pr
 const {
     calculateProfileAverage,
     tullockSuccessProbability,
+    attackerContestStrength,
     sampleVulnerabilityFromProfiles,
     summarizeVulnerabilitySamples,
     calculateLossMagnitudeRange,
@@ -159,8 +160,15 @@ function createAutocalcRouter() {
         const defenseScore = calculateProfileAverage(defenseProfile);
         // Punto de comparación "esfuerzo fijo": los mismos perfiles de siempre, con el MISMO m
         // que el usuario eligió para esta corrida — para no mezclar dos `m` distintos (este y el
-        // TULLOCK_M fijo que usa la Vulnerabilidad del Paso 2) en la misma comparación.
-        const fixedEffortVulnerability = tullockSuccessProbability(attackerScore, defenseScore, m) * 100;
+        // TULLOCK_M calibrado que usa la Vulnerabilidad del Paso 2) en la misma comparación.
+        //
+        // El Atacante SÍ pasa por el eje de contienda calibrado (attackerContestStrength), igual
+        // que en el Paso 2: la escala semántica del perfil y la de la Defensa no son comparables
+        // punto a punto, y compararlas crudas era un error que aquí quedaba escondido mientras
+        // TULLOCK_M valía 1 y no existía el eje. Aun así este número NO tiene por qué coincidir
+        // con el del Paso 2 — usa la `m` de este panel, no la calibrada — y la interfaz lo dice.
+        const fixedEffortVulnerability =
+            tullockSuccessProbability(attackerContestStrength(attackerScore), defenseScore, m) * 100;
 
         const equilibrium = solveNashEquilibrium({ m, valueAtStake, costAttacker, costDefense });
 

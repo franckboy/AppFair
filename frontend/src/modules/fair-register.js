@@ -343,6 +343,7 @@ export const FairRegister = {
         const assessmentDate = existingEntry?.assessmentDate || null;
         const assessmentLocation = existingEntry?.assessmentLocation || null;
         const securityPlan = existingEntry?.securityPlan || '—';
+        const deliberada = document.getElementById('fair-deliberate-threat').checked;
         const attackerProfile = state.quick.attackerProfiles[state.fair.attackerKey] || {};
         const defenseProfile = state.quick.defenseProfiles[state.fair.defenseKey] || {};
         const chart = state.fair.fairResultsChart;
@@ -460,8 +461,13 @@ export const FairRegister = {
                     // attacker/defenseProfileName de arriba — los necesita App.Treatment para
                     // poder recalcular "Reducción de ALE" sin depender de que el wizard siga
                     // abierto con este riesgo cargado.
-                    attackerKey: state.fair.attackerKey || null,
-                    defenseKey: state.fair.defenseKey || null,
+                    // Sin adversario no hay perfiles que guardar: dejarlos aquí no solo sería un
+                    // dato falso, además ANULA la bandera de arriba, porque inferDeliberateThreat
+                    // trata un attackerKey presente como prueba de que el riesgo sí se analizó
+                    // como contienda (ver fair-wizard.js). Mismo criterio que ya aplica
+                    // runSimulation al no mandarlos a /api/simulate.
+                    attackerKey: deliberada ? state.fair.attackerKey || null : null,
+                    defenseKey: deliberada ? state.fair.defenseKey || null : null,
                     mitigar,
                     transferir,
                     evitar,
@@ -473,6 +479,7 @@ export const FairRegister = {
                     lossExceedanceCurve: state.fair.lastLossExceedanceCurve || null,
                     inherentLossExceedanceCurve: state.fair.lastInherentLossExceedanceCurve || null,
                     calibrationVersion: state.fair.lastCalibrationVersion ?? null,
+                    isDeliberate: deliberada,
                     chartLabels: chart ? chart.data.labels : null,
                     chartData: chart ? chart.data.datasets[0].data : null,
                 },

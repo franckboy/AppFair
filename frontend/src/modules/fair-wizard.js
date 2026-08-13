@@ -584,6 +584,13 @@ export const FairWizard = {
         if (!deliberada) {
             this.setVulnManualOverride(true);
         }
+        // Etapa 3: el Equilibrio de Nash es una CONTIENDA entre dos jugadores que eligen cuánto
+        // esfuerzo invertir. Sin adversario no hay contienda que resolver — un sismo no decide
+        // esforzarse más porque reforzaste el edificio — y además el cálculo exige attackerKey +
+        // defenseKey, que en este modo no existen: dejarlo visible sería ofrecer un botón que solo
+        // puede terminar en el aviso "completa el Paso 1".
+        const nash = document.getElementById('fair-nash-container');
+        if (nash) nash.classList.toggle('hidden', !deliberada);
         // applyLabels() vuelve a pintar vuln-header desde su diccionario, así que el texto
         // específico de "no deliberada" se aplica DESPUÉS, desde applyDeliberateThreatLabels —
         // que también se llama al final de applyLabels() para que sobreviva a un cambio de Modo
@@ -930,6 +937,14 @@ export const FairWizard = {
         // ninguna señal visible de que el dato de origen ya no correspondía al riesgo real.
         if (entry.attackerKey) document.getElementById('fair-attacker-profile').value = entry.attackerKey;
         if (entry.defenseKey) document.getElementById('fair-defense-profile').value = entry.defenseKey;
+        // Mismo trío que ya hace loadRiskIntoForm (el camino de borrador): sin esto, retomar un
+        // riesgo NO deliberado desde el Registro lo reabría como si tuviera adversario — con los
+        // perfiles a la vista y la Vulnerabilidad en automático, justo lo contrario de cómo se
+        // analizó. El checkbox no se restauraba en ningún punto de esta función.
+        const esDeliberada = this.inferDeliberateThreat(entry);
+        document.getElementById('fair-deliberate-threat').checked = esDeliberada;
+        document.getElementById('fair-deliberate-ponderation-container').classList.toggle('hidden', !esDeliberada);
+        this.applyDeliberateThreatMode();
         this.updateAttackerDefenseSummary();
 
         if (entry.tef) {
