@@ -1834,7 +1834,7 @@ export const FairWizard = {
         const detalle = culpables.length
             ? `Está en cero: <strong>${culpables.join('</strong>, <strong>')}</strong>.`
             : 'Revisa que Frecuencia, Vulnerabilidad y Magnitud de Pérdida tengan valores.';
-        el.innerHTML = `⚠️ La pérdida anual esperada dio <strong>$0</strong>, así que este análisis todavía no dice nada. ${detalle} Complétalo y vuelve a simular — si lo guardas así, el riesgo entra al Registro, al Pareto y a la matriz como si no costara nada.`;
+        el.innerHTML = `⚠️ La pérdida anual esperada dio <strong>$0</strong>, así que este análisis todavía no dice nada. ${detalle} Complétalo y vuelve a simular — si lo guardas así, este riesgo va a aparecer en el Registro y en la matriz como si no costara nada, y va a quedar hasta el final de las listas de prioridad.`;
         el.classList.remove('hidden');
     },
 
