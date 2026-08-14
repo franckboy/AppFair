@@ -147,6 +147,11 @@ function simulatePortfolio(risks, { iterations = PORTFOLIO_ITERATIONS, seed = PO
     // sigue cascadeSimulation.js: la compuerta de cascada ya decidió "ocurrió este año", y volver
     // a multiplicar por su lef_i descontaría la frecuencia dos veces (para un riesgo raro pero
     // severo eso subestima el aporte en órdenes de magnitud).
+    // Instantánea ANTES de añadir la cascada: sin ella no se pueden separar los dos efectos, que
+    // van en direcciones opuestas. Diversificar BAJA la cola; correlacionar la SUBE. Reportar solo
+    // la resta contra la suma los revuelve en un número que no mide ninguno de los dos.
+    const independentSummary = summarizeLosses(portfolioLosses);
+
     let cascadeAddedLoss = 0;
     if (hasCascade) {
         const cascadeRng = mulberry32(seed + 104729);
@@ -174,9 +179,14 @@ function simulatePortfolio(risks, { iterations = PORTFOLIO_ITERATIONS, seed = PO
     }
 
     const summary = summarizeLosses(portfolioLosses);
-    // Cuánto se estaba sobrestimando la cola con el método anterior. Es informativo, no un ajuste:
-    // deja ver el beneficio de diversificación que antes quedaba invisible.
-    const diversificationBenefit = sumOfIndividualCVaR - summary.cvar95;
+    // Los dos efectos, medidos por separado contra la MISMA referencia:
+    //   diversificationBenefit = cuánto sobrestimaba sumar colas (siempre >= 0)
+    //   correlationPenalty     = cuánto engorda la cola la correlación declarada (siempre >= 0)
+    // Antes esto era una sola resta contra la suma, que los revolvía: con cascada declarada, el
+    // "beneficio de diversificación" salía artificialmente bajo porque le habían restado la
+    // correlación sin decirlo.
+    const diversificationBenefit = sumOfIndividualCVaR - independentSummary.cvar95;
+    const correlationPenalty = summary.cvar95 - independentSummary.cvar95;
 
     return {
         summary,
@@ -186,6 +196,8 @@ function simulatePortfolio(risks, { iterations = PORTFOLIO_ITERATIONS, seed = PO
         skippedRiskNames: skipped.map((r) => r.riskName),
         sumOfIndividualCVaR,
         diversificationBenefit,
+        correlationPenalty,
+        independentCVaR: independentSummary.cvar95,
         cascadeEdgeCount: [...childrenOf.values()].reduce((n, c) => n + c.length, 0),
         cascadeAddedALE: cascadeAddedLoss / iterations,
     };

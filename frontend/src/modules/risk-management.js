@@ -141,6 +141,8 @@ export const RiskManagement = {
         }
         if (requestId !== this._portfolioMcRequestId || !data || !data.summary) return;
 
+        // Diversificación y correlación van en direcciones opuestas y se reportan por separado:
+        // juntarlas en una sola resta no mide ninguna de las dos.
         const ahorro = data.diversificationBenefit;
         const pct = data.sumOfIndividualCVaR > 0 ? (100 * ahorro) / data.sumOfIndividualCVaR : 0;
         const nota =
@@ -152,7 +154,7 @@ export const RiskManagement = {
         // cambia cómo se lee el número de arriba.
         const cascada =
             data.cascadeEdgeCount > 0
-                ? ` <span class="text-gray-600">Incluye ${data.cascadeEdgeCount} ${data.cascadeEdgeCount === 1 ? 'dependencia declarada' : 'dependencias declaradas'} en el Árbol de Cascada: esos riesgos caen juntos, y por eso diversifican menos.</span>`
+                ? ` <span class="text-gray-600">Incluye ${data.cascadeEdgeCount} ${data.cascadeEdgeCount === 1 ? 'dependencia declarada' : 'dependencias declaradas'} en el Árbol de Cascada, que suman ${formatCurrency(data.correlationPenalty)} a la cola: esos riesgos caen el mismo año.</span>`
                 : '';
         // Modo Simple prohíbe los acrónimos (ver simple-mode-no-jargon.spec.js): se dice lo mismo
         // en palabras. Los dos textos describen exactamente las mismas dos cifras.

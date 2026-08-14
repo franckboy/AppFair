@@ -2573,14 +2573,32 @@ test('simulatePortfolio: la correlación declarada ENGORDA la cola conjunta', ()
     assert.ok(con.cascadeAddedALE > 0, 'la cascada debe añadir pérdida esperada');
 });
 
-test('simulatePortfolio: la correlación REDUCE el beneficio de diversificación', () => {
-    // Riesgos acoplados diversifican menos que riesgos independientes — el resultado que hacía
-    // falta para no subestimar un portafolio con causas compartidas.
+test('simulatePortfolio: diversificación y correlación se miden POR SEPARADO, no revueltas', () => {
+    // Van en direcciones opuestas —diversificar baja la cola, correlacionar la sube— así que una
+    // sola resta contra la suma no mide ninguna de las dos. Bug real: con cascada declarada, el
+    // "beneficio de diversificación" salía artificialmente bajo porque le habían restado la
+    // correlación sin decirlo.
     const sin = simulatePortfolio([1, 2, 3, 4, 5].map((i) => makePortfolioRisk(`S${i}`)));
     const con = simulatePortfolio(makeCascadeFamilyPortfolio());
+
+    // La diversificación NO depende de que haya cascada: es el mismo portafolio independiente.
     assert.ok(
-        con.diversificationBenefit < sin.diversificationBenefit,
-        `acoplado ${con.diversificationBenefit.toFixed(0)} debería diversificar menos que independiente ${sin.diversificationBenefit.toFixed(0)}`,
+        Math.abs(con.diversificationBenefit - sin.diversificationBenefit) / sin.diversificationBenefit < 0.01,
+        `la diversificación no debería cambiar por declarar dependencias: ${con.diversificationBenefit.toFixed(0)} vs ${sin.diversificationBenefit.toFixed(0)}`,
+    );
+    // La correlación es un efecto aparte, y solo existe si hay aristas.
+    assert.strictEqual(sin.correlationPenalty, 0);
+    assert.ok(con.correlationPenalty > 0, 'con aristas declaradas la correlación debe engordar la cola');
+});
+
+test('simulatePortfolio: la descomposición cuadra exactamente', () => {
+    // suma - diversificación + correlación = conjunto final. Si no cuadra, alguno de los tres
+    // números está midiendo algo distinto de lo que dice su nombre.
+    const r = simulatePortfolio(makeCascadeFamilyPortfolio());
+    const reconstruido = r.sumOfIndividualCVaR - r.diversificationBenefit + r.correlationPenalty;
+    assert.ok(
+        Math.abs(reconstruido - r.summary.cvar95) < 0.01,
+        `${reconstruido.toFixed(2)} != ${r.summary.cvar95.toFixed(2)}`,
     );
 });
 
