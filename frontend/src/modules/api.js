@@ -135,6 +135,15 @@ export const Api = {
     hideBootGate() {
         document.querySelectorAll('.nav-requires-boot').forEach((btn) => (btn.disabled = false));
         document.getElementById('boot-gate').classList.add('hidden');
+        // Bug real: showBootGate() esconde #fairAnalysisPage, pero esto no la devolvía — al
+        // conectar, la app quedaba sin NINGUNA página visible hasta que el usuario tocara un botón
+        // de navegación. Se veía como una pantalla en blanco después de conectar, y de forma
+        // intermitente (según ganara la carrera entre el arranque y el primer render).
+        // switchPage es la única fuente de verdad de "qué página se ve": deja exactamente una
+        // visible y marca su botón, en vez de quitar el `hidden` a mano y arriesgar dos a la vez.
+        if (App.Navigation) App.Navigation.switchPage('fair');
+        // #risk-summary-bar no se destapa aquí: tiene su propia lógica (App.RiskSummaryBar.render
+        // la muestra solo si hay algo que resumir), y forzarla dejaría una barra vacía.
     },
 
     initConnectionUI() {
