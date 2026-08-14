@@ -17,7 +17,7 @@ const {
     pearsonCorrelation,
     buildLossExceedanceCurve,
 } = require('../src/lib/simulation');
-const { simulatePortfolio } = require('../src/lib/portfolioSimulation');
+const { simulatePortfolio, simulateResidualPortfolio, residualScaleFactor } = require('../src/lib/portfolioSimulation');
 const { spearmanCorrelation } = require('../src/lib/simulation');
 const {
     tullockSuccessProbability,
@@ -2489,6 +2489,113 @@ test('simulatePortfolio: el ALE del portafolio SÍ es la suma de los ALE individ
     assert.ok(
         Math.abs(cinco.summary.average - esperado) / esperado < 0.05,
         `esperaba ~${esperado.toFixed(0)}, dio ${cinco.summary.average.toFixed(0)}`,
+    );
+});
+
+// --- Portafolio RESIDUAL (después del Tratamiento adoptado) --------------------------------
+
+test('residualScaleFactor: k sale de residualALE/ale, sin casos especiales por estrategia', () => {
+    const base = { ale: 1000 };
+    // Sin decisión adoptada: el riesgo entra tal cual.
+    assert.strictEqual(residualScaleFactor({ ...base }), 1);
+    // Mitigar al 60% de reducción deja el 40%.
+    assert.strictEqual(
+        residualScaleFactor({ ...base, treatmentDecision: { strategy: 'mitigar', residualALE: 400 } }),
+        0.4,
+    );
+    // Evitar elimina el riesgo: k = 0.
+    assert.strictEqual(residualScaleFactor({ ...base, treatmentDecision: { strategy: 'evitar', residualALE: 0 } }), 0);
+    // Aceptar es una decisión documentada que NO cambia la exposición: k = 1.
+    assert.strictEqual(
+        residualScaleFactor({ ...base, treatmentDecision: { strategy: 'aceptar', residualALE: 1000 } }),
+        1,
+    );
+    // Transferir NO se escala: el deducible/límite trunca la cola, no la escala. Se simula sin
+    // tratamiento (conservador), en vez de inventar un factor que no representa la póliza.
+    assert.strictEqual(
+        residualScaleFactor({ ...base, treatmentDecision: { strategy: 'transferir', residualALE: 200 } }),
+        1,
+    );
+});
+
+test('simulateResidualPortfolio: escalar la Vulnerabilidad por k escala el ALE del portafolio por k', () => {
+    const risks = [1, 2, 3].map((i) =>
+        makePortfolioRisk(`R${i}`, {
+            ale: 1000,
+            treatmentDecision: { strategy: 'mitigar', residualALE: 250 }, // k = 0.25
+        }),
+    );
+    const actual = simulatePortfolio(risks);
+    const residual = simulateResidualPortfolio(risks);
+    // Escalar toda la distribución por una constante escala TODAS sus estadísticas por igual.
+    assert.ok(
+        Math.abs(residual.summary.average - actual.summary.average * 0.25) < actual.summary.average * 0.001,
+        `ALE residual ${residual.summary.average} debería ser ~0.25x del actual ${actual.summary.average}`,
+    );
+    assert.ok(
+        Math.abs(residual.summary.cvar95 - actual.summary.cvar95 * 0.25) < actual.summary.cvar95 * 0.001,
+        `la cola residual ${residual.summary.cvar95} debería escalar igual que la media`,
+    );
+    assert.strictEqual(residual.treatedCount, 3);
+});
+
+test('simulateResidualPortfolio: misma semilla que la corrida actual — el ahorro es exacto, no ruido', () => {
+    // Sin ningún tratamiento adoptado, las dos corridas deben dar EXACTAMENTE lo mismo. Si usaran
+    // semillas distintas, diferirían por ruido de muestreo y el "ahorro" nunca sería cero limpio.
+    const risks = [1, 2, 3].map((i) => makePortfolioRisk(`S${i}`));
+    const actual = simulatePortfolio(risks);
+    const residual = simulateResidualPortfolio(risks);
+    assert.strictEqual(residual.summary.average, actual.summary.average);
+    assert.strictEqual(residual.summary.cvar95, actual.summary.cvar95);
+    assert.strictEqual(residual.summary.p90, actual.summary.p90);
+    assert.strictEqual(residual.treatedCount, 0);
+});
+
+test('simulateResidualPortfolio: un riesgo Transferido entra SIN escalar y se reporta aparte', () => {
+    const risks = [
+        makePortfolioRisk('Mitigado', { ale: 1000, treatmentDecision: { strategy: 'mitigar', residualALE: 100 } }),
+        makePortfolioRisk('Asegurado', { ale: 1000, treatmentDecision: { strategy: 'transferir', residualALE: 100 } }),
+    ];
+    const residual = simulateResidualPortfolio(risks);
+    assert.deepStrictEqual(residual.nonScalableRiskNames, ['Asegurado']);
+    assert.strictEqual(residual.treatedCount, 2);
+
+    // El asegurado aporta lo mismo que si no se hubiera tratado: la cola conjunta residual no
+    // puede bajar tanto como si los dos se hubieran podido escalar.
+    const soloMitigado = simulateResidualPortfolio([risks[0]]);
+    assert.ok(residual.summary.average > soloMitigado.summary.average);
+});
+
+test('simulateResidualPortfolio: Evitar saca al riesgo de la cola conjunta', () => {
+    const risks = [
+        makePortfolioRisk('Queda'),
+        makePortfolioRisk('Evitado', { ale: 1000, treatmentDecision: { strategy: 'evitar', residualALE: 0 } }),
+    ];
+    const residual = simulateResidualPortfolio(risks);
+    const soloElQueQueda = simulatePortfolio([makePortfolioRisk('Queda')]);
+    assert.ok(
+        Math.abs(residual.summary.average - soloElQueQueda.summary.average) < soloElQueQueda.summary.average * 0.001,
+        'un riesgo evitado no debe aportar nada al portafolio residual',
+    );
+});
+
+test('simulateResidualPortfolio: el escalado también aplica a los riesgos con Perfil de Atacante/Defensa', () => {
+    // Sin esto, el tratamiento no tendría NINGÚN efecto sobre los riesgos con perfiles — que son
+    // la mayoría — porque su Vulnerabilidad no sale del triángulo sino del sampler calibrado.
+    const conPerfiles = (name, decision) =>
+        makePortfolioRisk(name, {
+            vulnManualOverride: false,
+            attackerKey: 'organizado',
+            defenseKey: 'basica',
+            dataConfidence: 'medio',
+            ale: 1000,
+            ...(decision ? { treatmentDecision: decision } : {}),
+        });
+    const sinTratar = simulatePortfolio([conPerfiles('X')]);
+    const tratado = simulateResidualPortfolio([conPerfiles('X', { strategy: 'mitigar', residualALE: 500 })]);
+    assert.ok(
+        Math.abs(tratado.summary.average - sinTratar.summary.average * 0.5) < sinTratar.summary.average * 0.001,
+        `con perfiles, k=0.5 debería dar la mitad: ${tratado.summary.average} vs ${sinTratar.summary.average}`,
     );
 });
 

@@ -2181,3 +2181,64 @@ test('GET /api/register/portfolio-simulation devuelve percentiles reales y el be
             .set('X-API-Key', TEST_API_KEY);
     }
 });
+
+test('GET /api/register/portfolio-simulation trae también el estado RESIDUAL y el ahorro en la cola', async () => {
+    const base = {
+        riskType: 'amenaza',
+        vulnManualOverride: true,
+        tef: { min: 1, mode: 2, max: 4 },
+        vuln: { min: 20, mode: 40, max: 60 },
+        lossMagnitudes: { respuesta: { min: 5000, mode: 20000, max: 60000 } },
+        ale: 20000,
+        cvar95: 50000,
+    };
+    const sinTratar = 'Portafolio Residual — Sin tratar';
+    const mitigado = 'Portafolio Residual — Mitigado';
+    const asegurado = 'Portafolio Residual — Asegurado';
+
+    await request(app)
+        .put(`/api/register/${encodeURIComponent(sinTratar)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send(base);
+    await request(app)
+        .put(`/api/register/${encodeURIComponent(mitigado)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            ...base,
+            // k = 5000/20000 = 0.25
+            treatmentDecision: { strategy: 'mitigar', residualALE: 5000, decidedAt: new Date().toISOString() },
+        });
+    await request(app)
+        .put(`/api/register/${encodeURIComponent(asegurado)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            ...base,
+            treatmentDecision: { strategy: 'transferir', residualALE: 5000, decidedAt: new Date().toISOString() },
+        });
+
+    const res = await request(app).get('/api/register/portfolio-simulation').set('X-API-Key', TEST_API_KEY);
+    assert.strictEqual(res.status, 200);
+    // El estado actual sigue en la raíz: agregar el residual no rompe a quien ya consumía la ruta.
+    assert.ok(res.body.summary.average > 0);
+
+    const residual = res.body.residual;
+    assert.ok(residual && residual.summary, 'la respuesta debe traer el estado residual');
+    assert.ok(residual.treatedCount >= 2, `esperaba al menos 2 tratados, dio ${residual.treatedCount}`);
+    // Transferir no se representa escalando: se reporta aparte para poder decirlo en pantalla.
+    assert.ok(residual.nonScalableRiskNames.includes(asegurado));
+
+    // Tratar encoge la cola conjunta, y el ahorro es la resta de dos corridas PAREADAS.
+    assert.ok(
+        residual.summary.cvar95 < res.body.summary.cvar95,
+        `la cola residual ${residual.summary.cvar95} debería ser menor que la actual ${res.body.summary.cvar95}`,
+    );
+    assert.strictEqual(residual.tailSavings, res.body.summary.cvar95 - residual.summary.cvar95);
+    assert.ok(residual.tailSavings > 0);
+    assert.ok(residual.evaluation && typeof residual.evaluation.level === 'string');
+
+    for (const riskName of [sinTratar, mitigado, asegurado]) {
+        await request(app)
+            .delete(`/api/register/${encodeURIComponent(riskName)}`)
+            .set('X-API-Key', TEST_API_KEY);
+    }
+});

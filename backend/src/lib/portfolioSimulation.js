@@ -60,16 +60,62 @@ function hasCompleteInputs(risk) {
 }
 
 /**
+ * Factor `k` con el que se escala la Vulnerabilidad de un riesgo para simular su estado RESIDUAL
+ * (después del Tratamiento adoptado). 1 = sin cambio.
+ *
+ * Se deriva de `residualALE / ale`, NO del `reductionPercent` del formulario de Mitigar: la
+ * decisión adoptada solo persiste el residual (ver treatmentDecision en routes/register.js), y
+ * derivarlo del residual es además autoconsistente con lo que de verdad se adoptó — no con lo que
+ * quedara escrito en el formulario después. Sale sin casos especiales para las cuatro estrategias:
+ * Evitar da 0, Aceptar da 1.
+ *
+ * Por qué escalar la Vulnerabilidad reproduce el residual: cada pérdida anual simulada es
+ * `LEF x Magnitud` con `LEF = TEF x Vulnerabilidad`, así que multiplicar la Vulnerabilidad por k
+ * multiplica cada una de las 10.000 pérdidas por k — y escalar una distribución entera por una
+ * constante escala TODAS sus estadísticas por igual (la media tanto como el promedio de la cola).
+ * Es el mismo argumento que ya justifica `residualCVaR = currentCVaR x (1 - reducción)` en
+ * lib/treatment.js.
+ *
+ * TRANSFERIR queda fuera a propósito (devuelve 1, es decir: se simula sin tratamiento). El
+ * deducible y el límite no son un escalado sino una TRUNCACIÓN de la cola escenario por escenario
+ * — una transformación no lineal, sin ningún k que la represente. Simularlo como si nada se
+ * hubiera hecho es conservador (nunca subestima), que es el mismo criterio que ya sigue la página
+ * de Tratamiento cuando no puede calcular el beneficio real de una póliza.
+ */
+function residualScaleFactor(risk) {
+    const decision = risk && risk.treatmentDecision;
+    if (!decision) return 1;
+    if (decision.strategy === 'transferir' || decision.strategy === 'mitigarTransferir') return 1;
+    if (!(risk.ale > 0)) return 1;
+    const k = decision.residualALE / risk.ale;
+    if (!Number.isFinite(k) || k < 0) return 1;
+    return Math.min(1, k);
+}
+
+/** Un tratamiento cuya cola NO se puede representar escalando (ver residualScaleFactor). */
+function isNonScalableTreatment(risk) {
+    const strategy = risk && risk.treatmentDecision && risk.treatmentDecision.strategy;
+    return strategy === 'transferir' || strategy === 'mitigarTransferir';
+}
+
+/**
  * @param {Array<Object>} risks Entradas del Registro (ver routes/register.js).
  * @param {Object} [options]
  * @param {number} [options.iterations=10000]
  * @param {number} [options.seed] Semilla base; fija por defecto para que el resultado sea
  *   reproducible entre corridas (una cifra de portafolio que baila sin que cambien los datos es
  *   imposible de auditar).
+ * @param {(risk:Object) => number} [options.scaleOf] Factor por el que se escala la Vulnerabilidad
+ *   de cada riesgo. Por defecto 1 (sin cambio): la corrida ACTUAL. `simulateResidualPortfolio` le
+ *   pasa residualScaleFactor para obtener el estado después del Tratamiento, con la MISMA semilla
+ *   — ver ahí por qué el pareo importa.
  * @returns {{summary:Object, lossExceedanceCurve:Array, includedCount:number, skippedCount:number,
  *   skippedRiskNames:string[], sumOfIndividualCVaR:number|null, diversificationBenefit:number|null}}
  */
-function simulatePortfolio(risks, { iterations = PORTFOLIO_ITERATIONS, seed = PORTFOLIO_BASE_SEED } = {}) {
+function simulatePortfolio(
+    risks,
+    { iterations = PORTFOLIO_ITERATIONS, seed = PORTFOLIO_BASE_SEED, scaleOf = () => 1 } = {},
+) {
     const threats = (risks || []).filter((r) => r && r.riskType !== 'oportunidad');
     const usable = threats.filter(hasCompleteInputs);
     const skipped = threats.filter((r) => !hasCompleteInputs(r));
@@ -118,13 +164,20 @@ function simulatePortfolio(risks, { iterations = PORTFOLIO_ITERATIONS, seed = PO
         // Semilla derivada por posición: reproducible, y distinta para cada riesgo (con la misma
         // semilla para todos, los riesgos quedarían perfectamente correlacionados por accidente y
         // el resultado sería idéntico a la suma que estamos corrigiendo).
+        // El escalado se aplica a los DOS caminos de Vulnerabilidad para que den lo mismo: al
+        // triángulo capturado a mano (que muestrea runMonteCarloSimulation) y a la salida del
+        // sampler calibrado por perfiles, si el riesgo tiene Atacante/Defensa. Escalar solo el
+        // triángulo dejaría sin efecto el tratamiento en todo riesgo con perfiles — que son la
+        // mayoría.
+        const k = scaleOf(risk);
+        const baseSampler = buildVulnSampler(risk);
         const { annualLosses, lefSamples, magnitudeSamples } = runMonteCarloSimulation({
             iterations,
             seed: seed + index * 7919,
             tef: risk.tef,
-            vuln: risk.vuln,
+            vuln: k === 1 ? risk.vuln : { min: risk.vuln.min * k, mode: risk.vuln.mode * k, max: risk.vuln.max * k },
             lossMagnitudes: risk.lossMagnitudes,
-            sampleVuln: buildVulnSampler(risk),
+            sampleVuln: baseSampler && k !== 1 ? (rng) => k * baseSampler(rng) : baseSampler,
         });
         for (let i = 0; i < iterations; i++) portfolioLosses[i] += annualLosses[i];
         sumOfIndividualCVaR += summarizeLosses(annualLosses).cvar95;
@@ -203,4 +256,39 @@ function simulatePortfolio(risks, { iterations = PORTFOLIO_ITERATIONS, seed = PO
     };
 }
 
-module.exports = { simulatePortfolio, PORTFOLIO_ITERATIONS, PORTFOLIO_BASE_SEED };
+/**
+ * Simulación conjunta del portafolio en su estado RESIDUAL: después del Tratamiento adoptado de
+ * cada riesgo. Los que no tienen decisión adoptada entran tal cual (k = 1), igual que hoy.
+ *
+ * MISMA SEMILLA que la corrida actual, y no es un detalle: es lo que convierte "cuánto ahorra el
+ * tratamiento" en una cifra exacta en vez de una estimación ruidosa. Con semillas distintas, la
+ * resta entre las dos colas mezclaría el efecto del tratamiento con ruido de muestreo (a 10.000
+ * iteraciones el error estándar ronda el 0,6% — suficiente para ensuciar un ahorro pequeño). Con
+ * la misma, las dos corridas quedan PAREADAS: cada iteración es el mismo "año posible" vivido con
+ * y sin tratamiento, y la diferencia es atribuible solo a la mitigación.
+ *
+ * El pareo es exacto, no aproximado: en getPertRandom (lib/random.js) escalar min/mode/max por k
+ * deja alpha y beta idénticos, así que el sorteo Beta subyacente es el MISMO y el resultado es
+ * exactamente k veces el original.
+ *
+ * @returns Lo mismo que simulatePortfolio, más `treatedCount` (cuántos riesgos traían una decisión
+ *   adoptada) y `nonScalableRiskNames` (los tratados con Transferir, que entran sin escalar porque
+ *   su cola no se puede representar con un factor — ver residualScaleFactor).
+ */
+function simulateResidualPortfolio(risks, options = {}) {
+    const threats = (risks || []).filter((r) => r && r.riskType !== 'oportunidad' && hasCompleteInputs(r));
+    const result = simulatePortfolio(risks, { ...options, scaleOf: residualScaleFactor });
+    return {
+        ...result,
+        treatedCount: threats.filter((r) => r.treatmentDecision).length,
+        nonScalableRiskNames: threats.filter(isNonScalableTreatment).map((r) => r.riskName),
+    };
+}
+
+module.exports = {
+    simulatePortfolio,
+    simulateResidualPortfolio,
+    residualScaleFactor,
+    PORTFOLIO_ITERATIONS,
+    PORTFOLIO_BASE_SEED,
+};

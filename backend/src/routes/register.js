@@ -15,7 +15,7 @@ const { defaultRiskCriteria } = require('../data/profiles');
 const { normalizeRiskCriteria, validateRiskCriteriaOverride } = require('../lib/riskCriteria');
 const { asyncHandler } = require('../middleware/asyncHandler');
 const { ACCESS_LEVELS, DEFAULT_ACCESS_LEVEL } = require('../lib/autocalc');
-const { simulatePortfolio, PORTFOLIO_ITERATIONS } = require('../lib/portfolioSimulation');
+const { simulatePortfolio, simulateResidualPortfolio, PORTFOLIO_ITERATIONS } = require('../lib/portfolioSimulation');
 
 // La app solo calcula en USD (ver la nota equivalente en simulate.js/assets.js).
 function makeCurrencyFormatter() {
@@ -122,15 +122,33 @@ function createRegisterRouter(store) {
         asyncHandler(async (req, res) => {
             const risks = (await store.get('riskRegister')) || [];
             const result = simulatePortfolio(risks);
+            // El estado RESIDUAL (después del Tratamiento adoptado) viaja en la MISMA respuesta, no
+            // en una llamada aparte: las dos cifras se muestran juntas ("ahorro en la cola"), y dos
+            // peticiones podrían intercalarse y dejar en pantalla un par que nunca existió — el
+            // mismo problema que ya obligó a poner guardianes de carrera en otras vistas.
+            const residual = simulateResidualPortfolio(risks);
             const criteria = normalizeRiskCriteria((await store.get('riskCriteria')) || defaultRiskCriteria);
 
             // Clasificación del portafolio contra los Criterios de Riesgo, con el MISMO evaluador
             // que clasifica un riesgo individual — nunca se reimplementan los umbrales aquí.
-            const evaluation = result.summary
-                ? evaluateFairThreat(result.summary.average, result.summary.cvar95, criteria, makeCurrencyFormatter())
-                : null;
+            const evaluar = (summary) =>
+                summary ? evaluateFairThreat(summary.average, summary.cvar95, criteria, makeCurrencyFormatter()) : null;
 
-            res.json({ ...result, evaluation, iterations: PORTFOLIO_ITERATIONS });
+            // El estado actual se devuelve en la RAÍZ (no anidado bajo `actual`) para no romper a
+            // quien ya consume esta ruta; el residual se agrega al lado.
+            res.json({
+                ...result,
+                evaluation: evaluar(result.summary),
+                iterations: PORTFOLIO_ITERATIONS,
+                residual: {
+                    ...residual,
+                    evaluation: evaluar(residual.summary),
+                    // Lo que el comité quiere ver de una: cuánto encoge la cola el tratamiento, ya
+                    // descontada la diversificación (ambas corridas son conjuntas y pareadas).
+                    tailSavings:
+                        result.summary && residual.summary ? result.summary.cvar95 - residual.summary.cvar95 : null,
+                },
+            });
         }),
     );
 
