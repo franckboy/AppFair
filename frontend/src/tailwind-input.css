@@ -156,19 +156,31 @@
   }
 
   .modal-overlay {
-    @apply fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50;
+    @apply fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4;
   }
+  /* Columna flex con tope de altura: el cuerpo es lo único que crece y hace scroll, así que el
+     título y los botones del footer SIEMPRE quedan visibles. Sin esto, un modal largo (ej.
+     Criterios de Riesgo) empujaba "Guardar" fuera de la pantalla y había que bajar el zoom del
+     navegador para llegar a él. */
   .modal-box {
-    @apply w-11/12 max-w-md rounded-lg bg-white p-6 shadow-xl;
+    @apply flex max-h-[90vh] w-11/12 max-w-md flex-col rounded-lg bg-white p-6 shadow-xl;
+  }
+  /* Para modales con tablas o rejillas de varias columnas (Gestionar Controles, Criterios de
+     Riesgo, los catálogos): con max-w-md los campos quedan tan angostos que no se puede leer ni
+     escribir en ellos. */
+  .modal-box.modal-box-wide {
+    @apply max-w-3xl;
   }
   .modal-title {
-    @apply mb-4 text-xl font-bold;
+    @apply mb-4 shrink-0 text-xl font-bold;
   }
+  /* min-h-0 es obligatorio: sin él, un hijo flex se niega a encogerse por debajo de su contenido
+     y overflow-y-auto nunca llega a activarse. */
   .modal-body {
-    @apply mb-6 text-gray-700;
+    @apply mb-6 min-h-0 flex-1 overflow-y-auto text-gray-700;
   }
   .modal-footer {
-    @apply flex justify-end space-x-4;
+    @apply flex shrink-0 justify-end space-x-4;
   }
 
   .toast {

@@ -901,18 +901,34 @@ export const FairRegister = {
                 // omite el botón en vez de mandar a una página que lo va a rechazar.
                 const treatBtn =
                     item.stage === 'fair' && item.fairEntry.riskType !== 'oportunidad'
-                        ? `<button class="btn btn-success text-xs ml-1" data-treat-fair title="Tratar este riesgo (Mitigar/Transferir/Evitar/Aceptar)"><i class="fas fa-shield-halved mr-1"></i>Tratar</button>`
+                        ? `<button class="btn btn-success text-xs px-2 py-1" data-treat-fair title="Tratar este riesgo (Mitigar/Transferir/Evitar/Aceptar)"><i class="fas fa-shield-halved mr-1"></i>Tratar</button>`
                         : '';
+                // "Simular" nunca se deshabilita, aunque al riesgo le falten los insumos guardados
+                // (tef/vuln/lossMagnitudes — entradas anteriores a que se persistieran). Un botón
+                // deshabilitado no responde al clic Y su `title` no se muestra en la mayoría de los
+                // navegadores, así que se veía exactamente igual que un botón roto. Ahora el clic
+                // llega a simulateRegisteredRisk(), que ya tiene la guarda y explica en un aviso
+                // qué hacer ("vuelve a correrlo desde Análisis FAIR").
+                //
+                // Los botones van dentro de un contenedor flex-nowrap: .btn es `display: flex`
+                // (caja de nivel bloque), así que sueltos en la celda cada uno ocupaba TODO el
+                // ancho y quedaban apilados uno sobre otro, ignorando cualquier margen lateral.
+                // `flex-nowrap` (y no flex-wrap) es lo que obliga a la columna a pedir el ancho
+                // que de verdad necesita: con wrap, la tabla se la seguía dando de 116px y los
+                // botones volvían a apilarse, solo que ahora por envoltura en vez de por bloque.
+                // El contenedor de la tabla ya tiene overflow-x-auto para el desborde.
                 const actionsCell =
                     item.stage === 'fair'
-                        ? `<button class="btn btn-primary text-xs" data-analyze-fair="${sanitizeHTML(item.fairEntry.riskName)}"><i class="fas fa-balance-scale mr-1"></i>Analizar</button>
-                    <button class="btn btn-secondary text-xs ml-1" data-simulate-risk="${sanitizeHTML(item.fairEntry.riskName)}" ${item.fairEntry.tef && item.fairEntry.vuln && item.fairEntry.lossMagnitudes ? '' : 'disabled title="Este riesgo se guardó antes de esta función — vuelve a correr su simulación desde Análisis FAIR para poder verla aquí."'}>
-                        <i class="fas fa-chart-bar mr-1"></i>Simular
-                    </button>
+                        ? `<div class="flex flex-nowrap items-center gap-1">
+                    <button class="btn btn-primary text-xs px-2 py-1" data-analyze-fair="${sanitizeHTML(item.fairEntry.riskName)}"><i class="fas fa-balance-scale mr-1"></i>Analizar</button>
+                    <button class="btn btn-secondary text-xs px-2 py-1" data-simulate-risk="${sanitizeHTML(item.fairEntry.riskName)}"><i class="fas fa-chart-bar mr-1"></i>Simular</button>
                     ${treatBtn}
-                    <button class="inline-flex items-center justify-center p-2 text-red-600 hover:text-red-800 text-sm ml-2" title="Eliminar riesgo" aria-label="Eliminar riesgo" data-delete-risk="${sanitizeHTML(item.fairEntry.riskName)}" data-delete-source-id="${item.id || ''}" data-delete-entry-id="${item.fairEntry.id || ''}"><i class="fas fa-trash"></i></button>`
-                        : `<button class="btn btn-primary text-xs" data-analyze-quick="${item.id}" ${item.fullData ? '' : 'disabled title="No se encontró la información completa de este riesgo."'}><i class="fas fa-balance-scale mr-1"></i>Analizar con FAIR</button>
-                    <button class="inline-flex items-center justify-center p-2 text-red-600 hover:text-red-800 text-sm ml-2" title="Eliminar riesgo" aria-label="Eliminar riesgo" data-delete-quick="${item.id}"><i class="fas fa-trash"></i></button>`;
+                    <button class="inline-flex items-center justify-center p-1 text-red-600 hover:text-red-800 text-sm" title="Eliminar riesgo" aria-label="Eliminar riesgo" data-delete-risk="${sanitizeHTML(item.fairEntry.riskName)}" data-delete-source-id="${item.id || ''}" data-delete-entry-id="${item.fairEntry.id || ''}"><i class="fas fa-trash"></i></button>
+                </div>`
+                        : `<div class="flex flex-nowrap items-center gap-1">
+                    <button class="btn btn-primary text-xs px-2 py-1" data-analyze-quick="${item.id}" ${item.fullData ? '' : 'disabled title="No se encontró la información completa de este riesgo."'}><i class="fas fa-balance-scale mr-1"></i>Analizar con FAIR</button>
+                    <button class="inline-flex items-center justify-center p-1 text-red-600 hover:text-red-800 text-sm" title="Eliminar riesgo" aria-label="Eliminar riesgo" data-delete-quick="${item.id}"><i class="fas fa-trash"></i></button>
+                </div>`;
 
                 return `
                 <tr class="border-b">

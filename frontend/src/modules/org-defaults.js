@@ -61,6 +61,7 @@ export const OrgDefaults = {
                 </div>
             </div>
         `;
+        Modal.setSize('wide');
         Modal.title.textContent = 'Valores por Defecto';
         Modal.body.innerHTML = formHTML;
         Modal.footer.innerHTML = `

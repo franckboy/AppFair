@@ -155,6 +155,7 @@ export const FairWizard = {
                 </div>
             </div>
         `;
+        Modal.setSize('wide');
         Modal.title.textContent = 'Criterios de Riesgo — Solo para este riesgo';
         Modal.body.innerHTML = formHTML;
         Modal.footer.innerHTML = `
@@ -1059,6 +1060,7 @@ export const FairWizard = {
             defaultPct[k] = k === 'respuesta' ? 100 : 0;
         });
 
+        Modal.setSize('wide');
         Modal.title.textContent = 'Distribuir el Impacto Estimado';
         Modal.body.innerHTML = `
             <p class="description-text mb-3">
@@ -1709,6 +1711,7 @@ export const FairWizard = {
         const contenedor = document.getElementById('fair-nash-container');
         if (!panel || !contenedor) return;
 
+        Modal.setSize('wide');
         Modal.title.textContent = '¿Qué esfuerzo le conviene poner a cada lado?';
         Modal.body.innerHTML = '';
         Modal.body.appendChild(panel);
