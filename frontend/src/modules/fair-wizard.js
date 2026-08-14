@@ -409,6 +409,9 @@ export const FairWizard = {
         document
             .getElementById('fair-deep-analysis-btn')
             .addEventListener('click', () => App.FairRegister.showDeepAnalysis('quick-concentrated-table-body'));
+        document.querySelectorAll('[data-dashboard-view]').forEach((btn) => {
+            btn.addEventListener('click', () => App.FairRegister.setDashboardView(btn.dataset.dashboardView));
+        });
         document.getElementById('fair-deep-analysis-close').addEventListener('click', () => {
             document.getElementById('fair-deep-analysis-panel').classList.add('hidden');
         });

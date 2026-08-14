@@ -573,21 +573,62 @@ export const FairRegister = {
         // Modo Simple prohíbe los acrónimos (ver simple-mode-no-jargon.spec.js): se dice lo mismo
         // en palabras. Las dos redacciones describen exactamente las mismas cifras.
         const simple = App.UIMode.mode === 'simple';
-        const fila = (etiqueta, valor, detalle) => `
-            <div class="flex justify-between items-baseline gap-3 py-1 border-b border-gray-200 last:border-0">
+        // `estado` marca a qué mitad de la comparación pertenece cada fila, para que el interruptor
+        // del Dashboard atenúe la que no se está mirando (ver renderDashboardViewControls). Sin
+        // marca = siempre a plena opacidad (las notas que valen para los dos estados).
+        const fila = (etiqueta, valor, detalle, estado) => `
+            <div class="flex justify-between items-baseline gap-3 py-1 border-b border-gray-200 last:border-0"${
+                estado ? ` data-portfolio-state="${estado}"` : ''
+            }>
                 <span>${etiqueta}</span>
                 <strong class="whitespace-nowrap">${valor}</strong>
             </div>
             ${detalle ? `<p class="text-xs text-gray-500 mb-2">${detalle}</p>` : ''}`;
 
+        const res = data.residual;
         const filas = [
             fila(
                 simple ? 'En el 5% de años peores perderías, en promedio' : 'CVaR95 del portafolio',
                 formatCurrency(data.summary.cvar95),
                 `Simulando ${data.includedCount} ${data.includedCount === 1 ? 'amenaza' : 'amenazas'} a la vez.`,
+                'actual',
             ),
-            fila(simple ? '1 de cada 10 años pasaría de' : 'p90 del portafolio', formatCurrency(data.summary.p90)),
+            fila(
+                simple ? '1 de cada 10 años pasaría de' : 'p90 del portafolio',
+                formatCurrency(data.summary.p90),
+                '',
+                'actual',
+            ),
         ];
+
+        // Cifras duales: el estado actual y el residual, frente a frente. No se esconde ninguna con
+        // el interruptor — comparar es el punto — solo se atenúa la que no se está mirando.
+        // Las dos corridas usan la MISMA semilla, así que la resta es el efecto del tratamiento y
+        // no ruido de muestreo (ver simulateResidualPortfolio en el backend).
+        if (res && res.summary && res.treatedCount > 0) {
+            filas.push(
+                fila(
+                    simple ? 'Lo mismo, pero después de tratar' : 'CVaR95 del portafolio, después de tratar',
+                    formatCurrency(res.summary.cvar95),
+                    `Con las estrategias ya adoptadas en ${res.treatedCount} ${
+                        res.treatedCount === 1 ? 'riesgo' : 'riesgos'
+                    }.`,
+                    'residual',
+                ),
+            );
+            if (res.tailSavings > 0) {
+                filas.push(
+                    fila(
+                        simple ? 'Lo que te ahorra tratarlos, en los años malos' : 'Ahorro en la cola',
+                        formatCurrency(res.tailSavings),
+                        res.nonScalableRiskNames && res.nonScalableRiskNames.length > 0
+                            ? `No incluye ${res.nonScalableRiskNames.length} con seguro: un deducible y un límite recortan las pérdidas más grandes en vez de reducirlas de forma pareja, así que su efecto no se puede simular con estos datos.`
+                            : '',
+                        'residual',
+                    ),
+                );
+            }
+        }
 
         // Diversificación y correlación van en direcciones opuestas y se reportan por separado:
         // juntarlas en una sola resta contra la suma no mide ninguna de las dos.
@@ -599,6 +640,7 @@ export const FairRegister = {
                     simple ? 'Menos de lo que daría sumarlos por separado' : 'Beneficio de diversificación',
                     `${formatCurrency(data.diversificationBenefit)} (${pct.toFixed(0)}%)`,
                     'Porque no todos los riesgos ocurren el mismo año.',
+                    'actual',
                 ),
             );
         }
@@ -608,6 +650,7 @@ export const FairRegister = {
                     simple ? 'Suma de más porque unos riesgos arrastran a otros' : 'Penalización por correlación',
                     formatCurrency(data.correlationPenalty),
                     `${data.cascadeEdgeCount} ${data.cascadeEdgeCount === 1 ? 'dependencia declarada' : 'dependencias declaradas'} en el Árbol: esos riesgos caen el mismo año.`,
+                    'actual',
                 ),
             );
         }
@@ -617,6 +660,9 @@ export const FairRegister = {
             (data.skippedCount > 0
                 ? `<p class="text-xs text-gray-500 mt-2">${data.skippedCount} sin datos suficientes para simular.</p>`
                 : '');
+        // El bloque se acaba de repintar: hay que volver a aplicar la atenuación del estado que no
+        // se está mirando, o las filas nuevas saldrían todas a plena opacidad.
+        this.renderDashboardViewControls();
     },
 
     renderRiskRegister() {
@@ -643,6 +689,7 @@ export const FairRegister = {
 
         this.renderPortfolioInterpretation(register);
         this.renderPortfolioMonteCarlo();
+        this.renderDashboardViewControls();
 
         // El mapa de calor (Impacto vs. Probabilidad de excedencia) y sus zonas
         // Bajo/Medio/Alto/Crítico son conceptos de AMENAZA — para una 'oportunidad'
@@ -970,6 +1017,9 @@ export const FairRegister = {
     // Inherente/Residual/Categoría, por RRt%) como las del Registro (Etapa/CVaR/Evaluación, por
     // FAIR) — ningún dato se pierde al fusionar las dos tablas que existían antes por separado.
     renderConcentratedTable(list) {
+        // Qué columna se está mirando (ver setDashboardView). Se atenúa la otra en vez de
+        // esconderla: las dos siguen ahí para comparar de un vistazo.
+        const vistaResidual = state.fair.dashboardView === 'residual';
         const fmt = (v) =>
             new Intl.NumberFormat('en-US', {
                 style: 'currency',
@@ -1135,8 +1185,8 @@ export const FairRegister = {
                     <td>${stageBadge}${treatedBadge}${staleBadge}</td>
                     <td>${inherenteCell}</td>
                     <td>${item.controlEffectiveness || '—'}</td>
-                    <td>${actualCell}</td>
-                    <td>${residualCell}</td>
+                    <td class="${vistaResidual ? 'opacity-40' : 'font-semibold'}">${actualCell}</td>
+                    <td class="${vistaResidual ? 'font-semibold' : 'opacity-40'}">${residualCell}</td>
                     <td>${sanitizeHTML(item.asset)}</td>
                     <td>${cvarCell}</td>
                     <td>${evalCell}</td>
@@ -1350,9 +1400,79 @@ export const FairRegister = {
 
     // El Pareto 80-20 (ordenado, con % acumulado) ya viene calculado del backend
     // (GET /api/register → pareto) — aquí solo se dibuja.
+    /**
+     * Interruptor Actual / Residual del Dashboard.
+     *
+     * Gobierna el Pareto y la columna resaltada de la tabla. NO gobierna la Matriz ni el Monte
+     * Carlo: esos muestran siempre los dos estados (una flecha y dos cifras, respectivamente),
+     * porque comparar es su razón de ser — pero atenúan el estado no seleccionado, para que el
+     * interruptor no se vea inerte en media pantalla.
+     *
+     * El Pareto sí cambia entero, y no por gusto: el residual responde una pregunta DISTINTA
+     * ("qué sigue concentrando la exposición después de tratar") y sale en OTRO ORDEN. Superponer
+     * los dos en barras dobles obligaría a ordenar por uno y distorsionaría el otro.
+     */
+    setDashboardView(view) {
+        state.fair.dashboardView = view === 'residual' ? 'residual' : 'actual';
+        this.renderDashboardViewControls();
+        this.renderParetoChart();
+        this.renderConcentratedTable(state.fair.concentratedRisks || []);
+    },
+
+    renderDashboardViewControls() {
+        const activo = state.fair.dashboardView;
+        const toggle = document.getElementById('dashboard-state-toggle');
+        if (toggle) toggle.classList.toggle('hidden', (state.fair.riskRegister || []).length === 0);
+        [
+            ['dashboard-view-actual', 'actual'],
+            ['dashboard-view-residual', 'residual'],
+        ].forEach(([id, view]) => {
+            const btn = document.getElementById(id);
+            if (!btn) return;
+            const on = activo === view;
+            btn.classList.toggle('bg-blue-600', on);
+            btn.classList.toggle('text-white', on);
+            btn.classList.toggle('bg-white', !on);
+            btn.classList.toggle('text-gray-700', !on);
+            btn.setAttribute('aria-pressed', String(on));
+        });
+        // Atenuar en la Matriz y en el Monte Carlo el estado que no se está mirando. No se ocultan:
+        // siguen ahí para comparar, solo pierden protagonismo.
+        const chart = state.fair.registerChart;
+        if (chart && chart.data.datasets.length > 1) {
+            const residual = activo === 'residual';
+            chart.data.datasets[0].pointBorderColor = residual ? 'rgba(255,255,255,0.35)' : 'white';
+            chart.data.datasets[1].pointBorderColor = residual ? '#16a34a' : 'rgba(22,163,74,0.35)';
+            chart.update('none');
+        }
+        document.querySelectorAll('[data-portfolio-state]').forEach((el) => {
+            el.classList.toggle('opacity-40', el.dataset.portfolioState !== activo);
+        });
+    },
+
     renderParetoChart() {
-        const pareto = state.fair.registerPareto;
-        if (!pareto) return;
+        // El Pareto residual viene del backend con su PROPIO ordenamiento (ver
+        // calculateResidualParetoAnalysis): responde "qué sigue concentrando la exposición después
+        // de tratar", no "dónde enfocar el esfuerzo antes de decidir nada". Un riesgo puede ser el
+        // primero en uno y el quinto en el otro — ése es justo el hallazgo útil, y por eso el
+        // interruptor cambia el gráfico entero en vez de superponer barras dobles.
+        const residual = state.fair.dashboardView === 'residual';
+        const fuente = residual ? state.fair.registerResidualPareto : state.fair.registerPareto;
+        if (!fuente) return;
+        // Las dos fuentes traen el monto en campos distintos (`ale` vs `residualALE`) — a propósito,
+        // para que no se puedan confundir. Se normalizan aquí, en un solo sitio.
+        const pareto = {
+            ...fuente,
+            risks: (fuente.risks || []).map((r) => ({ ...r, valor: residual ? r.residualALE : r.ale })),
+        };
+
+        const nota = document.getElementById('fair-pareto-state-note');
+        if (nota) {
+            nota.textContent = residual
+                ? 'Después de aplicar los tratamientos ya adoptados.'
+                : 'Como está hoy, antes de tratar.';
+            nota.className = `text-sm font-semibold mb-1 ${residual ? 'text-green-700' : 'text-red-700'}`;
+        }
 
         document.getElementById('fair-pareto-summary').textContent =
             `${pareto.riskCountFor80Percent} de ${pareto.totalRiskCount} riesgo(s) concentran el 80% de tu exposición total (${formatCurrency(pareto.totalExposure)}/año). Prioriza el tratamiento en esos primero.`;
@@ -1383,7 +1503,7 @@ export const FairRegister = {
                     {
                         type: 'bar',
                         label: 'Pérdida Anual Esperada',
-                        data: pareto.risks.map((r) => r.ale),
+                        data: pareto.risks.map((r) => r.valor),
                         backgroundColor: 'rgba(124, 58, 237, 0.6)',
                         yAxisID: 'y',
                         // Sin esto, con pocos riesgos guardados (1-3) cada barra se estira para
