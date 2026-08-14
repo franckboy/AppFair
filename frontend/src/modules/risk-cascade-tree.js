@@ -746,6 +746,7 @@ export const RiskCascadeTree = {
             </tr>`;
 
         const render = () => {
+            Modal.setSize('wide');
             Modal.title.textContent = 'Cambiar Riesgo Desencadenante';
             Modal.body.innerHTML = `
                 <p class="description-text mb-3">

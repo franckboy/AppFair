@@ -175,6 +175,7 @@ export const Criteria = {
                 </div>
             </div>
         `;
+        Modal.setSize('wide');
         Modal.title.textContent = 'Criterios de Riesgo (Contexto)';
         Modal.body.innerHTML = formHTML;
         Modal.footer.innerHTML = `

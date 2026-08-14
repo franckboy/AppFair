@@ -307,6 +307,7 @@ export const Treatment = {
             </tr>`;
 
         const render = () => {
+            Modal.setSize('wide');
             Modal.title.textContent = 'Gestionar Controles';
             Modal.body.innerHTML = `
                 <p class="description-text mb-3">
