@@ -109,6 +109,45 @@ function pearsonCorrelation(x, y) {
  * influye cada variable de entrada en el resultado final, medido por su
  * correlación de Pearson contra las pérdidas simuladas.
  */
+/**
+ * Correlación de rangos de Spearman: Pearson aplicado a los RANGOS en vez de a los valores.
+ *
+ * Se usa en vez de Pearson porque este modelo no es lineal y Pearson solo mide relación lineal.
+ * Tullock con m=6,8254 es fuertemente convexo, y la Magnitud de Pérdida es lognormal con cola
+ * pesada: unos pocos sorteos enormes de magnitud dominan la covarianza y aplastan el peso aparente
+ * de los demás factores. Medido sobre el modelo real, Pearson subestimaba la Frecuencia y la
+ * Vulnerabilidad a la MITAD:
+ *
+ *      variable          Pearson    Spearman
+ *      Frecuencia          0,244      0,367
+ *      Vulnerabilidad      0,323      0,496
+ *      Magnitud            0,841      0,753
+ *
+ * Spearman es robusto a cualquier relación MONÓTONA, sea lineal o no, que es exactamente el caso:
+ * más frecuencia siempre implica más pérdida, aunque no de forma proporcional. No captura
+ * interacciones entre factores (para eso harían falta índices de Sobol, con su propio diseño
+ * muestral); si algún día la varianza sin explicar lo justifica, ese es el siguiente paso.
+ */
+function rankOf(values) {
+    const indexed = values.map((v, i) => [v, i]).sort((a, b) => a[0] - b[0]);
+    const ranks = new Array(values.length);
+    // Rangos promediados en los empates — sin esto, valores idénticos recibirían rangos
+    // arbitrarios según el orden de llegada y la correlación dependería del muestreo.
+    let i = 0;
+    while (i < indexed.length) {
+        let j = i;
+        while (j + 1 < indexed.length && indexed[j + 1][0] === indexed[i][0]) j++;
+        const promedio = (i + j) / 2;
+        for (let k = i; k <= j; k++) ranks[indexed[k][1]] = promedio;
+        i = j + 1;
+    }
+    return ranks;
+}
+
+function spearmanCorrelation(x, y) {
+    return pearsonCorrelation(rankOf(x), rankOf(y));
+}
+
 function calculateSensitivity(losses, tefSamples, vulnSamples, lmSamples, activeKeys) {
     // key es el identificador estable que usa el frontend para traducir el nombre a Modo
     // Simple/Técnico (ver LOSS_FORM_LABELS y SENSITIVITY_LABELS en app_fair.html) — name se
@@ -126,7 +165,7 @@ function calculateSensitivity(losses, tefSamples, vulnSamples, lmSamples, active
     const results = factors.map((f) => ({
         key: f.key,
         name: f.name,
-        correlation: pearsonCorrelation(f.values, losses),
+        correlation: spearmanCorrelation(f.values, losses),
     }));
     results.sort((a, b) => Math.abs(b.correlation) - Math.abs(a.correlation));
     return results;
@@ -145,6 +184,18 @@ function summarizeLosses(losses, exceedanceThreshold) {
     const sum = sorted.reduce((a, b) => a + b, 0);
     const avg = sum / n;
 
+    // Error estándar de la media: cuánta incertidumbre queda por usar 10.000 iteraciones en vez de
+    // infinitas. Se REPORTA, no se usa como criterio de parada: la app fija la semilla a propósito
+    // para que un resultado sea reproducible y auditable, y un corte dinámico rompería eso — dos
+    // corridas con los mismos datos pararían en N distintos y darían cifras distintas.
+    //
+    // `standardErrorPercent` (error relativo) es el número accionable: por debajo del ~1% las
+    // iteraciones sobran para decidir; por encima del ~5% el ALE todavía baila lo bastante como
+    // para que convenga subirlas antes de sustentar una decisión con él.
+    const variance = sorted.reduce((acc, v) => acc + (v - avg) * (v - avg), 0) / (n > 1 ? n - 1 : 1);
+    const standardError = Math.sqrt(variance / n);
+    const standardErrorPercent = avg > 0 ? (standardError / avg) * 100 : 0;
+
     const median = n % 2 === 0 ? (sorted[n / 2 - 1] + sorted[n / 2]) / 2 : sorted[Math.floor(n / 2)];
 
     const min = sorted[0];
@@ -160,7 +211,18 @@ function summarizeLosses(losses, exceedanceThreshold) {
         probExceedance = (sorted.filter((l) => l > exceedanceThreshold).length / n) * 100;
     }
 
-    return { average: avg, median, min, max, p90, cvar95, probExceedance, iterations: n };
+    return {
+        average: avg,
+        median,
+        min,
+        max,
+        p90,
+        cvar95,
+        probExceedance,
+        standardError,
+        standardErrorPercent,
+        iterations: n,
+    };
 }
 
 // Escalera de probabilidades de excedencia para la Curva de Excedencia de Pérdidas, en %.
@@ -209,6 +271,7 @@ module.exports = {
     calculateSensitivity,
     summarizeLosses,
     pearsonCorrelation,
+    spearmanCorrelation,
     buildLossExceedanceCurve,
     LEC_EXCEEDANCE_PROBABILITIES,
 };

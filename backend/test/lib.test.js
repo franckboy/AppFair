@@ -18,6 +18,7 @@ const {
     buildLossExceedanceCurve,
 } = require('../src/lib/simulation');
 const { simulatePortfolio } = require('../src/lib/portfolioSimulation');
+const { spearmanCorrelation } = require('../src/lib/simulation');
 const {
     tullockSuccessProbability,
     attackerContestStrength,
@@ -2642,4 +2643,55 @@ test('simulatePortfolio: una arista hacia un riesgo ausente del portafolio se ig
 test('simulatePortfolio: sigue siendo reproducible con cascada declarada', () => {
     const risks = makeCascadeFamilyPortfolio();
     assert.strictEqual(simulatePortfolio(risks).summary.cvar95, simulatePortfolio(risks).summary.cvar95);
+});
+
+// --- Sensibilidad por rangos y error estándar --------------------------------------------------
+test('spearmanCorrelation: capta una relación monótona NO lineal que Pearson subestima', () => {
+    // El caso real del modelo: Tullock con m=6,83 es muy convexo y la magnitud es lognormal con
+    // cola pesada, así que Pearson (que solo mide relación lineal) aplastaba el peso aparente de
+    // la Frecuencia y la Vulnerabilidad a la mitad.
+    const x = [];
+    const y = [];
+    for (let i = 1; i <= 500; i++) {
+        x.push(i);
+        y.push(Math.pow(i, 7)); // monótona perfecta, brutalmente no lineal
+    }
+    assert.ok(Math.abs(spearmanCorrelation(x, y) - 1) < 1e-9, 'Spearman debe dar 1 en una monótona perfecta');
+    assert.ok(pearsonCorrelation(x, y) < 0.9, 'Pearson se queda corto en la misma relación');
+});
+
+test('spearmanCorrelation: promedia los rangos en los empates', () => {
+    // Sin promediar, valores idénticos recibirían rangos arbitrarios según el orden de llegada y
+    // la correlación dependería del muestreo en vez de los datos.
+    const conEmpates = [5, 5, 5, 1, 9];
+    const otro = [1, 2, 3, 4, 5];
+    assert.strictEqual(spearmanCorrelation(conEmpates, otro), spearmanCorrelation([...conEmpates], [...otro]));
+    assert.ok(Number.isFinite(spearmanCorrelation(conEmpates, otro)));
+});
+
+test('summarizeLosses: el error estándar decrece como 1/raíz(N)', () => {
+    // Es el número que dice si 10.000 iteraciones alcanzan. Se REPORTA, no se usa para parar: la
+    // semilla es fija a propósito para que el resultado sea reproducible y auditable.
+    const correr = (n) =>
+        summarizeLosses(
+            runMonteCarloSimulation({
+                iterations: n,
+                seed: 42,
+                tef: { min: 1, mode: 2, max: 4 },
+                vuln: { min: 10, mode: 30, max: 70 },
+                lossMagnitudes: { respuesta: { min: 5000, mode: 20000, max: 60000 } },
+            }).annualLosses,
+        );
+    const mil = correr(1000).standardErrorPercent;
+    const diezMil = correr(10000).standardErrorPercent;
+    assert.ok(diezMil < mil, `${diezMil} debería ser menor que ${mil}`);
+    // 10x más iteraciones => ~raíz(10) ≈ 3,16x menos error. Margen amplio por el ruido del muestreo.
+    const ratio = mil / diezMil;
+    assert.ok(ratio > 2 && ratio < 5, `esperaba una razón cercana a 3,16, dio ${ratio.toFixed(2)}`);
+});
+
+test('summarizeLosses: un portafolio sin pérdida no divide por cero al calcular el error relativo', () => {
+    const s = summarizeLosses([0, 0, 0, 0]);
+    assert.strictEqual(s.standardErrorPercent, 0);
+    assert.ok(Number.isFinite(s.standardError));
 });
