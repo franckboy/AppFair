@@ -9,6 +9,18 @@ import { debounce, formatCurrency, getSafeNumber, sanitizeHTML, shortMetricLabel
 // agregada (la más débil presente), sin inventar una fórmula numérica nueva.
 const RELIABILITY_ORDER = ['baja', 'media', 'alta'];
 
+/**
+ * Tope de daño por evento tal como está en pantalla. Devuelve null —no 0— cuando el campo está
+ * vacío: getSafeNumber daría 0, y un tope de 0 diría "ningún evento cuesta nada", que es lo
+ * contrario de "no hay contención declarada".
+ */
+function readDamageCap() {
+    const el = document.getElementById('fair-mitigar-tope-dano');
+    if (!el || el.value.trim() === '') return null;
+    const n = Number(el.value);
+    return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 // Texto de Fiabilidad + advertencia para la combinación Mitigar+Transferir — no tiene una única
 // Fiabilidad (trae mitigarReliability/transferirReliability, ver evaluateMitigarConTransferir en
 // el backend), a diferencia de las otras 4 estrategias (una sola stratData.reliability). Aparte
@@ -97,6 +109,12 @@ export const Treatment = {
         document
             .getElementById('fair-mitigar-defensa-objetivo')
             .addEventListener('change', () => this.updateReduccionALEAuto());
+        // El tope de daño NO basta con repintarlo: cambia el residual REAL, así que tiene que
+        // volver a correr la simulación igual que el Nivel de Defensa Objetivo. Con debounce
+        // propio porque se escribe dígito a dígito y cada corrida son 10.000 iteraciones.
+        const debouncedTope = debounce(() => this.updateReduccionALEAuto(), 500);
+        this._pendingSaves.push(debouncedTope);
+        document.getElementById('fair-mitigar-tope-dano').addEventListener('input', debouncedTope);
         document
             .getElementById('treatment-manage-controls-btn')
             .addEventListener('click', () => this.openControlsModal());
@@ -293,6 +311,9 @@ export const Treatment = {
         document.getElementById('fair-reduccionALE').value = mitigar.reductionPercent || 0;
         document.getElementById('fair-mitigar-fiabilidad').value = mitigar.reliability || 'media';
         document.getElementById('fair-mitigar-retraso').value = mitigar.delayDays || 0;
+        // Vacío (no 0) cuando no hay tope: 0 significaría "ningún evento cuesta nada".
+        document.getElementById('fair-mitigar-tope-dano').value =
+            typeof mitigar.damageCap === 'number' && mitigar.damageCap > 0 ? mitigar.damageCap : '';
         document.getElementById('fair-mitigar-defensa-objetivo').value = 'basica';
 
         // Controles nombrados de Mitigar (ver openControlsModal/applyControlsAggregation más
@@ -522,6 +543,12 @@ export const Treatment = {
                     currentALE: entry.ale,
                     tef: entry.tef,
                     lossMagnitudes: entry.lossMagnitudes,
+                    accessLevel: entry.accessLevel,
+                    // Las dos palancas viajan juntas para que el backend las componga en UNA sola
+                    // corrida: subir la defensa (prevenir) y el tope por evento (contener).
+                    // Componerlas por separado y multiplicar sería válido para prevenir —que
+                    // escala— pero no para contener, que trunca.
+                    damageCap: readDamageCap(),
                 },
             });
         } catch (err) {
@@ -596,6 +623,9 @@ export const Treatment = {
             // manual o antes del primer autocálculo (ver evaluateTreatmentStrategies).
             residualALE: state.treatment.mitigarResidualALE,
             residualCVaR: state.treatment.mitigarResidualCVaR,
+            // Tope de daño por evento (contención). null = sin tope; el campo vacío da 0 en
+            // getSafeNumber, y 0 no significa "sin contención" sino "ningún evento cuesta nada".
+            damageCap: readDamageCap(),
             reliability: document.getElementById('fair-mitigar-fiabilidad').value,
             delayDays: getSafeNumber(document.getElementById('fair-mitigar-retraso')),
             // Controles nombrados (ver openControlsModal/applyControlsAggregation) — [] si este

@@ -2494,6 +2494,76 @@ test('simulatePortfolio: el ALE del portafolio SÍ es la suma de los ALE individ
     );
 });
 
+// --- Tope de daño por evento (contención) --------------------------------------------------
+
+// Cola larga a propósito: el máximo es 40x la moda, así que unos pocos escenarios dominan la cola.
+// Es el caso donde contener y prevenir se distinguen de verdad.
+const RIESGO_COLA_GORDA = {
+    iterations: 20000,
+    seed: 4242,
+    tef: { min: 1, mode: 2, max: 4 },
+    vuln: { min: 20, mode: 40, max: 60 },
+    lossMagnitudes: { respuesta: { min: 5000, mode: 25000, max: 1000000 } },
+};
+
+test('el tope de daño CAMBIA la forma de la cola; reducir la Vulnerabilidad solo la escala', () => {
+    const base = summarizeLosses(runMonteCarloSimulation(RIESGO_COLA_GORDA).annualLosses);
+
+    // PREVENIR: la misma Vulnerabilidad reducida a la mitad. Escala TODA la distribución.
+    const prevenido = summarizeLosses(
+        runMonteCarloSimulation({ ...RIESGO_COLA_GORDA, vuln: { min: 10, mode: 20, max: 30 } }).annualLosses,
+    );
+    // CONTENER: un tope que recorta los peores escenarios y deja los demás intactos.
+    const contenido = summarizeLosses(
+        runMonteCarloSimulation({ ...RIESGO_COLA_GORDA, magnitudeCap: 60000 }).annualLosses,
+    );
+
+    const razon = (r) => r.cvar95 / r.average;
+    // La firma de la prevención: la razón cola/media NO se mueve — queda congelada. Ésta es
+    // exactamente la limitación que el tope viene a resolver.
+    assert.ok(
+        Math.abs(razon(prevenido) - razon(base)) < razon(base) * 0.02,
+        `prevenir no debe cambiar la razón cola/media: ${razon(base).toFixed(3)} -> ${razon(prevenido).toFixed(3)}`,
+    );
+    // La firma de la contención: la razón cola/media BAJA — la cola se aplana de verdad.
+    assert.ok(
+        razon(contenido) < razon(base) * 0.9,
+        `contener debe aplanar la cola: ${razon(base).toFixed(3)} -> ${razon(contenido).toFixed(3)}`,
+    );
+});
+
+test('el tope baja el CVaR MÁS que el ALE — justo lo que hace un control de contención', () => {
+    const base = summarizeLosses(runMonteCarloSimulation(RIESGO_COLA_GORDA).annualLosses);
+    const contenido = summarizeLosses(
+        runMonteCarloSimulation({ ...RIESGO_COLA_GORDA, magnitudeCap: 60000 }).annualLosses,
+    );
+    const caidaALE = 1 - contenido.average / base.average;
+    const caidaCVaR = 1 - contenido.cvar95 / base.cvar95;
+    assert.ok(
+        caidaCVaR > caidaALE,
+        `el CVaR debe caer más que el ALE: ALE -${(caidaALE * 100).toFixed(1)}%, CVaR -${(caidaCVaR * 100).toFixed(1)}%`,
+    );
+});
+
+test('sin tope (o con tope inválido) el resultado es idéntico bit a bit al de siempre', () => {
+    const sinTope = runMonteCarloSimulation(RIESGO_COLA_GORDA).annualLosses;
+    // "Sin contención" se dice OMITIENDO el tope. Un 0 no significa "ningún evento cuesta nada".
+    [undefined, null, 0, -100, NaN].forEach((cap) => {
+        const conCap = runMonteCarloSimulation({ ...RIESGO_COLA_GORDA, magnitudeCap: cap }).annualLosses;
+        assert.deepStrictEqual(conCap, sinTope, `magnitudeCap=${cap} no debería cambiar nada`);
+    });
+});
+
+test('un tope por encima del peor escenario no cambia nada; uno muy bajo aplana casi toda la cola', () => {
+    const base = runMonteCarloSimulation(RIESGO_COLA_GORDA);
+    const peorMagnitud = Math.max(...base.magnitudeSamples);
+    const inocuo = runMonteCarloSimulation({ ...RIESGO_COLA_GORDA, magnitudeCap: peorMagnitud * 2 });
+    assert.deepStrictEqual(inocuo.annualLosses, base.annualLosses);
+
+    const duro = summarizeLosses(runMonteCarloSimulation({ ...RIESGO_COLA_GORDA, magnitudeCap: 10000 }).annualLosses);
+    assert.ok(duro.cvar95 < summarizeLosses(base.annualLosses).cvar95 / 3);
+});
+
 // --- Punto residual en la Matriz (destino de la flecha de migración) -----------------------
 
 const CRITERIOS = { aleCritico: 100000, aleUmbralExcedencia: 50000 };

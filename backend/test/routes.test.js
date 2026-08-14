@@ -2242,3 +2242,66 @@ test('GET /api/register/portfolio-simulation trae también el estado RESIDUAL y 
             .set('X-API-Key', TEST_API_KEY);
     }
 });
+
+test('POST /api/autocalc/reduccion-ale con damageCap: contener aplana la cola, prevenir solo la escala', async () => {
+    const cuerpo = {
+        attackerKey: 'organizado',
+        currentDefenseKey: 'basica',
+        targetDefenseKey: 'avanzada',
+        confidence: 'medio',
+        currentALE: 100000,
+        tef: { min: 1, mode: 2, max: 4 },
+        // Cola larga: unos pocos escenarios dominan el CVaR, que es donde contener se nota.
+        lossMagnitudes: { respuesta: { min: 5000, mode: 25000, max: 1000000 } },
+    };
+
+    const soloPrevenir = await request(app)
+        .post('/api/autocalc/reduccion-ale')
+        .set('X-API-Key', TEST_API_KEY)
+        .send(cuerpo);
+    assert.strictEqual(soloPrevenir.status, 200);
+
+    const conContencion = await request(app)
+        .post('/api/autocalc/reduccion-ale')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ...cuerpo, damageCap: 60000 });
+    assert.strictEqual(conContencion.status, 200);
+
+    // Añadir contención sobre la misma defensa objetivo baja las dos cifras...
+    assert.ok(conContencion.body.residualALE < soloPrevenir.body.residualALE);
+    assert.ok(conContencion.body.residualCVaR < soloPrevenir.body.residualCVaR);
+    // ...pero la cola MUCHO más que la media: eso es lo que distingue contener de prevenir.
+    const caidaALE = 1 - conContencion.body.residualALE / soloPrevenir.body.residualALE;
+    const caidaCVaR = 1 - conContencion.body.residualCVaR / soloPrevenir.body.residualCVaR;
+    assert.ok(
+        caidaCVaR > caidaALE,
+        `el tope debe recortar la cola más que la media: ALE -${(caidaALE * 100).toFixed(1)}%, CVaR -${(caidaCVaR * 100).toFixed(1)}%`,
+    );
+});
+
+test('POST /api/autocalc/reduccion-ale rechaza un damageCap que no sea un número >= 0', async () => {
+    const cuerpo = {
+        attackerKey: 'organizado',
+        currentDefenseKey: 'basica',
+        targetDefenseKey: 'avanzada',
+        currentALE: 100000,
+        tef: { min: 1, mode: 2, max: 4 },
+        lossMagnitudes: { respuesta: { min: 5000, mode: 25000, max: 100000 } },
+    };
+    // NaN no entra en esta lista: JSON.stringify(NaN) es "null", así que por HTTP nunca llega
+    // como NaN sino como null — es decir, "sin tope". La guarda contra NaN sigue en el servidor
+    // (es gratis y cubre a cualquier caller interno), pero no se puede ejercitar desde aquí.
+    for (const malo of [-1, 'mucho']) {
+        const res = await request(app)
+            .post('/api/autocalc/reduccion-ale')
+            .set('X-API-Key', TEST_API_KEY)
+            .send({ ...cuerpo, damageCap: malo });
+        assert.strictEqual(res.status, 400, `damageCap=${malo} debería rechazarse`);
+    }
+    // null/ausente es válido: significa "sin contención declarada".
+    const sinTope = await request(app)
+        .post('/api/autocalc/reduccion-ale')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ...cuerpo, damageCap: null });
+    assert.strictEqual(sinTope.status, 200);
+});

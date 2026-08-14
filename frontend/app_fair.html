@@ -827,10 +827,23 @@
                                     <button type="button" id="treatment-manage-controls-btn" class="btn btn-secondary text-sm">🔧 Gestionar Controles</button>
                                 </div>
                                 <p id="treatment-controls-note" class="description-text mb-2 hidden"></p>
+                                <!-- Las dos palancas de Mitigar, explícitas y separadas: PREVENIR (subir el
+                                     Nivel de Defensa, abajo) y CONTENER (este tope). No son lo mismo y no se
+                                     notan igual — prevenir baja el promedio y el peor caso en la misma
+                                     proporción; contener recorta sobre todo el peor caso. Contra un riesgo
+                                     raro pero catastrófico, contener suele rendir más. -->
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div class="input-group">
                                         <label for="fair-costoControlAnual" id="fair-costoControlAnual-label">Costo Anual del Control:</label>
                                         <input type="number" id="fair-costoControlAnual" class="form-input" value="0" min="0" oninput="validity.valid||(value='');">
+                                    </div>
+                                    <div class="input-group">
+                                        <label for="fair-mitigar-tope-dano">
+                                            <span id="fair-mitigar-tope-dano-label">Tope de daño por evento (contención)</span>
+                                            <i id="fair-mitigar-tope-dano-info" class="fas fa-info-circle text-blue-500 cursor-pointer ml-1" title="Lo máximo que puede costar UN solo evento gracias a este control: compartimentar, rociadores, límite de efectivo en caja, segmentar la red. Distinto de subir el Nivel de Defensa, que hace que pase menos veces — esto hace que duela menos cuando pasa. Déjalo vacío si el control no limita el daño."></i>
+                                        </label>
+                                        <input type="number" id="fair-mitigar-tope-dano" class="form-input" placeholder="Sin tope" min="0" oninput="validity.valid||(value='');">
+                                        <p class="description-text" id="fair-mitigar-tope-dano-desc">Déjalo vacío si el control no limita cuánto puede costar un solo evento.</p>
                                     </div>
                                     <div class="input-group">
                                         <label for="fair-mitigar-defensa-objetivo">
