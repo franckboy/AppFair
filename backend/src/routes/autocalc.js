@@ -73,6 +73,9 @@ function createAutocalcRouter() {
             currentALE,
             tef,
             lossMagnitudes,
+            // Tope de daño por evento declarado en Mitigar (contención). Opcional: sin él, el
+            // residual refleja solo el efecto de subir la defensa, como siempre.
+            damageCap,
         } = req.body;
         const attackerProfile = attackerProfiles[attackerKey];
         const currentProfile = defenseProfiles[currentDefenseKey];
@@ -89,6 +92,11 @@ function createAutocalcRouter() {
             const lossMagnitudesError = validateLossMagnitudes(lossMagnitudes, lossFormsKeys);
             if (lossMagnitudesError) return res.status(400).json({ error: lossMagnitudesError });
 
+            if (damageCap !== undefined && damageCap !== null) {
+                if (typeof damageCap !== 'number' || !Number.isFinite(damageCap) || damageCap < 0) {
+                    return res.status(400).json({ error: 'damageCap debe ser un número mayor o igual a 0.' });
+                }
+            }
             const { residualALE, residualCVaR, reductionPercent } = calculateResidualFromSimulation(
                 attackerProfile,
                 targetProfile,
@@ -97,6 +105,7 @@ function createAutocalcRouter() {
                 lossMagnitudes,
                 currentALE,
                 accessLevel,
+                damageCap,
             );
             return res.json({ currentScore, targetScore, reductionPercent, residualALE, residualCVaR });
         }

@@ -567,6 +567,7 @@ function calculateResidualFromSimulation(
     lossMagnitudes,
     currentALE,
     accessLevel,
+    damageCap,
 ) {
     const { annualLosses } = runMonteCarloSimulation({
         iterations: RESIDUAL_SIMULATION_ITERATIONS,
@@ -575,6 +576,11 @@ function calculateResidualFromSimulation(
         vuln: UNUSED_VULN_PLACEHOLDER,
         lossMagnitudes,
         sampleVuln: sampleVulnerabilityFromProfiles(attackerProfile, targetDefenseProfile, confidence, accessLevel),
+        // Las dos palancas de Mitigar, compuestas en UNA sola corrida: PREVENIR (el Nivel de
+        // Defensa objetivo, vía sampleVuln) y CONTENER (el tope de daño por evento). Son cosas
+        // distintas y se notan distinto — prevenir escala la distribución entera y deja la razón
+        // cola/media intacta; contener trunca los peores escenarios y la aplana.
+        magnitudeCap: damageCap,
     });
     const summary = summarizeLosses(annualLosses);
     const residualALE = summary.average;
