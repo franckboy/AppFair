@@ -192,16 +192,41 @@ function runFamilyCascadeSimulation({ rootRiskName, register, iterations, seed }
         // que el stream del rng no dependa de qué riesgos tengan FAIR completo — así la corrida
         // sigue siendo reproducible con la misma semilla.
         const selfStarters = selfStartCandidates.filter((name) => masterRng() < ownProbability(name, i));
-        const activatedNames = walkMarkovChain([rootRiskName, ...selfStarters], getTransitions, masterRng);
 
-        let total = 0;
+        // Bug real corregido: la raíz entraba al recorrido SIEMPRE, así que propagaba a sus hijos
+        // los 10.000 años, no solo aquellos en que de verdad ocurría. Con una raíz de LEF≈0.87
+        // (ocurre el 56% de los años) y una compuerta al hijo del 70%, el hijo recibía 0.70
+        // activaciones por cascada al año en vez de 0.70 x 0.565 = 0.395 — un 77% de más. Era
+        // además incoherente consigo mismo: la PÉRDIDA de la raíz sí estaba escalada por su LEF
+        // (annualLosses[i]), pero su PROPAGACIÓN no.
+        //
+        // Ahora la raíz pasa por la misma compuerta de ocurrencia que cualquier auto-iniciador.
+        // Su pérdida se sigue sumando SIEMPRE y sin condicionar: annualLosses[i] es LEF×Magnitud,
+        // una esperanza anual que ya lleva su frecuencia dentro — condicionarla la descontaría
+        // dos veces, el mismo error que este archivo ya documenta para los hijos.
+        // Se consume el número aleatorio SIEMPRE, aunque la raíz no tenga FAIR, para que el stream
+        // no dependa de qué riesgos estén analizados (mismo criterio que los auto-iniciadores).
+        const rootRoll = masterRng();
+        // Una raíz SIN análisis FAIR no tiene frecuencia sobre la que condicionar. En ese caso
+        // propaga siempre: negarle la propagación devolvería ceros y dejaría inservible "Simular
+        // Familia" justo en el caso en que más se usa — un riesgo recién creado desde el árbol,
+        // todavía sin analizar, del que cuelga una familia ya modelada. Su propia pérdida es 0 de
+        // todas formas (no tiene magnitud), así que solo aporta la estructura de cascada.
+        const rootOccurs = !perRisk.has(rootRiskName) || rootRoll < ownProbability(rootRiskName, i);
+        const startStates = rootOccurs ? [rootRiskName, ...selfStarters] : selfStarters;
+        const activatedNames = walkMarkovChain(startStates, getTransitions, masterRng);
+
+        const rootAnalyzed = perRisk.get(rootRiskName);
+        let total = rootAnalyzed ? rootAnalyzed.annualLosses[i] : 0;
+        if (rootOccurs) activationCounts.set(rootRiskName, activationCounts.get(rootRiskName) + 1);
+
         activatedNames.forEach((name) => {
+            // La raíz ya se contó arriba (pérdida y activación): saltarla evita duplicar ambas.
+            if (name === rootRiskName) return;
             activationCounts.set(name, activationCounts.get(name) + 1);
             const analyzed = perRisk.get(name);
             if (!analyzed) return;
-            // La raíz nunca pasa por ninguna compuerta (walkMarkovChain siempre la incluye) —
-            // su annualLosses[i] (LEF×Magnitud, el mismo cálculo actuarial de siempre) es lo
-            // correcto tal cual. Un riesgo NO-raíz sí pasó por una compuerta que ya "gastó" su
+            // Un riesgo activado sí pasó por una compuerta que ya "gastó" su
             // propio lef_i para decidir si el evento ocurrió este año (sea como auto-iniciador
             // vía ownProbability, o por cascada desde un padre activo); sumar
             // analyzed.annualLosses[i] aquí volvería a multiplicar por ese mismo lef_i — la
@@ -212,7 +237,7 @@ function runFamilyCascadeSimulation({ rootRiskName, register, iterations, seed }
             // Una vez que la compuerta ya decidió "sí ocurrió", lo que corresponde sumar es la
             // magnitud de ESE evento (magnitudeSamples[i]), no la magnitud vuelta a escalar por
             // la misma frecuencia que decidió que ocurriera.
-            total += name === rootRiskName ? analyzed.annualLosses[i] : analyzed.magnitudeSamples[i];
+            total += analyzed.magnitudeSamples[i];
         });
         familyAnnualLosses[i] = total;
     }

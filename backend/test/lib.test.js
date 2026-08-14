@@ -18,6 +18,7 @@ const {
     buildLossExceedanceCurve,
 } = require('../src/lib/simulation');
 const { simulatePortfolio } = require('../src/lib/portfolioSimulation');
+const { spearmanCorrelation } = require('../src/lib/simulation');
 const {
     tullockSuccessProbability,
     attackerContestStrength,
@@ -264,15 +265,43 @@ test('runFamilyCascadeSimulation: separa correctamente analizados (incluidos) de
     assert.match(result.excludedRiskNames.find((e) => e.riskName === 'Ahorro').reason, /oportunidad/i);
 });
 
-test('runFamilyCascadeSimulation: la raíz siempre se activa (100%), y un hijo con triggeredByProbability=100 también', () => {
+test('runFamilyCascadeSimulation: la raíz se activa según SU PROPIA frecuencia, no el 100% de los años', () => {
+    // Bug real corregido: la raíz entraba al recorrido siempre, así que propagaba a sus hijos los
+    // 10.000 años y no solo aquellos en que de verdad ocurría. Medido en una familia de dos: el
+    // hijo recibía un 77% más de activaciones por cascada de las que le correspondían.
     const result = runFamilyCascadeSimulation({
         rootRiskName: 'Incendio',
         register: makeCascadeFamily(),
-        iterations: 500,
+        iterations: 4000,
         seed: 123,
     });
-    assert.strictEqual(result.activationRates['Incendio'], 100);
-    assert.strictEqual(result.activationRates['Interrupcion'], 100);
+    assert.ok(
+        result.activationRates['Incendio'] > 0 && result.activationRates['Incendio'] < 100,
+        `la raíz debería activarse según su frecuencia, dio ${result.activationRates['Incendio']}`,
+    );
+    // Con la compuerta al 100%, el hijo se activa SIEMPRE que la raíz ocurre — pero además puede
+    // auto-iniciarse por su cuenta, así que nunca cae por debajo de la raíz.
+    assert.ok(
+        result.activationRates['Interrupcion'] >= result.activationRates['Incendio'],
+        'un hijo con compuerta al 100% no puede activarse menos que su raíz',
+    );
+});
+
+test('runFamilyCascadeSimulation: la raíz aporta su pérdida TODOS los años, aunque no propague', () => {
+    // Su annualLosses[i] es LEF x Magnitud, una esperanza anual que ya lleva la frecuencia dentro:
+    // condicionarla a que "ocurra" la descontaría dos veces. Lo que se condiciona es solo la
+    // propagación a los hijos.
+    const result = runFamilyCascadeSimulation({
+        rootRiskName: 'Incendio',
+        register: makeCascadeFamily(),
+        iterations: 3000,
+        seed: 123,
+    });
+    const conPerdida = result.familyAnnualLosses.filter((x) => x > 0).length;
+    assert.ok(
+        conPerdida / result.familyAnnualLosses.length > 0.95,
+        `la raíz debe aportar pérdida casi todos los años, dio ${((100 * conPerdida) / result.familyAnnualLosses.length).toFixed(1)}%`,
+    );
 });
 
 test('runFamilyCascadeSimulation: la pérdida de familia (raíz + hijo forzado) es mayor, en promedio, que la de la raíz sola', () => {
@@ -2573,14 +2602,32 @@ test('simulatePortfolio: la correlación declarada ENGORDA la cola conjunta', ()
     assert.ok(con.cascadeAddedALE > 0, 'la cascada debe añadir pérdida esperada');
 });
 
-test('simulatePortfolio: la correlación REDUCE el beneficio de diversificación', () => {
-    // Riesgos acoplados diversifican menos que riesgos independientes — el resultado que hacía
-    // falta para no subestimar un portafolio con causas compartidas.
+test('simulatePortfolio: diversificación y correlación se miden POR SEPARADO, no revueltas', () => {
+    // Van en direcciones opuestas —diversificar baja la cola, correlacionar la sube— así que una
+    // sola resta contra la suma no mide ninguna de las dos. Bug real: con cascada declarada, el
+    // "beneficio de diversificación" salía artificialmente bajo porque le habían restado la
+    // correlación sin decirlo.
     const sin = simulatePortfolio([1, 2, 3, 4, 5].map((i) => makePortfolioRisk(`S${i}`)));
     const con = simulatePortfolio(makeCascadeFamilyPortfolio());
+
+    // La diversificación NO depende de que haya cascada: es el mismo portafolio independiente.
     assert.ok(
-        con.diversificationBenefit < sin.diversificationBenefit,
-        `acoplado ${con.diversificationBenefit.toFixed(0)} debería diversificar menos que independiente ${sin.diversificationBenefit.toFixed(0)}`,
+        Math.abs(con.diversificationBenefit - sin.diversificationBenefit) / sin.diversificationBenefit < 0.01,
+        `la diversificación no debería cambiar por declarar dependencias: ${con.diversificationBenefit.toFixed(0)} vs ${sin.diversificationBenefit.toFixed(0)}`,
+    );
+    // La correlación es un efecto aparte, y solo existe si hay aristas.
+    assert.strictEqual(sin.correlationPenalty, 0);
+    assert.ok(con.correlationPenalty > 0, 'con aristas declaradas la correlación debe engordar la cola');
+});
+
+test('simulatePortfolio: la descomposición cuadra exactamente', () => {
+    // suma - diversificación + correlación = conjunto final. Si no cuadra, alguno de los tres
+    // números está midiendo algo distinto de lo que dice su nombre.
+    const r = simulatePortfolio(makeCascadeFamilyPortfolio());
+    const reconstruido = r.sumOfIndividualCVaR - r.diversificationBenefit + r.correlationPenalty;
+    assert.ok(
+        Math.abs(reconstruido - r.summary.cvar95) < 0.01,
+        `${reconstruido.toFixed(2)} != ${r.summary.cvar95.toFixed(2)}`,
     );
 });
 
@@ -2596,4 +2643,55 @@ test('simulatePortfolio: una arista hacia un riesgo ausente del portafolio se ig
 test('simulatePortfolio: sigue siendo reproducible con cascada declarada', () => {
     const risks = makeCascadeFamilyPortfolio();
     assert.strictEqual(simulatePortfolio(risks).summary.cvar95, simulatePortfolio(risks).summary.cvar95);
+});
+
+// --- Sensibilidad por rangos y error estándar --------------------------------------------------
+test('spearmanCorrelation: capta una relación monótona NO lineal que Pearson subestima', () => {
+    // El caso real del modelo: Tullock con m=6,83 es muy convexo y la magnitud es lognormal con
+    // cola pesada, así que Pearson (que solo mide relación lineal) aplastaba el peso aparente de
+    // la Frecuencia y la Vulnerabilidad a la mitad.
+    const x = [];
+    const y = [];
+    for (let i = 1; i <= 500; i++) {
+        x.push(i);
+        y.push(Math.pow(i, 7)); // monótona perfecta, brutalmente no lineal
+    }
+    assert.ok(Math.abs(spearmanCorrelation(x, y) - 1) < 1e-9, 'Spearman debe dar 1 en una monótona perfecta');
+    assert.ok(pearsonCorrelation(x, y) < 0.9, 'Pearson se queda corto en la misma relación');
+});
+
+test('spearmanCorrelation: promedia los rangos en los empates', () => {
+    // Sin promediar, valores idénticos recibirían rangos arbitrarios según el orden de llegada y
+    // la correlación dependería del muestreo en vez de los datos.
+    const conEmpates = [5, 5, 5, 1, 9];
+    const otro = [1, 2, 3, 4, 5];
+    assert.strictEqual(spearmanCorrelation(conEmpates, otro), spearmanCorrelation([...conEmpates], [...otro]));
+    assert.ok(Number.isFinite(spearmanCorrelation(conEmpates, otro)));
+});
+
+test('summarizeLosses: el error estándar decrece como 1/raíz(N)', () => {
+    // Es el número que dice si 10.000 iteraciones alcanzan. Se REPORTA, no se usa para parar: la
+    // semilla es fija a propósito para que el resultado sea reproducible y auditable.
+    const correr = (n) =>
+        summarizeLosses(
+            runMonteCarloSimulation({
+                iterations: n,
+                seed: 42,
+                tef: { min: 1, mode: 2, max: 4 },
+                vuln: { min: 10, mode: 30, max: 70 },
+                lossMagnitudes: { respuesta: { min: 5000, mode: 20000, max: 60000 } },
+            }).annualLosses,
+        );
+    const mil = correr(1000).standardErrorPercent;
+    const diezMil = correr(10000).standardErrorPercent;
+    assert.ok(diezMil < mil, `${diezMil} debería ser menor que ${mil}`);
+    // 10x más iteraciones => ~raíz(10) ≈ 3,16x menos error. Margen amplio por el ruido del muestreo.
+    const ratio = mil / diezMil;
+    assert.ok(ratio > 2 && ratio < 5, `esperaba una razón cercana a 3,16, dio ${ratio.toFixed(2)}`);
+});
+
+test('summarizeLosses: un portafolio sin pérdida no divide por cero al calcular el error relativo', () => {
+    const s = summarizeLosses([0, 0, 0, 0]);
+    assert.strictEqual(s.standardErrorPercent, 0);
+    assert.ok(Number.isFinite(s.standardError));
 });

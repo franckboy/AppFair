@@ -1920,9 +1920,34 @@ export const FairWizard = {
         el.classList.remove('hidden');
     },
 
+    // Error estándar de la media: cuánta incertidumbre queda por haber corrido 10.000 iteraciones
+    // en vez de infinitas. Se REPORTA, nunca se usa como criterio de parada — la semilla es fija a
+    // propósito para que un resultado sea reproducible y auditable, y un corte dinámico haría que
+    // dos corridas con los mismos datos dieran cifras distintas.
+    //
+    // Solo se muestra cuando el número es accionable: por debajo del 1% las iteraciones sobran y
+    // decirlo sería ruido; por encima, avisa de que conviene subirlas antes de sustentar una
+    // decisión con ese ALE.
+    renderPrecisionNote(summary) {
+        const el = document.getElementById('fair-precision-note');
+        if (!el) return;
+        const err = summary && summary.standardErrorPercent;
+        if (!err || err < 1) {
+            el.classList.add('hidden');
+            return;
+        }
+        const simple = App.UIMode.mode === 'simple';
+        el.innerHTML =
+            err >= 5
+                ? `⚠️ Este resultado todavía se mueve <strong>±${err.toFixed(1)}%</strong> de una corrida a otra. ${simple ? 'Conviene repetir el cálculo con más repeticiones antes de decidir con esta cifra.' : 'Sube las iteraciones antes de sustentar una decisión con este ALE.'}`
+                : `Precisión de la simulación: <strong>±${err.toFixed(1)}%</strong> sobre la pérdida promedio.`;
+        el.classList.remove('hidden');
+    },
+
     async displaySimulationResults(result) {
         const { summary, evaluation, inherentEvaluation, sensitivity, annualLosses } = result;
         this.renderZeroAleWarning(summary);
+        this.renderPrecisionNote(summary);
         state.fair.lastLossExceedanceCurve = result.lossExceedanceCurve || null;
         state.fair.lastInherentLossExceedanceCurve = result.inherentLossExceedanceCurve || null;
         state.fair.lastCalibrationVersion = result.calibrationVersion ?? null;
