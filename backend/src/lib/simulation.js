@@ -30,14 +30,31 @@ const { sampleCorrelation } = require('simple-statistics');
  *        sin tener que tocar el resto del motor. Debe devolver un decimal en [0,1] (no
  *        porcentaje), y consumir el mismo `rng` que se le pasa (para que la corrida siga siendo
  *        reproducible con una semilla).
+ * @param {number} [params.magnitudeCap] Tope de daño POR EVENTO, en dinero. Modela un control de
+ *        CONTENCIÓN: compartimentación, rociadores, un límite de efectivo en caja, segmentación de
+ *        red. Se aplica escenario por escenario (`min(lm_i, cap)`), nunca sobre el promedio.
+ *
+ *        Por qué existe, y por qué es distinto de todo lo demás: reducir la Vulnerabilidad
+ *        multiplica CADA pérdida por una constante, y escalar una distribución entera escala TODAS
+ *        sus estadísticas por igual — la razón cola/media queda congelada. Por eso un control de
+ *        PREVENCIÓN nunca puede cambiar la FORMA de la cola en este modelo, solo su tamaño. Un tope
+ *        sí: trunca los peores escenarios y deja los demás intactos, así que baja el CVaR mucho más
+ *        que el ALE. Es la única palanca del motor que distingue "que pase menos veces" de "que
+ *        duela menos cuando pase".
+ *
+ *        Sin tope (por defecto) el comportamiento es idéntico bit a bit al de antes.
  * @returns {{annualLosses:number[], usedSeed:number, sensitivity:Array, lefSamples:number[], magnitudeSamples:number[]}}
  */
-function runMonteCarloSimulation({ iterations, seed, tef, vuln, lossMagnitudes, sampleVuln }) {
+function runMonteCarloSimulation({ iterations, seed, tef, vuln, lossMagnitudes, sampleVuln, magnitudeCap }) {
     const usedSeed = seed && seed > 0 ? seed : Math.floor(Math.random() * 2147483647);
     const rng = mulberry32(usedSeed);
 
     const vulnDecimal = { min: vuln.min / 100, mode: vuln.mode / 100, max: vuln.max / 100 };
     const drawVuln = sampleVuln || ((r) => getPertRandom(vulnDecimal.min, vulnDecimal.mode, vulnDecimal.max, 4, r));
+
+    // Un tope de 0 o negativo se ignora: "sin contención" se dice omitiéndolo, no poniendo cero
+    // (que significaría que ningún evento cuesta nada).
+    const aplicaTope = typeof magnitudeCap === 'number' && Number.isFinite(magnitudeCap) && magnitudeCap > 0;
 
     const activeKeys = lossFormsKeys.filter((key) => lossMagnitudes[key]);
     const lmInputs = activeKeys.map((key) => lossMagnitudes[key]);
@@ -72,6 +89,12 @@ function runMonteCarloSimulation({ iterations, seed, tef, vuln, lossMagnitudes, 
             lmSamples[idx][i] = val;
             lm_i += val;
         });
+
+        // El tope actúa sobre el daño de UN evento (la suma de las categorías de pérdida), no sobre
+        // la pérdida anual: "ningún incendio pasa de $X" es una afirmación por evento. Se aplica
+        // DESPUÉS de sortear las categorías y ANTES de multiplicar por la frecuencia, que es donde
+        // de verdad corta la cola.
+        if (aplicaTope && lm_i > magnitudeCap) lm_i = magnitudeCap;
 
         tefSamples[i] = tef_i;
         vulnSamples[i] = vuln_i;
