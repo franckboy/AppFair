@@ -1292,8 +1292,14 @@ test('POST /api/cascade/:riskName/simulate-family simula la familia correlaciona
     assert.strictEqual(res.status, 200);
     assert.strictEqual(res.body.familySize, 2);
     assert.deepStrictEqual([...res.body.includedRiskNames].sort(), [childName, rootName].sort());
-    assert.strictEqual(res.body.activationRates[rootName], 100);
-    assert.strictEqual(res.body.activationRates[childName], 100);
+    // La raíz se activa según SU PROPIA frecuencia, no el 100% de los años (bug corregido: antes
+    // propagaba a sus hijos todos los años, no solo aquellos en que de verdad ocurría).
+    assert.ok(
+        res.body.activationRates[rootName] > 0 && res.body.activationRates[rootName] < 100,
+        `la raíz debería activarse según su frecuencia, dio ${res.body.activationRates[rootName]}`,
+    );
+    // Compuerta al 100%: el hijo cae siempre que cae la raíz, más sus propios auto-inicios.
+    assert.ok(res.body.activationRates[childName] >= res.body.activationRates[rootName]);
     assert.ok(res.body.summary.average > 0);
     assert.ok(res.body.evaluation && res.body.evaluation.level);
     assert.strictEqual(res.body.annualLosses.length, 500);

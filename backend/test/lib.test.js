@@ -264,15 +264,43 @@ test('runFamilyCascadeSimulation: separa correctamente analizados (incluidos) de
     assert.match(result.excludedRiskNames.find((e) => e.riskName === 'Ahorro').reason, /oportunidad/i);
 });
 
-test('runFamilyCascadeSimulation: la raíz siempre se activa (100%), y un hijo con triggeredByProbability=100 también', () => {
+test('runFamilyCascadeSimulation: la raíz se activa según SU PROPIA frecuencia, no el 100% de los años', () => {
+    // Bug real corregido: la raíz entraba al recorrido siempre, así que propagaba a sus hijos los
+    // 10.000 años y no solo aquellos en que de verdad ocurría. Medido en una familia de dos: el
+    // hijo recibía un 77% más de activaciones por cascada de las que le correspondían.
     const result = runFamilyCascadeSimulation({
         rootRiskName: 'Incendio',
         register: makeCascadeFamily(),
-        iterations: 500,
+        iterations: 4000,
         seed: 123,
     });
-    assert.strictEqual(result.activationRates['Incendio'], 100);
-    assert.strictEqual(result.activationRates['Interrupcion'], 100);
+    assert.ok(
+        result.activationRates['Incendio'] > 0 && result.activationRates['Incendio'] < 100,
+        `la raíz debería activarse según su frecuencia, dio ${result.activationRates['Incendio']}`,
+    );
+    // Con la compuerta al 100%, el hijo se activa SIEMPRE que la raíz ocurre — pero además puede
+    // auto-iniciarse por su cuenta, así que nunca cae por debajo de la raíz.
+    assert.ok(
+        result.activationRates['Interrupcion'] >= result.activationRates['Incendio'],
+        'un hijo con compuerta al 100% no puede activarse menos que su raíz',
+    );
+});
+
+test('runFamilyCascadeSimulation: la raíz aporta su pérdida TODOS los años, aunque no propague', () => {
+    // Su annualLosses[i] es LEF x Magnitud, una esperanza anual que ya lleva la frecuencia dentro:
+    // condicionarla a que "ocurra" la descontaría dos veces. Lo que se condiciona es solo la
+    // propagación a los hijos.
+    const result = runFamilyCascadeSimulation({
+        rootRiskName: 'Incendio',
+        register: makeCascadeFamily(),
+        iterations: 3000,
+        seed: 123,
+    });
+    const conPerdida = result.familyAnnualLosses.filter((x) => x > 0).length;
+    assert.ok(
+        conPerdida / result.familyAnnualLosses.length > 0.95,
+        `la raíz debe aportar pérdida casi todos los años, dio ${((100 * conPerdida) / result.familyAnnualLosses.length).toFixed(1)}%`,
+    );
 });
 
 test('runFamilyCascadeSimulation: la pérdida de familia (raíz + hijo forzado) es mayor, en promedio, que la de la raíz sola', () => {
