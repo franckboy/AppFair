@@ -96,6 +96,10 @@ export const state = {
         residualRequestId: 0,
     },
     fair: {
+        // Estado que se está mirando en el Dashboard: 'actual' (antes de tratar) o 'residual'
+        // (después). Gobierna el Pareto y la columna resaltada de la tabla; la Matriz y el Monte
+        // Carlo muestran siempre los dos, solo atenúan el que no está seleccionado.
+        dashboardView: 'actual',
         fairResultsChart: null,
         fairLecChart: null,
         // Curvas de Excedencia de Pérdidas de la última simulación (Actual e Inherente) — se
