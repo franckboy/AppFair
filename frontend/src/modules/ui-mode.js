@@ -163,6 +163,9 @@ export const UIMode = {
             'fair-lec-desc':
                 'Para cada monto, la probabilidad de que la pérdida de un año lo supere. Las líneas verticales marcan tu Pérdida Aceptable y tu Pérdida Crítica: donde la curva las cruza, ahí está la probabilidad de pasarte de lo que dijiste tolerar.',
             'fair-sensitivity-title': 'Análisis de Sensibilidad',
+            'dashboard-portfolio-mc-title': 'Monte Carlo del Portafolio',
+            'dashboard-portfolio-mc-desc':
+                'Qué pasa cuando se simulan todos los riesgos juntos, en vez de sumar el resultado de cada uno por separado.',
             'fair-sensitivity-desc':
                 'Qué tanto influye cada variable en el resultado final (correlación con la pérdida simulada). Enfoca tu esfuerzo de mejorar datos en las variables de arriba — son las que más mueven el resultado.',
             'fair-inherente-label': 'Riesgo Inherente (sin ningún control):',
@@ -188,6 +191,11 @@ export const UIMode = {
             'fair-lec-desc':
                 'Elige un monto en la línea de abajo y la curva te dice qué tan probable es perder más que eso en un año. Las dos líneas verticales son lo que dijiste que aceptas perder y tu límite: donde la curva las cruza, ésa es tu probabilidad de pasarte.',
             'fair-sensitivity-title': '¿Qué Es lo Que Más Cambia Tu Resultado?',
+            // "Monte Carlo" está en la lista de jerga prohibida en Modo Simple (ver
+            // simple-mode-no-jargon.spec.js) — misma idea, dicha sin el término.
+            'dashboard-portfolio-mc-title': 'Si todo te saliera mal el mismo año',
+            'dashboard-portfolio-mc-desc':
+                'Qué pasa cuando se simulan todos los riesgos juntos, en vez de sumar el resultado de cada uno por separado.',
             'fair-sensitivity-desc':
                 'Mejora primero la información de estos factores — son los que más mueven tu estimado.',
             'fair-inherente-label': 'Si no hicieras NADA para protegerte, esto te costaría al año:',

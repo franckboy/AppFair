@@ -21,7 +21,7 @@ test.describe('Guardar borrador en el Paso 1', () => {
         // Sigue en el Paso 1 — "Guardar" no debe forzar avanzar el wizard.
         await expect(page.locator('#fair-step-1')).not.toHaveClass(/hidden/);
 
-        await page.click('#nav-fair');
+        await page.click('#nav-dashboard');
         await page.waitForTimeout(500);
         const draftRow = page.locator('#quick-concentrated-table-body tr', {
             hasText: 'E2E — Sabotaje en Línea de Producción',
@@ -57,7 +57,7 @@ test.describe('Guardar borrador en el Paso 1', () => {
         const matches = register.risks.filter((r) => r.riskName === 'E2E — Sabotaje en Línea de Producción');
         expect(matches).toHaveLength(1);
 
-        await page.click('#nav-fair');
+        await page.click('#nav-dashboard');
         await page.waitForTimeout(500);
         const rows = page.locator('#quick-concentrated-table-body tr', {
             hasText: 'E2E — Sabotaje en Línea de Producción',
@@ -121,7 +121,7 @@ test.describe('Filtrar Riesgos Guardados por Etapa', () => {
         await connectAndBoot(page);
         await runFullFairAnalysis(page, 'E2E Filtro — Analizado FAIR');
 
-        await page.click('#nav-fair');
+        await page.click('#nav-dashboard');
         await page.waitForTimeout(500);
 
         const triageRow = page.locator('#quick-concentrated-table-body tr', { hasText: 'E2E Filtro — Solo Triage' });

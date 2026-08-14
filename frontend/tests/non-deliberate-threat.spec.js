@@ -39,14 +39,19 @@ test.describe('Amenaza no deliberada', () => {
     // Etapa 3: sin perfiles no hay contienda que resolver, y el cálculo exige attackerKey +
     // defenseKey — dejar el panel visible sería ofrecer un botón que solo puede terminar en el
     // aviso "completa el Paso 1".
-    // El panel vive en el Paso 4 (resultados), así que solo se puede observar después de simular;
-    // el interruptor que lo controla está en el Paso 2.
+    // El panel de Nash vive ahora dentro del modal de detalle del riesgo, no en el Paso 4 — solo
+    // se puede observar después de simular (abriéndolo con "Ver resultados detallados"), y el
+    // interruptor que lo controla sigue en el Paso 2 del wizard.
     test('el Equilibrio de Nash desaparece sin adversario y vuelve con él (Modo Técnico)', async ({ page }) => {
         await connectAndBoot(page);
         await page.click('#mode-toggle-btn');
         await page.waitForTimeout(300);
         await runFullFairAnalysis(page, 'E2E — Nash con adversario presente');
+        await page.click('#fair-goto-dashboard-btn');
+        await page.waitForTimeout(600);
         await expect(page.locator('#fair-nash-container')).toBeVisible();
+        await page.click('#risk-detail-close-btn');
+        await page.waitForTimeout(400);
 
         await page.click('#fair-step4-back');
         await page.waitForTimeout(300);
@@ -58,6 +63,10 @@ test.describe('Amenaza no deliberada', () => {
         await page.waitForTimeout(400);
         await page.click('#fair-step3-next');
         await page.waitForTimeout(400);
+        // Se comprueba con el modal ABIERTO, donde el panel de verdad se ve: cerrado, la aserción
+        // pasaría por estar el contenedor entero oculto, sin probar nada.
+        await page.click('#fair-goto-dashboard-btn');
+        await page.waitForTimeout(600);
         await expect(page.locator('#fair-nash-container')).toBeHidden();
     });
 
@@ -113,7 +122,7 @@ test.describe('Amenaza no deliberada', () => {
         // Y sobrevive al retomarlo: sin persistir isDeliberate, inferDeliberateThreat lo trataba
         // como deliberado y resucitaba unos perfiles que nunca se eligieron.
         await page.reload({ waitUntil: 'networkidle' });
-        await page.click('#nav-fair');
+        await page.click('#nav-dashboard');
         await page.waitForTimeout(600);
         const fila = page.locator('#quick-concentrated-table-body tr', { hasText: 'E2E — Incendio accidental' });
         await fila.locator('[data-analyze-fair]').click();
@@ -129,6 +138,8 @@ test.describe('Amenaza no deliberada', () => {
         await page.click('#mode-toggle-btn');
         await page.waitForTimeout(300);
         await runFullFairAnalysis(page, 'E2E — Nash con adversario');
+        await page.click('#fair-goto-dashboard-btn');
+        await page.waitForTimeout(600);
 
         await expect(page.locator('#fair-nash-container')).toBeVisible();
         // El formulario vive detrás de un botón: es una exploración aparte, no parte de los

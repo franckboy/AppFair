@@ -414,16 +414,15 @@ export const FairWizard = {
         document.getElementById('fair-deep-analysis-close').addEventListener('click', () => {
             document.getElementById('fair-deep-analysis-panel').classList.add('hidden');
         });
-        document.getElementById('dashboard-risk-detail-close').addEventListener('click', () => {
-            document.getElementById('dashboard-risk-detail').classList.add('hidden');
-        });
-        // El veredicto se queda en el wizard; los gráficos viven en el Dashboard. Este botón es el
-        // puente entre los dos, para que terminar una simulación no deje al usuario sin saber a
-        // dónde ir a ver el resultado completo.
+        // El veredicto se queda en el wizard; los gráficos viven en el detalle del riesgo, que es
+        // un modal (ver App.FairRegister.openRiskDetailModal). Este botón es el puente, para que
+        // terminar una simulación no deje al usuario sin saber dónde ver el resultado completo.
+        // Los elementos ya quedaron pintados por la simulación que se acaba de correr, así que
+        // solo hay que abrir el modal — no se vuelve a simular.
         document.getElementById('fair-goto-dashboard-btn').addEventListener('click', () => {
-            App.Navigation.switchPage('dashboard');
-            App.FairAnalysis.loadRiskRegister();
-            document.getElementById('dashboard-risk-detail').scrollIntoView({ behavior: 'smooth', block: 'start' });
+            App.FairRegister.openRiskDetailModal(
+                document.getElementById('fair-riskName').value.trim() || 'Detalle del Riesgo',
+            );
         });
         // Escopado a Paso 2 (TEF/Vulnerabilidad) a propósito: los campos de Magnitud de
         // Pérdida (Paso 3) ya tienen su propio listener en populateLossMagnitudeForms(),
@@ -2102,13 +2101,10 @@ export const FairWizard = {
 
         this.renderLossExceedanceCurve();
 
-        // Los gráficos que se acaban de dibujar viven en el Dashboard (Zona B), no aquí: hay que
-        // destaparla y ponerle el nombre del riesgo, o el usuario llegaría con el botón "Ver
-        // resultados en el Dashboard" a una sección todavía oculta. A diferencia de la ruta por
-        // tabla, aquí Nash SÍ aplica: los perfiles de Atacante/Defensa son los de esta corrida.
-        document.getElementById('dashboard-risk-detail').classList.remove('hidden');
-        document.getElementById('dashboard-risk-detail-title').textContent =
-            document.getElementById('fair-riskName').value.trim() || 'Detalle del Riesgo';
+        // Los gráficos que se acaban de dibujar viven en el panel de detalle del riesgo, que se
+        // muestra en un modal. Aquí solo se deja listo su contenido; el botón "Ver resultados
+        // detallados" lo abre. A diferencia de la ruta por tabla, aquí Nash SÍ aplica: los perfiles
+        // de Atacante/Defensa son los de esta misma corrida.
         document.getElementById('dashboard-risk-detail-loading').classList.add('hidden');
         document.getElementById('dashboard-risk-detail-body').classList.remove('hidden');
         document.getElementById('fair-nash-container').classList.remove('hidden');

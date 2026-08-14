@@ -171,6 +171,10 @@
   .modal-box.modal-box-wide {
     @apply max-w-3xl;
   }
+  /* Para el detalle de un riesgo: dos columnas de gráficos, que a 3xl quedarían estrujadas. */
+  .modal-box.modal-box-xl {
+    @apply max-w-6xl;
+  }
   .modal-title {
     @apply mb-4 shrink-0 text-xl font-bold;
   }

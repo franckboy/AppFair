@@ -6,7 +6,7 @@ test.describe('Análisis Profundo', () => {
         await connectAndBoot(page);
         await runFullFairAnalysis(page, 'E2E — Robo con Violencia en Sucursal');
 
-        await page.click('#nav-fair');
+        await page.click('#nav-dashboard');
         await page.waitForTimeout(500);
 
         const row = page.locator('#quick-concentrated-table-body tr', {
@@ -37,7 +37,7 @@ test.describe('Criterios de Riesgo aplicados de forma consistente', () => {
         await connectAndBoot(page);
         await runFullFairAnalysis(page, 'E2E — Vandalismo en Fachada Principal');
 
-        await page.click('#nav-fair');
+        await page.click('#nav-dashboard');
         await page.waitForTimeout(500);
 
         const row = page.locator('#quick-concentrated-table-body tr', {

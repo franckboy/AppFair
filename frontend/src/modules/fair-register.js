@@ -15,6 +15,7 @@ import {
     pertMean,
 } from './utils.js';
 import { STRATEGY_LABELS } from './treatment.js';
+import { Modal } from './modal.js';
 
 // ============================================================
 // App.FairRegister — el Registro de Riesgos consolidado: guardar/borrar
@@ -1012,8 +1013,12 @@ export const FairRegister = {
                     <button class="inline-flex items-center justify-center p-1 text-red-600 hover:text-red-800 text-sm" title="Eliminar riesgo" aria-label="Eliminar riesgo" data-delete-quick="${item.id}"><i class="fas fa-trash"></i></button>
                 </div>`;
 
+                // data-risk-row marca las filas que tienen un detalle que abrir (ver el listener de
+                // clic en fila más abajo): un riesgo de Triage todavía no se ha simulado, así que
+                // no tiene nada que mostrar y su fila no debe verse pinchable.
+                const filaAbrible = item.stage === 'fair' && item.fairEntry.tef && item.fairEntry.vuln;
                 return `
-                <tr class="border-b">
+                <tr class="border-b${filaAbrible ? ' cursor-pointer hover:bg-gray-50' : ''}"${filaAbrible ? ' data-risk-row' : ''}>
                     <td class="py-2 text-center">${checkboxCell}</td>
                     <td class="text-center text-gray-500">${item.number}</td>
                     <td class="risk-name-cell">${sanitizeHTML(item.riskName)}</td>
@@ -1046,6 +1051,18 @@ export const FairRegister = {
         });
         document.querySelectorAll('[data-simulate-risk]').forEach((btn) => {
             btn.addEventListener('click', () => this.simulateRegisteredRisk(btn.dataset.simulateRisk));
+        });
+        // Clic en la FILA (no solo en el botón "Simular") abre el detalle de ese riesgo — es lo que
+        // uno espera de una tabla cuyas filas tienen más que contar. Se ignoran los clics sobre los
+        // controles de la fila (botones, checkbox) para no abrir el detalle además de lo que el
+        // usuario pidió; el nombre sale del texto ya renderizado, no de un atributo, porque
+        // sanitizeHTML no escapa comillas dobles y un nombre con " rompería el atributo.
+        document.querySelectorAll('#quick-concentrated-table-body tr[data-risk-row]').forEach((tr) => {
+            tr.addEventListener('click', (e) => {
+                if (e.target.closest('button, input, a, select')) return;
+                const cell = tr.querySelector('.risk-name-cell');
+                if (cell) this.simulateRegisteredRisk(cell.textContent);
+            });
         });
         document.querySelectorAll('[data-treat-fair]').forEach((btn) => {
             // El nombre sale del texto ya renderizado (.risk-name-cell), no de un atributo —
@@ -1358,15 +1375,12 @@ export const FairRegister = {
             return;
         }
 
-        const section = document.getElementById('dashboard-risk-detail');
         const loading = document.getElementById('dashboard-risk-detail-loading');
         const body = document.getElementById('dashboard-risk-detail-body');
-        document.getElementById('dashboard-risk-detail-title').textContent = risk.riskName;
-        section.classList.remove('hidden');
+        this.openRiskDetailModal(risk.riskName);
         loading.classList.remove('hidden');
         loading.textContent = 'Simulando 10,000 escenarios…';
         body.classList.add('hidden');
-        section.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
         let result;
         try {
@@ -1403,6 +1417,40 @@ export const FairRegister = {
      * excedencia y sensibilidad viven en App.FairWizard y se reutilizan tal cual: no se duplica
      * ninguna fórmula ni configuración de gráfico.
      */
+    /**
+     * Abre el detalle de un riesgo en el modal compartido.
+     *
+     * El contenido no se regenera: se MUEVE el nodo `#dashboard-risk-detail` al cuerpo del modal
+     * y se devuelve a su sitio al cerrar — mismo patrón que App.FairWizard.openNashModal. Moviendo
+     * el nodo (en vez de reconstruir su HTML) sobreviven los ids, los listeners ya registrados en
+     * init(), y sobre todo los <canvas> con sus instancias de Chart ya dibujadas.
+     *
+     * Vive en un modal, y no colgando del Dashboard, porque el Dashboard responde "¿cómo está mi
+     * portafolio?" — un análisis individual permanente ahí abajo mezcla dos niveles de lectura.
+     */
+    openRiskDetailModal(riskName) {
+        const panel = document.getElementById('dashboard-risk-detail');
+        const casa = document.getElementById('dashboard-risk-detail-home');
+        if (!panel || !casa) return;
+
+        Modal.setSize('xl');
+        Modal.title.textContent = riskName;
+        Modal.body.innerHTML = '';
+        Modal.body.appendChild(panel);
+        panel.classList.remove('hidden');
+        Modal.footer.innerHTML = `<button id="risk-detail-close-btn" class="btn btn-secondary">Cerrar</button>`;
+
+        const cerrar = () => {
+            // Devolver el panel a su casa ANTES de cerrar: si se quedara dentro del modal, la
+            // próxima apertura no lo encontraría y los gráficos se perderían al vaciar el cuerpo.
+            panel.classList.add('hidden');
+            casa.appendChild(panel);
+            Modal.hide();
+        };
+        document.getElementById('risk-detail-close-btn').addEventListener('click', cerrar, { once: true });
+        Modal.modal.classList.remove('hidden');
+    },
+
     renderRiskDetail(result) {
         const { summary } = result;
         document.getElementById('ale-result').textContent = formatCurrency(summary.average);

@@ -6,7 +6,7 @@ test.describe('Eliminar un riesgo', () => {
         await connectAndBoot(page);
         await runFullFairAnalysis(page, 'E2E — Robo de Equipo de Cómputo');
 
-        await page.click('#nav-fair');
+        await page.click('#nav-dashboard');
         await page.waitForTimeout(500);
 
         const row = page.locator('#quick-concentrated-table-body tr', { hasText: 'E2E — Robo de Equipo de Cómputo' });

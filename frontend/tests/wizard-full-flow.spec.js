@@ -6,7 +6,7 @@ test.describe('Análisis FAIR completo', () => {
         await connectAndBoot(page);
         await runFullFairAnalysis(page, 'E2E — Robo en Bodega Norte');
 
-        await page.click('#nav-fair');
+        await page.click('#nav-dashboard');
         await page.waitForTimeout(500);
 
         const row = page.locator('#quick-concentrated-table-body tr', { hasText: 'E2E — Robo en Bodega Norte' });
@@ -68,7 +68,7 @@ test.describe('Análisis FAIR completo', () => {
         });
 
         await page.reload({ waitUntil: 'networkidle' });
-        await page.click('#nav-fair');
+        await page.click('#nav-dashboard');
         await page.waitForTimeout(600);
 
         const vieja = page.locator('#quick-concentrated-table-body tr', { hasText: 'E2E — Calibración Vieja' });
@@ -96,7 +96,7 @@ test.describe('Análisis FAIR completo', () => {
         // "editado a mano" sin importar si de verdad se había tocado — el autocálculo quedaba
         // roto para siempre desde el primer guardado. Ahora refleja el estado real.
         await page.reload({ waitUntil: 'networkidle' });
-        await page.click('#nav-fair');
+        await page.click('#nav-dashboard');
         await page.waitForTimeout(500);
         let row = page.locator('#quick-concentrated-table-body tr', { hasText: 'E2E — Vulnerabilidad Automática' });
         await row.locator('[data-analyze-fair]').click();
@@ -132,7 +132,7 @@ test.describe('Análisis FAIR completo', () => {
         expect(entry.vulnManualOverride).toBe(true);
 
         await page.reload({ waitUntil: 'networkidle' });
-        await page.click('#nav-fair');
+        await page.click('#nav-dashboard');
         await page.waitForTimeout(500);
         row = page.locator('#quick-concentrated-table-body tr', { hasText: 'E2E — Vulnerabilidad Manual' });
         await row.locator('[data-analyze-fair]').click();
@@ -197,7 +197,7 @@ test.describe('Análisis FAIR completo', () => {
         // Retoma el riesgo desde el Registro (mismo flujo que el bug afectaba) y confirma que el
         // formulario refleja los valores REALES guardados, no los defaults de resetForm.
         await page.reload({ waitUntil: 'networkidle' });
-        await page.click('#nav-fair');
+        await page.click('#nav-dashboard');
         await page.waitForTimeout(500);
         const row = page.locator('#quick-concentrated-table-body tr', { hasText: riskName });
         await row.locator('[data-analyze-fair]').click();
@@ -245,6 +245,10 @@ test.describe('Curva de Excedencia de Pérdidas (LEC)', () => {
         await connectAndBoot(page);
         const riskName = 'E2E LEC — Robo con Violencia';
         await runFullFairAnalysis(page, riskName);
+        // La curva vive en el modal de detalle del riesgo desde que se separó la captura de los
+        // resultados: el wizard pregunta datos, el detalle es donde se estudian.
+        await page.click('#fair-goto-dashboard-btn');
+        await page.waitForTimeout(600);
 
         await expect(page.locator('#fair-lec-container')).toBeVisible();
 

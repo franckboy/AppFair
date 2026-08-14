@@ -23,7 +23,7 @@ test.describe('Informe Consolidado (PDF único)', () => {
         await page.click('#treatment-adopt-mitigar-btn');
         await page.waitForTimeout(800);
 
-        await page.click('#nav-fair');
+        await page.click('#nav-dashboard');
         await page.waitForTimeout(500);
         await expect(page.locator('#fair-export-consolidated-btn')).toBeVisible();
         // El botón individual del Paso 4 se eliminó — el único punto de exportación es este.

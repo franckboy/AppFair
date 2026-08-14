@@ -8,15 +8,18 @@ export const Modal = {
 
     /**
      * Ancho del modal. 'wide' para los que llevan tabla o rejilla de varias columnas (Gestionar
-     * Controles, Criterios de Riesgo, catálogos); por defecto queda angosto, que es lo correcto
-     * para un alert/confirm de una línea.
+     * Controles, Criterios de Riesgo, catálogos); 'xl' para el detalle de un riesgo, que lleva
+     * dos columnas de gráficos; por defecto queda angosto, que es lo correcto para un
+     * alert/confirm de una línea.
      *
      * Se llama ANTES de mostrar el modal. `hide()` lo devuelve al default, así que ningún modal
      * hereda el ancho del anterior — no hace falta que cada quien limpie lo suyo.
-     * @param {'default'|'wide'} size
+     * @param {'default'|'wide'|'xl'} size
      */
     setSize(size = 'default') {
-        if (this.box) this.box.classList.toggle('modal-box-wide', size === 'wide');
+        if (!this.box) return;
+        this.box.classList.toggle('modal-box-wide', size === 'wide');
+        this.box.classList.toggle('modal-box-xl', size === 'xl');
     },
 
     alert(message, title = 'Notificación') {

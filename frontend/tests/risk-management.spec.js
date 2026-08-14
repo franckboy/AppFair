@@ -332,8 +332,13 @@ test.describe('Gestión de Riesgos (página aparte)', () => {
         ]);
         await page.waitForTimeout(1500);
 
-        // Paso 4: la línea de Riesgo Inherente debe verse, con un monto mayor al ALE actual.
+        // Las métricas viven en el modal de detalle del riesgo: la línea de Riesgo Inherente debe
+        // verse ahí, con un monto mayor al ALE actual.
+        await page.click('#fair-goto-dashboard-btn');
+        await page.waitForTimeout(600);
         await expect(page.locator('#fair-inherente-line')).toBeVisible();
+        await page.click('#risk-detail-close-btn');
+        await page.waitForTimeout(400);
 
         const entry = await page.evaluate(async () => {
             const res = await fetch('http://localhost:3000/api/register', { headers: { 'X-API-Key': 'test-e2e-key' } });
@@ -433,13 +438,16 @@ test('el portafolio muestra el CVaR95 simulado en conjunto, menor que la suma de
     // connectAndBoot en vez de page.reload: recargar deja la pantalla de conexión y la navegación
     // inhabilitada. Hace falta volver a arrancar para que el Registro traiga los riesgos sembrados.
     await connectAndBoot(page);
-    await page.click('#nav-risk-mgmt');
-    await page.waitForTimeout(500);
-    // El resumen del portafolio se pinta al elegir un riesgo (ver App.RiskManagement.selectRisk).
-    await page.selectOption('#riskmgmt-risk-select', 'E2E MC Portafolio A');
-    await page.waitForTimeout(2500);
-    const linea = page.locator('#riskmgmt-portfolio-mc');
-    await expect(linea).toBeVisible();
-    await expect(linea).toContainText('Simulando el portafolio completo a la vez');
-    await expect(linea).toContainText('menos que la suma');
+    // El Monte Carlo del portafolio se mudó a su propio bloque del Dashboard: en Gestión de
+    // Riesgos era un <p> de una línea, sin espacio para separar el beneficio de diversificación
+    // de la penalización por correlación, que van en direcciones opuestas.
+    await page.click('#nav-dashboard');
+    await page.waitForTimeout(3000);
+    const bloque = page.locator('#dashboard-portfolio-mc');
+    await expect(bloque).toBeVisible();
+    // No se afirma el número de amenazas: la suite comparte un solo backend y para cuando este
+    // test corre el Registro ya acumuló riesgos de otros archivos. Lo que sí es invariante es que
+    // el bloque muestre las dos cifras separadas.
+    await expect(bloque).toContainText('CVaR95 del portafolio');
+    await expect(bloque).toContainText('Beneficio de diversificación');
 });
