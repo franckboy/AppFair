@@ -65,7 +65,7 @@ test.describe('Informe Consolidado (PDF único)', () => {
         // REGRESIÓN: los gráficos (mapa de calor, Pareto, histograma del riesgo) se exportaban
         // en blanco cuando se exportaba SIN haber visitado antes "Registro de Riesgos" en la
         // misma sesión — justo el flujo de este test, que solo pasa por "Análisis de Riesgo"
-        // (#nav-fair), nunca por #nav-register. Antes del fix, el <canvas> real de esa página
+        // (#nav-fair), nunca por #nav-dashboard. Antes del fix, el <canvas> real de esa página
         // nunca se dibujaba y toDataURL() capturaba un PNG casi vacío de 300×150 (el tamaño
         // por defecto del navegador) — ahora los tres gráficos se redibujan fuera de pantalla a
         // tamaño fijo (ver App.FairExport.renderOffscreen*), sin depender de qué página se

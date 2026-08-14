@@ -93,7 +93,7 @@ test.describe('Modo Simple: sin jerga técnica en ninguna página', () => {
             excludeSelectors: ['#riskmgmt-residual-pareto-tbody', '#riskmgmt-risk-select'],
         });
 
-        await page.click('#nav-register');
+        await page.click('#nav-dashboard');
         await page.waitForTimeout(500);
         await assertNoJargon(page, 'Registro de Riesgos (Matriz/Pareto/Sensibilidad consolidados)', {
             containerSelector: '#fair-register-content',
@@ -158,7 +158,7 @@ test.describe('Modo Simple: sin jerga técnica en ninguna página', () => {
         await page.waitForTimeout(800);
         await expect(page.locator('#fair-roi-cvar-label')).toContainText('CVaR95');
 
-        await page.click('#nav-register');
+        await page.click('#nav-dashboard');
         await page.waitForTimeout(500);
         await expect(page.locator('#fair-register-pareto-title')).toContainText('Pareto');
 

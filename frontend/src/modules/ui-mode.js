@@ -149,7 +149,6 @@ export const UIMode = {
     STATIC_LABELS: {
         tecnico: {
             'quick-concentrated-th-cvar': 'CVaR 95%',
-            'fair-register-sim-cvar-label': 'CVaR 95%:',
             'fair-roi-cvar-label': 'Pérdida Residual (CVaR95):',
             'fair-evitar-cvar-label': 'Pérdida Residual (CVaR95):',
             'fair-aceptar-cvar-label': 'Pérdida Residual (CVaR95):',
@@ -171,12 +170,10 @@ export const UIMode = {
             'fair-treat-ale-acronym': ' (ALE)',
             'risk-tree-page-desc':
                 'Visualiza las relaciones entre riesgos. Cada riesgo conserva su propio cálculo ALE.',
-            'fair-register-sim-p90-label': 'Peor 10% de los casos (P90):',
             'risk-tree-family-sim-p90-label': 'Peor 10% de los casos (P90):',
         },
         simple: {
             'quick-concentrated-th-cvar': 'Peor Caso (5%)',
-            'fair-register-sim-cvar-label': 'Peor Caso Típico (5%):',
             'fair-roi-cvar-label': 'Pérdida Residual en un Mal Año:',
             'fair-evitar-cvar-label': 'Pérdida Residual en un Mal Año:',
             'fair-aceptar-cvar-label': 'Pérdida Residual en un Mal Año:',
@@ -198,7 +195,6 @@ export const UIMode = {
             'fair-treat-ale-acronym': '',
             'risk-tree-page-desc':
                 'Visualiza cómo un riesgo puede desencadenar a otro. Cada riesgo conserva su propio estimado de pérdida.',
-            'fair-register-sim-p90-label': 'De cada 10 años, en el peor:',
             'risk-tree-family-sim-p90-label': 'De cada 10 años, en el peor:',
         },
     },

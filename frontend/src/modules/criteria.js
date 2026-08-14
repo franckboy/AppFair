@@ -33,7 +33,7 @@ export const Criteria = {
     showGate(onComplete) {
         document.querySelectorAll('.nav-requires-boot').forEach((btn) => (btn.disabled = true));
         document
-            .querySelectorAll('#fairAnalysisPage, #registerPage, #assetsPage')
+            .querySelectorAll('#fairAnalysisPage, #dashboardPage, #assetsPage')
             .forEach((el) => el.classList.add('hidden'));
         document.getElementById('criteria-gate-form').innerHTML = `
             <div class="input-group">

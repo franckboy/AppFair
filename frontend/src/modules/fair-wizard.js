@@ -414,8 +414,16 @@ export const FairWizard = {
         document.getElementById('fair-deep-analysis-close').addEventListener('click', () => {
             document.getElementById('fair-deep-analysis-panel').classList.add('hidden');
         });
-        document.getElementById('fair-register-simulation-close').addEventListener('click', () => {
-            document.getElementById('fair-register-simulation').classList.add('hidden');
+        document.getElementById('dashboard-risk-detail-close').addEventListener('click', () => {
+            document.getElementById('dashboard-risk-detail').classList.add('hidden');
+        });
+        // El veredicto se queda en el wizard; los gráficos viven en el Dashboard. Este botón es el
+        // puente entre los dos, para que terminar una simulación no deje al usuario sin saber a
+        // dónde ir a ver el resultado completo.
+        document.getElementById('fair-goto-dashboard-btn').addEventListener('click', () => {
+            App.Navigation.switchPage('dashboard');
+            App.FairAnalysis.loadRiskRegister();
+            document.getElementById('dashboard-risk-detail').scrollIntoView({ behavior: 'smooth', block: 'start' });
         });
         // Escopado a Paso 2 (TEF/Vulnerabilidad) a propósito: los campos de Magnitud de
         // Pérdida (Paso 3) ya tienen su propio listener en populateLossMagnitudeForms(),
@@ -1786,14 +1794,71 @@ export const FairWizard = {
         }
     },
 
+    /**
+     * Histograma de pérdida anual. Compartido: lo usa tanto esta pantalla al terminar una
+     * simulación nueva como App.FairRegister.simulateRegisteredRisk al re-simular un riesgo ya
+     * guardado desde la tabla del Dashboard — los dos dibujan sobre el MISMO canvas, así que la
+     * instancia de Chart tiene que vivir en un solo lugar (state.fair.fairResultsChart) o
+     * Chart.js falla con "Canvas is already in use".
+     */
+    renderLossHistogram(annualLosses, maxLoss) {
+        const ctx = document.getElementById('fair-results-chart').getContext('2d');
+        const { labels, binCounts } = buildHistogramBins(annualLosses, maxLoss);
+        if (state.fair.fairResultsChart) {
+            state.fair.fairResultsChart.destroy();
+        }
+        state.fair.fairResultsChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [
+                    {
+                        label: 'Frecuencia de Pérdida Anual',
+                        data: binCounts,
+                        backgroundColor: 'rgba(54, 162, 235, 0.6)',
+                        borderColor: 'rgba(54, 162, 235, 1)',
+                        borderWidth: 1,
+                    },
+                ],
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: { display: true, text: 'Nº de Simulaciones' },
+                    },
+                    x: {
+                        title: { display: true, text: 'Pérdida Anual Estimada (miles de USD)' },
+                        ticks: { autoSkip: true, maxRotation: 45, minRotation: 45 },
+                    },
+                },
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            title: (context) => `Rango de Pérdida: ~${context[0].label}`,
+                            label: (context) => `Simulaciones: ${context.parsed.y}`,
+                        },
+                    },
+                },
+            },
+        });
+    },
+
     // Curva de Excedencia de Pérdidas (LEC) — la entrega insignia de FAIR. A diferencia del
     // histograma (que enseña la FORMA de la distribución), responde directamente "¿qué
     // probabilidad hay de perder más de X en un año?", que es la pregunta con la que se decide.
     // Se superponen los dos umbrales que el usuario ya declaró en Criterios de Riesgo: donde la
     // curva los cruza está su probabilidad de pasarse de lo que dijo tolerar.
-    renderLossExceedanceCurve() {
+    /**
+     * @param {?{curva: Array, inherente: ?Array}} datos Curvas explícitas. Sin argumento usa las
+     *   de la última simulación del wizard (state.fair.*) — así la tabla del Dashboard puede
+     *   dibujar la LEC de CUALQUIER riesgo guardado sin pisar el estado del riesgo en curso.
+     */
+    renderLossExceedanceCurve(datos = null) {
         const contenedor = document.getElementById('fair-lec-container');
-        const curva = state.fair.lastLossExceedanceCurve;
+        const curva = datos ? datos.curva : state.fair.lastLossExceedanceCurve;
         if (!contenedor) return;
         if (!Array.isArray(curva) || curva.length === 0) {
             contenedor.classList.add('hidden');
@@ -1822,7 +1887,7 @@ export const FairWizard = {
             },
         ];
         // La curva del Inherente solo existe para Amenaza (ver calculateInherentRiskFromSimulation).
-        const inherente = state.fair.lastInherentLossExceedanceCurve;
+        const inherente = datos ? datos.inherente : state.fair.lastInherentLossExceedanceCurve;
         if (Array.isArray(inherente) && inherente.length > 0) {
             datasets.push({
                 label: simple ? 'Si no tuvieras ningún control' : 'Riesgo Inherente',
@@ -2029,56 +2094,24 @@ export const FairWizard = {
         document.getElementById('prob-threshold-result').textContent = `${summary.probExceedance.toFixed(1)}%`;
 
         // El histograma se construye ANTES de guardar en el Registro a propósito —
-        // saveToRiskRegister() lee state.fair.fairResultsChart para guardar chartLabels/
-        // chartData (ver App.FairExport.buildFullRiskReportSection, que los usa para
-        // redibujar este mismo histograma en el PDF). Guardarlo primero y crear el gráfico
-        // después dejaba el Registro con los datos de la corrida ANTERIOR (o null, en la
-        // primera simulación de la sesión) — el histograma de este riesgo nunca aparecía en
-        // el PDF, o aparecía con la corrida equivocada.
-        const ctx = document.getElementById('fair-results-chart').getContext('2d');
-        const { labels, binCounts } = buildHistogramBins(annualLosses, summary.max);
-        if (state.fair.fairResultsChart) {
-            state.fair.fairResultsChart.destroy();
-        }
-        state.fair.fairResultsChart = new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels: labels,
-                datasets: [
-                    {
-                        label: 'Frecuencia de Pérdida Anual',
-                        data: binCounts,
-                        backgroundColor: 'rgba(54, 162, 235, 0.6)',
-                        borderColor: 'rgba(54, 162, 235, 1)',
-                        borderWidth: 1,
-                    },
-                ],
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        title: { display: true, text: 'Nº de Simulaciones' },
-                    },
-                    x: {
-                        title: { display: true, text: 'Pérdida Anual Estimada (miles de USD)' },
-                        ticks: { autoSkip: true, maxRotation: 45, minRotation: 45 },
-                    },
-                },
-                plugins: {
-                    tooltip: {
-                        callbacks: {
-                            title: (context) => `Rango de Pérdida: ~${context[0].label}`,
-                            label: (context) => `Simulaciones: ${context.parsed.y}`,
-                        },
-                    },
-                },
-            },
-        });
+        // saveToRiskRegister() lee state.fair.fairResultsChart para guardar chartLabels/chartData
+        // (ver App.FairExport.buildFullRiskReportSection, que los usa para redibujar este mismo
+        // histograma en el PDF). Guardarlo primero y crear el gráfico después dejaba el Registro
+        // con los datos de la corrida ANTERIOR (o null, en la primera simulación de la sesión).
+        this.renderLossHistogram(annualLosses, summary.max);
 
         this.renderLossExceedanceCurve();
+
+        // Los gráficos que se acaban de dibujar viven en el Dashboard (Zona B), no aquí: hay que
+        // destaparla y ponerle el nombre del riesgo, o el usuario llegaría con el botón "Ver
+        // resultados en el Dashboard" a una sección todavía oculta. A diferencia de la ruta por
+        // tabla, aquí Nash SÍ aplica: los perfiles de Atacante/Defensa son los de esta corrida.
+        document.getElementById('dashboard-risk-detail').classList.remove('hidden');
+        document.getElementById('dashboard-risk-detail-title').textContent =
+            document.getElementById('fair-riskName').value.trim() || 'Detalle del Riesgo';
+        document.getElementById('dashboard-risk-detail-loading').classList.add('hidden');
+        document.getElementById('dashboard-risk-detail-body').classList.remove('hidden');
+        document.getElementById('fair-nash-container').classList.remove('hidden');
 
         await App.FairRegister.saveToRiskRegister(summary, evaluation, inherentEvaluation);
 
