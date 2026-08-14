@@ -125,6 +125,105 @@ export const Treatment = {
                 .addEventListener('click', () => this.adoptStrategy(key));
         });
         document.getElementById('treatment-decision-clear-btn').addEventListener('click', () => this.clearDecision());
+        document.getElementById('fair-nash-open-btn').addEventListener('click', () => this.toggleNashPanel());
+        document.getElementById('nash-calculate-btn').addEventListener('click', () => this.calculateNashEquilibrium());
+    },
+
+    /**
+     * Muestra u oculta el formulario de Nash EN SITIO. Es una exploración aparte del cálculo de
+     * Mitigar, así que vive detrás de un botón en vez de ocupar espacio permanente.
+     */
+    toggleNashPanel() {
+        const panel = document.getElementById('fair-nash-panel');
+        const btn = document.getElementById('fair-nash-open-btn');
+        if (!panel) return;
+        const abierto = panel.classList.toggle('hidden') === false;
+        if (btn) {
+            btn.innerHTML = abierto
+                ? '<i class="fas fa-chess mr-2"></i>Ocultar'
+                : '<i class="fas fa-chess mr-2"></i>Explorar: ¿y si el atacante reacciona?';
+        }
+    },
+
+    /**
+     * El Equilibrio de Nash pertenece a Tratamiento, no al reporte de resultados: es una
+     * herramienta para DISEÑAR la mitigación. El resto de esta página compara costo contra pérdida
+     * evitada suponiendo que el atacante se queda quieto; acá los dos lados ELIGEN cuánto esfuerzo
+     * invertir, así que responde la pregunta que de verdad se hace quien decide cuánto gastar:
+     * si subo mi defensa, ¿cómo reacciona el atacante, y en qué punto atacarme deja de convenirle?
+     *
+     * Se alimenta del riesgo SELECCIONADO (sus perfiles y su Magnitud de Pérdida ya guardados), no
+     * del wizard — desde aquí se trata cualquier riesgo del Registro, sin volver a simular.
+     *
+     * Análisis exploratorio "qué pasaría si": nunca alimenta la simulación ni el residual, botón
+     * explícito, no autocálculo.
+     */
+    async calculateNashEquilibrium() {
+        const entry = state.treatment.currentEntry;
+        if (!entry || !entry.attackerKey || !entry.defenseKey) {
+            Modal.alert(
+                'Este riesgo no tiene Perfil de Atacante ni de Defensa guardados (por ejemplo, una amenaza no deliberada). Sin dos lados que elijan esfuerzo no hay contienda que resolver.',
+            );
+            return;
+        }
+        const m = getSafeNumber(document.getElementById('nash-m'));
+        const costAttacker = getSafeNumber(document.getElementById('nash-cost-attacker'));
+        const costDefense = getSafeNumber(document.getElementById('nash-cost-defense'));
+        if (m <= 0 || costAttacker <= 0 || costDefense <= 0) {
+            Modal.alert(
+                'Los 3 campos (qué tan decisivo es el esfuerzo, y el costo de esforzarse más para cada lado) deben ser mayores a 0.',
+            );
+            return;
+        }
+
+        const btn = document.getElementById('nash-calculate-btn');
+        btn.disabled = true;
+        try {
+            const result = await App.Api.request('/api/autocalc/nash-equilibrium', {
+                method: 'POST',
+                body: {
+                    attackerKey: entry.attackerKey,
+                    defenseKey: entry.defenseKey,
+                    m,
+                    costAttacker,
+                    costDefense,
+                    lossMagnitudes: entry.lossMagnitudes || undefined,
+                },
+            });
+
+            document.getElementById('nash-attacker-effort').textContent = result.attackerEffort.toFixed(1);
+            document.getElementById('nash-defense-effort').textContent = result.defenseEffort.toFixed(1);
+            document.getElementById('nash-equilibrium-vuln').textContent =
+                `${result.equilibriumVulnerability.toFixed(1)}%`;
+            document.getElementById('nash-fixed-vuln').textContent = `${result.fixedEffortVulnerability.toFixed(1)}%`;
+            document.getElementById('nash-value-at-stake').textContent = formatCurrency(result.valueAtStake);
+            document.getElementById('nash-attacker-payoff').textContent = formatCurrency(result.attackerPayoff);
+            document.getElementById('nash-defense-loss').textContent = formatCurrency(result.defenseLoss);
+            document.getElementById('nash-not-converged-warning').classList.toggle('hidden', result.converged);
+            document.getElementById('nash-results').classList.remove('hidden');
+        } catch (error) {
+            Modal.alert(
+                error.userMessage || 'Error al calcular el Equilibrio de Nash. Por favor, revise sus entradas.',
+                'Error de Cálculo',
+            );
+        } finally {
+            btn.disabled = false;
+        }
+    },
+
+    /**
+     * Nash necesita DOS lados que elijan esfuerzo. Una amenaza no deliberada (un sismo, una falla
+     * eléctrica) no tiene atacante, así que la sección entera se oculta en vez de ofrecer un
+     * cálculo que no significa nada — mismo criterio que ya usaba el wizard.
+     */
+    renderNashSection(entry) {
+        const cont = document.getElementById('fair-nash-container');
+        if (!cont) return;
+        cont.classList.toggle('hidden', !(entry && entry.attackerKey && entry.defenseKey));
+        // Resultados de OTRO riesgo no deben quedarse a la vista al cambiar de riesgo.
+        document.getElementById('nash-results').classList.add('hidden');
+        const panel = document.getElementById('fair-nash-panel');
+        if (panel) panel.classList.add('hidden');
     },
 
     _flushPendingSaves() {
@@ -179,6 +278,7 @@ export const Treatment = {
         this._flushPendingSaves();
         state.treatment.currentEntry = entry;
         state.treatment.lastResult = null;
+        this.renderNashSection(entry);
         // Residual de un riesgo distinto no aplica acá — se recalcula abajo (updateReduccionALEAuto)
         // si corresponde, o se queda en null si este riesgo no tiene defenseKey/attackerKey.
         state.treatment.mitigarResidualALE = null;

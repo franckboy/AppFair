@@ -1421,7 +1421,7 @@ export const FairRegister = {
      * Abre el detalle de un riesgo en el modal compartido.
      *
      * El contenido no se regenera: se MUEVE el nodo `#dashboard-risk-detail` al cuerpo del modal
-     * y se devuelve a su sitio al cerrar — mismo patrón que App.FairWizard.openNashModal. Moviendo
+     * y se devuelve a su sitio al cerrar — mismo patrón que ya usaba el panel de Nash. Moviendo
      * el nodo (en vez de reconstruir su HTML) sobreviven los ids, los listeners ya registrados en
      * init(), y sobre todo los <canvas> con sus instancias de Chart ya dibujadas.
      *
@@ -1477,12 +1477,6 @@ export const FairRegister = {
             inherente: result.inherentLossExceedanceCurve || null,
         });
         App.FairWizard.renderSensitivity(result.sensitivity);
-
-        // Nash depende del Perfil de Atacante/Defensa que esté elegido AHORA en el wizard, no de
-        // los de este riesgo guardado — mostrarlo aquí daría un resultado que no corresponde al
-        // riesgo que se está viendo. Se oculta al llegar por la tabla; el wizard lo vuelve a
-        // mostrar cuando la simulación sí viene de sus propios perfiles.
-        document.getElementById('fair-nash-container').classList.add('hidden');
     },
 
     // Síntesis del portafolio completo (no de un riesgo aislado) — cuenta por nivel de

@@ -319,8 +319,6 @@ export const FairWizard = {
         document.getElementById('fair-step3-next').addEventListener('click', () => this.navigateWizard(4));
         document.getElementById('fair-step4-back').addEventListener('click', () => this.navigateWizard(3));
         document.getElementById('run-simulation-btn').addEventListener('click', () => this.runMonteCarloSimulation());
-        document.getElementById('nash-calculate-btn').addEventListener('click', () => this.calculateNashEquilibrium());
-        document.getElementById('fair-nash-open-btn').addEventListener('click', () => this.openNashModal());
         document.getElementById('fair-access-level').addEventListener('change', () => {
             state.fair.accessLevel = document.getElementById('fair-access-level').value;
             this.renderAccessLevelEffect();
@@ -640,13 +638,10 @@ export const FairWizard = {
         if (!deliberada) {
             this.setVulnManualOverride(true);
         }
-        // Etapa 3: el Equilibrio de Nash es una CONTIENDA entre dos jugadores que eligen cuánto
-        // esfuerzo invertir. Sin adversario no hay contienda que resolver — un sismo no decide
-        // esforzarse más porque reforzaste el edificio — y además el cálculo exige attackerKey +
-        // defenseKey, que en este modo no existen: dejarlo visible sería ofrecer un botón que solo
-        // puede terminar en el aviso "completa el Paso 1".
-        const nash = document.getElementById('fair-nash-container');
-        if (nash) nash.classList.toggle('hidden', !deliberada);
+        // El Equilibrio de Nash ya no vive aquí: se movió a Tratamiento (ver
+        // App.Treatment.renderNashSection), que es donde se decide cuánto invertir en defensa y
+        // por tanto donde sirve preguntar cómo reaccionaría el atacante. Allá se oculta solo, por
+        // el riesgo seleccionado, con el mismo criterio: sin adversario no hay contienda.
         // applyLabels() vuelve a pintar vuln-header desde su diccionario, así que el texto
         // específico de "no deliberada" se aplica DESPUÉS, desde applyDeliberateThreatLabels —
         // que también se llama al final de applyLabels() para que sobreviva a un cambio de Modo
@@ -1530,10 +1525,6 @@ export const FairWizard = {
             document.getElementById('fair-sensitivity-list').innerHTML = '';
             document.getElementById('fair-sensitivity-container').classList.add('hidden');
             state.fair.lastSensitivity = null;
-            document.getElementById('nash-results').classList.add('hidden');
-            document.getElementById('nash-m').value = '1';
-            document.getElementById('nash-cost-attacker').value = '';
-            document.getElementById('nash-cost-defense').value = '';
             document.getElementById('tef-min').value = '5';
             document.getElementById('tef-mode').value = '10';
             document.getElementById('tef-max').value = '18';
@@ -1702,95 +1693,6 @@ export const FairWizard = {
             })
             .join('');
         document.getElementById('fair-sensitivity-container').classList.remove('hidden');
-    },
-
-    // El Equilibrio de Nash es una exploración aparte, no parte de la evaluación: vive detrás de un
-    // botón y se abre en un modal. Antes ocupaba el bloque más grande del Paso 4 —3 campos, 2
-    // párrafos, botón y 7 filas de resultado— justo entre los resultados de la simulación, donde
-    // invitaba a leerlo como si alimentara el cálculo. Además sus tres campos piden datos que un
-    // responsable de seguridad no puede obtener de ninguna fuente (el costo del esfuerzo del
-    // atacante), así que toparse con ellos en el scroll natural se siente como un bloqueo.
-    //
-    // Se MUEVE el nodo al cuerpo del modal en vez de re-generar su HTML: así los ids y los
-    // listeners ya registrados en init() sobreviven intactos, sin re-cablear nada.
-    openNashModal() {
-        const panel = document.getElementById('fair-nash-panel');
-        const contenedor = document.getElementById('fair-nash-container');
-        if (!panel || !contenedor) return;
-
-        Modal.setSize('wide');
-        Modal.title.textContent = '¿Qué esfuerzo le conviene poner a cada lado?';
-        Modal.body.innerHTML = '';
-        Modal.body.appendChild(panel);
-        panel.classList.remove('hidden');
-        Modal.footer.innerHTML = `<button id="nash-modal-close-btn" class="btn btn-secondary">Cerrar</button>`;
-
-        const cerrar = () => {
-            // Devolver el panel a su sitio antes de cerrar: si se quedara dentro del modal, la
-            // próxima apertura no lo encontraría y los resultados se perderían al vaciar el cuerpo.
-            panel.classList.add('hidden');
-            contenedor.appendChild(panel);
-            Modal.hide();
-        };
-        document.getElementById('nash-modal-close-btn').addEventListener('click', cerrar, { once: true });
-        Modal.modal.classList.remove('hidden');
-    },
-
-    // Equilibrio de Nash del juego de contienda de Tullock (POST /api/autocalc/nash-equilibrium)
-    // — a diferencia de la Vulnerabilidad del Paso 2 (esfuerzo fijo, los perfiles curados), aquí
-    // Atacante y Defensa ELIGEN cuánto esfuerzo invertir dado el Valor en Juego (auto-sumado de
-    // Magnitud de Pérdida) y su propio costo por unidad de esfuerzo. Análisis exploratorio "qué
-    // pasaría si" — nunca alimenta la simulación real, botón explícito, no autocálculo.
-    async calculateNashEquilibrium() {
-        if (!state.fair.attackerKey || !state.fair.defenseKey) {
-            Modal.alert(
-                'Completa el Paso 1 (Perfil de Atacante y Defensa) antes de calcular cuánto le conviene esforzarse a cada lado.',
-            );
-            return;
-        }
-        const m = getSafeNumber(document.getElementById('nash-m'));
-        const costAttacker = getSafeNumber(document.getElementById('nash-cost-attacker'));
-        const costDefense = getSafeNumber(document.getElementById('nash-cost-defense'));
-        if (m <= 0 || costAttacker <= 0 || costDefense <= 0) {
-            Modal.alert(
-                'Los 3 campos (qué tan decisivo es el esfuerzo, y el costo de esforzarse más para cada lado) deben ser mayores a 0.',
-            );
-            return;
-        }
-
-        const btn = document.getElementById('nash-calculate-btn');
-        btn.disabled = true;
-        try {
-            const result = await App.Api.request('/api/autocalc/nash-equilibrium', {
-                method: 'POST',
-                body: {
-                    attackerKey: state.fair.attackerKey,
-                    defenseKey: state.fair.defenseKey,
-                    m,
-                    costAttacker,
-                    costDefense,
-                    lossMagnitudes: this.buildLossMagnitudesFromDom(),
-                },
-            });
-
-            document.getElementById('nash-attacker-effort').textContent = result.attackerEffort.toFixed(1);
-            document.getElementById('nash-defense-effort').textContent = result.defenseEffort.toFixed(1);
-            document.getElementById('nash-equilibrium-vuln').textContent =
-                `${result.equilibriumVulnerability.toFixed(1)}%`;
-            document.getElementById('nash-fixed-vuln').textContent = `${result.fixedEffortVulnerability.toFixed(1)}%`;
-            document.getElementById('nash-value-at-stake').textContent = formatCurrency(result.valueAtStake);
-            document.getElementById('nash-attacker-payoff').textContent = formatCurrency(result.attackerPayoff);
-            document.getElementById('nash-defense-loss').textContent = formatCurrency(result.defenseLoss);
-            document.getElementById('nash-not-converged-warning').classList.toggle('hidden', result.converged);
-            document.getElementById('nash-results').classList.remove('hidden');
-        } catch (error) {
-            Modal.alert(
-                error.userMessage || 'Error al calcular el Equilibrio de Nash. Por favor, revise sus entradas.',
-                'Error de Cálculo',
-            );
-        } finally {
-            btn.disabled = false;
-        }
     },
 
     /**
@@ -2068,10 +1970,6 @@ export const FairWizard = {
         state.fair.lastSensitivity = sensitivity;
         this.renderSensitivity(sensitivity);
 
-        // Un Equilibrio de Nash calculado antes de esta corrida quedó contra un Valor en Juego
-        // que puede haber cambiado — se oculta para no dejar un resultado obsoleto en pantalla.
-        document.getElementById('nash-results').classList.add('hidden');
-
         // Historial de Revisiones (ISO 31000, cláusula 6.6 — Monitoreo): cada corrida de
         // este mismo análisis queda registrada, para ver cómo cambió el riesgo entre revisiones.
         // Se persiste al Registro (ver saveToRiskRegister) para que un riesgo retomado después
@@ -2103,11 +2001,9 @@ export const FairWizard = {
 
         // Los gráficos que se acaban de dibujar viven en el panel de detalle del riesgo, que se
         // muestra en un modal. Aquí solo se deja listo su contenido; el botón "Ver resultados
-        // detallados" lo abre. A diferencia de la ruta por tabla, aquí Nash SÍ aplica: los perfiles
-        // de Atacante/Defensa son los de esta misma corrida.
+        // detallados" lo abre.
         document.getElementById('dashboard-risk-detail-loading').classList.add('hidden');
         document.getElementById('dashboard-risk-detail-body').classList.remove('hidden');
-        document.getElementById('fair-nash-container').classList.remove('hidden');
 
         await App.FairRegister.saveToRiskRegister(summary, evaluation, inherentEvaluation);
 
