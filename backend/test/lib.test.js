@@ -48,6 +48,8 @@ const {
     calculateResidualPortfolio,
     calculateResidualParetoAnalysis,
     calculateInherentPortfolio,
+    calculateResidualMatrixPoint,
+    exceedanceProbabilityAt,
 } = require('../src/lib/register');
 const { sampleActivatedTransitions, walkMarkovChain } = require('../src/lib/markov');
 const { buildFamilySubtree, runFamilyCascadeSimulation, MAX_FAMILY_SIZE } = require('../src/lib/cascadeSimulation');
@@ -2490,6 +2492,108 @@ test('simulatePortfolio: el ALE del portafolio SÍ es la suma de los ALE individ
         Math.abs(cinco.summary.average - esperado) / esperado < 0.05,
         `esperaba ~${esperado.toFixed(0)}, dio ${cinco.summary.average.toFixed(0)}`,
     );
+});
+
+// --- Punto residual en la Matriz (destino de la flecha de migración) -----------------------
+
+const CRITERIOS = { aleCritico: 100000, aleUmbralExcedencia: 50000 };
+// Curva descendente: pérdidas chicas son muy probables, pérdidas grandes muy improbables.
+const CURVA = [
+    { loss: 10000, probability: 90 },
+    { loss: 50000, probability: 40 },
+    { loss: 100000, probability: 10 },
+    { loss: 200000, probability: 1 },
+];
+
+test('exceedanceProbabilityAt: interpola entre los puntos guardados de la curva', () => {
+    assert.strictEqual(exceedanceProbabilityAt(CURVA, 50000), 40);
+    // Justo a la mitad entre 50k (40%) y 100k (10%).
+    assert.strictEqual(exceedanceProbabilityAt(CURVA, 75000), 25);
+    // Más allá del último punto: la probabilidad real es MENOR, pero la curva no dice cuánto —
+    // se devuelve esa última como cota superior, que nunca subestima.
+    assert.strictEqual(exceedanceProbabilityAt(CURVA, 999999), 1);
+    assert.strictEqual(exceedanceProbabilityAt([], 50000), null);
+});
+
+test('calculateResidualMatrixPoint: Mitigar mueve el punto a la izquierda Y hacia abajo', () => {
+    const risk = {
+        ale: 40000,
+        probabilityPercent: 40,
+        lossExceedanceCurve: CURVA,
+        treatmentDecision: { strategy: 'mitigar', residualALE: 20000 }, // k = 0.5
+    };
+    const punto = calculateResidualMatrixPoint(risk, CRITERIOS);
+    assert.strictEqual(punto.k, 0.5);
+    // X: 20000/100000 = 20%
+    assert.strictEqual(punto.impactPercent, 20);
+    // Y: P(residual > 50k) = P(actual > 100k) = 10%, leído sobre la curva guardada.
+    assert.strictEqual(punto.probabilityPercent, 10);
+    // Migra hacia la zona buena en los DOS ejes, que es justo lo que la flecha debe mostrar.
+    assert.ok(punto.probabilityPercent < risk.probabilityPercent);
+});
+
+test('calculateResidualMatrixPoint: Evitar lleva el punto al origen', () => {
+    const punto = calculateResidualMatrixPoint(
+        {
+            ale: 40000,
+            probabilityPercent: 40,
+            lossExceedanceCurve: CURVA,
+            treatmentDecision: { strategy: 'evitar', residualALE: 0 },
+        },
+        CRITERIOS,
+    );
+    assert.strictEqual(punto.impactPercent, 0);
+    assert.strictEqual(punto.probabilityPercent, 0);
+});
+
+test('calculateResidualMatrixPoint: Aceptar cae EXACTAMENTE sobre el punto actual', () => {
+    // Sin esto, un error de interpolación dejaría el punto verde a un pixel del rojo y parecería
+    // que aceptar movió algo. Aceptar es una decisión documentada que no cambia la exposición.
+    const risk = {
+        ale: 40000,
+        probabilityPercent: 37.5,
+        lossExceedanceCurve: CURVA,
+        treatmentDecision: { strategy: 'aceptar', residualALE: 40000 },
+    };
+    const punto = calculateResidualMatrixPoint(risk, CRITERIOS);
+    assert.strictEqual(punto.k, 1);
+    assert.strictEqual(punto.probabilityPercent, 37.5);
+    assert.strictEqual(punto.impactPercent, 40);
+});
+
+test('calculateResidualMatrixPoint: sin punto verde cuando no hay uno honesto que dibujar', () => {
+    const base = { ale: 40000, probabilityPercent: 40, lossExceedanceCurve: CURVA };
+    // Sin decisión adoptada: no hay residual.
+    assert.strictEqual(calculateResidualMatrixPoint({ ...base }, CRITERIOS), null);
+    // Transferir: hay X (residualALE) pero NO Y — la póliza trunca la cola, no la escala. Mover
+    // solo X afirmaría que la probabilidad de excedencia no cambió, justo lo falso.
+    assert.strictEqual(
+        calculateResidualMatrixPoint(
+            { ...base, treatmentDecision: { strategy: 'transferir', residualALE: 10000 } },
+            CRITERIOS,
+        ),
+        null,
+    );
+    // Riesgo guardado antes de que se persistiera la curva: no hay de dónde leer la Y.
+    assert.strictEqual(
+        calculateResidualMatrixPoint(
+            { ale: 40000, probabilityPercent: 40, treatmentDecision: { strategy: 'mitigar', residualALE: 20000 } },
+            CRITERIOS,
+        ),
+        null,
+    );
+});
+
+test('calculateResidualMatrixPoint: usa el override de criterios del riesgo, no los globales', () => {
+    const risk = {
+        ale: 40000,
+        probabilityPercent: 40,
+        lossExceedanceCurve: CURVA,
+        treatmentDecision: { strategy: 'mitigar', residualALE: 20000 },
+    };
+    // Con un ALE Crítico propio más chico, el MISMO residual pesa el doble en el eje de impacto.
+    const punto = calculateResidualMatrixPoint(risk, { ...CRITERIOS, aleCritico: 50000 });
+    assert.strictEqual(punto.impactPercent, 40);
 });
 
 // --- Portafolio RESIDUAL (después del Tratamiento adoptado) --------------------------------

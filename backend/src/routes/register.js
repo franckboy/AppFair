@@ -8,6 +8,7 @@ const {
     calculateConsolidatedSensitivity,
     calculateResidualPortfolio,
     calculateResidualParetoAnalysis,
+    calculateResidualMatrixPoint,
     calculateInherentPortfolio,
 } = require('../lib/register');
 const { evaluateFairThreat } = require('../lib/evaluation');
@@ -56,6 +57,16 @@ function createRegisterRouter(store) {
                     inherentPortfolio: null,
                 });
             }
+
+            // Punto RESIDUAL de cada riesgo en la Matriz (el destino de la flecha de migración).
+            // Derivado, no persistido: se recalcula solo si cambian los Criterios de Riesgo. Se
+            // resuelven aquí los criterios EFECTIVOS de cada riesgo (su override individual si lo
+            // tiene, o los globales) — la misma resolución que hace el PUT para el punto actual,
+            // en un solo lugar. `null` = no hay punto verde honesto que dibujar (ver el helper).
+            risks.forEach((r) => {
+                const efectivos = r.riskCriteriaOverride ? { ...criteria, ...r.riskCriteriaOverride } : criteria;
+                r.residualMatrixPoint = calculateResidualMatrixPoint(r, efectivos);
+            });
 
             const pareto = calculateParetoAnalysis(risks);
             const consolidatedSensitivity = calculateConsolidatedSensitivity(risks);

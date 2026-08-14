@@ -198,6 +198,93 @@ function calculateResidualPortfolio(risks) {
  * a confundirlos en el frontend.
  * @param {Array<{riskName:string, riskType?:string, ale:number, treatmentDecision?:{residualALE:number}|null}>} risks
  */
+/**
+ * Coordenadas de un riesgo en la Matriz para su estado RESIDUAL (después del Tratamiento
+ * adoptado) — el punto verde al que apunta la flecha de migración.
+ *
+ * Se derivan aquí, no en el frontend, por la misma regla que ya sigue toda la app: los umbrales y
+ * su resolución (criterios globales vs. override individual del riesgo) se calculan en un solo
+ * lugar. Son campos DERIVADOS, no persistidos: cambian solos si cambian los Criterios de Riesgo.
+ *
+ * Eje X (impacto) — aritmética directa sobre el residualALE, misma fórmula que el punto actual.
+ *
+ * Eje Y (probabilidad de superar el umbral) — NO sale del ALE: depende de la distribución, no de
+ * su media. Pero como el Tratamiento escala toda la distribución por una constante k (ver
+ * residualScaleFactor en portfolioSimulation.js), se cumple que
+ *   P(residual > umbral) = P(actual > umbral / k)
+ * y eso se lee sobre la Curva de Excedencia que YA está guardada en la entrada. Sin re-simular:
+ * la respuesta es instantánea y no se paga otro Monte Carlo por cada repintado de la matriz.
+ *
+ * Devuelve null cuando no hay punto verde honesto que dibujar:
+ *  - sin decisión adoptada (no hay residual que mostrar),
+ *  - Transferir, cuya cola se trunca en vez de escalarse: tenemos X pero NO Y, y mover solo X
+ *    afirmaría que la probabilidad de excedencia no cambió — justo lo falso, porque una póliza
+ *    recorta precisamente la cola,
+ *  - sin curva guardada (riesgos anteriores a que se persistiera).
+ */
+function calculateResidualMatrixPoint(risk, effectiveCriteria) {
+    const decision = risk && risk.treatmentDecision;
+    if (!decision) return null;
+    if (decision.strategy === 'transferir' || decision.strategy === 'mitigarTransferir') return null;
+    if (!(risk.ale > 0)) return null;
+
+    const k = decision.residualALE / risk.ale;
+    if (!Number.isFinite(k) || k < 0 || k > 1) return null;
+
+    const impactPercent = Math.max(
+        0,
+        Math.min(100, (decision.residualALE / (effectiveCriteria.aleCritico || 1)) * 100),
+    );
+
+    const umbral = effectiveCriteria.aleUmbralExcedencia;
+    let probabilityPercent = null;
+    if (k === 1) {
+        // Aceptar: la exposición no cambió. Se reusa el valor ya guardado en vez de releer la
+        // curva, para que el punto verde caiga EXACTAMENTE sobre el rojo y no a un pixel por
+        // error de interpolación.
+        probabilityPercent = risk.probabilityPercent ?? null;
+    } else if (k === 0) {
+        probabilityPercent = 0; // Evitar: no queda pérdida que pueda superar ningún umbral.
+    } else if (typeof umbral === 'number' && Array.isArray(risk.lossExceedanceCurve)) {
+        probabilityPercent = exceedanceProbabilityAt(risk.lossExceedanceCurve, umbral / k);
+    }
+    if (probabilityPercent === null) return null;
+
+    return { impactPercent, probabilityPercent: Math.max(0, Math.min(100, probabilityPercent)), k };
+}
+
+/**
+ * Lee sobre la Curva de Excedencia guardada la probabilidad de superar `loss`.
+ *
+ * La curva viene como [{loss, probability}] ordenada de mayor probabilidad (pérdidas chicas) a
+ * menor (pérdidas grandes) — ver buildLossExceedanceCurve. Se interpola linealmente entre los dos
+ * puntos que rodean a `loss`.
+ *
+ * Si `loss` cae más allá del último punto (una pérdida mayor que la más extrema simulada), la
+ * probabilidad real es MENOR que la del último punto, pero la curva no dice cuánto: se devuelve
+ * esa última probabilidad como cota superior. Nunca subestima, que es la dirección en la que no
+ * se debe fallar.
+ */
+function exceedanceProbabilityAt(curve, loss) {
+    if (!Array.isArray(curve) || curve.length === 0) return null;
+    const puntos = [...curve].sort((a, b) => a.loss - b.loss);
+    if (loss <= puntos[0].loss) return puntos[0].probability;
+    const ultimo = puntos[puntos.length - 1];
+    if (loss >= ultimo.loss) return ultimo.probability;
+
+    for (let i = 1; i < puntos.length; i++) {
+        if (loss <= puntos[i].loss) {
+            const a = puntos[i - 1];
+            const b = puntos[i];
+            const span = b.loss - a.loss;
+            if (span <= 0) return b.probability;
+            const t = (loss - a.loss) / span;
+            return a.probability + t * (b.probability - a.probability);
+        }
+    }
+    return ultimo.probability;
+}
+
 function calculateResidualParetoAnalysis(risks) {
     const threats = risks.filter((r) => r.riskType !== 'oportunidad');
     const withResidual = threats.map((r) => ({
@@ -300,6 +387,8 @@ function calculateInherentPortfolio(risks) {
 }
 
 module.exports = {
+    calculateResidualMatrixPoint,
+    exceedanceProbabilityAt,
     normalizeTriggeredBy,
     getRiskMatrixZones,
     calculateParetoAnalysis,
