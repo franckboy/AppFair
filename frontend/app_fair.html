@@ -608,6 +608,10 @@
                         <div class="lg:col-span-6">
                             <h3 class="text-lg font-semibold text-gray-800 mb-2">Matriz de Riesgos</h3>
                             <p class="description-text mb-2">Cada punto lleva un número — la lista de al lado dice qué riesgo es cada uno.</p>
+                            <!-- Sin este contador, un portafolio con 3 de 20 tratados se ve casi
+                                 idéntico con y sin flechas, y quien lo lee concluye que el
+                                 tratamiento no sirvió de nada. -->
+                            <p id="fair-matrix-migration-note" class="description-text mb-2 hidden"></p>
                             <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
                                 <div style="height: 400px;" class="md:col-span-3">
                                     <canvas id="fair-register-chart"></canvas>

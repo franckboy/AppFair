@@ -1,5 +1,7 @@
 'use strict';
 
+const { createHash } = require('node:crypto');
+
 const express = require('express');
 const {
     normalizeTriggeredBy,
@@ -8,6 +10,7 @@ const {
     calculateConsolidatedSensitivity,
     calculateResidualPortfolio,
     calculateResidualParetoAnalysis,
+    calculateResidualMatrixPoint,
     calculateInherentPortfolio,
 } = require('../lib/register');
 const { evaluateFairThreat } = require('../lib/evaluation');
@@ -15,7 +18,37 @@ const { defaultRiskCriteria } = require('../data/profiles');
 const { normalizeRiskCriteria, validateRiskCriteriaOverride } = require('../lib/riskCriteria');
 const { asyncHandler } = require('../middleware/asyncHandler');
 const { ACCESS_LEVELS, DEFAULT_ACCESS_LEVEL } = require('../lib/autocalc');
-const { simulatePortfolio, PORTFOLIO_ITERATIONS } = require('../lib/portfolioSimulation');
+const { simulatePortfolio, simulateResidualPortfolio, PORTFOLIO_ITERATIONS } = require('../lib/portfolioSimulation');
+
+// Caché de la simulación del portafolio (ver GET /portfolio-simulation). Vive en el módulo, no en
+// el store: es un resultado derivado, se puede recalcular siempre, y no tiene por qué sobrevivir a
+// un reinicio.
+const portfolioCache = { huella: null, payload: null };
+
+/**
+ * Huella de los campos del Registro que ENTRAN al cálculo del portafolio. Cambiar cualquiera de
+ * ellos invalida el caché; cambiar el dueño o la fecha de revisión no.
+ */
+function portfolioFingerprint(risks) {
+    const relevante = (risks || []).map((r) => [
+        r.riskName,
+        r.riskType,
+        r.ale,
+        r.tef,
+        r.vuln,
+        r.vulnManualOverride,
+        r.lossMagnitudes,
+        r.attackerKey,
+        r.defenseKey,
+        r.accessLevel,
+        r.dataConfidence,
+        r.triggeredBy,
+        r.triggeredByRiskName,
+        r.triggeredByProbability,
+        r.treatmentDecision,
+    ]);
+    return createHash('sha1').update(JSON.stringify(relevante)).digest('hex');
+}
 
 // La app solo calcula en USD (ver la nota equivalente en simulate.js/assets.js).
 function makeCurrencyFormatter() {
@@ -56,6 +89,16 @@ function createRegisterRouter(store) {
                     inherentPortfolio: null,
                 });
             }
+
+            // Punto RESIDUAL de cada riesgo en la Matriz (el destino de la flecha de migración).
+            // Derivado, no persistido: se recalcula solo si cambian los Criterios de Riesgo. Se
+            // resuelven aquí los criterios EFECTIVOS de cada riesgo (su override individual si lo
+            // tiene, o los globales) — la misma resolución que hace el PUT para el punto actual,
+            // en un solo lugar. `null` = no hay punto verde honesto que dibujar (ver el helper).
+            risks.forEach((r) => {
+                const efectivos = r.riskCriteriaOverride ? { ...criteria, ...r.riskCriteriaOverride } : criteria;
+                r.residualMatrixPoint = calculateResidualMatrixPoint(r, efectivos);
+            });
 
             const pareto = calculateParetoAnalysis(risks);
             const consolidatedSensitivity = calculateConsolidatedSensitivity(risks);
@@ -121,16 +164,55 @@ function createRegisterRouter(store) {
         '/portfolio-simulation',
         asyncHandler(async (req, res) => {
             const risks = (await store.get('riskRegister')) || [];
+
+            // Caché por huella del Registro. Sin esto, cada visita al Dashboard cuesta dos
+            // simulaciones completas (actual + residual): con 66 riesgos son ~5,5 segundos de
+            // cómputo SÍNCRONO, y Node es de un solo hilo — durante ese rato el backend no atiende
+            // ninguna otra petición y la app entera se ve congelada. La huella cubre solo los
+            // campos que de verdad entran al cálculo, así que editar el dueño o la fecha de
+            // revisión de un riesgo no obliga a re-simular; cambiar su Vulnerabilidad o su
+            // decisión de Tratamiento sí.
+            const huella = portfolioFingerprint(risks);
+            if (portfolioCache.huella === huella) {
+                return res.json(portfolioCache.payload);
+            }
+
             const result = simulatePortfolio(risks);
+            // Respirar entre las dos corridas. Cada una es cómputo síncrono y Node es de un solo
+            // hilo: encadenarlas sin ceder duplicaría el tiempo que el servidor pasa sordo a
+            // cualquier otra petición. Con este setImmediate el bloqueo peor caso vuelve a ser el
+            // de UNA corrida, no el de dos.
+            await new Promise((resolve) => setImmediate(resolve));
+            // El estado RESIDUAL (después del Tratamiento adoptado) viaja en la MISMA respuesta, no
+            // en una llamada aparte: las dos cifras se muestran juntas ("ahorro en la cola"), y dos
+            // peticiones podrían intercalarse y dejar en pantalla un par que nunca existió — el
+            // mismo problema que ya obligó a poner guardianes de carrera en otras vistas.
+            const residual = simulateResidualPortfolio(risks);
             const criteria = normalizeRiskCriteria((await store.get('riskCriteria')) || defaultRiskCriteria);
 
             // Clasificación del portafolio contra los Criterios de Riesgo, con el MISMO evaluador
             // que clasifica un riesgo individual — nunca se reimplementan los umbrales aquí.
-            const evaluation = result.summary
-                ? evaluateFairThreat(result.summary.average, result.summary.cvar95, criteria, makeCurrencyFormatter())
-                : null;
+            const evaluar = (summary) =>
+                summary ? evaluateFairThreat(summary.average, summary.cvar95, criteria, makeCurrencyFormatter()) : null;
 
-            res.json({ ...result, evaluation, iterations: PORTFOLIO_ITERATIONS });
+            // El estado actual se devuelve en la RAÍZ (no anidado bajo `actual`) para no romper a
+            // quien ya consume esta ruta; el residual se agrega al lado.
+            const payload = {
+                ...result,
+                evaluation: evaluar(result.summary),
+                iterations: PORTFOLIO_ITERATIONS,
+                residual: {
+                    ...residual,
+                    evaluation: evaluar(residual.summary),
+                    // Lo que el comité quiere ver de una: cuánto encoge la cola el tratamiento, ya
+                    // descontada la diversificación (ambas corridas son conjuntas y pareadas).
+                    tailSavings:
+                        result.summary && residual.summary ? result.summary.cvar95 - residual.summary.cvar95 : null,
+                },
+            };
+            portfolioCache.huella = huella;
+            portfolioCache.payload = payload;
+            res.json(payload);
         }),
     );
 

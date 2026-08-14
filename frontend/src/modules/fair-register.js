@@ -652,6 +652,10 @@ export const FairRegister = {
         // ver backend calculateParetoAnalysis), pero se sigue listando en la tabla de abajo
         // con su propia evaluación correcta ("Oportunidad Significativa...", etc.).
         const threatRegister = register.filter((r) => r.riskType !== 'oportunidad');
+        // Riesgos con un punto residual dibujable. El backend ya decidió cuáles lo tienen (ver
+        // calculateResidualMatrixPoint) — aquí no se reimplementa ese criterio.
+        const conResidual = threatRegister.filter((r) => r.residualMatrixPoint);
+        this.renderMigrationNote(threatRegister, conResidual);
         const opportunityCount = register.length - threatRegister.length;
 
         // Las zonas del mapa de calor (colores + rangos) ya vienen del backend en la
@@ -714,14 +718,81 @@ export const FairRegister = {
         const clampPointsToChartAreaPlugin = {
             id: 'fairRegisterClampPoints',
             beforeDatasetsDraw(chart) {
-                const meta = chart.getDatasetMeta(0);
-                if (!meta || !meta.data) return;
                 const area = chart.chartArea;
-                meta.data.forEach((point) => {
-                    const r = ((point.options && point.options.radius) || 10) + POINT_EDGE_MARGIN;
-                    point.x = Math.min(Math.max(point.x, area.left + r), area.right - r);
-                    point.y = Math.min(Math.max(point.y, area.top + r), area.bottom - r);
+                // Los DOS datasets: el actual y el residual. Recortar solo el primero dejaba los
+                // puntos verdes saliéndose del cuadro (Evitar cae en 0,0, justo en la esquina).
+                chart.data.datasets.forEach((_, i) => {
+                    const meta = chart.getDatasetMeta(i);
+                    if (!meta || !meta.data) return;
+                    meta.data.forEach((point) => {
+                        const r = ((point.options && point.options.radius) || 10) + POINT_EDGE_MARGIN;
+                        point.x = Math.min(Math.max(point.x, area.left + r), area.right - r);
+                        point.y = Math.min(Math.max(point.y, area.top + r), area.bottom - r);
+                    });
                 });
+            },
+        };
+
+        /**
+         * Flechas de migración: une el punto ACTUAL de cada riesgo con su punto RESIDUAL (dónde
+         * quedará después del Tratamiento adoptado). Es la lectura que un comité entiende sin
+         * explicación: los riesgos desplazándose fuera de la zona crítica.
+         *
+         * Se dibuja como plugin y no como dataset de línea porque hacen falta puntas de flecha, y
+         * porque así las líneas van DEBAJO de los puntos (beforeDatasetsDraw) en vez de taparlos.
+         *
+         * Sin flecha cuando no hay desplazamiento real (Aceptar, k=1): un vector de longitud cero
+         * es ruido. Ese caso se distingue con un anillo, no borrando el punto — aceptar SÍ es una
+         * decisión documentada, y hacerla desaparecer la confundiría con un riesgo sin tratar.
+         */
+        const migrationArrowsPlugin = {
+            id: 'fairRegisterMigrationArrows',
+            beforeDatasetsDraw(chart) {
+                const metaActual = chart.getDatasetMeta(0);
+                const metaResidual = chart.getDatasetMeta(1);
+                if (!metaActual || !metaResidual || !metaResidual.data || metaResidual.hidden) return;
+                const ctx = chart.ctx;
+                const puntosActuales = new Map(
+                    (chart.data.datasets[0].data || []).map((d, i) => [d.name, metaActual.data[i]]),
+                );
+
+                ctx.save();
+                ctx.strokeStyle = '#16a34a';
+                ctx.fillStyle = '#16a34a';
+                ctx.lineWidth = 2;
+                (chart.data.datasets[1].data || []).forEach((d, i) => {
+                    const desde = puntosActuales.get(d.name);
+                    const hasta = metaResidual.data[i];
+                    if (!desde || !hasta) return;
+                    const dx = hasta.x - desde.x;
+                    const dy = hasta.y - desde.y;
+                    const largo = Math.hypot(dx, dy);
+                    if (largo < 12) return; // Aceptar (o una reducción irrelevante): sin flecha.
+
+                    // La línea arranca y termina en el BORDE de cada punto, no en su centro, para
+                    // que no se vea atravesándolos.
+                    const ux = dx / largo;
+                    const uy = dy / largo;
+                    const x0 = desde.x + ux * 12;
+                    const y0 = desde.y + uy * 12;
+                    const x1 = hasta.x - ux * 12;
+                    const y1 = hasta.y - uy * 12;
+
+                    ctx.beginPath();
+                    ctx.moveTo(x0, y0);
+                    ctx.lineTo(x1, y1);
+                    ctx.stroke();
+
+                    const ancho = 6;
+                    const largoPunta = 10;
+                    ctx.beginPath();
+                    ctx.moveTo(x1, y1);
+                    ctx.lineTo(x1 - ux * largoPunta - uy * ancho, y1 - uy * largoPunta + ux * ancho);
+                    ctx.lineTo(x1 - ux * largoPunta + uy * ancho, y1 - uy * largoPunta - ux * ancho);
+                    ctx.closePath();
+                    ctx.fill();
+                });
+                ctx.restore();
             },
         };
 
@@ -806,6 +877,32 @@ export const FairRegister = {
                         // (abajo) además reubica su centro para que no se vea saliendo del cuadro.
                         clip: 16,
                     },
+                    // Punto RESIDUAL: dónde queda el riesgo después del Tratamiento adoptado. Solo
+                    // los que tienen uno honesto que dibujar — el backend devuelve null para los
+                    // demás (sin decisión, Transferir, o sin curva guardada; ver
+                    // calculateResidualMatrixPoint). Verde fijo, no por severidad: aquí el color
+                    // codifica "estado residual", no gravedad; que un punto verde caiga en zona
+                    // roja es información, no un error.
+                    {
+                        label: 'Después de tratar',
+                        data: conResidual.map((r) => ({
+                            x: r.residualMatrixPoint.impactPercent,
+                            y: r.residualMatrixPoint.probabilityPercent,
+                            name: r.riskName,
+                            level: r.evaluationLevel,
+                            k: r.residualMatrixPoint.k,
+                        })),
+                        // Aceptar (k=1) no mueve nada: anillo hueco en vez de punto lleno, para
+                        // distinguirlo de un riesgo sin tratar sin fingir un desplazamiento.
+                        pointBackgroundColor: conResidual.map((r) =>
+                            r.residualMatrixPoint.k === 1 ? 'transparent' : '#16a34a',
+                        ),
+                        pointBorderColor: '#16a34a',
+                        pointBorderWidth: 3,
+                        pointRadius: 8,
+                        pointHoverRadius: 11,
+                        clip: 16,
+                    },
                 ],
             },
             options: {
@@ -839,13 +936,26 @@ export const FairRegister = {
                     legend: { display: false },
                     tooltip: {
                         callbacks: {
-                            label: (context) =>
-                                `${context.dataIndex + 1}. ${context.raw.name}: Impacto ${context.raw.x.toFixed(0)}%, Probabilidad ${context.raw.y.toFixed(0)}% — ${context.raw.level}`,
+                            // El número solo tiene sentido en el punto ACTUAL: es el que aparece en
+                            // la lista de al lado. El punto residual del mismo riesgo comparte
+                            // número, así que se busca por nombre en vez de usar su propio índice
+                            // (que no corresponde, porque no todos los riesgos tienen residual).
+                            label: (context) => {
+                                const numero = threatRegister.findIndex((r) => r.riskName === context.raw.name) + 1;
+                                const coords = `Impacto ${context.raw.x.toFixed(0)}%, Probabilidad ${context.raw.y.toFixed(0)}%`;
+                                if (context.datasetIndex === 0) {
+                                    return `${numero}. ${context.raw.name}: ${coords} — ${context.raw.level}`;
+                                }
+                                const sinCambio = context.raw.k === 1;
+                                return `${numero}. ${context.raw.name} — ${
+                                    sinCambio ? 'aceptado, sin cambio' : 'después de tratar'
+                                }: ${coords}`;
+                            },
                         },
                     },
                 },
             },
-            plugins: [matrixBackgroundPlugin, clampPointsToChartAreaPlugin, pointNumberPlugin],
+            plugins: [matrixBackgroundPlugin, migrationArrowsPlugin, clampPointsToChartAreaPlugin, pointNumberPlugin],
         });
 
         this.renderParetoChart();
@@ -1342,6 +1452,47 @@ export const FairRegister = {
 
     // El promedio de sensibilidad por variable, considerando todos los riesgos guardados,
     // también viene ya calculado del backend (GET /api/register → consolidatedSensitivity).
+    /**
+     * Cuántos riesgos tienen de verdad una flecha de migración, y cuántos no. Sin decirlo, un
+     * portafolio con 3 de 20 tratados se ve casi idéntico con y sin flechas: quien lo lee concluye
+     * que el tratamiento no movió nada, cuando lo que pasa es que casi nadie tomó una decisión.
+     *
+     * Los tratados con Transferir se cuentan aparte: sí tienen decisión adoptada, pero no llevan
+     * punto verde porque una póliza trunca la cola en vez de escalarla (ver
+     * calculateResidualMatrixPoint en el backend) — omitirlos sin explicación los haría parecer
+     * riesgos sin tratar.
+     */
+    renderMigrationNote(threatRegister, conResidual) {
+        const el = document.getElementById('fair-matrix-migration-note');
+        if (!el) return;
+        const total = threatRegister.length;
+        const tratados = threatRegister.filter((r) => r.treatmentDecision).length;
+        const transferidos = threatRegister.filter(
+            (r) =>
+                r.treatmentDecision &&
+                (r.treatmentDecision.strategy === 'transferir' ||
+                    r.treatmentDecision.strategy === 'mitigarTransferir') &&
+                !r.residualMatrixPoint,
+        ).length;
+
+        if (tratados === 0) {
+            el.textContent = `Ninguno de los ${total} riesgos tiene todavía una estrategia de tratamiento adoptada, así que no hay movimiento que mostrar.`;
+            el.classList.remove('hidden');
+            return;
+        }
+        const nota =
+            transferidos > 0
+                ? ` ${transferidos} ${
+                      transferidos === 1 ? 'con seguro no lleva flecha' : 'con seguro no llevan flecha'
+                  }: un deducible y un límite recortan las pérdidas más grandes en vez de reducirlas de forma pareja, así que su punto no se puede ubicar.`
+                : '';
+        el.innerHTML =
+            `<strong>${tratados} de ${total}</strong> riesgos tienen una estrategia adoptada; la flecha verde muestra dónde queda cada uno después.` +
+            (conResidual.length === 0 ? ' Ninguno se puede ubicar todavía.' : '') +
+            nota;
+        el.classList.remove('hidden');
+    },
+
     renderConsolidatedSensitivity() {
         const container = document.getElementById('fair-consolidated-sensitivity-list');
         const averaged = state.fair.registerConsolidatedSensitivity || [];

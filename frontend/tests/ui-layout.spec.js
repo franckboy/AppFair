@@ -146,7 +146,9 @@ test.describe('Maquetado: modales y acciones del Registro', () => {
         const fila = page.locator('#quick-concentrated-table-body tr[data-risk-row]').first();
         await fila.scrollIntoViewIfNeeded();
         await fila.locator('.risk-name-cell').click();
-        await page.waitForTimeout(3000);
+        // Se espera la CONDICIÓN, no un rato fijo: la simulación tarda lo que tarde el backend, y
+        // con un registro grande un sleep se queda corto y el canvas todavía mide cero.
+        await expect(page.locator('#dashboard-risk-detail-body')).toBeVisible({ timeout: 20000 });
 
         const geom = await page.evaluate(() => ({
             dentroDelModal: !!document.querySelector('#modalBody #dashboard-risk-detail'),

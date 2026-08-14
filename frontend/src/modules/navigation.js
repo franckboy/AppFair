@@ -5,9 +5,10 @@ export const Navigation = {
         document.getElementById('nav-fair').addEventListener('click', () => this.switchPage('fair'));
         document.getElementById('nav-dashboard').addEventListener('click', () => {
             this.switchPage('dashboard');
-            App.FairAnalysis.loadRiskRegister();
-            // La tabla "Riesgos Guardados" vive ahora aquí (es el selector del detalle por riesgo),
-            // así que refrescarla es responsabilidad de esta página, no de la del wizard.
+            // UNA sola carga. loadHistory() ya llama a App.FairRegister.loadRiskRegister() por
+            // dentro, así que pedir las dos disparaba DOS renders concurrentes de la misma tabla —
+            // y el segundo, al llegar tarde, borraba en silencio lo que el usuario ya hubiera
+            // marcado (los checkboxes de Análisis Profundo, por ejemplo).
             App.QuickAnalysis.loadHistory();
         });
         document.getElementById('nav-treatment').addEventListener('click', () => {
