@@ -76,7 +76,7 @@ test.describe('Tratamiento del Riesgo (página aparte)', () => {
         // Una Oportunidad no aplica a Tratamiento — el CTA del wizard tampoco debe aparecer.
         await expect(page.locator('#fair-treatment-cta')).toBeHidden();
 
-        await page.click('#nav-fair');
+        await page.click('#nav-dashboard');
         await page.waitForTimeout(500);
         const row = page.locator('#quick-concentrated-table-body tr', {
             hasText: 'E2E Tratamiento — Oportunidad de Mercado',
@@ -93,7 +93,7 @@ test.describe('Tratamiento del Riesgo (página aparte)', () => {
         await connectAndBoot(page);
         await runFullFairAnalysis(page, 'E2E Tratamiento — Vía Tabla');
 
-        await page.click('#nav-fair');
+        await page.click('#nav-dashboard');
         await page.waitForTimeout(500);
         const row = page.locator('#quick-concentrated-table-body tr', { hasText: 'E2E Tratamiento — Vía Tabla' });
         await row.locator('[data-treat-fair]').click();
@@ -269,7 +269,7 @@ test.describe('Tratamiento del Riesgo (página aparte)', () => {
         // La tabla de Riesgos Guardados debe mostrar la señal "✔ Tratado" junto a Etapa en
         // cuanto se adopta una decisión — antes esa tabla se quedaba en 2 pisos (Inherente/
         // Actual), sin ninguna señal de que este riesgo ya tiene un 3er piso (Residual real).
-        await page.click('#nav-fair');
+        await page.click('#nav-dashboard');
         await page.waitForTimeout(500);
         const row = page.locator('#quick-concentrated-table-body tr', { hasText: 'E2E Tratamiento — Decisión' });
         const treatedBadge = row.locator('span', { hasText: 'Tratado' });
@@ -321,7 +321,7 @@ test.describe('Tratamiento del Riesgo (página aparte)', () => {
         expect(entry.treatmentDecision).toBe(null);
 
         // La señal "✔ Tratado" también debe desaparecer de Riesgos Guardados al quitar la decisión.
-        await page.click('#nav-fair');
+        await page.click('#nav-dashboard');
         await page.waitForTimeout(500);
         const rowAfterClear = page.locator('#quick-concentrated-table-body tr', {
             hasText: 'E2E Tratamiento — Decisión',

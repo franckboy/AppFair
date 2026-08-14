@@ -46,7 +46,7 @@ test.describe('Nivel de Acceso del atacante', () => {
         expect(entries.alto.vuln.mode).toBeGreaterThan(entries.nulo.vuln.mode);
 
         await page.reload({ waitUntil: 'networkidle' });
-        await page.click('#nav-fair');
+        await page.click('#nav-dashboard');
         await page.waitForTimeout(600);
         const fila = page.locator('#quick-concentrated-table-body tr', { hasText: 'E2E — Insider privilegiado' });
         await fila.locator('[data-analyze-fair]').click();

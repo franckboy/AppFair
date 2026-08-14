@@ -115,65 +115,10 @@ export const RiskManagement = {
     // calculado del lado del servidor (ver GET /api/register, App.FairRegister.loadRiskRegister)
     // — no depende de qué riesgo esté elegido abajo, así que se llama una sola vez aquí, no desde
     // selectRisk(). Sin llamada de red propia.
-    // El CVaR95/p90 de arriba son la SUMA de los individuales. El ALE sí se puede sumar (la
-    // esperanza es lineal), pero un percentil no: p90(X+Y) != p90(X) + p90(Y). Como CVaR es una
-    // medida coherente y por tanto subaditiva, sumarlos SOBRESTIMA la cola salvo que todos los
-    // riesgos se materialicen el mismo año.
-    //
-    // Esta línea trae el valor REAL, simulando el portafolio completo a la vez (ver
-    // lib/portfolioSimulation.js en el backend). Se muestra JUNTO a la suma, no en su lugar: el
-    // usuario debe poder ver de cuánto era la diferencia, no encontrarse el número cambiado sin
-    // explicación.
-    //
-    // Guardián de condición de carrera, mismo patrón que residualRequestId: la simulación es cara
-    // (10.000 iteraciones por riesgo) y una respuesta vieja no debe pisar a una nueva.
-    async renderPortfolioMonteCarlo() {
-        const el = document.getElementById('riskmgmt-portfolio-mc');
-        if (!el) return;
-        const requestId = ++this._portfolioMcRequestId;
-        el.classList.add('hidden');
-
-        let data;
-        try {
-            data = await App.Api.request('/api/register/portfolio-simulation');
-        } catch {
-            return; // silencioso: es información complementaria, no debe romper la página
-        }
-        if (requestId !== this._portfolioMcRequestId || !data || !data.summary) return;
-
-        // Diversificación y correlación van en direcciones opuestas y se reportan por separado:
-        // juntarlas en una sola resta no mide ninguna de las dos.
-        const ahorro = data.diversificationBenefit;
-        const pct = data.sumOfIndividualCVaR > 0 ? (100 * ahorro) / data.sumOfIndividualCVaR : 0;
-        const nota =
-            data.includedCount > 1 && ahorro > 0
-                ? ` — ${formatCurrency(ahorro)} menos que la suma (${pct.toFixed(0)}%), porque no todos los riesgos ocurren el mismo año.`
-                : '.';
-        // Si hay dependencias declaradas en el Árbol de Cascada, la simulación ya las usó: los
-        // riesgos encadenados caen juntos y eso engorda la cola. Decirlo explícitamente, porque
-        // cambia cómo se lee el número de arriba.
-        const cascada =
-            data.cascadeEdgeCount > 0
-                ? ` <span class="text-gray-600">Incluye ${data.cascadeEdgeCount} ${data.cascadeEdgeCount === 1 ? 'dependencia declarada' : 'dependencias declaradas'} en el Árbol de Cascada, que suman ${formatCurrency(data.correlationPenalty)} a la cola: esos riesgos caen el mismo año.</span>`
-                : '';
-        // Modo Simple prohíbe los acrónimos (ver simple-mode-no-jargon.spec.js): se dice lo mismo
-        // en palabras. Los dos textos describen exactamente las mismas dos cifras.
-        const simple = App.UIMode.mode === 'simple';
-        const cifras = simple
-            ? `en el 5% de años peores se perderían <strong>${formatCurrency(data.summary.cvar95)}</strong> en promedio, ` +
-              `y 1 de cada 10 años pasaría de <strong>${formatCurrency(data.summary.p90)}</strong>`
-            : `CVaR95 <strong>${formatCurrency(data.summary.cvar95)}</strong>, p90 <strong>${formatCurrency(data.summary.p90)}</strong>`;
-        el.innerHTML =
-            `<strong>Simulando el portafolio completo a la vez</strong> (${data.includedCount} amenazas): ` +
-            `${cifras}${nota}${cascada}` +
-            (data.skippedCount > 0
-                ? ` <span class="text-gray-500">(${data.skippedCount} sin datos suficientes para simular)</span>`
-                : '');
-        el.classList.remove('hidden');
-    },
-
-    _portfolioMcRequestId: 0,
-
+    // El CVaR95/p90 de esta sección son la SUMA de los individuales — una cota conservadora.
+    // El valor REAL, simulando el portafolio completo a la vez, se muestra en el Dashboard
+    // (ver App.FairRegister.renderPortfolioMonteCarlo): ahí tiene espacio para mostrar también
+    // el beneficio de diversificación y la correlación declarada, que aquí no cabían.
     renderResidualPortfolio() {
         const section = document.getElementById('riskmgmt-portfolio-section');
         const portfolio = state.fair.registerResidualPortfolio;
@@ -189,8 +134,6 @@ export const RiskManagement = {
 
         document.getElementById('riskmgmt-portfolio-detail').textContent =
             `${portfolio.treatedCount} de ${portfolio.totalRiskCount} amenazas con tratamiento adoptado`;
-
-        this.renderPortfolioMonteCarlo();
 
         // Waterfall Inherente (sin controles) → Actual (con controles vigentes) → Residual
         // (después de Tratamiento) — las 3 etapas, en dólares. inherentPortfolio ya trae también

@@ -23,7 +23,7 @@ test.describe('Informe Consolidado (PDF único)', () => {
         await page.click('#treatment-adopt-mitigar-btn');
         await page.waitForTimeout(800);
 
-        await page.click('#nav-fair');
+        await page.click('#nav-dashboard');
         await page.waitForTimeout(500);
         await expect(page.locator('#fair-export-consolidated-btn')).toBeVisible();
         // El botón individual del Paso 4 se eliminó — el único punto de exportación es este.
@@ -65,7 +65,7 @@ test.describe('Informe Consolidado (PDF único)', () => {
         // REGRESIÓN: los gráficos (mapa de calor, Pareto, histograma del riesgo) se exportaban
         // en blanco cuando se exportaba SIN haber visitado antes "Registro de Riesgos" en la
         // misma sesión — justo el flujo de este test, que solo pasa por "Análisis de Riesgo"
-        // (#nav-fair), nunca por #nav-register. Antes del fix, el <canvas> real de esa página
+        // (#nav-fair), nunca por #nav-dashboard. Antes del fix, el <canvas> real de esa página
         // nunca se dibujaba y toDataURL() capturaba un PNG casi vacío de 300×150 (el tamaño
         // por defecto del navegador) — ahora los tres gráficos se redibujan fuera de pantalla a
         // tamaño fijo (ver App.FairExport.renderOffscreen*), sin depender de qué página se

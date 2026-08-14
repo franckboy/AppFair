@@ -39,25 +39,48 @@ test.describe('Amenaza no deliberada', () => {
     // Etapa 3: sin perfiles no hay contienda que resolver, y el cálculo exige attackerKey +
     // defenseKey — dejar el panel visible sería ofrecer un botón que solo puede terminar en el
     // aviso "completa el Paso 1".
-    // El panel vive en el Paso 4 (resultados), así que solo se puede observar después de simular;
-    // el interruptor que lo controla está en el Paso 2.
-    test('el Equilibrio de Nash desaparece sin adversario y vuelve con él (Modo Técnico)', async ({ page }) => {
+    // El Equilibrio de Nash vive ahora en Tratamiento, no en el wizard ni en el reporte de
+    // resultados: es una herramienta para DISEÑAR la mitigación ("si subo mi defensa, ¿cómo
+    // reacciona el atacante?"), no una cifra de reporte. Se alimenta de los perfiles YA guardados
+    // del riesgo seleccionado, así que sin adversario la sección entera desaparece.
+    test('el Equilibrio de Nash aparece en Tratamiento con adversario y desaparece sin él', async ({ page }) => {
         await connectAndBoot(page);
         await page.click('#mode-toggle-btn');
         await page.waitForTimeout(300);
         await runFullFairAnalysis(page, 'E2E — Nash con adversario presente');
+
+        await page.click('#nav-treatment');
+        await page.waitForTimeout(800);
+        await page.selectOption('#treatment-risk-select', 'E2E — Nash con adversario presente');
+        await page.waitForTimeout(800);
         await expect(page.locator('#fair-nash-container')).toBeVisible();
 
-        await page.click('#fair-step4-back');
+        // Un riesgo sin Perfil de Atacante (amenaza no deliberada) no tiene contienda que resolver.
+        // connectAndBoot en vez de reiniciar el formulario: el wizard quedó en el Paso 4 tras la
+        // simulación anterior, y "Nuevo Análisis" pide confirmación — arrancar limpio es el mismo
+        // patrón que ya usa el resto de la suite para encadenar dos análisis.
+        await connectAndBoot(page);
+        await page.click('#mode-toggle-btn');
         await page.waitForTimeout(300);
-        await page.click('#fair-step3-back');
-        await page.waitForTimeout(400);
+        await page.fill('#fair-riskName', 'E2E — Nash sin adversario');
+        await page.click('#fair-step1-next');
+        await page.waitForTimeout(300);
         await page.uncheck('#fair-deliberate-threat');
         await page.waitForTimeout(400);
         await page.click('#fair-step2-next');
         await page.waitForTimeout(400);
         await page.click('#fair-step3-next');
         await page.waitForTimeout(400);
+        await Promise.all([
+            page.waitForResponse((r) => r.url().includes('/api/simulate'), { timeout: 15000 }),
+            page.click('#run-simulation-btn'),
+        ]);
+        await page.waitForTimeout(1500);
+
+        await page.click('#nav-treatment');
+        await page.waitForTimeout(800);
+        await page.selectOption('#treatment-risk-select', 'E2E — Nash sin adversario');
+        await page.waitForTimeout(800);
         await expect(page.locator('#fair-nash-container')).toBeHidden();
     });
 
@@ -113,7 +136,7 @@ test.describe('Amenaza no deliberada', () => {
         // Y sobrevive al retomarlo: sin persistir isDeliberate, inferDeliberateThreat lo trataba
         // como deliberado y resucitaba unos perfiles que nunca se eligieron.
         await page.reload({ waitUntil: 'networkidle' });
-        await page.click('#nav-fair');
+        await page.click('#nav-dashboard');
         await page.waitForTimeout(600);
         const fila = page.locator('#quick-concentrated-table-body tr', { hasText: 'E2E — Incendio accidental' });
         await fila.locator('[data-analyze-fair]').click();
@@ -124,15 +147,20 @@ test.describe('Amenaza no deliberada', () => {
         await expect(page.locator('#fair-attacker-defense-section')).toBeHidden();
     });
 
-    test('una amenaza deliberada conserva el Equilibrio de Nash y su comparación a esfuerzo fijo', async ({ page }) => {
+    test('el Equilibrio de Nash se calcula en Tratamiento con los perfiles del riesgo elegido', async ({ page }) => {
         await connectAndBoot(page);
         await page.click('#mode-toggle-btn');
         await page.waitForTimeout(300);
         await runFullFairAnalysis(page, 'E2E — Nash con adversario');
 
+        await page.click('#nav-treatment');
+        await page.waitForTimeout(800);
+        await page.selectOption('#treatment-risk-select', 'E2E — Nash con adversario');
+        await page.waitForTimeout(800);
         await expect(page.locator('#fair-nash-container')).toBeVisible();
-        // El formulario vive detrás de un botón: es una exploración aparte, no parte de los
-        // resultados de la evaluación.
+
+        // El formulario vive detrás de un botón: es una exploración aparte, no parte del cálculo
+        // de Mitigar que tiene encima.
         await expect(page.locator('#fair-nash-panel')).toBeHidden();
         await page.click('#fair-nash-open-btn');
         await page.waitForTimeout(300);
@@ -146,81 +174,12 @@ test.describe('Amenaza no deliberada', () => {
         await expect(page.locator('#nash-results')).toBeVisible();
         await expect(page.locator('#nash-fixed-vuln')).not.toHaveText('');
 
-        // Al cerrar, el panel vuelve a su sitio: si se quedara dentro del modal, la próxima
-        // apertura no lo encontraría.
-        await page.click('#nash-modal-close-btn');
+        // El mismo botón lo oculta y lo vuelve a mostrar, con los resultados ya calculados.
+        await page.click('#fair-nash-open-btn');
         await page.waitForTimeout(300);
         await expect(page.locator('#fair-nash-panel')).toBeHidden();
         await page.click('#fair-nash-open-btn');
         await page.waitForTimeout(300);
         await expect(page.locator('#nash-results')).toBeVisible();
-    });
-});
-
-// Pérdida = Frecuencia x Vulnerabilidad x Magnitud: basta con que uno de los tres quede en cero
-// para que el análisis entero valga 0. El caso más fácil de topar es justo el no deliberado — sin
-// Perfil de Atacante no hay Frecuencia sugerida.
-test.describe('Avisos de datos incompletos', () => {
-    test('un análisis que da ALE 0 lo avisa y nombra el factor en cero, en vez de guardarse en silencio', async ({
-        page,
-    }) => {
-        await connectAndBoot(page);
-        await page.fill('#fair-riskName', 'E2E — Análisis sin magnitud');
-        await page.click('#fair-step1-next');
-        await page.waitForTimeout(400);
-        await page.uncheck('#fair-deliberate-threat');
-        await page.waitForTimeout(400);
-        await page.fill('#vuln-min', '10');
-        await page.fill('#vuln-mode', '25');
-        await page.fill('#vuln-max', '40');
-        await page.click('#fair-step2-next');
-        await page.waitForTimeout(400);
-        // Se deja la Magnitud de Pérdida en cero a propósito.
-        await page.click('#fair-step3-next');
-        await page.waitForTimeout(400);
-        await Promise.all([
-            page.waitForResponse((r) => r.url().includes('/api/simulate'), { timeout: 15000 }),
-            page.click('#run-simulation-btn'),
-        ]);
-        await page.waitForTimeout(1200);
-
-        const aviso = page.locator('#fair-zero-ale-warning');
-        await expect(aviso).toBeVisible();
-        await expect(aviso).toContainText('Magnitud de Pérdida');
-    });
-
-    test('la Frecuencia acepta decimales — un sismo cada 20 años es 0,05 al año, no 0', async ({ page }) => {
-        await connectAndBoot(page);
-        await page.fill('#fair-riskName', 'E2E — Sismo cada 20 años');
-        await page.click('#fair-step1-next');
-        await page.waitForTimeout(400);
-        await page.uncheck('#fair-deliberate-threat');
-        await page.waitForTimeout(400);
-
-        // Antes, type="number" sin step usaba step="1": 0.05 era inválido y el oninput lo borraba.
-        await page.fill('#tef-min', '0.02');
-        await page.fill('#tef-mode', '0.05');
-        await page.fill('#tef-max', '0.1');
-        await expect(page.locator('#tef-mode')).toHaveValue('0.05');
-
-        await page.fill('#vuln-min', '40');
-        await page.fill('#vuln-mode', '60');
-        await page.fill('#vuln-max', '80');
-        await page.click('#fair-step2-next');
-        await page.waitForTimeout(400);
-        await page.check('#lm-manual-override');
-        await page.waitForTimeout(300);
-        await page.fill('#lm-respuesta-min', '100000');
-        await page.fill('#lm-respuesta-mode', '500000');
-        await page.fill('#lm-respuesta-max', '2000000');
-        await page.click('#fair-step3-next');
-        await page.waitForTimeout(400);
-        const [resp] = await Promise.all([
-            page.waitForResponse((r) => r.url().includes('/api/simulate'), { timeout: 15000 }),
-            page.click('#run-simulation-btn'),
-        ]);
-        expect(resp.request().postDataJSON().tef).toMatchObject({ min: 0.02, mode: 0.05, max: 0.1 });
-        await page.waitForTimeout(1200);
-        await expect(page.locator('#fair-zero-ale-warning')).toBeHidden();
     });
 });

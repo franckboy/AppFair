@@ -31,6 +31,10 @@ async function assertNoJargon(page, pageLabel, { containerSelector = 'body', exc
                     el.style.display = 'none';
                 });
             });
+            // innerText (no textContent) a propósito: es lo que de verdad ve el usuario. Ojo con
+            // la consecuencia — solo respeta el display:none de arriba si el contenedor se está
+            // renderizando. Con la página oculta, innerText cae a textContent y las exclusiones
+            // se ignoran sin avisar, así que cada llamada debe hacerse con su pantalla a la vista.
             const captured = container.innerText;
             restore.forEach(([el, prevDisplay]) => {
                 el.style.display = prevDisplay;
@@ -93,7 +97,7 @@ test.describe('Modo Simple: sin jerga técnica en ninguna página', () => {
             excludeSelectors: ['#riskmgmt-residual-pareto-tbody', '#riskmgmt-risk-select'],
         });
 
-        await page.click('#nav-register');
+        await page.click('#nav-dashboard');
         await page.waitForTimeout(500);
         await assertNoJargon(page, 'Registro de Riesgos (Matriz/Pareto/Sensibilidad consolidados)', {
             containerSelector: '#fair-register-content',
@@ -120,12 +124,17 @@ test.describe('Modo Simple: sin jerga técnica en ninguna página', () => {
             excludeSelectors: ['#risk-tree-family-sim-members'], // lista riesgos incluidos/excluidos por nombre
         });
 
-        // Riesgos Guardados (#historySection, en Análisis de Riesgo) — hueco real de cobertura
+        // Riesgos Guardados (#historySection, hoy en el Dashboard) — hueco real de cobertura
         // encontrado en una auditoría: vive FUERA de #fair-step-4 (el wizard), así que las
         // verificaciones de arriba nunca lo tocaban. La columna CVaR95 ya se traduce por
         // STATIC_LABELS (quick-concentrated-th-cvar), pero nada lo confirmaba automáticamente.
-        await page.click('#nav-fair');
-        await page.waitForTimeout(500);
+        //
+        // La navegación importa: el contenedor tiene que estar VISIBLE. assertNoJargon excluye
+        // los nombres de riesgo ajenos poniéndoles display:none, y eso solo surte efecto sobre
+        // innerText si el contenedor se está renderizando — en una página oculta innerText cae a
+        // comportarse como textContent y las exclusiones se ignoran en silencio.
+        await page.click('#nav-dashboard');
+        await page.waitForTimeout(800);
         await assertNoJargon(page, 'Riesgos Guardados', {
             containerSelector: '#historySection',
             // .risk-name-cell son nombres de riesgo de OTROS archivos de test (ej. "E2E Pareto
@@ -158,7 +167,7 @@ test.describe('Modo Simple: sin jerga técnica en ninguna página', () => {
         await page.waitForTimeout(800);
         await expect(page.locator('#fair-roi-cvar-label')).toContainText('CVaR95');
 
-        await page.click('#nav-register');
+        await page.click('#nav-dashboard');
         await page.waitForTimeout(500);
         await expect(page.locator('#fair-register-pareto-title')).toContainText('Pareto');
 

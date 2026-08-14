@@ -133,7 +133,7 @@ export const OrgContext = {
     showGate(onComplete) {
         document.querySelectorAll('.nav-requires-boot').forEach((btn) => (btn.disabled = true));
         document
-            .querySelectorAll('#fairAnalysisPage, #registerPage, #assetsPage')
+            .querySelectorAll('#fairAnalysisPage, #dashboardPage, #assetsPage')
             .forEach((el) => el.classList.add('hidden'));
         document.getElementById('orgcontext-gate-form').innerHTML = this.buildFormHTML('orgctx-gate');
         document.getElementById('orgcontext-gate').classList.remove('hidden');

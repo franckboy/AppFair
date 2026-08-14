@@ -45,7 +45,7 @@ test.describe('Barra persistente de riesgo (Actual/Residual del portafolio + rie
         await expect(page.locator('#risk-summary-residual-value')).toContainText('$');
 
         // Clic en "Estás analizando ahora" navega directo al Paso 4 del wizard, desde otra página.
-        await page.click('#nav-register');
+        await page.click('#nav-dashboard');
         await page.waitForTimeout(300);
         await page.click('#risk-summary-current');
         await page.waitForTimeout(300);

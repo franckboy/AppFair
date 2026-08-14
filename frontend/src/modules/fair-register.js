@@ -3,7 +3,6 @@ import { state } from './state.js';
 import {
     LOSS_FORMS_KEYS,
     LOSS_FORM_LABELS,
-    buildHistogramBins,
     classifyPointSeverity,
     formatCurrency,
     getSafeNumber,
@@ -16,6 +15,7 @@ import {
     pertMean,
 } from './utils.js';
 import { STRATEGY_LABELS } from './treatment.js';
+import { Modal } from './modal.js';
 
 // ============================================================
 // App.FairRegister — el Registro de Riesgos consolidado: guardar/borrar
@@ -537,6 +537,88 @@ export const FairRegister = {
         showToast('Riesgo eliminado.');
     },
 
+    _portfolioMcRequestId: 0,
+
+    /**
+     * Monte Carlo del PORTAFOLIO: simula todos los riesgos a la vez, en vez de sumar el resultado
+     * de cada uno por separado.
+     *
+     * Por qué importa: el ALE sí se puede sumar (la esperanza es lineal), pero un percentil no —
+     * `p90(X + Y) != p90(X) + p90(Y)`. CVaR es una medida coherente y por tanto SUBADITIVA, así
+     * que sumar los individuales SOBRESTIMA la cola salvo que todos los riesgos ocurran el mismo
+     * año. Se muestran los dos números juntos, nunca uno en lugar del otro: el usuario tiene que
+     * poder ver de cuánto era la diferencia.
+     *
+     * Antes esto era una sola línea de texto dentro de Gestión de Riesgos
+     * (`#riskmgmt-portfolio-mc`). Aquí tiene espacio para separar las tres cifras que de verdad
+     * dicen algo distinto: la cola real, cuánto sobrestimaba la suma, y cuánto añade la
+     * correlación declarada en el Árbol de Cascada.
+     *
+     * Guardián de condición de carrera: la simulación es cara (10.000 iteraciones por riesgo) y
+     * una respuesta vieja no debe pisar a una nueva.
+     */
+    async renderPortfolioMonteCarlo() {
+        const el = document.getElementById('dashboard-portfolio-mc');
+        if (!el) return;
+        const requestId = ++this._portfolioMcRequestId;
+
+        let data;
+        try {
+            data = await App.Api.request('/api/register/portfolio-simulation');
+        } catch {
+            return; // silencioso: es información complementaria, no debe romper la página
+        }
+        if (requestId !== this._portfolioMcRequestId || !data || !data.summary) return;
+
+        // Modo Simple prohíbe los acrónimos (ver simple-mode-no-jargon.spec.js): se dice lo mismo
+        // en palabras. Las dos redacciones describen exactamente las mismas cifras.
+        const simple = App.UIMode.mode === 'simple';
+        const fila = (etiqueta, valor, detalle) => `
+            <div class="flex justify-between items-baseline gap-3 py-1 border-b border-gray-200 last:border-0">
+                <span>${etiqueta}</span>
+                <strong class="whitespace-nowrap">${valor}</strong>
+            </div>
+            ${detalle ? `<p class="text-xs text-gray-500 mb-2">${detalle}</p>` : ''}`;
+
+        const filas = [
+            fila(
+                simple ? 'En el 5% de años peores perderías, en promedio' : 'CVaR95 del portafolio',
+                formatCurrency(data.summary.cvar95),
+                `Simulando ${data.includedCount} ${data.includedCount === 1 ? 'amenaza' : 'amenazas'} a la vez.`,
+            ),
+            fila(simple ? '1 de cada 10 años pasaría de' : 'p90 del portafolio', formatCurrency(data.summary.p90)),
+        ];
+
+        // Diversificación y correlación van en direcciones opuestas y se reportan por separado:
+        // juntarlas en una sola resta contra la suma no mide ninguna de las dos.
+        if (data.includedCount > 1 && data.diversificationBenefit > 0) {
+            const pct =
+                data.sumOfIndividualCVaR > 0 ? (100 * data.diversificationBenefit) / data.sumOfIndividualCVaR : 0;
+            filas.push(
+                fila(
+                    simple ? 'Menos de lo que daría sumarlos por separado' : 'Beneficio de diversificación',
+                    `${formatCurrency(data.diversificationBenefit)} (${pct.toFixed(0)}%)`,
+                    'Porque no todos los riesgos ocurren el mismo año.',
+                ),
+            );
+        }
+        if (data.cascadeEdgeCount > 0) {
+            filas.push(
+                fila(
+                    simple ? 'Suma de más porque unos riesgos arrastran a otros' : 'Penalización por correlación',
+                    formatCurrency(data.correlationPenalty),
+                    `${data.cascadeEdgeCount} ${data.cascadeEdgeCount === 1 ? 'dependencia declarada' : 'dependencias declaradas'} en el Árbol: esos riesgos caen el mismo año.`,
+                ),
+            );
+        }
+
+        el.innerHTML =
+            filas.join('') +
+            (data.skippedCount > 0
+                ? `<p class="text-xs text-gray-500 mt-2">${data.skippedCount} sin datos suficientes para simular.</p>`
+                : '');
+    },
+
     renderRiskRegister() {
         const empty = document.getElementById('fair-register-empty');
         const content = document.getElementById('fair-register-content');
@@ -560,6 +642,7 @@ export const FairRegister = {
         content.classList.remove('hidden');
 
         this.renderPortfolioInterpretation(register);
+        this.renderPortfolioMonteCarlo();
 
         // El mapa de calor (Impacto vs. Probabilidad de excedencia) y sus zonas
         // Bajo/Medio/Alto/Crítico son conceptos de AMENAZA — para una 'oportunidad'
@@ -930,8 +1013,12 @@ export const FairRegister = {
                     <button class="inline-flex items-center justify-center p-1 text-red-600 hover:text-red-800 text-sm" title="Eliminar riesgo" aria-label="Eliminar riesgo" data-delete-quick="${item.id}"><i class="fas fa-trash"></i></button>
                 </div>`;
 
+                // data-risk-row marca las filas que tienen un detalle que abrir (ver el listener de
+                // clic en fila más abajo): un riesgo de Triage todavía no se ha simulado, así que
+                // no tiene nada que mostrar y su fila no debe verse pinchable.
+                const filaAbrible = item.stage === 'fair' && item.fairEntry.tef && item.fairEntry.vuln;
                 return `
-                <tr class="border-b">
+                <tr class="border-b${filaAbrible ? ' cursor-pointer hover:bg-gray-50' : ''}"${filaAbrible ? ' data-risk-row' : ''}>
                     <td class="py-2 text-center">${checkboxCell}</td>
                     <td class="text-center text-gray-500">${item.number}</td>
                     <td class="risk-name-cell">${sanitizeHTML(item.riskName)}</td>
@@ -964,6 +1051,18 @@ export const FairRegister = {
         });
         document.querySelectorAll('[data-simulate-risk]').forEach((btn) => {
             btn.addEventListener('click', () => this.simulateRegisteredRisk(btn.dataset.simulateRisk));
+        });
+        // Clic en la FILA (no solo en el botón "Simular") abre el detalle de ese riesgo — es lo que
+        // uno espera de una tabla cuyas filas tienen más que contar. Se ignoran los clics sobre los
+        // controles de la fila (botones, checkbox) para no abrir el detalle además de lo que el
+        // usuario pidió; el nombre sale del texto ya renderizado, no de un atributo, porque
+        // sanitizeHTML no escapa comillas dobles y un nombre con " rompería el atributo.
+        document.querySelectorAll('#quick-concentrated-table-body tr[data-risk-row]').forEach((tr) => {
+            tr.addEventListener('click', (e) => {
+                if (e.target.closest('button, input, a, select')) return;
+                const cell = tr.querySelector('.risk-name-cell');
+                if (cell) this.simulateRegisteredRisk(cell.textContent);
+            });
         });
         document.querySelectorAll('[data-treat-fair]').forEach((btn) => {
             // El nombre sale del texto ya renderizado (.risk-name-cell), no de un atributo —
@@ -1276,16 +1375,12 @@ export const FairRegister = {
             return;
         }
 
-        const section = document.getElementById('fair-register-simulation');
-        const loading = document.getElementById('fair-register-simulation-loading');
-        const body = document.getElementById('fair-register-simulation-body');
-        document.getElementById('fair-register-simulation-title').textContent =
-            `Simulación Detallada: ${risk.riskName}`;
-        section.classList.remove('hidden');
+        const loading = document.getElementById('dashboard-risk-detail-loading');
+        const body = document.getElementById('dashboard-risk-detail-body');
+        this.openRiskDetailModal(risk.riskName);
         loading.classList.remove('hidden');
         loading.textContent = 'Simulando 10,000 escenarios…';
         body.classList.add('hidden');
-        section.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
         let result;
         try {
@@ -1310,57 +1405,78 @@ export const FairRegister = {
 
         loading.classList.add('hidden');
         body.classList.remove('hidden');
+        this.renderRiskDetail(result);
+    },
 
-        document.getElementById('fair-register-sim-ale').textContent = formatCurrency(result.summary.average);
-        document.getElementById('fair-register-sim-median').textContent = formatCurrency(result.summary.median);
-        document.getElementById('fair-register-sim-p90').textContent = formatCurrency(result.summary.p90);
-        document.getElementById('fair-register-sim-cvar').textContent = formatCurrency(result.summary.cvar95);
+    /**
+     * Llena la Zona B del Dashboard (el detalle de UN riesgo) con el resultado de /api/simulate.
+     *
+     * Es el mismo juego de elementos que usa el wizard al terminar una simulación nueva — antes
+     * había dos juegos casi idénticos (#fair-register-sim-* aquí, y los del Paso 4 allá)
+     * mostrando lo mismo con código distinto. Los renderizadores de histograma, curva de
+     * excedencia y sensibilidad viven en App.FairWizard y se reutilizan tal cual: no se duplica
+     * ninguna fórmula ni configuración de gráfico.
+     */
+    /**
+     * Abre el detalle de un riesgo en el modal compartido.
+     *
+     * El contenido no se regenera: se MUEVE el nodo `#dashboard-risk-detail` al cuerpo del modal
+     * y se devuelve a su sitio al cerrar — mismo patrón que ya usaba el panel de Nash. Moviendo
+     * el nodo (en vez de reconstruir su HTML) sobreviven los ids, los listeners ya registrados en
+     * init(), y sobre todo los <canvas> con sus instancias de Chart ya dibujadas.
+     *
+     * Vive en un modal, y no colgando del Dashboard, porque el Dashboard responde "¿cómo está mi
+     * portafolio?" — un análisis individual permanente ahí abajo mezcla dos niveles de lectura.
+     */
+    openRiskDetailModal(riskName) {
+        const panel = document.getElementById('dashboard-risk-detail');
+        const casa = document.getElementById('dashboard-risk-detail-home');
+        if (!panel || !casa) return;
 
-        const sensContainer = document.getElementById('fair-register-sim-sensitivity');
-        const top = (result.sensitivity || []).slice(0, 5);
-        const maxAbs = Math.max(...top.map((s) => Math.abs(s.correlation)), 0.0001);
-        sensContainer.innerHTML = top
-            .map((s) => {
-                const pct = Math.max(2, Math.round((Math.abs(s.correlation) / maxAbs) * 100));
-                const color = s.correlation >= 0 ? '#3B82F6' : '#EF4444';
-                return `
-                <div class="mb-2">
-                    <div class="flex justify-between text-sm"><span>${sensitivityLabel(s)}</span><span>${(s.correlation * 100).toFixed(1)}%</span></div>
-                    <div class="w-full bg-gray-200 rounded h-2"><div class="h-2 rounded" style="width:${pct}%; background-color:${color};"></div></div>
-                </div>`;
-            })
-            .join('');
+        Modal.setSize('xl');
+        Modal.title.textContent = riskName;
+        Modal.body.innerHTML = '';
+        Modal.body.appendChild(panel);
+        panel.classList.remove('hidden');
+        Modal.footer.innerHTML = `<button id="risk-detail-close-btn" class="btn btn-secondary">Cerrar</button>`;
 
-        // Histograma — mismo binning que el de Análisis FAIR (ver buildHistogramBins en utils.js).
-        const ctx = document.getElementById('fair-register-sim-chart').getContext('2d');
-        const { labels, binCounts } = buildHistogramBins(result.annualLosses, result.summary.max);
-        if (state.fair.registerSimChart) state.fair.registerSimChart.destroy();
-        state.fair.registerSimChart = new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels,
-                datasets: [
-                    {
-                        label: 'Frecuencia de Pérdida Anual',
-                        data: binCounts,
-                        backgroundColor: 'rgba(54, 162, 235, 0.6)',
-                        borderColor: 'rgba(54, 162, 235, 1)',
-                        borderWidth: 1,
-                    },
-                ],
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: {
-                    y: { beginAtZero: true, title: { display: true, text: 'Nº de Simulaciones' } },
-                    x: {
-                        title: { display: true, text: 'Pérdida Anual Estimada (miles de USD)' },
-                        ticks: { autoSkip: true, maxRotation: 45, minRotation: 45 },
-                    },
-                },
-            },
+        const cerrar = () => {
+            // Devolver el panel a su casa ANTES de cerrar: si se quedara dentro del modal, la
+            // próxima apertura no lo encontraría y los gráficos se perderían al vaciar el cuerpo.
+            panel.classList.add('hidden');
+            casa.appendChild(panel);
+            Modal.hide();
+        };
+        document.getElementById('risk-detail-close-btn').addEventListener('click', cerrar, { once: true });
+        Modal.modal.classList.remove('hidden');
+    },
+
+    renderRiskDetail(result) {
+        const { summary } = result;
+        document.getElementById('ale-result').textContent = formatCurrency(summary.average);
+        document.getElementById('median-loss-result').textContent = formatCurrency(summary.median);
+        document.getElementById('min-loss-result').textContent = formatCurrency(summary.min);
+        document.getElementById('max-loss-result').textContent = formatCurrency(summary.max);
+        document.getElementById('percentile-90-result').textContent = `> ${formatCurrency(summary.p90)}`;
+        document.getElementById('cvar-95-result').textContent = formatCurrency(summary.cvar95);
+        document.getElementById('prob-threshold-result').textContent = `${summary.probExceedance.toFixed(1)}%`;
+
+        // Riesgo Inherente: solo lo trae Amenaza (ver calculateInherentRiskFromSimulation en el
+        // backend). Se oculta la línea entera en vez de mostrar "$NaN".
+        const inherenteLine = document.getElementById('fair-inherente-line');
+        if (typeof summary.inherentALE === 'number') {
+            inherenteLine.classList.remove('hidden');
+            document.getElementById('fair-inherente-result').textContent = formatCurrency(summary.inherentALE);
+        } else {
+            inherenteLine.classList.add('hidden');
+        }
+
+        App.FairWizard.renderLossHistogram(result.annualLosses, summary.max);
+        App.FairWizard.renderLossExceedanceCurve({
+            curva: result.lossExceedanceCurve || null,
+            inherente: result.inherentLossExceedanceCurve || null,
         });
+        App.FairWizard.renderSensitivity(result.sensitivity);
     },
 
     // Síntesis del portafolio completo (no de un riesgo aislado) — cuenta por nivel de

@@ -2,17 +2,13 @@ import { App } from './app-namespace.js';
 
 export const Navigation = {
     init() {
-        document.getElementById('nav-fair').addEventListener('click', () => {
-            this.switchPage('fair');
-            // La tabla concentrada (dentro de esta misma página, ver #quick-concentrated-table-body)
-            // es la misma que la de Registro de Riesgos (App.FairRegister.renderConcentratedTable)
-            // — sin esto, un riesgo analizado/simulado mientras se estaba en otra página no se
-            // reflejaba aquí (etapa/CVaR/Evaluación) hasta guardar/borrar algo de nuevo.
-            App.QuickAnalysis.loadHistory();
-        });
-        document.getElementById('nav-register').addEventListener('click', () => {
-            this.switchPage('register');
+        document.getElementById('nav-fair').addEventListener('click', () => this.switchPage('fair'));
+        document.getElementById('nav-dashboard').addEventListener('click', () => {
+            this.switchPage('dashboard');
             App.FairAnalysis.loadRiskRegister();
+            // La tabla "Riesgos Guardados" vive ahora aquí (es el selector del detalle por riesgo),
+            // así que refrescarla es responsabilidad de esta página, no de la del wizard.
+            App.QuickAnalysis.loadHistory();
         });
         document.getElementById('nav-treatment').addEventListener('click', () => {
             this.switchPage('treatment');
@@ -32,7 +28,7 @@ export const Navigation = {
     switchPage(pageKey) {
         const pages = {
             fair: document.getElementById('fairAnalysisPage'),
-            register: document.getElementById('registerPage'),
+            dashboard: document.getElementById('dashboardPage'),
             treatment: document.getElementById('treatmentPage'),
             riskmgmt: document.getElementById('riskMgmtPage'),
             assets: document.getElementById('assetsPage'),
@@ -42,7 +38,7 @@ export const Navigation = {
         // así el usuario ve de dónde vino aunque haya entrado por un menú.
         const navs = {
             fair: document.getElementById('nav-fair'),
-            register: document.getElementById('nav-register'),
+            dashboard: document.getElementById('nav-dashboard'),
             treatment: document.getElementById('nav-treatment'),
             riskmgmt: document.getElementById('nav-risk-mgmt'),
             assets: document.getElementById('nav-config'),
