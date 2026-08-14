@@ -56,15 +56,24 @@ test.describe('Dashboard: interruptor Actual / Residual', () => {
         const leer = () =>
             page.evaluate(() => ({
                 nota: document.getElementById('fair-pareto-state-note').textContent.trim(),
-                primero: document.querySelector('#fair-pareto-legend ol li')?.textContent.trim() || '',
+                // Posición RELATIVA de los dos riesgos sembrados, no el primer puesto absoluto: la
+                // suite comparte un solo backend y para cuando este spec corre el Registro ya
+                // acumuló riesgos de otros archivos, algunos más grandes que éstos.
+                orden: [...document.querySelectorAll('#fair-pareto-legend ol li')].map((li) => li.textContent),
                 atenuadasActual: document.querySelectorAll('[data-portfolio-state="actual"].opacity-40').length,
                 atenuadasResidual: document.querySelectorAll('[data-portfolio-state="residual"].opacity-40').length,
                 mc: document.getElementById('dashboard-portfolio-mc').textContent.replace(/\s+/g, ' '),
             }));
 
+        const posicion = (orden, nombre) => orden.findIndex((t) => t.includes(nombre));
+
         const actual = await leer();
         expect(actual.nota).toContain('antes de tratar');
-        expect(actual.primero).toContain('TOGGLE Grande tratado');
+        // Antes de tratar, el grande pesa el doble que el mediano y va delante.
+        expect(posicion(actual.orden, 'TOGGLE Grande tratado')).toBeGreaterThanOrEqual(0);
+        expect(posicion(actual.orden, 'TOGGLE Grande tratado')).toBeLessThan(
+            posicion(actual.orden, 'TOGGLE Mediano sin tratar'),
+        );
         // En la vista Actual se atenúan las filas residuales, no al revés.
         expect(actual.atenuadasResidual).toBeGreaterThan(0);
         expect(actual.atenuadasActual).toBe(0);
@@ -73,9 +82,12 @@ test.describe('Dashboard: interruptor Actual / Residual', () => {
         await page.waitForTimeout(800);
         const residual = await leer();
         expect(residual.nota).toContain('ya adoptados');
-        // El ORDEN cambia: el grande ya tratado deja de encabezar. Esto es lo que unas barras
-        // dobles no podrían mostrar sin distorsionar uno de los dos ordenamientos.
-        expect(residual.primero).toContain('TOGGLE Mediano sin tratar');
+        // El ORDEN se invierte: el grande ya tratado cae por debajo del mediano sin tratar. Esto es
+        // lo que unas barras dobles no podrían mostrar sin distorsionar uno de los dos
+        // ordenamientos.
+        expect(posicion(residual.orden, 'TOGGLE Mediano sin tratar')).toBeLessThan(
+            posicion(residual.orden, 'TOGGLE Grande tratado'),
+        );
         expect(residual.atenuadasActual).toBeGreaterThan(0);
         expect(residual.atenuadasResidual).toBe(0);
 
