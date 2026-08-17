@@ -337,7 +337,7 @@ test.describe('Gestión de Riesgos (página aparte)', () => {
         await page.click('#fair-goto-dashboard-btn');
         await page.waitForTimeout(600);
         await expect(page.locator('#fair-inherente-line')).toBeVisible();
-        await page.click('#risk-detail-close-btn');
+        await page.click('#risk-card-close-btn'); // el detalle vive dentro de la ficha del riesgo
         await page.waitForTimeout(400);
 
         const entry = await page.evaluate(async () => {

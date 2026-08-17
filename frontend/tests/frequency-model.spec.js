@@ -55,7 +55,7 @@ test.describe('Modelo de frecuencia: comparador en el detalle del riesgo', () =>
         await page.click('#nav-dashboard');
         await page.waitForTimeout(1500);
 
-        // El detalle de un riesgo vive en el modal (ver openRiskDetailModal), y el comparador
+        // El detalle de un riesgo vive dentro de su ficha (ver openRiskCard), y el comparador
         // adentro de él — no en un modal propio, que vaciaría el cuerpo del que lo contiene.
         await page.click(`[data-simulate-risk="${riskName}"]`);
         const panel = page.locator('#fair-frequency-models');
