@@ -14,7 +14,7 @@ const {
     calculateInherentPortfolio,
 } = require('../lib/register');
 const { evaluateFairThreat } = require('../lib/evaluation');
-const { defaultRiskCriteria } = require('../data/profiles');
+const { defaultRiskCriteria, defenseProfiles } = require('../data/profiles');
 const { normalizeRiskCriteria, validateRiskCriteriaOverride } = require('../lib/riskCriteria');
 const { asyncHandler } = require('../middleware/asyncHandler');
 const { ACCESS_LEVELS, DEFAULT_ACCESS_LEVEL } = require('../lib/autocalc');
@@ -488,6 +488,37 @@ function createRegisterRouter(store) {
                     return res.status(400).json({
                         error: 'treatmentDecision.residualCVaR debe ser un número mayor o igual a 0, o null.',
                     });
+                }
+
+                // La RECETA del residual: con qué se simuló, no solo qué dio. Opcional — las
+                // decisiones adoptadas antes de que existiera no la traen y siguen funcionando con
+                // el escalado de siempre (ver residualSpecOf en lib/portfolioSimulation.js).
+                const receta = treatmentDecision.residualInputs;
+                if (receta !== undefined && receta !== null) {
+                    if (typeof receta !== 'object' || Array.isArray(receta)) {
+                        return res
+                            .status(400)
+                            .json({ error: 'treatmentDecision.residualInputs debe ser un objeto o null.' });
+                    }
+                    if (receta.targetDefenseKey !== undefined && !defenseProfiles[receta.targetDefenseKey]) {
+                        return res.status(400).json({
+                            error: 'treatmentDecision.residualInputs.targetDefenseKey no es un perfil válido.',
+                        });
+                    }
+                    for (const campo of ['preventionScale', 'damageCap']) {
+                        const valor = receta[campo];
+                        if (valor === undefined || valor === null) continue;
+                        if (typeof valor !== 'number' || !Number.isFinite(valor) || valor < 0) {
+                            return res.status(400).json({
+                                error: `treatmentDecision.residualInputs.${campo} debe ser un número mayor o igual a 0.`,
+                            });
+                        }
+                    }
+                    if (typeof receta.preventionScale === 'number' && receta.preventionScale > 1) {
+                        return res.status(400).json({
+                            error: 'treatmentDecision.residualInputs.preventionScale debe estar entre 0 y 1.',
+                        });
+                    }
                 }
             }
 

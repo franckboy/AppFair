@@ -41,10 +41,13 @@ const PORTFOLIO_BASE_SEED = 20260813;
  * Defensa, se usa la contienda calibrada (mismo camino que POST /api/simulate); si no, cae al
  * triángulo capturado a mano, que `runMonteCarloSimulation` ya sabe muestrear.
  */
-function buildVulnSampler(risk) {
+function buildVulnSampler(risk, defenseKeyOverride) {
     if (risk.vulnManualOverride) return null;
     const attackerProfile = attackerProfiles[risk.attackerKey];
-    const defenseProfile = defenseProfiles[risk.defenseKey];
+    // El override existe para el estado RESIDUAL: ahí la Vulnerabilidad no es la del riesgo hoy
+    // sino la que tendría con el Nivel de Defensa OBJETIVO del tratamiento adoptado, exactamente
+    // como la simuló la página de Tratamiento (ver residualSpecOf).
+    const defenseProfile = defenseProfiles[defenseKeyOverride || risk.defenseKey];
     if (!attackerProfile || !defenseProfile) return null;
     return sampleVulnerabilityFromProfiles(
         attackerProfile,
@@ -92,6 +95,49 @@ function residualScaleFactor(risk) {
     return Math.min(1, k);
 }
 
+/**
+ * Cómo hay que simular un riesgo para obtener su estado RESIDUAL: `{ scale, defenseKey, damageCap }`.
+ *
+ * Por qué no basta un número. La Decisión de Tratamiento guardaba solo el RESULTADO
+ * (`residualALE`), y de un solo número no se puede reconstruir una distribución: fija la media,
+ * nunca la forma. Mitigar tiene DOS palancas que producen la misma media y colas completamente
+ * distintas — prevenir escala la frecuencia, contener trunca la magnitud de cada evento — así que
+ * el portafolio reconstruía cualquier tratamiento como si hubiera sido prevención pura. Medido
+ * sobre un riesgo tratado con un tope de daño: el ALE salía bien ($43.018 real contra $42.918
+ * reconstruido) y la cola salía casi al triple ($181.141 real contra $517.514). El error iba hacia
+ * el lado conservador, pero 3x en la cifra con la que se decide si un tratamiento sirvió no es
+ * aceptable.
+ *
+ * Por eso la decisión ahora guarda la RECETA (`residualInputs`) y esto solo la traduce:
+ *  - `targetDefenseKey` (modo automático): con qué Nivel de Defensa se simuló el residual. Se
+ *    reconstruye el mismo sampler calibrado TCap vs. RS, no una aproximación.
+ *  - `preventionScale` (modo manual): la Vulnerabilidad escalada por 1 − r/100.
+ *  - `damageCap`: el tope por evento. Va DENTRO de la decisión y no se lee de `mitigar.damageCap`
+ *    a propósito — si se leyera el campo vivo, editar el tope después de adoptar cambiaría la cola
+ *    del portafolio mientras `residualALE` sigue congelado, y los dos números se contradirían.
+ *
+ * Sin receta (decisiones adoptadas antes de que existiera) se cae al comportamiento anterior:
+ * escalar por `residualALE / ale`. Exacto para prevención pura, aproximado si hubo contención.
+ */
+function residualSpecOf(risk) {
+    const decision = risk && risk.treatmentDecision;
+    const receta = decision && decision.residualInputs;
+    if (!receta) return { scale: residualScaleFactor(risk) };
+    if (decision.strategy === 'transferir' || decision.strategy === 'mitigarTransferir') return { scale: 1 };
+
+    const spec = { scale: 1 };
+    if (typeof receta.preventionScale === 'number' && Number.isFinite(receta.preventionScale)) {
+        spec.scale = Math.max(0, Math.min(1, receta.preventionScale));
+    }
+    if (receta.targetDefenseKey && defenseProfiles[receta.targetDefenseKey]) {
+        spec.defenseKey = receta.targetDefenseKey;
+    }
+    if (typeof receta.damageCap === 'number' && Number.isFinite(receta.damageCap) && receta.damageCap > 0) {
+        spec.damageCap = receta.damageCap;
+    }
+    return spec;
+}
+
 /** Un tratamiento cuya cola NO se puede representar escalando (ver residualScaleFactor). */
 function isNonScalableTreatment(risk) {
     const strategy = risk && risk.treatmentDecision && risk.treatmentDecision.strategy;
@@ -105,16 +151,16 @@ function isNonScalableTreatment(risk) {
  * @param {number} [options.seed] Semilla base; fija por defecto para que el resultado sea
  *   reproducible entre corridas (una cifra de portafolio que baila sin que cambien los datos es
  *   imposible de auditar).
- * @param {(risk:Object) => number} [options.scaleOf] Factor por el que se escala la Vulnerabilidad
- *   de cada riesgo. Por defecto 1 (sin cambio): la corrida ACTUAL. `simulateResidualPortfolio` le
- *   pasa residualScaleFactor para obtener el estado después del Tratamiento, con la MISMA semilla
- *   — ver ahí por qué el pareo importa.
+ * @param {(risk:Object) => {scale:number, defenseKey?:string, damageCap?:number}} [options.specOf]
+ *   Cómo simular cada riesgo. Por defecto `{ scale: 1 }` (sin cambio): la corrida ACTUAL.
+ *   `simulateResidualPortfolio` le pasa residualSpecOf para obtener el estado después del
+ *   Tratamiento, con la MISMA semilla — ver ahí por qué el pareo importa.
  * @returns {{summary:Object, lossExceedanceCurve:Array, includedCount:number, skippedCount:number,
  *   skippedRiskNames:string[], sumOfIndividualCVaR:number|null, diversificationBenefit:number|null}}
  */
 function simulatePortfolio(
     risks,
-    { iterations = PORTFOLIO_ITERATIONS, seed = PORTFOLIO_BASE_SEED, scaleOf = () => 1 } = {},
+    { iterations = PORTFOLIO_ITERATIONS, seed = PORTFOLIO_BASE_SEED, specOf = () => ({ scale: 1 }) } = {},
 ) {
     const threats = (risks || []).filter((r) => r && r.riskType !== 'oportunidad');
     const usable = threats.filter(hasCompleteInputs);
@@ -175,14 +221,13 @@ function simulatePortfolio(
         // sampler calibrado por perfiles, si el riesgo tiene Atacante/Defensa. Escalar solo el
         // triángulo dejaría sin efecto el tratamiento en todo riesgo con perfiles — que son la
         // mayoría.
-        // Nota sobre el residual con CONTENCIÓN (tope de daño por evento): `k` sale de
-        // residualALE/ale, que mezcla las dos palancas de Mitigar en un solo número. Si el
-        // tratamiento incluyó un tope, el portafolio lo reproduce como si TODO hubiera sido
-        // prevención — el ALE queda bien (las dos palancas bajan la media) pero la forma de la cola
-        // no, porque prevenir escala y contener trunca. Separarlas exigiría guardar el factor de
-        // prevención aparte al adoptar la decisión; queda anotado, no resuelto.
-        const k = scaleOf(risk);
-        const baseSampler = buildVulnSampler(risk);
+        // Las DOS palancas de Mitigar, cada una donde le toca (ver residualSpecOf): prevenir mueve
+        // la Vulnerabilidad —por el Nivel de Defensa objetivo, o por un factor en modo manual— y
+        // contener entra como tope por evento. Reconstruir la contención como si fuera prevención
+        // acertaba el ALE y triplicaba la cola.
+        const spec = specOf(risk);
+        const k = spec.scale;
+        const baseSampler = buildVulnSampler(risk, spec.defenseKey);
         const { annualLosses, lefSamples, magnitudeSamples, eventCounts } = runMonteCarloSimulation({
             iterations,
             seed: seed + index * 7919,
@@ -190,6 +235,7 @@ function simulatePortfolio(
             vuln: k === 1 ? risk.vuln : { min: risk.vuln.min * k, mode: risk.vuln.mode * k, max: risk.vuln.max * k },
             lossMagnitudes: risk.lossMagnitudes,
             sampleVuln: baseSampler && k !== 1 ? (rng) => k * baseSampler(rng) : baseSampler,
+            magnitudeCap: spec.damageCap,
         });
         for (let i = 0; i < iterations; i++) portfolioLosses[i] += annualLosses[i];
         sumOfIndividualCVaR += summarizeLosses(annualLosses).cvar95;
@@ -361,7 +407,7 @@ function simulatePortfolio(
  */
 function simulateResidualPortfolio(risks, options = {}) {
     const threats = (risks || []).filter((r) => r && r.riskType !== 'oportunidad' && hasCompleteInputs(r));
-    const result = simulatePortfolio(risks, { ...options, scaleOf: residualScaleFactor });
+    const result = simulatePortfolio(risks, { ...options, specOf: residualSpecOf });
     return {
         ...result,
         treatedCount: threats.filter((r) => r.treatmentDecision).length,
@@ -373,6 +419,7 @@ module.exports = {
     simulatePortfolio,
     simulateResidualPortfolio,
     residualScaleFactor,
+    residualSpecOf,
     PORTFOLIO_ITERATIONS,
     PORTFOLIO_BASE_SEED,
 };

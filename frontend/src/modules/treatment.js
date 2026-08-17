@@ -130,6 +130,7 @@ export const Treatment = {
                 state.treatment.mitigarResidualALE = null;
                 state.treatment.mitigarResidualCVaR = null;
                 state.treatment.mitigarResidualCurve = null;
+                state.treatment.mitigarTargetDefenseKey = null;
                 showToast('Ahora puedes escribir la Reducción de ALE manualmente.');
             } else {
                 this.updateReduccionALEAuto();
@@ -303,6 +304,7 @@ export const Treatment = {
         state.treatment.mitigarResidualALE = null;
         state.treatment.mitigarResidualCVaR = null;
         state.treatment.mitigarResidualCurve = null;
+        state.treatment.mitigarTargetDefenseKey = null;
         document.getElementById('treatment-risk-select').value = riskName;
         // Independiente de updateTreatmentView (más abajo) — el badge/banner de la decisión ya
         // adoptada debe verse de inmediato, sin esperar a la llamada async de evaluate.
@@ -558,6 +560,7 @@ export const Treatment = {
             state.treatment.mitigarResidualALE = null;
             state.treatment.mitigarResidualCVaR = null;
             state.treatment.mitigarResidualCurve = null;
+            state.treatment.mitigarTargetDefenseKey = null;
             explanationEl.textContent = 'No se pudo calcular automáticamente. Verifica tu conexión.';
             return;
         }
@@ -577,6 +580,7 @@ export const Treatment = {
         state.treatment.mitigarResidualALE = data.residualALE;
         state.treatment.mitigarResidualCVaR = data.residualCVaR;
         state.treatment.mitigarResidualCurve = data.residualLossExceedanceCurve || null;
+        state.treatment.mitigarTargetDefenseKey = objetivoKey;
         explanationEl.textContent = `Calculado como: pasar de tu defensa actual (${data.currentScore.toFixed(0)}%) a "${state.quick.defenseProfiles[objetivoKey].name}" (${data.targetScore.toFixed(0)}%) = ${data.reductionPercent}% de reducción estimada.`;
         this.updateTreatmentView(true);
     },
@@ -896,6 +900,31 @@ export const Treatment = {
             (strategyKey === 'mitigar' ? state.treatment.mitigarResidualCurve : null);
         if (Array.isArray(curvaResidual)) {
             decision.residualLossExceedanceCurve = curvaResidual;
+        }
+
+        // La RECETA del residual, no solo el resultado. Sin ella, el Riesgo Residual del Portafolio
+        // tiene que reconstruir la distribución a partir de un solo número (residualALE / ale), y
+        // un número fija la media pero nunca la forma: cualquier tratamiento se reproducía como si
+        // hubiera sido prevención pura. Medido sobre un riesgo tratado con tope de daño, eso
+        // acertaba el ALE y casi triplicaba la cola.
+        //
+        // El tope se COPIA aquí en vez de leerse después de `mitigar.damageCap`: si el portafolio
+        // leyera el campo vivo, editarlo tras adoptar cambiaría la cola mientras `residualALE`
+        // sigue congelado en su valor viejo, y los dos números se contradirían sin avisar.
+        if (strategyKey === 'mitigar') {
+            const manual = document.getElementById('fair-reduccionALE-manual-override').checked;
+            const receta = {};
+            if (!manual && state.treatment.mitigarTargetDefenseKey) {
+                receta.targetDefenseKey = state.treatment.mitigarTargetDefenseKey;
+            } else {
+                receta.preventionScale = Math.max(
+                    0,
+                    Math.min(1, 1 - getSafeNumber(document.getElementById('fair-reduccionALE')) / 100),
+                );
+            }
+            const tope = readDamageCap();
+            if (tope) receta.damageCap = tope;
+            decision.residualInputs = receta;
         }
         await this._persistDecision(entry, decision);
         showToast(`Se adoptó "${STRATEGY_LABELS[strategyKey]}" como la decisión de tratamiento de este riesgo.`);

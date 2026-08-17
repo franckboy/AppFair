@@ -22,7 +22,12 @@ const {
     LEC_EXCEEDANCE_PROBABILITIES,
     MAX_COMPOUND_TEF,
 } = require('../src/lib/simulation');
-const { simulatePortfolio, simulateResidualPortfolio, residualScaleFactor } = require('../src/lib/portfolioSimulation');
+const {
+    simulatePortfolio,
+    simulateResidualPortfolio,
+    residualScaleFactor,
+    residualSpecOf,
+} = require('../src/lib/portfolioSimulation');
 const { spearmanCorrelation } = require('../src/lib/simulation');
 const {
     tullockSuccessProbability,
@@ -3444,4 +3449,120 @@ test('calculateResidualFromReduction: con inputs que no producen pérdida, cae a
     assert.ok(Math.abs(res.residualALE - 5000) < 1e-6);
     assert.ok(Math.abs(res.residualCVaR - 10000) < 1e-6, `esperaba 10000, dio ${res.residualCVaR}`);
     assert.deepStrictEqual(res.residualLossExceedanceCurve, []);
+});
+
+// --- La receta del residual: prevenir y contener dejan de confundirse en el portafolio ---------
+
+const RIESGO_TRATABLE = {
+    riskName: 'RT',
+    riskType: 'amenaza',
+    vulnManualOverride: true,
+    tef: { min: 1, mode: 2, max: 4 },
+    vuln: { min: 20, mode: 40, max: 60 },
+    lossMagnitudes: { respuesta: { min: 5000, mode: 25000, max: 1000000 } },
+};
+
+test('residualSpecOf: sin receta cae al escalado de siempre (decisiones adoptadas antes de que existiera)', () => {
+    const risk = { ...RIESGO_TRATABLE, ale: 1000, treatmentDecision: { strategy: 'mitigar', residualALE: 250 } };
+    assert.deepStrictEqual(residualSpecOf(risk), { scale: 0.25 });
+    // Sin decisión, tampoco hay nada que cambiar.
+    assert.deepStrictEqual(residualSpecOf({ ...RIESGO_TRATABLE, ale: 1000 }), { scale: 1 });
+});
+
+test('residualSpecOf: traduce la receta a las dos palancas por separado', () => {
+    const conTope = residualSpecOf({
+        ...RIESGO_TRATABLE,
+        ale: 1000,
+        treatmentDecision: {
+            strategy: 'mitigar',
+            residualALE: 250,
+            residualInputs: { preventionScale: 0.5, damageCap: 60000 },
+        },
+    });
+    assert.deepStrictEqual(conTope, { scale: 0.5, damageCap: 60000 });
+
+    const conDefensaObjetivo = residualSpecOf({
+        ...RIESGO_TRATABLE,
+        ale: 1000,
+        treatmentDecision: {
+            strategy: 'mitigar',
+            residualALE: 250,
+            residualInputs: { targetDefenseKey: 'avanzada' },
+        },
+    });
+    assert.strictEqual(conDefensaObjetivo.defenseKey, 'avanzada');
+    assert.strictEqual(conDefensaObjetivo.scale, 1, 'con Nivel de Defensa objetivo no se escala nada a mano');
+});
+
+test('residualSpecOf: ignora una receta con un perfil de defensa que ya no existe', () => {
+    const spec = residualSpecOf({
+        ...RIESGO_TRATABLE,
+        ale: 1000,
+        treatmentDecision: {
+            strategy: 'mitigar',
+            residualALE: 250,
+            residualInputs: { targetDefenseKey: 'inventada', preventionScale: 0.25 },
+        },
+    });
+    assert.strictEqual(spec.defenseKey, undefined);
+    assert.strictEqual(spec.scale, 0.25);
+});
+
+test('el portafolio ya NO reconstruye la contención como si fuera prevención', () => {
+    // El bug medido: la Decisión guardaba solo el RESULTADO (residualALE), y de un número no se
+    // puede reconstruir una distribución. Las dos palancas de Mitigar dan la MISMA media y colas
+    // completamente distintas — prevenir escala la frecuencia, contener trunca cada evento — así
+    // que el portafolio reproducía cualquier tratamiento como prevención pura: acertaba el ALE y
+    // casi triplicaba la cola.
+    const CAP = 60000;
+    // El residual REAL de un tratamiento de pura contención, simulado directo.
+    const real = summarizeLosses(
+        runMonteCarloSimulation({
+            iterations: 20000,
+            seed: 4242,
+            tef: RIESGO_TRATABLE.tef,
+            vuln: RIESGO_TRATABLE.vuln,
+            lossMagnitudes: RIESGO_TRATABLE.lossMagnitudes,
+            magnitudeCap: CAP,
+        }).annualLosses,
+    );
+    const conRiesgo = (residualInputs) => ({
+        ...RIESGO_TRATABLE,
+        ale: 133371,
+        treatmentDecision: { strategy: 'mitigar', residualALE: real.average, residualInputs },
+    });
+
+    const sinReceta = simulateResidualPortfolio([conRiesgo(undefined)]);
+    const conReceta = simulateResidualPortfolio([conRiesgo({ damageCap: CAP })]);
+
+    // Con la receta, la cola del portafolio coincide con el residual real; sin ella, se dispara.
+    const desvio = Math.abs(conReceta.summary.cvar95 / real.cvar95 - 1);
+    assert.ok(
+        desvio < 0.1,
+        `con receta debería parecerse al real ${real.cvar95.toFixed(0)}: ${conReceta.summary.cvar95.toFixed(0)}`,
+    );
+    assert.ok(
+        sinReceta.summary.cvar95 > conReceta.summary.cvar95 * 2,
+        `sin receta la cola se sobreestima: ${sinReceta.summary.cvar95.toFixed(0)} vs ${conReceta.summary.cvar95.toFixed(0)}`,
+    );
+});
+
+test('la receta con Nivel de Defensa objetivo re-simula con ESE perfil, no con el actual', () => {
+    const conPerfiles = (residualInputs) => ({
+        ...RIESGO_TRATABLE,
+        vulnManualOverride: false,
+        attackerKey: 'organizado',
+        defenseKey: 'basica',
+        dataConfidence: 'medio',
+        ale: 1000,
+        treatmentDecision: { strategy: 'mitigar', residualALE: 400, residualInputs },
+    });
+    const sinTratar = simulatePortfolio([conPerfiles(undefined)]);
+    const conObjetivo = simulateResidualPortfolio([conPerfiles({ targetDefenseKey: 'elite' })]);
+    // Subir de defensa básica a élite tiene que bajar la pérdida de verdad, sin depender de que
+    // alguien haya calculado bien el residualALE guardado.
+    assert.ok(
+        conObjetivo.summary.average < sinTratar.summary.average * 0.5,
+        `de básica a élite debería bajar bastante: ${sinTratar.summary.average.toFixed(0)} -> ${conObjetivo.summary.average.toFixed(0)}`,
+    );
 });

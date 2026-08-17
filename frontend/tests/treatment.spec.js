@@ -468,6 +468,87 @@ test.describe('Tratamiento del Riesgo (página aparte)', () => {
         expect(entry.residualMatrixPoint.probabilityPercent).toBeGreaterThanOrEqual(0);
     });
 
+    // El Riesgo Residual del Portafolio re-simula cada riesgo tratado. Con solo `residualALE` no
+    // podía distinguir prevenir de contener —misma media, colas completamente distintas— así que
+    // reproducía todo como prevención pura: acertaba el ALE y casi triplicaba la cola. Ahora la
+    // Decisión guarda la RECETA con la que se simuló el residual.
+    test('adoptar Mitigar guarda la receta del residual (tope de daño incluido), no solo el resultado', async ({
+        page,
+    }) => {
+        const riskName = 'E2E Receta Residual';
+        await connectAndBoot(page);
+        await runFullFairAnalysis(page, riskName);
+
+        await page.evaluate(
+            async ({ riskName }) => {
+                const KEY = 'test-e2e-key';
+                const API = 'http://localhost:3000';
+                const entry = await fetch(`${API}/api/register`, { headers: { 'X-API-Key': KEY } })
+                    .then((r) => r.json())
+                    .then((d) => d.risks.find((r) => r.riskName === riskName));
+                await fetch(`${API}/api/register/${encodeURIComponent(riskName)}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'X-API-Key': KEY },
+                    body: JSON.stringify({
+                        ...entry,
+                        vulnManualOverride: true,
+                        tef: { min: 1, mode: 2, max: 4 },
+                        vuln: { min: 20, mode: 40, max: 60 },
+                        lossMagnitudes: { respuesta: { min: 5000, mode: 25000, max: 1000000 } },
+                        seed: 4242,
+                        ale: 130000,
+                        cvar95: 950000,
+                    }),
+                });
+            },
+            { riskName },
+        );
+
+        await page.reload({ waitUntil: 'networkidle' });
+        await page.click('#nav-treatment');
+        await page.waitForTimeout(500);
+        await page.selectOption('#treatment-risk-select', riskName);
+        await page.waitForTimeout(500);
+
+        // Contención declarada: un tope por evento, más una reducción manual modesta.
+        await page.check('#fair-reduccionALE-manual-override');
+        await page.fill('#fair-reduccionALE', '20');
+        await page.fill('#fair-mitigar-tope-dano', '60000');
+        await page.waitForTimeout(1500);
+
+        await page.click('#treatment-adopt-mitigar-btn');
+        await page.waitForTimeout(1000);
+
+        const entry = await page.evaluate(
+            async ({ riskName }) => {
+                const res = await fetch('http://localhost:3000/api/register', {
+                    headers: { 'X-API-Key': 'test-e2e-key' },
+                });
+                const data = await res.json();
+                return data.risks.find((r) => r.riskName === riskName);
+            },
+            { riskName },
+        );
+
+        const receta = entry.treatmentDecision.residualInputs;
+        expect(receta).toBeTruthy();
+        // El tope se COPIA dentro de la decisión: si el portafolio leyera `mitigar.damageCap` en
+        // vivo, editarlo tras adoptar cambiaría la cola mientras `residualALE` sigue congelado.
+        expect(receta.damageCap).toBe(60000);
+        // Modo manual: la prevención viaja como factor, 1 − 20/100.
+        expect(receta.preventionScale).toBeCloseTo(0.8, 5);
+
+        await page.evaluate(
+            async ({ riskName }) => {
+                await fetch(`http://localhost:3000/api/register/${encodeURIComponent(riskName)}`, {
+                    method: 'DELETE',
+                    headers: { 'X-API-Key': 'test-e2e-key' },
+                });
+            },
+            { riskName },
+        );
+    });
+
     // Regresión: elegir un Nivel de Defensa Objetivo real (el camino AUTOMÁTICO, no manual)
     // llamaba a POST /api/autocalc/reduccion-ale sin mandar attackerKey — la ruta lo exige desde
     // el modelo TCap/RS y 400eaba en silencio, dejando el autocálculo roto para cualquier riesgo
