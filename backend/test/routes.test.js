@@ -455,6 +455,145 @@ test('POST /api/simulate/evaluate sin ale/cvar95 numéricos responde 400', async
     assert.strictEqual(res.status, 400);
 });
 
+// --- Residual de Mitigar re-simulado en modo manual + curva residual en la Matriz ---
+
+const RIESGO_MANUAL_HTTP = {
+    tef: { min: 0.5, mode: 1, max: 2 },
+    vuln: { min: 20, mode: 40, max: 70 },
+    lossMagnitudes: { respuesta: { min: 5000, mode: 50000, max: 400000 } },
+};
+
+test('POST /api/treatment/evaluate re-simula el residual de Mitigar cuando le mandan los inputs del riesgo', async () => {
+    const sim = await request(app)
+        .post('/api/simulate')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ...RIESGO_MANUAL_HTTP, iterations: 10000, seed: 12345 });
+    const { average, cvar95 } = sim.body.summary;
+
+    const res = await request(app)
+        .post('/api/treatment/evaluate')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            currentALE: average,
+            currentCVaR: cvar95,
+            seed: 12345,
+            mitigar: { cost: 10000, reductionPercent: 60, reliability: 'alta', delayDays: 30 },
+            ...RIESGO_MANUAL_HTTP,
+        });
+    assert.strictEqual(res.status, 200);
+    // El ALE lo fija el usuario (declaró 60%); la cola sale de la simulación.
+    assert.ok(Math.abs(res.body.mitigar.residualALE - average * 0.4) < 1e-6);
+    assert.ok(Array.isArray(res.body.mitigar.residualLossExceedanceCurve));
+    // Con semilla pareada y el modelo de frecuencia actual, coincide EXACTO con el escalado
+    // proporcional de antes: este cambio no mueve ningún número hoy.
+    assert.ok(Math.abs(res.body.mitigar.residualCVaR - cvar95 * 0.4) < 1e-6);
+});
+
+test('POST /api/treatment/evaluate sin los inputs del riesgo cae al escalado proporcional de siempre (cliente viejo)', async () => {
+    const res = await request(app)
+        .post('/api/treatment/evaluate')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            currentALE: 100000,
+            currentCVaR: 250000,
+            mitigar: { cost: 10000, reductionPercent: 60, reliability: 'alta', delayDays: 30 },
+        });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.mitigar.residualALE, 40000);
+    assert.strictEqual(res.body.mitigar.residualCVaR, 100000);
+    assert.strictEqual(res.body.mitigar.residualLossExceedanceCurve, null);
+});
+
+test('GET /api/register: el punto residual de la Matriz lee la curva REAL del residual, no la deduce escalando la actual', async () => {
+    const riskName = 'HTTP Curva Residual';
+    // Curva ACTUAL: leída en umbral/k daría una probabilidad muy distinta a la que dice la
+    // residual — así el test distingue de verdad cuál de las dos se usó.
+    const lossExceedanceCurve = [
+        { loss: 1000, probability: 90 },
+        { loss: 50000, probability: 50 },
+        { loss: 500000, probability: 1 },
+    ];
+    const residualLossExceedanceCurve = [
+        { loss: 1000, probability: 80 },
+        { loss: 20000, probability: 33 },
+        { loss: 200000, probability: 2 },
+    ];
+    await request(app)
+        .put(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            riskType: 'amenaza',
+            ...RIESGO_MANUAL_HTTP,
+            ale: 100000,
+            cvar95: 250000,
+            lossExceedanceCurve,
+            treatmentDecision: {
+                strategy: 'mitigar',
+                residualALE: 40000,
+                residualCVaR: 100000,
+                residualLossExceedanceCurve,
+                decidedAt: new Date().toISOString(),
+            },
+        });
+
+    const leerPunto = async () => {
+        const res = await request(app).get('/api/register').set('X-API-Key', TEST_API_KEY);
+        return res.body.risks.find((r) => r.riskName === riskName).residualMatrixPoint;
+    };
+    const conCurva = await leerPunto();
+    assert.ok(conCurva, 'debería haber punto residual');
+
+    // La MISMA decisión sin curva propia cae al respaldo (leer la curva actual en umbral/k). Si los
+    // dos caminos dieran lo mismo, este test no probaría nada — por eso se comparan entre sí.
+    await request(app)
+        .put(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            riskType: 'amenaza',
+            ...RIESGO_MANUAL_HTTP,
+            ale: 100000,
+            cvar95: 250000,
+            lossExceedanceCurve,
+            treatmentDecision: {
+                strategy: 'mitigar',
+                residualALE: 40000,
+                residualCVaR: 100000,
+                decidedAt: new Date().toISOString(),
+            },
+        });
+    const sinCurva = await leerPunto();
+
+    assert.strictEqual(conCurva.impactPercent, sinCurva.impactPercent, 'el eje X sale del ALE, no cambia');
+    assert.notStrictEqual(
+        conCurva.probabilityPercent,
+        sinCurva.probabilityPercent,
+        'el eje Y debe salir de la curva residual real, no del respaldo por escalado',
+    );
+
+    await request(app)
+        .delete(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY);
+});
+
+test('PUT /api/register rechaza una curva residual mal formada dentro de la Decisión de Tratamiento', async () => {
+    const res = await request(app)
+        .put('/api/register/HTTP Curva Residual Invalida')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            riskType: 'amenaza',
+            ...RIESGO_MANUAL_HTTP,
+            ale: 100000,
+            treatmentDecision: {
+                strategy: 'mitigar',
+                residualALE: 40000,
+                residualLossExceedanceCurve: [{ loss: 'mucho', probability: 50 }],
+                decidedAt: new Date().toISOString(),
+            },
+        });
+    assert.strictEqual(res.status, 400);
+    assert.match(res.body.error, /residualLossExceedanceCurve/);
+});
+
 // --- Modelo de frecuencia (POST /api/simulate + POST /api/simulate/frequency-models) ---
 
 const RIESGO_RARO_SEVERO_HTTP = {

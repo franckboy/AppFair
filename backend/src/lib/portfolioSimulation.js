@@ -170,6 +170,12 @@ function simulatePortfolio(
         // sampler calibrado por perfiles, si el riesgo tiene Atacante/Defensa. Escalar solo el
         // triángulo dejaría sin efecto el tratamiento en todo riesgo con perfiles — que son la
         // mayoría.
+        // Nota sobre el residual con CONTENCIÓN (tope de daño por evento): `k` sale de
+        // residualALE/ale, que mezcla las dos palancas de Mitigar en un solo número. Si el
+        // tratamiento incluyó un tope, el portafolio lo reproduce como si TODO hubiera sido
+        // prevención — el ALE queda bien (las dos palancas bajan la media) pero la forma de la cola
+        // no, porque prevenir escala y contener trunca. Separarlas exigiría guardar el factor de
+        // prevención aparte al adoptar la decisión; queda anotado, no resuelto.
         const k = scaleOf(risk);
         const baseSampler = buildVulnSampler(risk);
         const { annualLosses, lefSamples, magnitudeSamples } = runMonteCarloSimulation({

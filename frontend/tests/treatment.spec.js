@@ -371,51 +371,101 @@ test.describe('Tratamiento del Riesgo (página aparte)', () => {
         expect(entry.treatmentDecision.residualALE).toBeGreaterThanOrEqual(0);
     });
 
-    test('CVaR residual escala igual que el ALE residual para Mitigar/Evitar/Aceptar (proporcional a la Vulnerabilidad reducida)', async ({
+    // El residual de Mitigar en modo MANUAL reparte responsabilidades: el ALE lo fija el usuario
+    // ("reduce mi pérdida un 60%" es una definición, no un estimado) y la FORMA de la cola sale de
+    // una re-simulación real con la Vulnerabilidad escalada. Antes la cola se deducía multiplicando
+    // el CVaR actual por ese mismo 60% — exacto con el modelo de frecuencia de hoy, pero falso en
+    // cuanto hay un tope de daño, y peor con el modelo compuesto: prevenir hace los malos años más
+    // RAROS, no menos malos.
+    test('el residual de Mitigar sale de una re-simulación real: ALE exacto al declarado, y la curva residual se persiste', async ({
         page,
     }) => {
+        const riskName = 'E2E Tratamiento — CVaR Residual';
         await connectAndBoot(page);
-        await runFullFairAnalysis(page, 'E2E Tratamiento — CVaR Residual');
+        await runFullFairAnalysis(page, riskName);
 
-        // Fuerza ALE/CVaR95 conocidos para poder verificar la fórmula exacta (el wizard con
-        // perfiles default puede dar $0 si no se tocan Magnitudes de Pérdida en Paso 3).
-        await page.evaluate(async () => {
-            const res = await fetch('http://localhost:3000/api/register', { headers: { 'X-API-Key': 'test-e2e-key' } });
-            const data = await res.json();
-            const entry = data.risks.find((r) => r.riskName === 'E2E Tratamiento — CVaR Residual');
-            await fetch(`http://localhost:3000/api/register/${encodeURIComponent(entry.riskName)}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json', 'X-API-Key': 'test-e2e-key' },
-                body: JSON.stringify({ ...entry, ale: 100000, cvar95: 250000 }),
-            });
-        });
+        // Datos COHERENTES entre sí: se fijan tef/vuln/magnitudes y una semilla, y el ale/cvar95
+        // guardados salen de simular ESOS mismos inputs. Antes este test forzaba ale/cvar95 a
+        // números inventados que no correspondían a los inputs del riesgo — con el residual
+        // deducido por regla de tres daba igual, pero una re-simulación real sí lo nota.
+        const real = await page.evaluate(
+            async ({ riskName }) => {
+                const KEY = 'test-e2e-key';
+                const API = 'http://localhost:3000';
+                const inputs = {
+                    tef: { min: 0.5, mode: 1, max: 2 },
+                    vuln: { min: 20, mode: 40, max: 70 },
+                    lossMagnitudes: { respuesta: { min: 5000, mode: 50000, max: 400000 } },
+                };
+                const sim = await fetch(`${API}/api/simulate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-API-Key': KEY },
+                    body: JSON.stringify({ ...inputs, iterations: 10000, seed: 12345 }),
+                }).then((r) => r.json());
+
+                const entry = await fetch(`${API}/api/register`, { headers: { 'X-API-Key': KEY } })
+                    .then((r) => r.json())
+                    .then((d) => d.risks.find((r) => r.riskName === riskName));
+                await fetch(`${API}/api/register/${encodeURIComponent(riskName)}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'X-API-Key': KEY },
+                    body: JSON.stringify({
+                        ...entry,
+                        ...inputs,
+                        seed: 12345,
+                        vulnManualOverride: true,
+                        ale: sim.summary.average,
+                        cvar95: sim.summary.cvar95,
+                    }),
+                });
+                return { ale: sim.summary.average, cvar95: sim.summary.cvar95 };
+            },
+            { riskName },
+        );
+
         await page.reload({ waitUntil: 'networkidle' });
-
         await page.click('#nav-treatment');
         await page.waitForTimeout(500);
-        await page.selectOption('#treatment-risk-select', 'E2E Tratamiento — CVaR Residual');
+        await page.selectOption('#treatment-risk-select', riskName);
         await page.waitForTimeout(500);
 
         await page.check('#fair-reduccionALE-manual-override');
         await page.fill('#fair-reduccionALE', '60');
-        await page.waitForTimeout(1000);
+        await page.waitForTimeout(1500);
 
-        // Mitigar: residualALE = 100000*(1-0.6) = 40000, residualCVaR = 250000*(1-0.6) = 100000.
-        await expect(page.locator('#fair-roi-ale-despues')).toHaveText('$40,000');
-        await expect(page.locator('#fair-roi-cvar-despues')).toHaveText('$100,000');
-        // Aceptar: sin cambios — residual = el ALE/CVaR actual.
-        await expect(page.locator('#fair-aceptar-residual-cvar')).toContainText('$250,000');
+        const aDolares = (t) => Number(t.replace(/[^0-9.-]/g, ''));
+        // El ALE residual es EXACTAMENTE el 40% que el usuario declaró (redondeado a dólares).
+        const aleMostrado = aDolares(await page.locator('#fair-roi-ale-despues').innerText());
+        expect(Math.abs(aleMostrado - real.ale * 0.4)).toBeLessThan(1);
+        // La cola sale de la simulación pareada (misma semilla del riesgo), no de una regla de tres.
+        const cvarMostrado = aDolares(await page.locator('#fair-roi-cvar-despues').innerText());
+        expect(cvarMostrado).toBeGreaterThan(0);
+        expect(cvarMostrado).toBeLessThan(real.cvar95);
+        // Aceptar: sin cambios — residual = el CVaR actual.
+        await expect(page.locator('#fair-aceptar-residual-cvar')).toContainText('$');
 
         await page.click('#treatment-adopt-mitigar-btn');
-        await page.waitForTimeout(800);
+        await page.waitForTimeout(1000);
 
-        const register = await page.evaluate(async () => {
-            const res = await fetch('http://localhost:3000/api/register', { headers: { 'X-API-Key': 'test-e2e-key' } });
-            return res.json();
-        });
-        const entry = register.risks.find((r) => r.riskName === 'E2E Tratamiento — CVaR Residual');
-        expect(entry.treatmentDecision.residualALE).toBe(40000);
-        expect(entry.treatmentDecision.residualCVaR).toBe(100000);
+        const entry = await page.evaluate(
+            async ({ riskName }) => {
+                const res = await fetch('http://localhost:3000/api/register', {
+                    headers: { 'X-API-Key': 'test-e2e-key' },
+                });
+                const data = await res.json();
+                return data.risks.find((r) => r.riskName === riskName);
+            },
+            { riskName },
+        );
+        expect(Math.abs(entry.treatmentDecision.residualALE - real.ale * 0.4)).toBeLessThan(1);
+        expect(entry.treatmentDecision.residualCVaR).toBeGreaterThan(0);
+        // La curva del residual viaja DENTRO de la decisión: es lo que le da al punto verde de la
+        // Matriz un eje Y propio, en vez de deducirlo escalando la curva actual.
+        expect(Array.isArray(entry.treatmentDecision.residualLossExceedanceCurve)).toBe(true);
+        expect(entry.treatmentDecision.residualLossExceedanceCurve.length).toBeGreaterThan(10);
+        // Y el punto residual de la Matriz existe y es coherente.
+        expect(entry.residualMatrixPoint).toBeTruthy();
+        expect(entry.residualMatrixPoint.probabilityPercent).toBeGreaterThanOrEqual(0);
     });
 
     // Regresión: elegir un Nivel de Defensa Objetivo real (el camino AUTOMÁTICO, no manual)

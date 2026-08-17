@@ -84,6 +84,10 @@ export const state = {
         // del primer autocálculo.
         mitigarResidualALE: null,
         mitigarResidualCVaR: null,
+        // Curva de Excedencia del residual re-simulado. Vive SOLO acá (no viaja dentro del objeto
+        // `mitigar`, que sí se persiste) para no guardar dos copias de la misma curva en cada
+        // entrada: solo se copia dentro de la Decisión de Tratamiento al adoptar una estrategia.
+        mitigarResidualCurve: null,
     },
     // Gestión de Riesgos (Gobernanza/Revisión + Plan de Seguridad) — página aparte (ver
     // App.RiskManagement), mismo criterio que treatment de arriba: separada del wizard porque

@@ -230,7 +230,14 @@ function getInvestmentVerdict(cost, lossAvoided, formatCurrency) {
  *   Vulnerabilidad lineal (escalar Vulnerabilidad por X% escalaba TODA la distribución de
  *   pérdidas por igual, ALE y CVaR incluidos) — con el modelo TCap vs. RS + Tullock ya no lo es,
  *   así que sigue siendo solo la mejor aproximación disponible cuando no hay `residualALE`/
- *   `residualCVaR` reales (modo manual, sin un Nivel de Defensa Objetivo que simular).
+ *   `residualCVaR` reales.
+ *
+ *   Ese respaldo por escalado quedó reducido al mínimo: POST /api/treatment/evaluate ahora
+ *   re-simula el residual TAMBIÉN en modo manual (Reducción de ALE tecleada a mano) cuando el
+ *   cliente manda tef/vuln/lossMagnitudes, ver calculateResidualFromReduction en autocalc.js. Solo
+ *   se llega acá con un cliente que no mande esos inputs. Y conviene recordar por qué importa:
+ *   escalar la cola en la misma proporción que el promedio SOBREESTIMA lo que logra un control de
+ *   prevención — prevenir hace los malos años más RAROS, no menos malos.
  * @param {Object} params.transferir { premium, deductible, limit, unlimited, reliability, delayDays }
  * @param {Object} params.evitar { cost, reliability, delayDays }
  * @param {(n:number) => string} formatCurrency
@@ -262,6 +269,10 @@ function evaluateTreatmentStrategies(
     results.mitigar = {
         cost: mitigar.cost,
         residualALE: aleAfterMitigar,
+        // Curva de Excedencia del residual, cuando vino de una re-simulación real. Viaja hasta la
+        // Decisión de Tratamiento para que el punto verde de la Matriz lea su propia curva en vez
+        // de deducirla escalando la actual (ver calculateResidualMatrixPoint en lib/register.js).
+        residualLossExceedanceCurve: mitigar.residualLossExceedanceCurve || null,
         residualCVaR: hasCVaR
             ? hasRealResidualCVaR
                 ? mitigar.residualCVaR

@@ -209,11 +209,18 @@ function calculateResidualPortfolio(risks) {
  * Eje X (impacto) — aritmética directa sobre el residualALE, misma fórmula que el punto actual.
  *
  * Eje Y (probabilidad de superar el umbral) — NO sale del ALE: depende de la distribución, no de
- * su media. Pero como el Tratamiento escala toda la distribución por una constante k (ver
- * residualScaleFactor en portfolioSimulation.js), se cumple que
- *   P(residual > umbral) = P(actual > umbral / k)
- * y eso se lee sobre la Curva de Excedencia que YA está guardada en la entrada. Sin re-simular:
- * la respuesta es instantánea y no se paga otro Monte Carlo por cada repintado de la matriz.
+ * su media. Se lee de la Curva de Excedencia del RESIDUAL, re-simulada al calcular el tratamiento
+ * y guardada dentro de la Decisión (`treatmentDecision.residualLossExceedanceCurve`). Leer una
+ * curva ya persistida mantiene esto instantáneo: no se paga otro Monte Carlo por cada repintado
+ * de la matriz.
+ *
+ * Si la decisión NO trae curva propia (adoptada antes de que se persistiera), se cae al respaldo
+ * de siempre: como escalar la Vulnerabilidad multiplica cada pérdida simulada por k, se cumple
+ * P(residual > umbral) = P(actual > umbral / k) y eso se lee sobre la curva ACTUAL. Es exacto
+ * mientras el tratamiento escale la distribución entera — o sea, mientras no haya un tope de daño
+ * de por medio y la frecuencia se modele como una fracción continua de evento. Con el modelo
+ * compuesto deja de serlo, y el error va hacia el lado optimista, por eso el camino preferido es
+ * la curva real.
  *
  * Devuelve null cuando no hay punto verde honesto que dibujar:
  *  - sin decisión adoptada (no hay residual que mostrar),
@@ -245,6 +252,9 @@ function calculateResidualMatrixPoint(risk, effectiveCriteria) {
         probabilityPercent = risk.probabilityPercent ?? null;
     } else if (k === 0) {
         probabilityPercent = 0; // Evitar: no queda pérdida que pueda superar ningún umbral.
+    } else if (typeof umbral === 'number' && Array.isArray(decision.residualLossExceedanceCurve)) {
+        // Camino preferido: la curva REAL del residual, leída en el umbral tal cual.
+        probabilityPercent = exceedanceProbabilityAt(decision.residualLossExceedanceCurve, umbral);
     } else if (typeof umbral === 'number' && Array.isArray(risk.lossExceedanceCurve)) {
         probabilityPercent = exceedanceProbabilityAt(risk.lossExceedanceCurve, umbral / k);
     }
