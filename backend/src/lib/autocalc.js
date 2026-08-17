@@ -65,7 +65,13 @@ function getConfidenceSpread(confidence) {
 // Nada de esto lo prescribe ISO 31000, ISO 28000 ni ASIS: esas normas aportan el marco de proceso
 // (contexto, identificación, análisis, evaluación, tratamiento), no estas cifras ni estas
 // fórmulas. Es metodología cuantitativa propia de AppFair y así debe documentarse.
-const TULLOCK_M = 6.8254;
+//
+// Los cuatro decimales son para REPRODUCIR el ajuste, no una afirmación de precisión: el análisis
+// de sensibilidad midió que un error de ±3 puntos en el ancla 3 —perfectamente plausible en un
+// juicio experto— mueve `m` un ±12 %. `m` y el nodo 60 se compensan mutuamente para preservar las
+// anclas, así que el PAR está bien identificado aunque `m` por separado no lo esté. Al citarlo
+// fuera del código, dígase «≈ 6,4», nunca «6,4073».
+const TULLOCK_M = 6.4073;
 
 // Eje de contienda: traduce el promedio SEMÁNTICO de un Perfil de Atacante (Motivación, Recursos,
 // Capacidad, Persistencia, Sofisticación) a la escala en la que de verdad compite contra la
@@ -86,11 +92,11 @@ const TULLOCK_M = 6.8254;
 // usuario sí puede ver y usar; el resto de las anclas siguen validándose entre sí igual que antes.
 const ATTACKER_CONTEST_CALIBRATION = [
     { profileScore: 0, contestStrength: 0 },
-    { profileScore: 18, contestStrength: 14.614 }, // intruso oportunista
-    { profileScore: 43, contestStrength: 22.682 }, // vandalismo / hurtos comunes
-    { profileScore: 54.2, contestStrength: 40.911 }, // empleado desleal
-    { profileScore: 60, contestStrength: 56.911 }, // crimen organizado
-    { profileScore: 90, contestStrength: 75.748 }, // terrorista o espía
+    { profileScore: 18, contestStrength: 14.295 }, // intruso oportunista
+    { profileScore: 43, contestStrength: 22.561 }, // vandalismo / hurtos comunes
+    { profileScore: 54.2, contestStrength: 40.34 }, // empleado desleal
+    { profileScore: 60, contestStrength: 57.373 }, // crimen organizado
+    { profileScore: 90, contestStrength: 79.129 }, // terrorista o espía
 ];
 
 /**
@@ -171,7 +177,15 @@ const VULNERABILITY_FLOOR = 0.005;
 //       prácticamente lo mismo que antes (el juicio del experto se conserva); con acceso nulo o
 //       bajo bajan bastante, que es la corrección. Los otros cuatro perfiles no se mueven ni un
 //       décimo — medido celda por celda.
-const CALIBRATION_VERSION = 6;
+//   7 = se quita el TOPE DE 100 del triángulo de Fuerza de Resistencia y se recalibra entera.
+//       Ese tope truncaba el lado alto de la Resistencia justo donde la defensa es buena (con
+//       confianza media mordía en avanzada, 102,7 -> 100, y sobre todo en élite, 127,2 -> 100), o
+//       sea subvaloraba la defensa fuerte — el mismo sesgo que la calibración 2 vino a corregir.
+//       Quitarlo obliga a re-derivar TODO, porque el tope estaba activo en una de las dos anclas
+//       que identifican `m` y no en la otra: `m` 6,8254 -> 6,4073, los cinco nodos del eje, y los
+//       tres factores alfa del Nivel de Acceso. Las seis anclas de calibración se siguen
+//       reproduciendo con residuo <= 0,15 pp. Cambia los números de TODO riesgo.
+const CALIBRATION_VERSION = 7;
 
 /**
  * Función de Éxito de Contienda de Tullock — probabilidad de que el lado "atacante" gane un
@@ -212,27 +226,31 @@ function tullockSuccessProbability(attackerStrength, defenseStrength, m = TULLOC
 // realmente a interponerse, porque quien ya está adentro se salta salvaguardas enteras.
 //
 // Por eso modula la Fuerza de Resistencia (R_efectiva = R x alfa) y nunca la Capacidad de Amenaza.
-// Bajo Tullock las dos operaciones son casi equivalentes —solo cuenta la razón C/R— pero NO del
-// todo: el triángulo de Resistencia tiene un tope duro en 100 que ya muerde con defensa avanzada y
-// élite, así que escalar R hacia abajo lo libera mientras que subir C no. Medido: contra defensa
-// élite las dos rutas difieren hasta 4,7 puntos, y modular R da el resultado más conservador.
+//
+// Hasta la calibración 6 esa elección además CAMBIABA el resultado: el triángulo de Resistencia
+// tenía un tope duro en 100 que mordía con defensa avanzada y élite, así que escalar R hacia abajo
+// lo liberaba mientras que subir C no (medido: hasta 4,7 puntos de diferencia contra defensa
+// élite, y modular R era el lado conservador). Quitado el tope en la calibración 7, Tullock solo
+// mira la razón C/R y las dos rutas son EXACTAMENTE equivalentes. Se conserva modular R porque es
+// lo que la frase de arriba describe —cuánto de tu defensa llega a interponerse— no porque cambie
+// ningún número.
 //
 // `nulo` (alfa = 1,00) es el default y es un NO-OP exacto: las seis anclas de calibración se
 // emitieron sin modificador de acceso, así que siguen valiendo tal cual y ningún riesgo ya
 // guardado cambia de números.
 // Los factores alfa están DESPEJADOS, no elegidos a ojo — mismo criterio que `m`.
 //
-// Se anclan sobre una sola pareja fija (organizado vs. estándar, C=56,911 y ENC=55,0) variando
+// Se anclan sobre una sola pareja fija (organizado vs. estándar, C=57,373 y ENC=55,0) variando
 // únicamente el Nivel de Acceso. Al mantener C y R constantes, ambos se cancelan y la variación de
 // Vulnerabilidad es función pura de alfa: cada ancla despeja su factor de forma unívoca, y la
 // monotonía sale por construcción. La pareja se eligió por estar en la zona central de la sigmoide
-// de Tullock, donde m=6,8254 tiene su mejor resolución — anclar cerca del piso de 0,5 % daría
+// de Tullock, donde m tiene su mejor resolución — anclar cerca del piso de 0,5 % daría
 // factores hipersensibles al ruido.
 //
 //   acceso nulo   -> 60 %  (es el ancla base #3, ya existente)  -> alfa 1,000
 //   acceso bajo   -> 72 %                                        -> alfa 0,878
-//   acceso medio  -> 88 %                                        -> alfa 0,703
-//   acceso alto   -> 96 %                                        -> alfa 0,568
+//   acceso medio  -> 88 %                                        -> alfa 0,698
+//   acceso alto   -> 96 %                                        -> alfa 0,559
 //
 // Un intento anterior de anclar el acceso cruzando distintos atacantes y defensas resultó
 // MUTUAMENTE INCOMPATIBLE: los alfa despejados salían 0,614 (bajo), 0,777 (medio) y 0,686 (alto),
@@ -243,8 +261,8 @@ function tullockSuccessProbability(attackerStrength, defenseStrength, m = TULLOC
 const ACCESS_LEVELS = {
     nulo: { alpha: 1.0, name: 'Nulo / Externo' },
     bajo: { alpha: 0.878, name: 'Bajo / Perimetral' },
-    medio: { alpha: 0.703, name: 'Medio / Operativo' },
-    alto: { alpha: 0.568, name: 'Alto / Privilegiado' },
+    medio: { alpha: 0.698, name: 'Medio / Operativo' },
+    alto: { alpha: 0.559, name: 'Alto / Privilegiado' },
 };
 const DEFAULT_ACCESS_LEVEL = 'nulo';
 
@@ -267,7 +285,7 @@ function estimateMeanVulnerability(contestStrength, defenseScore, persistence, s
     const tcapMin = contestStrength * spread.min;
     const tcapMax = contestStrength * spread.max;
     const rsMin = defenseScore * spread.min;
-    const rsMax = Math.min(100, defenseScore * spread.max);
+    const rsMax = defenseScore * spread.max;
     let sum = 0;
     for (let i = 0; i < iterations; i++) {
         const tcapSample = getPertRandom(tcapMin, contestStrength, tcapMax, 4, rng);
@@ -332,8 +350,8 @@ function buildContestTriangles(attackerProfile, defenseProfile, confidence, acce
         calculateProfileAverage(attackerProfile),
         calib.contestNodes || ATTACKER_CONTEST_CALIBRATION,
     );
-    // El alfa de acceso se aplica ANTES de abrir el triángulo (y antes del tope de 100), para que
-    // la banda de incertidumbre se abra alrededor de la Resistencia que de verdad se interpone.
+    // El alfa de acceso se aplica ANTES de abrir el triángulo, para que la banda de incertidumbre
+    // se abra alrededor de la Resistencia que de verdad se interpone.
     const defenseScore = calculateProfileAverage(defenseProfile) * getAccessAlpha(accessLevel);
     const persistence = attackerProfile.persistence || 0;
     const spread = getConfidenceSpread(confidence);
@@ -345,7 +363,14 @@ function buildContestTriangles(attackerProfile, defenseProfile, confidence, acce
             mode: contestStrength,
             max: contestStrength * spread.max,
         },
-        rs: { min: defenseScore * spread.min, mode: defenseScore, max: Math.min(100, defenseScore * spread.max) },
+        // La Fuerza de Resistencia PUEDE pasar de 100, igual que la Capacidad de Amenaza (ver
+        // attackerContestStrength). Hasta la calibración 6 tenía un tope duro ahí, heredado de
+        // leerla como un porcentaje; pero Tullock compara una RAZÓN, no dos porcentajes, y ese tope
+        // truncaba el lado alto del triángulo justo donde la defensa es buena: con confianza media
+        // mordía en avanzada (102,7 -> 100) y sobre todo en élite (127,2 -> 100). El efecto era
+        // subvalorar sistemáticamente la defensa fuerte — el mismo sesgo, en el mismo sentido, que
+        // la app venía corrigiendo desde la calibración 2.
+        rs: { min: defenseScore * spread.min, mode: defenseScore, max: defenseScore * spread.max },
         persistence,
     };
 }
@@ -820,6 +845,9 @@ module.exports = {
     tullockSuccessProbability,
     attackerContestStrength,
     ATTACKER_CONTEST_CALIBRATION,
+    // Se exporta solo para que la suite pueda inspeccionar los triángulos directamente (ver el
+    // candado del tope de Resistencia en lib.test.js). Ningún consumidor de producción lo usa.
+    buildContestTriangles,
     ACCESS_LEVELS,
     DEFAULT_ACCESS_LEVEL,
     getAccessAlpha,

@@ -10,8 +10,8 @@ mal.
 > (contexto, identificación, análisis, evaluación, tratamiento, controles), pero **no prescriben
 > estas cifras ni estas fórmulas**, y la app no debe afirmar lo contrario.
 
-**Estado: calibración 6** (el Empleado Desleal deja de ser indistinguible del Crimen Organizado,
-§2.1). Archivos de referencia:
+**Estado: calibración 7** (se quita el tope de 100 de la Fuerza de Resistencia y se recalibra
+entera, §4 y §9.1). Archivos de referencia:
 
 | Pieza                                                  | Archivo                                  |
 | ------------------------------------------------------ | ---------------------------------------- |
@@ -122,11 +122,11 @@ C = attackerContestStrength(FA)
 | FA   | C          |
 | ---- | ---------- |
 | 0    | 0          |
-| 18   | **14,614** |
-| 43   | **22,682** |
-| 54,2 | **40,911** |
-| 60   | **56,911** |
-| 90   | **75,748** |
+| 18   | **14,295** |
+| 43   | **22,561** |
+| 54,2 | **40,340** |
+| 60   | **57,373** |
+| 90   | **79,129** |
 
 El nodo 54,2 (`empleado-desleal`) es nuevo desde la calibración 6. Antes ese perfil caía en el nodo
 60 y era indistinguible de `organizado` (§2.1).
@@ -152,17 +152,19 @@ R_eff = ENC × α
 | ------- | ------------------- | ------------------ |
 | `nulo`  | Nulo / Externo      | **1,00** (default) |
 | `bajo`  | Bajo / Perimetral   | **0,878**          |
-| `medio` | Medio / Operativo   | **0,703**          |
-| `alto`  | Alto / Privilegiado | **0,568**          |
+| `medio` | Medio / Operativo   | **0,698**          |
+| `alto`  | Alto / Privilegiado | **0,559**          |
 
-**Por qué modula R y no C.** Bajo Tullock solo cuenta la razón `C/R`, así que `R·α` y `C/α` son casi
-equivalentes — pero no del todo: el triángulo de Resistencia tiene un tope duro en 100 que ya muerde
-con defensa avanzada y élite, así que escalar R hacia abajo lo libera mientras que subir C no.
-Medido contra defensa élite, las dos rutas difieren hasta **4,7 puntos**, y modular R da el
-resultado conservador.
+**Por qué modula R y no C.** Bajo Tullock solo cuenta la razón `C/R`, así que `R·α` y `C/α` son
+**exactamente** equivalentes. Hasta la calibración 6 no lo eran: el triángulo de Resistencia tenía
+un tope duro en 100 que mordía con defensa avanzada y élite, así que escalar R hacia abajo lo
+liberaba mientras que subir C no (medido contra defensa élite, las dos rutas diferían hasta **4,7
+puntos**, y modular R daba el resultado conservador). Quitado el tope en la calibración 7, la
+elección ya no cambia ningún número: se conserva porque describe lo que de verdad pasa —cuánto de tu
+defensa llega a interponerse— no porque importe al cálculo.
 
 **Los α están despejados, no elegidos.** Se anclan sobre **una sola pareja fija** —`organizado`
-(C = 56,911) vs `estándar` (ENC = 55,0)— variando únicamente el Nivel de Acceso. Al mantener C y R
+(C = 57,373) vs `estándar` (ENC = 55,0)— variando únicamente el Nivel de Acceso. Al mantener C y R
 constantes, ambos se cancelan y la variación de Vulnerabilidad es función pura de α: cada ancla
 despeja su factor de forma unívoca, y la monotonía sale por construcción.
 
@@ -170,11 +172,11 @@ despeja su factor de forma unívoca, y la monotonía sale por construcción.
 | ------ | -------------------------- | ----------- |
 | nulo   | 60 % (es el ancla base #3) | 1,000       |
 | bajo   | 72 %                       | 0,878       |
-| medio  | 88 %                       | 0,703       |
-| alto   | 96 %                       | 0,568       |
+| medio  | 88 %                       | 0,698       |
+| alto   | 96 %                       | 0,559       |
 
-La pareja se eligió por estar en la **zona central de la sigmoide**, donde `m = 6,8254` tiene su
-mejor resolución.
+La pareja se eligió por estar en la **zona central de la sigmoide**, donde `m` tiene su mejor
+resolución.
 
 **Por qué NO se ancla cruzando celdas.** Un intento anterior usó tres combinaciones distintas de
 atacante y defensa. Los α despejados salieron **0,614** (bajo), **0,777** (medio) y **0,686** (alto)
@@ -183,7 +185,8 @@ causa fue anclar en celdas pegadas al piso de 0,5 %, donde mover la Vulnerabilid
 exige recortes enormes de α. **Regla: el acceso se ancla sobre una pareja fija en la zona central,
 nunca cruzando celdas.**
 
-**`α = 1,00` es un no-op exacto**, y por eso las ocho anclas siguen valiendo sin recalibrar.
+**`α = 1,00` es un no-op exacto**, y por eso siete de las ocho anclas se emiten ahí sin más. La
+octava —la del empleado desleal— se emite con α de acceso medio, por lo explicado en §6.1.
 
 ---
 
@@ -192,7 +195,7 @@ nunca cruzando celdas.**
 ### 5.1 Función de contienda de Tullock
 
 ```
-V(C, R) = C^m / (C^m + R^m)          m = 6,8254
+V(C, R) = C^m / (C^m + R^m)          m = 6,4073  (cítese «≈ 6,4», ver §6.1)
 ```
 
 Es una **razón**, no una resta: un empate a cualquier escala (10 vs 10, o 90 vs 90) da 50 %
@@ -232,7 +235,7 @@ daban 0,0 %, que afirma invulnerabilidad.
 ### 5.4 Re-centrado por confianza (bisección)
 
 **Problema.** La confianza es incertidumbre epistémica, pero al ensanchar la banda PERT movía
-también el centro, porque Tullock con `m = 6,8254` es muy convexo y las iteraciones donde el
+también el centro, porque Tullock con `m ≈ 6,4` es muy convexo y las iteraciones donde el
 atacante sale alto dominan el promedio (Jensen). Medido antes del arreglo: declarar confianza baja
 subía la Vulnerabilidad de un oportunista contra defensa básica de **5,0 % a 11,8 %** — 4,7 veces
 más vulnerable por admitir que no estás seguro de tus datos.
@@ -287,7 +290,8 @@ seguridad patrimonial, todas con **confianza media**. Siete van con **acceso nul
 **Por qué el ancla 5 lleva acceso medio.** "Un insider sin ningún acceso" es una contradicción de
 términos. Hasta la calibración 5 esa ancla se leía sobre el eje de acceso nulo, y para hacer que un
 empleado _sin acceso_ diera 30 % contra defensa avanzada, la calibración tenía que empujar su nodo
-de contienda hasta **56,911** — la fuerza bruta de una banda criminal— compensando un acceso que el
+de contienda hasta **56,911** —la fuerza bruta de una banda criminal, en los números de la
+calibración 5— compensando un acceso que el
 modelo ya cuenta aparte en §4. Es el mismo error de _"está adentro" se coló dentro de "es capaz"_
 que ya se había corregido en los atributos del perfil, pero que el ancla volvía a meter por la
 puerta de atrás; y es lo que hacía que el Empleado Desleal y el Crimen Organizado dieran el mismo
@@ -317,7 +321,7 @@ iteraciones con muestreo Beta-PERT, escalada por persistencia y piso. Sobre esa 
 mismas dos anclas exigen:
 
 ```
-m = 6,8254     ← el valor del código
+m = 6,4073     ← el valor del código
 ```
 
 La diferencia es sesgo de Jensen otra vez: con una función convexa, la media de la simulación no
@@ -333,13 +337,20 @@ los dos por separado. Con `m` fijo, cada ancla restante despeja su propio nodo d
 
 Emitidas **después** de fijar `m` y el eje, sin que el modelo se ajustara para acertarlas:
 
-| #   | Atacante   | Defensa  | Ancla | Predicción previa del modelo |
-| --- | ---------- | -------- | ----- | ---------------------------- |
-| 7   | organizado | básica   | 98 %  | **98,5 %**                   |
-| 8   | organizado | avanzada | 30 %  | **30,8 %**                   |
+| #   | Atacante   | Defensa  | Ancla | Predicción del modelo (calib. 7) | Residuo |
+| --- | ---------- | -------- | ----- | -------------------------------- | ------- |
+| 7   | organizado | básica   | 98 %  | **98,3 %**                       | +0,3 pp |
+| 8   | organizado | avanzada | 30 %  | **31,7 %**                       | +1,7 pp |
 
 Confirman que la escala de Defensa es internamente consistente y **no necesita curva de calibración
 propia**. Esta es la validación más fuerte del modelo: no se ajustó nada para conseguirla.
+
+**La calibración 7 la empeoró, y hay que decirlo.** Con el tope de 100 activo el ancla 8 daba
+30,8 % (+0,8 pp); quitarlo la subió a 31,7 % (+1,7 pp), porque el tope mordía justo en la banda
+`avanzada`. Sigue siendo una validación buena —5,8 % de error relativo sobre un juicio de "30 %"—
+pero es menos apretada que antes, y la tolerancia de la suite para este par se subió de 1,5 a 2 pp
+(§9). Se aceptó a ojo abierto: el tope sesgaba **toda** la grilla contra la defensa fuerte, y eso
+pesa más que 0,9 pp en una celda de comprobación.
 
 ### 6.3 Grilla resultante
 
@@ -348,20 +359,20 @@ Vulnerabilidad media (%), confianza media, acceso nulo. `*` = celda anclada.
 | Atacante         | básica     | estándar   | avanzada   | élite      |
 | ---------------- | ---------- | ---------- | ---------- | ---------- |
 | oportunista      | **5,0\***  | 0,5        | 0,5        | 0,5        |
-| vandalismo       | **35,1\*** | 1,2        | 0,5        | 0,5        |
-| empleado desleal | 90,0       | 24,2       | 6,9        | 2,1        |
-| organizado       | **98,5\*** | **59,6\*** | **30,8\*** | **15,0\*** |
-| estado-nación    | 99,8       | 84,4       | 62,1       | **45,1\*** |
+| vandalismo       | **35,0\*** | 1,4        | 0,6        | 0,5        |
+| empleado desleal | 88,5       | 23,7       | 7,0        | 2,3        |
+| organizado       | **98,3\*** | **60,0\*** | **31,7\*** | **15,0\*** |
+| estado-nación    | 99,8       | 86,1       | 65,0       | **45,0\*** |
 
 `empleado-desleal` no tiene celda anclada en esta tabla: su ancla se emitió con **acceso medio**
 (§6.1), y esta grilla es a acceso nulo. Ahí es donde vive:
 
 | empleado desleal, por Nivel de Acceso | básica | estándar | avanzada   | élite |
 | ------------------------------------- | ------ | -------- | ---------- | ----- |
-| nulo                                  | 90,0   | 24,2     | 6,9        | 2,1   |
-| bajo                                  | 94,9   | 36,5     | 12,9       | 4,5   |
-| medio                                 | 98,7   | 60,2     | **30,0\*** | 13,4  |
-| alto                                  | 99,7   | 80,1     | 52,3       | 30,0  |
+| nulo                                  | 88,5   | 23,7     | 7,0        | 2,3   |
+| bajo                                  | 93,9   | 35,6     | 12,8       | 4,6   |
+| medio                                 | 98,3   | 59,2     | **30,0\*** | 13,7  |
+| alto                                  | 99,6   | 79,4     | 52,4       | 30,7  |
 
 Rango cubierto: **0,5 % – 99,8 %**. El modelo anterior (`m = 1`, sin eje de contienda) comprimía
 toda la grilla entre 17,7 % y 76,3 %: pasar de defensa básica a élite apenas dividía la
@@ -382,7 +393,7 @@ Perfil de Defensa ──► ENC ──► × α (Nivel de Acceso) ──► R_ef
                                                           ▼
                     triángulos PERT (λ=4) ──► escalada por persistencia
                                                           │
-                                          Tullock(m=6,8254) + piso 0,005
+                                          Tullock(m≈6,4) + piso 0,005
                                                           ▼
                                                   Vulnerabilidad V_i
                                                           │
@@ -495,7 +506,7 @@ cuando la respuesta real es 5 %. Esa curva alimenta el eje Y de la Matriz de Rie
 residual, así que el error no se quedaba en el dibujo.
 
 **Por qué Spearman y no Pearson.** El modelo no es lineal y Pearson solo mide relación lineal:
-Tullock con `m = 6,8254` es fuertemente convexo y la Magnitud es lognormal de cola pesada, así que
+Tullock con `m ≈ 6,4` es fuertemente convexo y la Magnitud es lognormal de cola pesada, así que
 unos pocos sorteos enormes dominaban la covarianza y aplastaban el peso aparente de los demás
 factores. Medido sobre el modelo real, Pearson subestimaba Frecuencia y Vulnerabilidad **a la
 mitad** (0,244 vs 0,367 y 0,323 vs 0,496). Spearman es robusto a cualquier relación monótona, que
@@ -647,14 +658,16 @@ El texto es sensible al Modo Simple: `CVaR95`/`p90` son jerga vetada ahí (ver
 `m`, el eje de contienda, los factores de acceso ni los atributos de un perfil sin que la suite
 avise que el modelo dejó de coincidir con ese criterio.
 
-| Invariante                 | Verificación                                                                                                                                            |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Las 8 anclas**           | \|media simulada − ancla\| **≤ 1,5 puntos porcentuales** (60.000 iteraciones, semilla `0x5eed`), cada una con su propio Nivel de Acceso (§6.1)          |
-| **Perfiles distinguibles** | Empleado Desleal y Crimen Organizado tienen que dar números distintos: sin acceso, el insider queda ≥ 10 pp por debajo; con acceso operativo, lo supera |
-| **Monotonía en defensa**   | Para cada atacante: más defensa nunca sube la Vulnerabilidad (tolerancia 0,05)                                                                          |
-| **Monotonía en atacante**  | Para cada defensa: oportunista ≤ vandalismo ≤ empleado desleal ≤ organizado ≤ estado-nación (tolerancia 0,05)                                           |
-| **Piso**                   | Ninguna combinación da 0 %; y el piso no infla el resultado (`< 2 %` en oportunista vs élite)                                                           |
-| **Eje de contienda**       | Reproduce exactamente sus nodos calibrados, y es monótono creciente en `[0, 100]` con paso 0,5                                                          |
+| Invariante                  | Verificación                                                                                                                                                             |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **6 anclas de calibración** | \|media simulada − ancla\| **≤ 0,5 pp** (60.000 iteraciones, semilla `0x5eed`), cada una con su Nivel de Acceso (§6.1). Peor residuo medido: 0,15 pp con cuatro semillas |
+| **2 anclas de validación**  | \|media simulada − ancla\| **≤ 2 pp** — no se ajustaron a nada, así que su residuo mide consistencia y no ajuste (§6.2)                                                  |
+| **Tope de Resistencia**     | `buildContestTriangles` NO topa el triángulo de Resistencia en 100: su máximo es exactamente moda × 1,40 (§4)                                                            |
+| **Perfiles distinguibles**  | Empleado Desleal y Crimen Organizado tienen que dar números distintos: sin acceso, el insider queda ≥ 10 pp por debajo; con acceso operativo, queda a la par (± 5 pp)    |
+| **Monotonía en defensa**    | Para cada atacante: más defensa nunca sube la Vulnerabilidad (tolerancia 0,05)                                                                                           |
+| **Monotonía en atacante**   | Para cada defensa: oportunista ≤ vandalismo ≤ empleado desleal ≤ organizado ≤ estado-nación (tolerancia 0,05)                                                            |
+| **Piso**                    | Ninguna combinación da 0 %; y el piso no infla el resultado (`< 2 %` en oportunista vs élite)                                                                            |
+| **Eje de contienda**        | Reproduce exactamente sus nodos calibrados, y es monótono creciente en `[0, 100]` con paso 0,5                                                                           |
 
 Las dos pruebas de monotonía cubren las **15 celdas que ningún ancla de calibración toca**: sin ellas, una
 calibración podría acertar las 8 anclas y aun así producir absurdos en el resto de la grilla — que
@@ -663,7 +676,7 @@ eje.
 
 ### 9.1 Versionado de calibración
 
-`CALIBRATION_VERSION = 6`. Se sube cada vez que cambie algo que mueva los números de una simulación:
+`CALIBRATION_VERSION = 7`. Se sube cada vez que cambie algo que mueva los números de una simulación:
 `m`, el eje de contienda, el piso, los atributos de un perfil, o **el modelo de frecuencia del
 motor**.
 
@@ -680,6 +693,7 @@ motor**.
 | 4       | Los factores α del Nivel de Acceso pasan de juicio directo a despejados por anclas           |
 | 5       | **Modelo compuesto de frecuencia** (§7.1). El ALE de cada riesgo se conserva; cambia la cola |
 | 6       | El **Empleado Desleal deja de ser indistinguible** del Crimen Organizado (§2.1, §6.1)        |
+| 7       | Se quita el **tope de 100** del triángulo de Resistencia; recalibración completa (§4, §6.2)  |
 
 Cada simulación sella su resultado con esta versión y el Registro la guarda. Los riesgos calculados
 con una versión anterior **no se recalculan solos**: en una herramienta de GRC, sobrescribir en
@@ -746,11 +760,12 @@ dos números se contradirían sin avisar.
   con el escalado proporcional de siempre: exacto para prevención pura, aproximado si hubo
   contención. Se resuelve solo al volver a adoptar la estrategia, y ya vienen marcadas con
   `⟳ Recalibrar` por el salto a la calibración 5.
-- **El tope de 100 se conserva a propósito.** Quitarlo no es un ajuste de un nodo: rompe también
-  `organizado vs élite` (15,0 % → 13,7 %), y ese perfil está en el nodo FA=60, no en el superior.
-  Como `organizado` tiene dos anclas y un solo nodo, sin el tope ya no caben las dos a la vez —
-  habría que **re-derivar `m`**, porque el tope estaba activo en una de las dos anclas que lo
-  determinan y no en la otra. Es una recalibración completa, no un parche.
+- ~~**El tope de 100 se conserva a propósito.**~~ **Quitado en la calibración 7.** El diagnóstico de
+  por qué era caro resultó exacto: rompía `organizado vs élite` (15,0 % → 13,7 %) y obligaba a
+  **re-derivar `m`**, porque el tope estaba activo en una de las dos anclas que lo determinan y no
+  en la otra. Fue una recalibración completa —`m` 6,8254 → 6,4073, los cinco nodos del eje y los
+  tres factores α— y las seis anclas de calibración se volvieron a reproducir con residuo ≤ 0,15 pp.
+  El análisis de sensibilidad había pronosticado que el cambio sería de bajo riesgo, y acertó.
 
 ---
 
@@ -765,7 +780,7 @@ Hechos verificables en el código:
   (`backend/src/routes/autocalc.js`), disparado por un botón explícito del usuario.
 - `POST /api/simulate` **no lo importa ni lo llama**.
 - El `m` del panel de Nash es un campo del formulario, **deliberadamente independiente** del
-  `TULLOCK_M = 6,8254` calibrado. Nunca puede cambiar en silencio el resultado de la simulación real.
+  `TULLOCK_M` calibrado. Nunca puede cambiar en silencio el resultado de la simulación real.
 - Su resultado no se persiste en el Registro y no alimenta Tratamiento ni Gestión de Riesgos.
 
 **Por qué se mantiene desacoplado.** Nash exige el **costo y el beneficio del atacante** — las
@@ -798,7 +813,8 @@ Decisiones tomadas con su razón, para que quien retome esto no las revierta por
 | Tullock sobre un eje calibrado, no `FA × (1 − ENC)` | La segunda tiene techo estructural (`V ≤ FA`): estado-nación contra defensa básica quedaba topado en 66 % cuando debe rondar 98 % |
 | `m` derivado, no ajustado                           | Dos anclas que comparten atacante cancelan el eje y lo determinan sin suposiciones                                                |
 | Eje de contienda solo en el atacante                | Validado fuera de muestra: la escala de defensa resultó consistente sin curva propia                                              |
-| Acceso modula R, no C                               | El tope de 100 rompe la equivalencia; modular R es el lado conservador                                                            |
+| Acceso modula R, no C                               | Describe lo que pasa: cuánto de tu defensa llega a interponerse. Sin el tope de 100 las dos rutas ya son exactamente equivalentes |
+| La Resistencia no se topa en 100                    | Tullock compara una RAZÓN, no dos porcentajes; topar el lado alto subvaloraba la defensa fuerte en toda la grilla                 |
 | Acceso es del riesgo, no del perfil                 | El mismo insider tiene acceso distinto a cada activo                                                                              |
 | Confianza no mueve la media                         | Es incertidumbre epistémica: habla del analista, no del atacante                                                                  |
 | La frecuencia baja con la capacidad                 | La mandan cuántos actores hay y qué tan indiscriminados son, no el empeño de cada uno                                             |
