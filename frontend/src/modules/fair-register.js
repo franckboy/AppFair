@@ -1277,6 +1277,23 @@ export const FairRegister = {
             cb.addEventListener('change', () => this.updateDeepAnalysisBtnState());
         });
         this.updateDeepAnalysisBtnState();
+        this.updateRecalibrateBtnState();
+    },
+
+    /** El botón de recalibración masiva solo existe si hay algo que recalibrar, y dice cuántos.
+     *  Su listener se registra UNA vez: vive en HTML estático que no se reconstruye. */
+    updateRecalibrateBtnState() {
+        const btn = document.getElementById('fair-recalibrate-all-btn');
+        if (!btn) return;
+        const pendientes = this.staleRisks().length;
+        btn.classList.toggle('hidden', pendientes === 0);
+        if (pendientes === 0) return;
+        document.getElementById('fair-recalibrate-all-label').textContent =
+            `Recalibrar ${pendientes} ${pendientes === 1 ? 'riesgo' : 'riesgos'}`;
+        if (!this._recalibrateWired) {
+            btn.addEventListener('click', () => this.recalibrateAll());
+            this._recalibrateWired = true;
+        }
     },
 
     toggleSelectAll(tbodyId, checked) {
@@ -1649,6 +1666,220 @@ export const FairRegister = {
                 </div>`;
             })
             .join('');
+    },
+
+    /** Riesgos del Registro calculados con una calibración anterior a la vigente y con datos
+     *  suficientes para volver a simularlos. Mismo criterio que la insignia "⟳ Recalibrar" de la
+     *  tabla — un stub "Sin analizar" (creado desde el Árbol con "+") no tiene nada que recalibrar. */
+    staleRisks() {
+        const vigente = state.config.calibrationVersion;
+        if (vigente == null) return [];
+        return (state.fair.riskRegister || []).filter(
+            (r) => (r.calibrationVersion ?? 0) < vigente && r.tef && r.vuln && r.lossMagnitudes,
+        );
+    },
+
+    /**
+     * Recalibración masiva: vuelve a simular TODOS los riesgos desactualizados con los datos que ya
+     * tienen guardados, y actualiza sus números.
+     *
+     * Por qué existe y por qué NO corre sola. La app nunca recalcula un riesgo guardado por su
+     * cuenta: sobrescribir en silencio la evaluación de un analista destruye la trazabilidad de por
+     * qué se decidió lo que se decidió (ver la insignia "⟳ Recalibrar"). Esto es la salida explícita
+     * a esa regla — la dispara una persona, a sabiendas, y la evaluación anterior de cada riesgo se
+     * conserva en su Historial de Revisiones (ISO 31000, cláusula 6.6) en vez de perderse.
+     *
+     * Va por el MISMO camino que una re-simulación manual (POST /api/simulate + PUT /api/register),
+     * no por un atajo propio: así no hay dos maneras distintas de producir un riesgo actualizado que
+     * puedan desincronizarse. El PUT reemplaza la entrada completa, por eso se manda `{...entry}`
+     * primero y solo se pisan los campos que la simulación produce.
+     */
+    async recalibrateAll() {
+        const pendientes = this.staleRisks();
+        if (pendientes.length === 0) {
+            showToast('No hay riesgos con calibración desactualizada.');
+            return;
+        }
+        if (!(await this.confirmRecalibration(pendientes.length))) return;
+
+        const cambios = [];
+        let falla = null;
+        for (let i = 0; i < pendientes.length; i++) {
+            const entry = pendientes[i];
+            this.renderRecalibrationProgress(i, pendientes.length, entry.riskName);
+            try {
+                cambios.push(await this.recalibrateOne(entry));
+            } catch (e) {
+                falla = { riskName: entry.riskName, message: e.userMessage || 'Error de red.' };
+                break;
+            }
+        }
+
+        await this.loadRiskRegister();
+        this.renderRecalibrationSummary(cambios, falla, pendientes.length);
+    },
+
+    /** Modal de confirmación. Reescribe evaluaciones guardadas, así que dice exactamente qué va a
+     *  pasar antes de hacerlo — incluido lo que NO cambia. */
+    confirmRecalibration(cuantos) {
+        return new Promise((resolve) => {
+            Modal.setSize('wide');
+            Modal.title.textContent = 'Recalibrar riesgos desactualizados';
+            Modal.body.innerHTML = `
+                <p class="mb-3">Se van a volver a simular <strong>${cuantos}</strong> ${cuantos === 1 ? 'riesgo' : 'riesgos'} con los datos que ya tienen guardados. No se te va a pedir ningún dato nuevo.</p>
+                <ul class="text-sm text-gray-700 list-disc list-inside mb-3 space-y-1">
+                    <li>Su <strong>pérdida promedio anual apenas se moverá</strong>: el modelo nuevo tiene la misma media que el anterior.</li>
+                    <li>Lo que sí cambia es el <strong>peor caso</strong>, y puede cambiar bastante: sube en los riesgos raros y graves, baja en los frecuentes y menores.</li>
+                    <li>Algunos riesgos pueden <strong>cambiar de nivel</strong> (por ejemplo de Alto a Crítico) como consecuencia.</li>
+                </ul>
+                <p class="text-sm p-2 rounded bg-blue-50 text-blue-900 mb-3">La evaluación anterior de cada riesgo se guarda en su <strong>Historial de Revisiones</strong>, así que no se pierde nada de lo ya decidido.</p>
+                <p class="text-sm text-gray-600">Tus decisiones de tratamiento, dueños, fechas de revisión y notas no se tocan.</p>
+            `;
+            Modal.footer.innerHTML = `
+                <button id="recal-cancel-btn" class="btn btn-secondary">Cancelar</button>
+                <button id="recal-go-btn" class="btn btn-primary">Recalibrar ${cuantos}</button>
+            `;
+            Modal.modal.classList.remove('hidden');
+            document.getElementById('recal-cancel-btn').addEventListener(
+                'click',
+                () => {
+                    Modal.hide();
+                    resolve(false);
+                },
+                { once: true },
+            );
+            document.getElementById('recal-go-btn').addEventListener('click', () => resolve(true), { once: true });
+        });
+    },
+
+    renderRecalibrationProgress(hechos, total, riskName) {
+        const pct = Math.round((hechos / total) * 100);
+        Modal.body.innerHTML = `
+            <p class="mb-3">Recalibrando <strong>${hechos + 1}</strong> de <strong>${total}</strong>…</p>
+            <div class="w-full bg-gray-200 rounded h-3 mb-2"><div class="h-3 rounded bg-blue-600" style="width:${pct}%"></div></div>
+            <p class="text-sm text-gray-600">${sanitizeHTML(riskName)}</p>
+        `;
+        Modal.footer.innerHTML = '';
+    },
+
+    /** Resumen final: qué cambió en cada riesgo. Es el registro de la operación, no un "listo". */
+    renderRecalibrationSummary(cambios, falla, total) {
+        const cambioNivel = cambios.filter((c) => c.antes.evaluationLevel !== c.despues.evaluationLevel);
+        const pct = (a, b) => (a > 0 ? `${b >= a ? '+' : ''}${(((b - a) / a) * 100).toFixed(0)}%` : '—');
+        const filas = cambios
+            .map(
+                (c) => `
+                <tr class="border-b">
+                    <td class="py-1 pr-3">${sanitizeHTML(c.riskName)}</td>
+                    <td class="py-1 pr-3 text-right">${formatCurrency(c.antes.ale)} → ${formatCurrency(c.despues.ale)}</td>
+                    <td class="py-1 pr-3 text-right">${formatCurrency(c.antes.cvar95)} → ${formatCurrency(c.despues.cvar95)} <span class="text-gray-500">(${pct(c.antes.cvar95, c.despues.cvar95)})</span></td>
+                    <td class="py-1">${c.antes.evaluationLevel !== c.despues.evaluationLevel ? `<strong>${sanitizeHTML(c.antes.evaluationLevel || '—')} → ${sanitizeHTML(c.despues.evaluationLevel)}</strong>` : '<span class="text-gray-500">sin cambio</span>'}</td>
+                </tr>`,
+            )
+            .join('');
+
+        Modal.setSize('xl');
+        Modal.title.textContent = 'Recalibración terminada';
+        Modal.body.innerHTML = `
+            ${
+                falla
+                    ? `<p class="mb-3 p-2 rounded bg-red-50 border-l-4 border-red-500 text-red-800 text-sm">Se detuvo en <strong>${sanitizeHTML(falla.riskName)}</strong>: ${sanitizeHTML(falla.message)}. Los ${cambios.length} anteriores sí quedaron guardados — puedes volver a ejecutarlo y seguirá desde donde se quedó.</p>`
+                    : ''
+            }
+            <p class="mb-3">Se recalibraron <strong>${cambios.length}</strong> de ${total} ${total === 1 ? 'riesgo' : 'riesgos'}.${cambioNivel.length > 0 ? ` <strong>${cambioNivel.length}</strong> cambió de nivel.` : ' Ninguno cambió de nivel.'}</p>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead><tr class="text-left border-b">
+                        <th class="py-1 pr-3">Riesgo</th>
+                        <th class="py-1 pr-3 text-right">${shortMetricLabel('ale', 'ALE')}</th>
+                        <th class="py-1 pr-3 text-right">${shortMetricLabel('cvar95', 'CVaR 95%')}</th>
+                        <th class="py-1">Nivel</th>
+                    </tr></thead>
+                    <tbody>${filas}</tbody>
+                </table>
+            </div>
+            <p class="text-xs text-gray-600 mt-3">La evaluación anterior de cada uno quedó en su Historial de Revisiones.</p>
+        `;
+        Modal.footer.innerHTML = `<button id="recal-close-btn" class="btn btn-primary">Cerrar</button>`;
+        document.getElementById('recal-close-btn').addEventListener('click', () => Modal.hide(), { once: true });
+    },
+
+    /** Una sola recalibración: simula con los inputs guardados y guarda el resultado. */
+    async recalibrateOne(entry) {
+        const deliberada = entry.isDeliberate !== false && entry.attackerKey && entry.defenseKey;
+        const result = await App.Api.request('/api/simulate', {
+            method: 'POST',
+            body: {
+                iterations: 10000,
+                seed: entry.seed || 0,
+                tef: entry.tef,
+                vuln: entry.vuln,
+                lossMagnitudes: entry.lossMagnitudes,
+                riskType: entry.riskType || 'amenaza',
+                // Los mismos perfiles con los que se calculó la primera vez. Sin ellos el backend
+                // caería al triángulo guardado y el riesgo quedaría recalibrado con OTRO modelo de
+                // Vulnerabilidad que el que le corresponde.
+                attackerKey: deliberada ? entry.attackerKey : undefined,
+                defenseKey: deliberada ? entry.defenseKey : undefined,
+                accessLevel: deliberada ? entry.accessLevel : undefined,
+                confidence: entry.dataConfidence || 'medio',
+                vulnManualOverride: !deliberada || !!entry.vulnManualOverride,
+                riskCriteria: entry.riskCriteriaOverride
+                    ? { ...state.config.riskCriteria, ...entry.riskCriteriaOverride }
+                    : state.config.riskCriteria,
+            },
+        });
+
+        const { summary, evaluation, inherentEvaluation } = result;
+        const antes = { ale: entry.ale, evaluationLevel: entry.evaluationLevel, cvar95: entry.cvar95 };
+
+        // El Historial de Revisiones se queda con la foto ANTERIOR: es lo que hace que esto no
+        // destruya trazabilidad. Mismo formato que ya escribe el wizard.
+        const historial = Array.isArray(entry.reviewHistory) ? [...entry.reviewHistory] : [];
+        historial.push({
+            date: new Date(entry.date || Date.now()).toLocaleDateString('es-MX', {
+                day: 'numeric',
+                month: 'short',
+                year: 'numeric',
+            }),
+            ale: formatCurrency(entry.ale),
+            evaluationLevel: entry.evaluationLevel || '—',
+        });
+
+        await App.Api.request(`/api/register/${encodeURIComponent(entry.riskName)}`, {
+            method: 'PUT',
+            body: {
+                ...entry,
+                ale: summary.average,
+                cvar95: summary.cvar95,
+                probExceedance: summary.probExceedance,
+                inherentALE: summary.inherentALE,
+                inherentCVaR: summary.inherentCVaR,
+                inherentEvaluationLevel: inherentEvaluation ? inherentEvaluation.level : null,
+                inherentEvaluationClasses: inherentEvaluation ? severityToClasses(inherentEvaluation.severity) : null,
+                inherentSeverity: inherentEvaluation ? inherentEvaluation.severity : null,
+                evaluationLevel: evaluation.level,
+                evaluationClasses: severityToClasses(evaluation.severity),
+                severity: evaluation.severity,
+                evaluationJustification: evaluation.justification,
+                sensitivity: (result.sensitivity || []).slice(0, 5),
+                lossExceedanceCurve: result.lossExceedanceCurve || null,
+                inherentLossExceedanceCurve: result.inherentLossExceedanceCurve || null,
+                calibrationVersion: result.calibrationVersion ?? null,
+                // El histograma guardado (lo usa el PDF) es de la corrida vieja. Se limpia en vez de
+                // dejarlo: el reporte ya sabe omitirlo cuando falta, y un histograma del modelo
+                // anterior junto a cifras del nuevo sería una contradicción impresa.
+                chartLabels: null,
+                chartData: null,
+                reviewHistory: historial,
+            },
+        });
+
+        return {
+            riskName: entry.riskName,
+            antes,
+            despues: { ale: summary.average, evaluationLevel: evaluation.level, cvar95: summary.cvar95 },
+        };
     },
 
     // Re-simula un riesgo ya guardado usando sus inputs originales (tef/vuln/lossMagnitudes)
