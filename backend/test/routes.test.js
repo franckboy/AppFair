@@ -579,6 +579,53 @@ test('GET /api/register: el punto residual de la Matriz lee la curva REAL del re
         .set('X-API-Key', TEST_API_KEY);
 });
 
+test('PUT /api/register persiste la receta del residual y rechaza una mal formada', async () => {
+    const riskName = 'HTTP Receta Residual';
+    const put = (residualInputs) =>
+        request(app)
+            .put(`/api/register/${encodeURIComponent(riskName)}`)
+            .set('X-API-Key', TEST_API_KEY)
+            .send({
+                riskType: 'amenaza',
+                ...RIESGO_MANUAL_HTTP,
+                ale: 100000,
+                treatmentDecision: {
+                    strategy: 'mitigar',
+                    residualALE: 40000,
+                    residualInputs,
+                    decidedAt: new Date().toISOString(),
+                },
+            });
+
+    const ok = await put({ targetDefenseKey: 'avanzada', damageCap: 60000 });
+    assert.strictEqual(ok.status, 200);
+    const leido = await request(app).get('/api/register').set('X-API-Key', TEST_API_KEY);
+    const entry = leido.body.risks.find((r) => r.riskName === riskName);
+    assert.deepStrictEqual(entry.treatmentDecision.residualInputs, {
+        targetDefenseKey: 'avanzada',
+        damageCap: 60000,
+    });
+
+    // Un perfil de defensa inventado no puede pasar: el portafolio lo usaría para re-simular.
+    const perfilMalo = await put({ targetDefenseKey: 'inventada' });
+    assert.strictEqual(perfilMalo.status, 400);
+    assert.match(perfilMalo.body.error, /targetDefenseKey/);
+
+    // preventionScale es una fracción de la Vulnerabilidad: fuera de [0,1] no significa nada.
+    const escalaMala = await put({ preventionScale: 1.5 });
+    assert.strictEqual(escalaMala.status, 400);
+    const topeMalo = await put({ damageCap: -100 });
+    assert.strictEqual(topeMalo.status, 400);
+
+    // Ausente sigue siendo válido: las decisiones adoptadas antes no la traen.
+    const sinReceta = await put(undefined);
+    assert.strictEqual(sinReceta.status, 200);
+
+    await request(app)
+        .delete(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY);
+});
+
 test('PUT /api/register rechaza una curva residual mal formada dentro de la Decisión de Tratamiento', async () => {
     const res = await request(app)
         .put('/api/register/HTTP Curva Residual Invalida')

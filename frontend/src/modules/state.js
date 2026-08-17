@@ -88,6 +88,12 @@ export const state = {
         // `mitigar`, que sí se persiste) para no guardar dos copias de la misma curva en cada
         // entrada: solo se copia dentro de la Decisión de Tratamiento al adoptar una estrategia.
         mitigarResidualCurve: null,
+        // La RECETA con la que se simuló ese residual: con qué Nivel de Defensa objetivo (modo
+        // automático) o con qué factor de prevención (modo manual). El tope de daño se lee del
+        // formulario al adoptar. Sin esto, la Decisión guarda solo el RESULTADO, y de un número no
+        // se puede reconstruir una distribución — el portafolio terminaba reproduciendo cualquier
+        // tratamiento como si hubiera sido prevención pura.
+        mitigarTargetDefenseKey: null,
     },
     // Gestión de Riesgos (Gobernanza/Revisión + Plan de Seguridad) — página aparte (ver
     // App.RiskManagement), mismo criterio que treatment de arriba: separada del wizard porque
