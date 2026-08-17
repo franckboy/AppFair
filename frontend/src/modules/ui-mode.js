@@ -174,6 +174,10 @@ export const UIMode = {
             'risk-tree-page-desc':
                 'Visualiza las relaciones entre riesgos. Cada riesgo conserva su propio cálculo ALE.',
             'risk-tree-family-sim-p90-label': 'Peor 10% de los casos (P90):',
+            'fair-freqmodel-title': 'Modelo de Frecuencia: promedio continuo vs. eventos discretos',
+            'fair-freqmodel-desc':
+                'Hoy la pérdida del año se calcula como Frecuencia × Magnitud, o sea repartiendo una fracción de evento en todos los años por igual. El modelo compuesto sortea cuántos eventos ocurren ese año (Poisson) y suma sus magnitudes. El promedio no cambia; la cola sí. Nada de esto se guarda — es para mirar los dos con tus propios datos.',
+            'fair-freqmodel-btn-label': 'Comparar los dos modelos',
         },
         simple: {
             'quick-concentrated-th-cvar': 'Peor Caso (5%)',
@@ -204,6 +208,10 @@ export const UIMode = {
             'risk-tree-page-desc':
                 'Visualiza cómo un riesgo puede desencadenar a otro. Cada riesgo conserva su propio estimado de pérdida.',
             'risk-tree-family-sim-p90-label': 'De cada 10 años, en el peor:',
+            'fair-freqmodel-title': '¿La pérdida llega repartida o de golpe?',
+            'fair-freqmodel-desc':
+                'Hoy el cálculo reparte el daño en todos los años por igual: si algo pasa una vez cada diez años, dice que cada año pierdes la décima parte. En la vida real o pasa o no pasa. Esta comparación te muestra las dos versiones con tus mismos datos. No cambia ni guarda nada.',
+            'fair-freqmodel-btn-label': 'Ver las dos versiones',
         },
     },
 

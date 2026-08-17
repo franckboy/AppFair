@@ -776,6 +776,19 @@
                         </div>
                     </div>
 
+                        <!-- Comparador de modelos de frecuencia (ver frequencyModel en
+                             backend/src/lib/simulation.js). Es DIAGNÓSTICO: corre los dos modelos
+                             con la misma semilla y muestra ambos, sin guardar nada ni cambiar
+                             ninguna cifra del Registro. Vive aquí adentro (no en un modal propio)
+                             porque el detalle del riesgo YA es el modal — abrir otro encima vacía
+                             su cuerpo y se lleva por delante este mismo panel. -->
+                        <div id="fair-frequency-models" class="hidden mt-6 p-4 bg-gray-50 rounded-lg">
+                            <h4 class="text-lg font-semibold text-gray-800 mb-1" id="fair-freqmodel-title">Modelo de Frecuencia: promedio continuo vs. eventos discretos</h4>
+                            <p class="description-text mb-3" id="fair-freqmodel-desc">Hoy la pérdida del año se calcula como Frecuencia × Magnitud, o sea repartiendo una fracción de evento en todos los años por igual. El modelo compuesto sortea cuántos eventos ocurren ese año (Poisson) y suma sus magnitudes. El promedio no cambia; la cola sí. Nada de esto se guarda — es para mirar los dos con tus propios datos.</p>
+                            <button type="button" id="fair-freqmodel-btn" class="btn btn-secondary text-sm"><i class="fas fa-scale-balanced mr-2"></i><span id="fair-freqmodel-btn-label">Comparar los dos modelos</span></button>
+                            <div id="fair-freqmodel-result" class="hidden mt-4"></div>
+                        </div>
+
                         <div id="fair-sensitivity-container" class="hidden mt-6 p-4 bg-gray-50 rounded-lg">
                             <h4 class="text-lg font-semibold text-gray-800 mb-1" id="fair-sensitivity-title">Análisis de Sensibilidad</h4>
                             <p class="description-text mb-3" id="fair-sensitivity-desc">Qué tanto influye cada variable en el resultado final, midiendo si mover una arrastra a la pérdida hacia arriba o hacia abajo. Enfoca tu esfuerzo de mejorar datos en las variables de arriba — son las que más mueven el resultado.</p>

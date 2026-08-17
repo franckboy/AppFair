@@ -8,6 +8,9 @@ const {
     getTriangularRandom,
     getPertRandom,
     getLognormalRandom,
+    getPoissonRandom,
+    magnitudeParams,
+    sampleMagnitude,
     triangularVariance,
     solveLognormalSigmaSquared,
 } = require('../src/lib/random');
@@ -3011,4 +3014,206 @@ test('summarizeLosses: un portafolio sin pérdida no divide por cero al calcular
     const s = summarizeLosses([0, 0, 0, 0]);
     assert.strictEqual(s.standardErrorPercent, 0);
     assert.ok(Number.isFinite(s.standardError));
+});
+
+// --- Modelo compuesto de frecuencia (N ~ Poisson(LEF), suma de N magnitudes) ------------------
+
+// Raro y severo: una vez cada ~20 años, pero cuando pasa duele. Es el régimen donde el modelo
+// 'expected' (repartir una fracción de evento en todos los años) miente más sobre la forma.
+const RIESGO_RARO_SEVERO = {
+    iterations: 10000,
+    seed: 777,
+    tef: { min: 0.05, mode: 0.1, max: 0.3 },
+    vuln: { min: 20, mode: 40, max: 70 },
+    lossMagnitudes: {
+        productividad: { min: 1000, mode: 5000, max: 20000 },
+        respuesta: { min: 5000, mode: 50000, max: 400000 },
+    },
+};
+
+// Frecuente y menor: varias veces al año, poco dinero cada vez. El régimen opuesto — y ahí el
+// modelo compuesto BAJA la cola en vez de subirla (ver el test correspondiente más abajo).
+const RIESGO_FRECUENTE_MENOR = {
+    iterations: 10000,
+    seed: 777,
+    tef: { min: 20, mode: 40, max: 60 },
+    vuln: { min: 40, mode: 50, max: 60 },
+    lossMagnitudes: { productividad: { min: 100, mode: 500, max: 2000 } },
+};
+
+test('getPoissonRandom: la media y la varianza muestrales convergen a lambda (las dos, que es lo que define a Poisson)', () => {
+    const rng = mulberry32(31337);
+    const lambda = 3.5;
+    const n = 200000;
+    let suma = 0;
+    const muestras = new Array(n);
+    for (let i = 0; i < n; i++) {
+        muestras[i] = getPoissonRandom(lambda, rng);
+        suma += muestras[i];
+    }
+    const media = suma / n;
+    const varianza = muestras.reduce((acc, v) => acc + (v - media) * (v - media), 0) / (n - 1);
+    assert.ok(Math.abs(media - lambda) < 0.03, `media ${media.toFixed(3)} debería estar cerca de ${lambda}`);
+    assert.ok(Math.abs(varianza - lambda) < 0.06, `varianza ${varianza.toFixed(3)} debería estar cerca de ${lambda}`);
+    assert.ok(
+        muestras.every((v) => Number.isInteger(v) && v >= 0),
+        'toda muestra debe ser un entero >= 0',
+    );
+});
+
+test('getPoissonRandom: lambda 0 o negativo devuelve 0 sin consumir el rng (no es un error, es "nunca pasa")', () => {
+    let llamadas = 0;
+    const rng = () => {
+        llamadas++;
+        return 0.5;
+    };
+    assert.strictEqual(getPoissonRandom(0, rng), 0);
+    assert.strictEqual(getPoissonRandom(-1, rng), 0);
+    assert.strictEqual(llamadas, 0);
+});
+
+test('magnitudeParams + sampleMagnitude dan exactamente lo mismo que getLognormalRandom (la separación es solo de rendimiento)', () => {
+    const casos = [
+        [1000, 5000, 20000], // lognormal
+        [0, 0, 20000], // moda en 0 -> respaldo triangular
+        [7000, 7000, 7000], // sin varianza -> constante
+    ];
+    casos.forEach(([min, mode, max]) => {
+        const rngA = mulberry32(99);
+        const rngB = mulberry32(99);
+        const params = magnitudeParams(min, mode, max);
+        for (let i = 0; i < 50; i++) {
+            assert.strictEqual(
+                sampleMagnitude(params, rngA),
+                getLognormalRandom(min, mode, max, rngB),
+                `min=${min} mode=${mode} max=${max}`,
+            );
+        }
+    });
+});
+
+test('frequencyModel: no pedir nada es idéntico bit a bit a pedir "expected" (el default no cambió)', () => {
+    const sinPedir = runMonteCarloSimulation(RIESGO_RARO_SEVERO);
+    const explicito = runMonteCarloSimulation({ ...RIESGO_RARO_SEVERO, frequencyModel: 'expected' });
+    assert.deepStrictEqual(sinPedir.annualLosses, explicito.annualLosses);
+    assert.strictEqual(sinPedir.frequencyModel, 'expected');
+    // eventCounts no existe en 'expected': ahí la pregunta "¿cuántos eventos hubo?" no tiene
+    // respuesta, porque el modelo reparte una fracción de evento en todos los años.
+    assert.strictEqual(sinPedir.eventCounts, null);
+});
+
+test('frequencyModel compound: es reproducible con la misma semilla', () => {
+    const params = { ...RIESGO_RARO_SEVERO, frequencyModel: 'compound' };
+    assert.deepStrictEqual(runMonteCarloSimulation(params).annualLosses, runMonteCarloSimulation(params).annualLosses);
+});
+
+test('frequencyModel compound: el ALE se conserva — los dos modelos tienen la MISMA media por construcción', () => {
+    // Con 95% de años en cero, una sola corrida trae mucho ruido de muestreo: el promedio de la
+    // media sobre varias semillas es lo que muestra que no hay sesgo, no que dé igual corrida a
+    // corrida. Este test es la garantía de que cambiar de modelo NO reabre las ocho anclas de
+    // calibración: el número con el que se decide el apetito de riesgo sigue siendo el mismo.
+    let sumaExpected = 0;
+    let sumaCompound = 0;
+    for (let seed = 1; seed <= 40; seed++) {
+        sumaExpected += summarizeLosses(runMonteCarloSimulation({ ...RIESGO_RARO_SEVERO, seed }).annualLosses).average;
+        sumaCompound += summarizeLosses(
+            runMonteCarloSimulation({ ...RIESGO_RARO_SEVERO, seed, frequencyModel: 'compound' }).annualLosses,
+        ).average;
+    }
+    const desvio = Math.abs(sumaCompound / sumaExpected - 1);
+    assert.ok(desvio < 0.03, `el ALE promedio se desvió ${(desvio * 100).toFixed(2)}%, esperaba menos de 3%`);
+});
+
+test('frequencyModel compound: aparecen los años en cero (y el modelo actual no los tiene nunca)', () => {
+    const actual = runMonteCarloSimulation(RIESGO_RARO_SEVERO);
+    const compuesto = runMonteCarloSimulation({ ...RIESGO_RARO_SEVERO, frequencyModel: 'compound' });
+
+    assert.ok(
+        actual.annualLosses.every((l) => l > 0),
+        'el modelo actual reparte una fracción de evento en TODOS los años: ninguno sale en cero',
+    );
+
+    const enCero = compuesto.annualLosses.filter((l) => l === 0).length;
+    // 1 − e^(−LEF) con LEF ~0,045 da ~4,4% de años CON evento, o sea ~95% en cero.
+    assert.ok(
+        enCero / compuesto.annualLosses.length > 0.9,
+        `esperaba más de 90% de años sin pérdida, dio ${((enCero / compuesto.annualLosses.length) * 100).toFixed(1)}%`,
+    );
+    // Un año vale cero exactamente cuando no ocurrió ningún evento — no por redondeo.
+    compuesto.annualLosses.forEach((loss, i) => {
+        assert.strictEqual(loss === 0, compuesto.eventCounts[i] === 0, `iteración ${i}`);
+    });
+    assert.ok(
+        compuesto.eventCounts.some((n) => n >= 2),
+        'con 10.000 años debería haber al menos uno con dos eventos encimados',
+    );
+});
+
+test('frequencyModel compound: SUBE la cola del riesgo raro-severo y la BAJA en el frecuente-menor', () => {
+    // Las dos mitades del mismo hallazgo, y por eso van en un solo test: el modelo actual no
+    // "subestima el riesgo" en general — deforma la cola en direcciones OPUESTAS según el régimen.
+    // Donde los eventos son raros, esconde el año malo (la pérdida llega junta, no repartida);
+    // donde son frecuentes, inventa una dispersión que no existe (multiplica la magnitud de UN
+    // evento por la frecuencia entera, así que un solo sorteo caro contamina todo el año).
+    const colaRaro = {
+        actual: summarizeLosses(runMonteCarloSimulation(RIESGO_RARO_SEVERO).annualLosses).cvar95,
+        compuesto: summarizeLosses(
+            runMonteCarloSimulation({ ...RIESGO_RARO_SEVERO, frequencyModel: 'compound' }).annualLosses,
+        ).cvar95,
+    };
+    const colaFrecuente = {
+        actual: summarizeLosses(runMonteCarloSimulation(RIESGO_FRECUENTE_MENOR).annualLosses).cvar95,
+        compuesto: summarizeLosses(
+            runMonteCarloSimulation({ ...RIESGO_FRECUENTE_MENOR, frequencyModel: 'compound' }).annualLosses,
+        ).cvar95,
+    };
+
+    assert.ok(
+        colaRaro.compuesto > colaRaro.actual * 2,
+        `raro-severo: la cola debería crecer bastante, pasó de ${colaRaro.actual.toFixed(0)} a ${colaRaro.compuesto.toFixed(0)}`,
+    );
+    assert.ok(
+        colaFrecuente.compuesto < colaFrecuente.actual,
+        `frecuente-menor: la cola debería BAJAR, pasó de ${colaFrecuente.actual.toFixed(0)} a ${colaFrecuente.compuesto.toFixed(0)}`,
+    );
+});
+
+test('frequencyModel compound: el tope de daño sigue siendo POR EVENTO, no por año', () => {
+    const cap = 30000;
+    const compuesto = runMonteCarloSimulation({
+        ...RIESGO_RARO_SEVERO,
+        frequencyModel: 'compound',
+        magnitudeCap: cap,
+    });
+
+    compuesto.annualLosses.forEach((loss, i) => {
+        const n = compuesto.eventCounts[i];
+        // Ningún año puede costar más que N veces el tope...
+        assert.ok(loss <= n * cap + 1e-9, `iteración ${i}: ${loss} > ${n} × ${cap}`);
+    });
+    // ...pero un año CON DOS eventos sí puede pasarse del tope: contener el daño de cada incendio
+    // no promete que no haya dos incendios. Esta es justamente la lectura que el modelo actual no
+    // puede dar, porque ahí nunca hay "dos eventos".
+    const añosDobles = compuesto.annualLosses.filter((loss, i) => compuesto.eventCounts[i] >= 2);
+    assert.ok(añosDobles.length > 0, 'el caso de prueba debería producir años con dos eventos');
+    assert.ok(
+        añosDobles.some((loss) => loss > cap),
+        'un año con dos eventos topados debe poder superar el tope de UN evento',
+    );
+});
+
+test('frequencyModel compound: magnitudeSamples sigue siendo la magnitud de UN evento (lo que necesita la cascada)', () => {
+    // cascadeSimulation.js suma magnitudeSamples[i] cuando un padre arrastra a este riesgo — o sea,
+    // el costo de UN evento forzado, no el total del año. Debe seguir estando ahí incluso en los
+    // años que salieron en cero, donde no ocurrió ningún evento propio.
+    const compuesto = runMonteCarloSimulation({ ...RIESGO_RARO_SEVERO, frequencyModel: 'compound' });
+    const enCero = compuesto.eventCounts.findIndex((n) => n === 0);
+    assert.ok(enCero >= 0, 'el caso de prueba debería producir años sin eventos');
+    assert.strictEqual(compuesto.annualLosses[enCero], 0);
+    assert.ok(compuesto.magnitudeSamples[enCero] > 0, 'la magnitud representativa debe existir igual');
+
+    // Y en un año de UN evento, el total del año ES esa magnitud.
+    const unEvento = compuesto.eventCounts.findIndex((n) => n === 1);
+    assert.ok(unEvento >= 0);
+    assert.strictEqual(compuesto.annualLosses[unEvento], compuesto.magnitudeSamples[unEvento]);
 });
