@@ -97,6 +97,70 @@ test.describe('Modelo de frecuencia: comparador en el detalle del riesgo', () =>
         expect(guardado.frequencyModel).toBeUndefined();
     });
 
+    // Calibración 5: el modelo compuesto pasó a ser el default del motor.
+    test('el default es el modelo compuesto: el riesgo se sella con la calibración 5 y el P90 en $0 viene explicado', async ({
+        page,
+    }) => {
+        await connectAndBoot(page);
+
+        const sim = await page.evaluate(async () => {
+            const res = await fetch('http://localhost:3000/api/simulate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-API-Key': 'test-e2e-key' },
+                body: JSON.stringify({
+                    iterations: 10000,
+                    seed: 42,
+                    tef: { min: 0.05, mode: 0.1, max: 0.3 },
+                    vuln: { min: 20, mode: 40, max: 70 },
+                    lossMagnitudes: { respuesta: { min: 5000, mode: 50000, max: 400000 } },
+                }),
+            });
+            return res.json();
+        });
+
+        expect(sim.frequencyModel).toBe('compound');
+        expect(sim.calibrationVersion).toBe(5);
+        // Nueve de cada diez años no traen ningún evento, así que el P90 es $0. Es la respuesta
+        // correcta — el modelo anterior la escondía repartiendo una fracción de evento en todos.
+        expect(sim.summary.p90).toBe(0);
+        expect(sim.summary.zeroLossYearsPercent).toBeGreaterThan(90);
+        // Y el ALE se conserva: cambiar de modelo no reabre la calibración de Vulnerabilidad.
+        expect(sim.summary.average).toBeGreaterThan(0);
+    });
+
+    test('el P90 en $0 se muestra con su explicación, no como un número suelto', async ({ page }) => {
+        await connectAndBoot(page);
+        await page.evaluate(
+            async ({ API, KEY, riskName }) => {
+                await fetch(`${API}/api/register/${encodeURIComponent(riskName)}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'X-API-Key': KEY },
+                    body: JSON.stringify({
+                        riskType: 'amenaza',
+                        vulnManualOverride: true,
+                        tef: { min: 0.05, mode: 0.1, max: 0.3 },
+                        vuln: { min: 20, mode: 40, max: 70 },
+                        lossMagnitudes: { respuesta: { min: 5000, mode: 50000, max: 400000 } },
+                        seed: 42,
+                        ale: 5000,
+                        cvar95: 20000,
+                    }),
+                });
+            },
+            { API, KEY, riskName },
+        );
+
+        await connectAndBoot(page);
+        await page.click('#nav-dashboard');
+        await page.waitForTimeout(1500);
+        await page.click(`[data-simulate-risk="${riskName}"]`);
+
+        await expect(page.locator('#percentile-90-result')).toHaveText('> $0', { timeout: 20000 });
+        const nota = page.locator('#fair-zero-years-note');
+        await expect(nota).toBeVisible();
+        await expect(nota).toContainText('no perderías nada');
+    });
+
     // El detalle del riesgo vive en un modal y solo existe tras un clic, así que queda fuera del
     // alcance de simple-mode-no-jargon.spec.js (que recorre páginas). Este comparador es texto
     // nuevo visible para el usuario: su Modo Simple se verifica aquí, con la misma red de jerga.

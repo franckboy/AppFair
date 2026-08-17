@@ -20,6 +20,7 @@ const {
     pearsonCorrelation,
     buildLossExceedanceCurve,
     LEC_EXCEEDANCE_PROBABILITIES,
+    MAX_COMPOUND_TEF,
 } = require('../src/lib/simulation');
 const { simulatePortfolio, simulateResidualPortfolio, residualScaleFactor } = require('../src/lib/portfolioSimulation');
 const { spearmanCorrelation } = require('../src/lib/simulation');
@@ -760,11 +761,16 @@ test('runMonteCarloSimulation es reproducible con la misma semilla', () => {
 });
 
 test('runMonteCarloSimulation: magnitudeSamples es lm_i sin escalar por LEF (annualLosses = lefSamples × magnitudeSamples)', () => {
+    // La identidad es propia del modelo de VALOR ESPERADO, que es literalmente esa multiplicación.
+    // Con el compuesto (el default) la pérdida del año es la suma de N magnitudes, así que la
+    // igualdad deja de tener sentido — se pide el modelo explícito para seguir fijando la relación
+    // entre las tres salidas, que es lo que este test protege.
     // Ancla el split que cascadeSimulation.js necesita (ver runFamilyCascadeSimulation): sumar
     // magnitudeSamples[i] en vez de annualLosses[i] para un riesgo hijo ya activado solo es
     // correcto si de verdad se cumple esta identidad — que magnitudeSamples es lm_i SIN el lef_i
     // ya aplicado (annualLosses ya lo trae adentro).
     const result = runMonteCarloSimulation({
+        frequencyModel: 'expected',
         iterations: 2000,
         seed: 4242,
         tef: { min: 5, mode: 10, max: 20 },
@@ -2511,29 +2517,46 @@ const RIESGO_COLA_GORDA = {
     lossMagnitudes: { respuesta: { min: 5000, mode: 25000, max: 1000000 } },
 };
 
-test('el tope de daño CAMBIA la forma de la cola; reducir la Vulnerabilidad solo la escala', () => {
-    const base = summarizeLosses(runMonteCarloSimulation(RIESGO_COLA_GORDA).annualLosses);
-
-    // PREVENIR: la misma Vulnerabilidad reducida a la mitad. Escala TODA la distribución.
-    const prevenido = summarizeLosses(
-        runMonteCarloSimulation({ ...RIESGO_COLA_GORDA, vuln: { min: 10, mode: 20, max: 30 } }).annualLosses,
-    );
+test('prevenir y contener deforman la cola en direcciones OPUESTAS', () => {
+    const razon = (params) => {
+        const r = summarizeLosses(runMonteCarloSimulation(params).annualLosses);
+        return r.cvar95 / r.average;
+    };
+    const base = razon(RIESGO_COLA_GORDA);
+    // PREVENIR: la misma Vulnerabilidad reducida a la mitad — menos eventos, igual de caros.
+    const prevenido = razon({ ...RIESGO_COLA_GORDA, vuln: { min: 10, mode: 20, max: 30 } });
     // CONTENER: un tope que recorta los peores escenarios y deja los demás intactos.
-    const contenido = summarizeLosses(
-        runMonteCarloSimulation({ ...RIESGO_COLA_GORDA, magnitudeCap: 60000 }).annualLosses,
-    );
+    const contenido = razon({ ...RIESGO_COLA_GORDA, magnitudeCap: 60000 });
 
-    const razon = (r) => r.cvar95 / r.average;
-    // La firma de la prevención: la razón cola/media NO se mueve — queda congelada. Ésta es
-    // exactamente la limitación que el tope viene a resolver.
+    // La firma de la PREVENCIÓN con el modelo compuesto: la razón cola/media SUBE. Bajar la
+    // Vulnerabilidad reduce la CANTIDAD de eventos, no lo que cuesta cada uno — hace los malos
+    // años más RAROS, no menos malos, así que la cola baja menos que el promedio.
+    //
+    // Con el modelo anterior esta razón quedaba congelada (escalar la Vulnerabilidad multiplicaba
+    // toda la distribución por una constante), y de ahí salía la conclusión de que la prevención
+    // "no puede cambiar la forma de la cola". Era un artefacto del modelo, no del mundo.
     assert.ok(
-        Math.abs(razon(prevenido) - razon(base)) < razon(base) * 0.02,
-        `prevenir no debe cambiar la razón cola/media: ${razon(base).toFixed(3)} -> ${razon(prevenido).toFixed(3)}`,
+        prevenido > base * 1.02,
+        `prevenir debe SUBIR la razón cola/media: ${base.toFixed(3)} -> ${prevenido.toFixed(3)}`,
     );
-    // La firma de la contención: la razón cola/media BAJA — la cola se aplana de verdad.
+    // La firma de la CONTENCIÓN, en cambio, sigue siendo aplanar: trunca los peores escenarios.
+    assert.ok(contenido < base * 0.9, `contener debe aplanar la cola: ${base.toFixed(3)} -> ${contenido.toFixed(3)}`);
+});
+
+test('con el modelo ANTERIOR, prevenir dejaba la razón cola/media congelada (el artefacto que se corrigió)', () => {
+    // Se conserva a propósito: documenta con números por qué el modelo compuesto era necesario.
+    // `pérdida = LEF × Magnitud` multiplica toda la distribución por una constante al escalar la
+    // Vulnerabilidad, así que TODAS las estadísticas se mueven igual y la razón queda fija — el
+    // control de prevención se veía incapaz de tocar la forma de la cola.
+    const razon = (params) => {
+        const r = summarizeLosses(runMonteCarloSimulation({ ...params, frequencyModel: 'expected' }).annualLosses);
+        return r.cvar95 / r.average;
+    };
+    const base = razon(RIESGO_COLA_GORDA);
+    const prevenido = razon({ ...RIESGO_COLA_GORDA, vuln: { min: 10, mode: 20, max: 30 } });
     assert.ok(
-        razon(contenido) < razon(base) * 0.9,
-        `contener debe aplanar la cola: ${razon(base).toFixed(3)} -> ${razon(contenido).toFixed(3)}`,
+        Math.abs(prevenido - base) < base * 0.02,
+        `esperaba la razón congelada: ${base.toFixed(3)} -> ${prevenido.toFixed(3)}`,
     );
 });
 
@@ -2706,15 +2729,24 @@ test('simulateResidualPortfolio: escalar la Vulnerabilidad por k escala el ALE d
     );
     const actual = simulatePortfolio(risks);
     const residual = simulateResidualPortfolio(risks);
-    // Escalar toda la distribución por una constante escala TODAS sus estadísticas por igual.
+
+    // El ALE sí escala por k: la pérdida esperada es proporcional a la Vulnerabilidad en cualquiera
+    // de los dos modelos de frecuencia. La tolerancia es de muestreo, no de sesgo — verificado
+    // promediando 25 semillas, la razón converge a 0,2497 contra el 0,2500 teórico. Con el modelo
+    // compuesto la varianza del estimador sube (menos eventos, más grandes), así que una sola
+    // corrida se desvía más que con el modelo anterior, donde esto era exacto término a término.
     assert.ok(
-        Math.abs(residual.summary.average - actual.summary.average * 0.25) < actual.summary.average * 0.001,
+        Math.abs(residual.summary.average - actual.summary.average * 0.25) < actual.summary.average * 0.03,
         `ALE residual ${residual.summary.average} debería ser ~0.25x del actual ${actual.summary.average}`,
     );
+    // La COLA, en cambio, NO escala por k — y ésa es la corrección de la calibración 5. Bajar la
+    // Vulnerabilidad reduce la cantidad de eventos, no lo que cuesta cada uno: hace los malos años
+    // más raros, no menos malos. Antes esta misma línea afirmaba lo contrario, con 0,1% de holgura.
     assert.ok(
-        Math.abs(residual.summary.cvar95 - actual.summary.cvar95 * 0.25) < actual.summary.cvar95 * 0.001,
-        `la cola residual ${residual.summary.cvar95} debería escalar igual que la media`,
+        residual.summary.cvar95 > actual.summary.cvar95 * 0.25,
+        `la cola residual ${residual.summary.cvar95.toFixed(0)} no debería bajar tanto como la media (${(actual.summary.cvar95 * 0.25).toFixed(0)})`,
     );
+    assert.ok(residual.summary.cvar95 < actual.summary.cvar95, 'pero el tratamiento sí debe ayudar');
     assert.strictEqual(residual.treatedCount, 3);
 });
 
@@ -2772,9 +2804,11 @@ test('simulateResidualPortfolio: el escalado también aplica a los riesgos con P
         });
     const sinTratar = simulatePortfolio([conPerfiles('X')]);
     const tratado = simulateResidualPortfolio([conPerfiles('X', { strategy: 'mitigar', residualALE: 500 })]);
+    // Tolerancia de muestreo (ver la nota del test anterior): con el modelo compuesto el estimador
+    // de la media tiene más varianza, y acá hay UN solo riesgo, así que la holgura es mayor.
     assert.ok(
-        Math.abs(tratado.summary.average - sinTratar.summary.average * 0.5) < sinTratar.summary.average * 0.001,
-        `con perfiles, k=0.5 debería dar la mitad: ${tratado.summary.average} vs ${sinTratar.summary.average}`,
+        Math.abs(tratado.summary.average - sinTratar.summary.average * 0.5) < sinTratar.summary.average * 0.05,
+        `con perfiles, k=0.5 debería dar ~la mitad: ${tratado.summary.average} vs ${sinTratar.summary.average}`,
     );
 });
 
@@ -2852,6 +2886,24 @@ test('simulatePortfolio: la curva de excedencia del portafolio es monótona decr
 // El Árbol de Riesgos en Cascada es la ÚNICA fuente de correlación del portafolio: sale del
 // criterio del usuario (qué riesgo dispara a cuál y con qué probabilidad), no de un supuesto
 // estadístico nuestro.
+// Familia en cascada de riesgos RAROS. El régimen importa: medido sobre el motor, el efecto de
+// declarar una cascada sobre la cola del portafolio va de +18% con LEF~0,05 a prácticamente cero
+// con LEF~3. Tiene sentido — con eventos frecuentes, un año ya trae muchas ocurrencias de cada
+// riesgo y hacer que algunas coincidan con el padre cambia poco; con eventos raros, que el año malo
+// sea compartido o no ES toda la pregunta. Por eso los tests de correlación usan este fixture y no
+// el genérico (LEF~0,87, justo en el punto de cruce donde el efecto se anula).
+function makeRareCascadeFamily() {
+    const raro = (riskName, overrides = {}) =>
+        makePortfolioRisk(riskName, { tef: { min: 0.02, mode: 0.05, max: 0.1 }, ...overrides });
+    return [
+        raro('RA'),
+        raro('RB', { triggeredBy: [{ riskName: 'RA', probability: 70 }] }),
+        raro('RC', { triggeredBy: [{ riskName: 'RA', probability: 60 }] }),
+        raro('RD', { triggeredBy: [{ riskName: 'RB', probability: 50 }] }),
+        raro('RE'),
+    ];
+}
+
 function makeCascadeFamilyPortfolio() {
     return [
         makePortfolioRisk('CA'),
@@ -2879,8 +2931,10 @@ test('simulatePortfolio: SIN dependencias declaradas da exactamente los mismos n
 test('simulatePortfolio: la correlación declarada ENGORDA la cola conjunta', () => {
     // Es el efecto que la independencia no podía capturar: cuando un padre arrastra a sus hijos,
     // los tres caen el MISMO año, y esa co-ocurrencia es justo lo que hace la cola más pesada.
-    const sin = simulatePortfolio([1, 2, 3, 4, 5].map((i) => makePortfolioRisk(`S${i}`)));
-    const con = simulatePortfolio(makeCascadeFamilyPortfolio());
+    // Los MISMOS riesgos con y sin aristas — comparar contra otro portafolio distinto mediría
+    // también la diferencia entre los dos conjuntos de riesgos, no solo el efecto de la cascada.
+    const con = simulatePortfolio(makeRareCascadeFamily());
+    const sin = simulatePortfolio(makeRareCascadeFamily().map((r) => ({ ...r, triggeredBy: [] })));
     assert.ok(
         con.summary.cvar95 > sin.summary.cvar95,
         `con cascada ${con.summary.cvar95.toFixed(0)} debería superar a sin cascada ${sin.summary.cvar95.toFixed(0)}`,
@@ -2898,12 +2952,14 @@ test('simulatePortfolio: declarar la cascada NO cambia el ALE del portafolio —
     // Ahora la cascada EXPLICA parte de las ocurrencias que el hijo ya tenía en vez de añadirlas:
     // el total esperado de cada riesgo queda igual al declarado (su ALE individual no se mueve, el
     // Registro no cambia), pero esas ocurrencias caen el MISMO año que las del padre.
-    const conCascada = simulatePortfolio(makeCascadeFamilyPortfolio());
-    const sinAristas = simulatePortfolio(makeCascadeFamilyPortfolio().map((r) => ({ ...r, triggeredBy: [] })));
+    const conCascada = simulatePortfolio(makeRareCascadeFamily());
+    const sinAristas = simulatePortfolio(makeRareCascadeFamily().map((r) => ({ ...r, triggeredBy: [] })));
 
+    // La holgura es de muestreo: esta familia es de riesgos RAROS (ver makeRareCascadeFamily), y ahí
+    // el promedio de 10.000 años lo dominan unos pocos años con evento, así que baila más.
     const desvio = Math.abs(conCascada.summary.average / sinAristas.summary.average - 1);
     assert.ok(
-        desvio < 0.02,
+        desvio < 0.05,
         `declarar la cascada no debe mover el ALE: ${sinAristas.summary.average.toFixed(0)} -> ${conCascada.summary.average.toFixed(0)} (${(desvio * 100).toFixed(1)}%)`,
     );
     // Pero la cola SÍ sube: los riesgos encadenados caen juntos.
@@ -2929,8 +2985,8 @@ test('simulatePortfolio: diversificación y correlación se miden POR SEPARADO, 
     // sola resta contra la suma no mide ninguna de las dos. Bug real: con cascada declarada, el
     // "beneficio de diversificación" salía artificialmente bajo porque le habían restado la
     // correlación sin decirlo.
-    const sin = simulatePortfolio([1, 2, 3, 4, 5].map((i) => makePortfolioRisk(`S${i}`)));
-    const con = simulatePortfolio(makeCascadeFamilyPortfolio());
+    const con = simulatePortfolio(makeRareCascadeFamily());
+    const sin = simulatePortfolio(makeRareCascadeFamily().map((r) => ({ ...r, triggeredBy: [] })));
 
     // La diversificación NO depende de que haya cascada: es el mismo portafolio independiente.
     assert.ok(
@@ -3094,14 +3150,34 @@ test('magnitudeParams + sampleMagnitude dan exactamente lo mismo que getLognorma
     });
 });
 
-test('frequencyModel: no pedir nada es idéntico bit a bit a pedir "expected" (el default no cambió)', () => {
+test('frequencyModel: el default es el modelo COMPUESTO (calibración 5)', () => {
     const sinPedir = runMonteCarloSimulation(RIESGO_RARO_SEVERO);
-    const explicito = runMonteCarloSimulation({ ...RIESGO_RARO_SEVERO, frequencyModel: 'expected' });
+    const explicito = runMonteCarloSimulation({ ...RIESGO_RARO_SEVERO, frequencyModel: 'compound' });
     assert.deepStrictEqual(sinPedir.annualLosses, explicito.annualLosses);
-    assert.strictEqual(sinPedir.frequencyModel, 'expected');
-    // eventCounts no existe en 'expected': ahí la pregunta "¿cuántos eventos hubo?" no tiene
-    // respuesta, porque el modelo reparte una fracción de evento en todos los años.
-    assert.strictEqual(sinPedir.eventCounts, null);
+    assert.strictEqual(sinPedir.frequencyModel, 'compound');
+
+    // eventCounts solo existe en el compuesto: con el modelo de valor esperado la pregunta
+    // "¿cuántos eventos hubo?" no tiene respuesta, porque reparte una fracción en todos los años.
+    const anterior = runMonteCarloSimulation({ ...RIESGO_RARO_SEVERO, frequencyModel: 'expected' });
+    assert.strictEqual(anterior.eventCounts, null);
+    assert.strictEqual(anterior.frequencyModel, 'expected');
+});
+
+test('frequencyModel: por encima de MAX_COMPOUND_TEF el compuesto cae solo al de valor esperado, sin error', () => {
+    // Un riesgo muy frecuente es un riesgo válido y corriente, no una petición mal formada: a esa
+    // frecuencia los dos modelos ya coinciden y el compuesto solo costaría tiempo (sortea una
+    // magnitud por evento). Cae solo, y el modelo realmente usado viaja de vuelta.
+    const muyFrecuente = {
+        ...RIESGO_RARO_SEVERO,
+        tef: { min: MAX_COMPOUND_TEF + 100, mode: MAX_COMPOUND_TEF + 200, max: MAX_COMPOUND_TEF + 300 },
+    };
+    const r = runMonteCarloSimulation({ ...muyFrecuente, frequencyModel: 'compound' });
+    assert.strictEqual(r.frequencyModel, 'expected');
+    assert.strictEqual(r.eventCounts, null);
+    assert.deepStrictEqual(
+        r.annualLosses,
+        runMonteCarloSimulation({ ...muyFrecuente, frequencyModel: 'expected' }).annualLosses,
+    );
 });
 
 test('frequencyModel compound: es reproducible con la misma semilla', () => {
@@ -3127,8 +3203,8 @@ test('frequencyModel compound: el ALE se conserva — los dos modelos tienen la 
 });
 
 test('frequencyModel compound: aparecen los años en cero (y el modelo actual no los tiene nunca)', () => {
-    const actual = runMonteCarloSimulation(RIESGO_RARO_SEVERO);
-    const compuesto = runMonteCarloSimulation({ ...RIESGO_RARO_SEVERO, frequencyModel: 'compound' });
+    const actual = runMonteCarloSimulation({ ...RIESGO_RARO_SEVERO, frequencyModel: 'expected' });
+    const compuesto = runMonteCarloSimulation(RIESGO_RARO_SEVERO);
 
     assert.ok(
         actual.annualLosses.every((l) => l > 0),
@@ -3157,26 +3233,21 @@ test('frequencyModel compound: SUBE la cola del riesgo raro-severo y la BAJA en 
     // Donde los eventos son raros, esconde el año malo (la pérdida llega junta, no repartida);
     // donde son frecuentes, inventa una dispersión que no existe (multiplica la magnitud de UN
     // evento por la frecuencia entera, así que un solo sorteo caro contamina todo el año).
-    const colaRaro = {
-        actual: summarizeLosses(runMonteCarloSimulation(RIESGO_RARO_SEVERO).annualLosses).cvar95,
-        compuesto: summarizeLosses(
-            runMonteCarloSimulation({ ...RIESGO_RARO_SEVERO, frequencyModel: 'compound' }).annualLosses,
-        ).cvar95,
-    };
-    const colaFrecuente = {
-        actual: summarizeLosses(runMonteCarloSimulation(RIESGO_FRECUENTE_MENOR).annualLosses).cvar95,
-        compuesto: summarizeLosses(
-            runMonteCarloSimulation({ ...RIESGO_FRECUENTE_MENOR, frequencyModel: 'compound' }).annualLosses,
-        ).cvar95,
-    };
+    const cola = (params) => ({
+        anterior: summarizeLosses(runMonteCarloSimulation({ ...params, frequencyModel: 'expected' }).annualLosses)
+            .cvar95,
+        compuesto: summarizeLosses(runMonteCarloSimulation(params).annualLosses).cvar95,
+    });
+    const colaRaro = cola(RIESGO_RARO_SEVERO);
+    const colaFrecuente = cola(RIESGO_FRECUENTE_MENOR);
 
     assert.ok(
-        colaRaro.compuesto > colaRaro.actual * 2,
-        `raro-severo: la cola debería crecer bastante, pasó de ${colaRaro.actual.toFixed(0)} a ${colaRaro.compuesto.toFixed(0)}`,
+        colaRaro.compuesto > colaRaro.anterior * 2,
+        `raro-severo: la cola debería crecer bastante, pasó de ${colaRaro.anterior.toFixed(0)} a ${colaRaro.compuesto.toFixed(0)}`,
     );
     assert.ok(
-        colaFrecuente.compuesto < colaFrecuente.actual,
-        `frecuente-menor: la cola debería BAJAR, pasó de ${colaFrecuente.actual.toFixed(0)} a ${colaFrecuente.compuesto.toFixed(0)}`,
+        colaFrecuente.compuesto < colaFrecuente.anterior,
+        `frecuente-menor: la cola debería BAJAR, pasó de ${colaFrecuente.anterior.toFixed(0)} a ${colaFrecuente.compuesto.toFixed(0)}`,
     );
 });
 
@@ -3248,12 +3319,10 @@ test('calculateResidualFromReduction: el ALE residual es EXACTAMENTE el que el u
     assert.strictEqual(res.residualALE, actual.average * 0.4);
 });
 
-test('calculateResidualFromReduction: con semilla pareada, hoy da EXACTAMENTE lo mismo que el escalado proporcional', () => {
-    // El seguro de que este cambio no mueve ni un número con el modelo de frecuencia actual:
-    // escalar la Vulnerabilidad por k multiplica cada pérdida simulada por k (en getPertRandom,
-    // escalar min/mode/max deja alpha/beta idénticos), así que las dos corridas pareadas tienen la
-    // MISMA razón cola/media y el factor de deformación vale 1 exacto. Sin parear la semilla ese
-    // factor traía ~3% de ruido sobre los mismos datos, que es ruido y no información.
+test('calculateResidualFromReduction: la cola baja MENOS que el promedio — prevenir hace los malos años más raros, no menos malos', () => {
+    // El hallazgo central de la calibración 5, medido de punta a punta. Un control que corta la
+    // pérdida promedio un 60% NO corta el mal año un 60%: reduce la cantidad de eventos, no lo que
+    // cuesta cada uno. Suponer proporcionalidad sobreestimaba lo que logra el control.
     const actual = simularActual();
     const res = calculateResidualFromReduction({
         ...RIESGO_MANUAL,
@@ -3261,6 +3330,36 @@ test('calculateResidualFromReduction: con semilla pareada, hoy da EXACTAMENTE lo
         currentALE: actual.average,
         currentCVaR: actual.cvar95,
         seed: SEMILLA_MANUAL,
+    });
+    const proporcional = actual.cvar95 * 0.4;
+    assert.ok(
+        res.residualCVaR > proporcional * 1.1,
+        `la cola residual debe superar al escalado proporcional (${proporcional.toFixed(0)}), dio ${res.residualCVaR.toFixed(0)}`,
+    );
+    // Pero sigue siendo una MEJORA: el control ayuda, solo que menos de lo que se creía.
+    assert.ok(res.residualCVaR < actual.cvar95, 'la cola residual debe seguir por debajo de la actual');
+});
+
+test('calculateResidualFromReduction: con el modelo ANTERIOR daba exactamente el escalado proporcional', () => {
+    // Documenta de dónde venía la cifra que la app mostraba hasta la calibración 4: escalar la
+    // Vulnerabilidad multiplicaba cada pérdida simulada por k (en getPertRandom, escalar
+    // min/mode/max deja alpha/beta idénticos), así que las dos corridas pareadas tenían la MISMA
+    // razón cola/media y el factor de deformación valía 1 exacto.
+    const actual = summarizeLosses(
+        runMonteCarloSimulation({
+            iterations: 10000,
+            seed: SEMILLA_MANUAL,
+            ...RIESGO_MANUAL,
+            frequencyModel: 'expected',
+        }).annualLosses,
+    );
+    const res = calculateResidualFromReduction({
+        ...RIESGO_MANUAL,
+        reductionPercent: 60,
+        currentALE: actual.average,
+        currentCVaR: actual.cvar95,
+        seed: SEMILLA_MANUAL,
+        frequencyModel: 'expected',
     });
     assert.ok(
         Math.abs(res.residualCVaR - actual.cvar95 * 0.4) < 1e-6,
@@ -3271,17 +3370,30 @@ test('calculateResidualFromReduction: con semilla pareada, hoy da EXACTAMENTE lo
 test('calculateResidualFromReduction: la cola se ancla al CVaR que el usuario ya ve, no al simulado a secas', () => {
     // Si el ale/cvar95 guardados no cuadran con los inputs guardados (dato viejo, inputs editados
     // sin volver a simular), tomar el CVaR simulado directo haría que ese desajuste apareciera como
-    // si fuera efecto del tratamiento. Anclando a lo que la pantalla muestra, un 60% de reducción
-    // se ve como un 60% también en la cola mientras el modelo no la deforme.
-    const res = calculateResidualFromReduction({
+    // si fuera efecto del tratamiento. Lo único que se toma de la simulación es el FACTOR de
+    // deformación de la cola; la escala la sigue poniendo lo que la pantalla muestra.
+    const conCVaRDeclarado = calculateResidualFromReduction({
         ...RIESGO_MANUAL,
         reductionPercent: 60,
         currentALE: 100000, // a propósito, sin relación con lo que darían tef/vuln/lossMagnitudes
         currentCVaR: 250000,
         seed: SEMILLA_MANUAL,
     });
-    assert.ok(Math.abs(res.residualALE - 40000) < 1e-6);
-    assert.ok(Math.abs(res.residualCVaR - 100000) < 1e-6, `esperaba 100000, dio ${res.residualCVaR}`);
+    assert.ok(Math.abs(conCVaRDeclarado.residualALE - 40000) < 1e-6);
+
+    // Duplicar el CVaR declarado debe duplicar el residual: el factor de deformación no depende de
+    // la escala, solo de la forma. Si el residual saliera del CVaR simulado a secas, no se movería.
+    const conElDoble = calculateResidualFromReduction({
+        ...RIESGO_MANUAL,
+        reductionPercent: 60,
+        currentALE: 100000,
+        currentCVaR: 500000,
+        seed: SEMILLA_MANUAL,
+    });
+    assert.ok(
+        Math.abs(conElDoble.residualCVaR / conCVaRDeclarado.residualCVaR - 2) < 1e-9,
+        `esperaba el doble, dio ${conElDoble.residualCVaR / conCVaRDeclarado.residualCVaR}`,
+    );
 });
 
 test('calculateResidualFromReduction: devuelve la Curva de Excedencia del residual, a la escala declarada', () => {

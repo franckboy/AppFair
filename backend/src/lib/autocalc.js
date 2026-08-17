@@ -109,9 +109,14 @@ const MAX_ESCALATION = 0.3;
 // de seguridad puede sostener.
 const VULNERABILITY_FLOOR = 0.005;
 
-// Versión del modelo de Vulnerabilidad. Se sube CADA vez que cambie `TULLOCK_M`,
-// `ATTACKER_CONTEST_CALIBRATION`, `VULNERABILITY_FLOOR` o los atributos de un Perfil de Atacante,
-// porque cualquiera de esas cosas cambia los números de una simulación.
+// Versión del modelo que produce los números de una simulación. Se sube CADA vez que cambie algo
+// que mueva esos números: `TULLOCK_M`, `ATTACKER_CONTEST_CALIBRATION`, `VULNERABILITY_FLOOR`, los
+// atributos de un Perfil de Atacante, o el modelo de frecuencia del motor.
+//
+// Se llamaba VULNERABILITY_CALIBRATION_VERSION mientras solo sellaba la calibración de
+// Vulnerabilidad; desde la versión 5 sella también cómo se convierte la frecuencia en pérdida
+// anual, así que el nombre viejo quedaba corto. El campo persistido siempre se llamó
+// `calibrationVersion`, así que el cambio es solo interno y no toca ningún dato guardado.
 //
 // Cada simulación sella su resultado con esta versión y el Registro la guarda. Los riesgos
 // guardados con una versión anterior NO se recalculan solos: en una herramienta de GRC,
@@ -124,7 +129,14 @@ const VULNERABILITY_FLOOR = 0.005;
 //       cierra el abanico. Cambia los números de todo riesgo capturado con confianza alta o baja.
 //   4 = los factores alfa del Nivel de Acceso pasan de juicio directo a despejados por anclas
 //       estructurales. Solo cambia los números de riesgos con acceso distinto de 'nulo'.
-const VULNERABILITY_CALIBRATION_VERSION = 4;
+//   5 = modelo COMPUESTO de frecuencia: la pérdida del año es la suma de N ~ Poisson(LEF) eventos,
+//       en vez de `LEF × Magnitud` (ver frequencyModel en lib/simulation.js). El ALE de cada riesgo
+//       se conserva —la media es la misma por construcción, así que las anclas de arriba siguen
+//       válidas— pero la COLA cambia, y en direcciones opuestas según la frecuencia: sube donde los
+//       eventos son raros (deja de esconder el año malo) y baja donde son frecuentes (deja de
+//       inventar dispersión). Cambia el CVaR95, el P90 y la probabilidad de excedencia de TODO
+//       riesgo, así que también puede mover su clasificación de severidad.
+const CALIBRATION_VERSION = 5;
 
 /**
  * Función de Éxito de Contienda de Tullock — probabilidad de que el lado "atacante" gane un
@@ -648,6 +660,10 @@ function calculateResidualFromSimulation(
  * @param {number} [params.seed] Semilla de la corrida ORIGINAL del riesgo (entry.seed). Parea las
  *   dos corridas: sin pareo, `factorDeCola` traía ~3% de ruido de muestreo sobre los mismos datos.
  * @param {number} [params.damageCap] Tope de daño por evento (contención), si lo hay
+ * @param {'expected'|'compound'} [params.frequencyModel] Modelo de frecuencia de las dos corridas.
+ *   Se deja fijar sobre todo para poder comparar contra el modelo anterior en pruebas; en producción
+ *   se omite y manda el default del motor, que es lo correcto (las dos corridas SIEMPRE tienen que
+ *   usar el mismo modelo, o su cociente no significaría nada).
  * @returns {{residualALE:number, residualCVaR:number, residualLossExceedanceCurve:Array}}
  */
 function calculateResidualFromReduction({
@@ -659,11 +675,12 @@ function calculateResidualFromReduction({
     currentCVaR,
     seed,
     damageCap,
+    frequencyModel,
 }) {
     const k = Math.max(0, Math.min(1, 1 - (reductionPercent || 0) / 100));
     const residualALE = currentALE * k;
     const semilla = typeof seed === 'number' && seed > 0 ? seed : RESIDUAL_SIMULATION_SEED;
-    const base = { iterations: RESIDUAL_SIMULATION_ITERATIONS, seed: semilla, tef, lossMagnitudes };
+    const base = { iterations: RESIDUAL_SIMULATION_ITERATIONS, seed: semilla, tef, lossMagnitudes, frequencyModel };
 
     // Las dos corridas pareadas. La actual va SIN tope a propósito: el tope es parte del
     // tratamiento que se está evaluando, no del estado de hoy.
@@ -763,7 +780,7 @@ module.exports = {
     getAccessAlpha,
     TULLOCK_M,
     VULNERABILITY_FLOOR,
-    VULNERABILITY_CALIBRATION_VERSION,
+    CALIBRATION_VERSION,
     sampleVulnerabilityFromProfiles,
     summarizeVulnerabilitySamples,
     pairedVulnerabilitySample,

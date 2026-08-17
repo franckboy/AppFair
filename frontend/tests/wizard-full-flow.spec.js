@@ -36,7 +36,7 @@ test.describe('Análisis FAIR completo', () => {
         await expect(page.locator('#fair-riskName')).toHaveValue('');
     });
 
-    // El sello de calibración (ver VULNERABILITY_CALIBRATION_VERSION en backend/src/lib/autocalc.js)
+    // El sello de calibración (ver CALIBRATION_VERSION en backend/src/lib/autocalc.js)
     // distingue un riesgo calculado con el modelo de Vulnerabilidad vigente de uno calculado con
     // una calibración anterior. Los viejos NO se recalculan solos — se marcan y el analista decide.
     test('un riesgo recién simulado queda sellado con la calibración vigente; uno viejo se marca "Recalibrar"', async ({

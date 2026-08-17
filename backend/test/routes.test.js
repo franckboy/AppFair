@@ -10,7 +10,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const request = require('supertest');
 const { timingSafeEqualStrings } = require('../src/middleware/apiKeyAuth');
-const { VULNERABILITY_CALIBRATION_VERSION } = require('../src/lib/autocalc');
+const { CALIBRATION_VERSION } = require('../src/lib/autocalc');
 
 const TEST_API_KEY = 'test-key-for-http-integration-tests';
 process.env.API_KEY = TEST_API_KEY;
@@ -484,9 +484,13 @@ test('POST /api/treatment/evaluate re-simula el residual de Mitigar cuando le ma
     // El ALE lo fija el usuario (declaró 60%); la cola sale de la simulación.
     assert.ok(Math.abs(res.body.mitigar.residualALE - average * 0.4) < 1e-6);
     assert.ok(Array.isArray(res.body.mitigar.residualLossExceedanceCurve));
-    // Con semilla pareada y el modelo de frecuencia actual, coincide EXACTO con el escalado
-    // proporcional de antes: este cambio no mueve ningún número hoy.
-    assert.ok(Math.abs(res.body.mitigar.residualCVaR - cvar95 * 0.4) < 1e-6);
+    // Y la cola NO baja en la misma proporción que el promedio: prevenir hace los malos años más
+    // raros, no menos malos (calibración 5). Antes esta línea afirmaba la igualdad exacta.
+    assert.ok(
+        res.body.mitigar.residualCVaR > cvar95 * 0.4,
+        `esperaba una cola por encima del escalado proporcional (${cvar95 * 0.4}), dio ${res.body.mitigar.residualCVaR}`,
+    );
+    assert.ok(res.body.mitigar.residualCVaR < cvar95, 'pero el control sí debe ayudar');
 });
 
 test('POST /api/treatment/evaluate sin los inputs del riesgo cae al escalado proporcional de siempre (cliente viejo)', async () => {
@@ -607,27 +611,32 @@ const RIESGO_RARO_SEVERO_HTTP = {
     },
 };
 
-test('POST /api/simulate informa siempre con qué modelo de frecuencia calculó, y el default sigue siendo "expected"', async () => {
+test('POST /api/simulate informa siempre con qué modelo de frecuencia calculó, y el default es el COMPUESTO', async () => {
     const res = await request(app).post('/api/simulate').set('X-API-Key', TEST_API_KEY).send(RIESGO_RARO_SEVERO_HTTP);
     assert.strictEqual(res.status, 200);
-    assert.strictEqual(res.body.frequencyModel, 'expected');
+    assert.strictEqual(res.body.frequencyModel, 'compound');
+    // El dato que vuelve legible un P90 en $0: cuántos años no costaron nada.
+    assert.ok(res.body.summary.zeroLossYearsPercent > 90);
 });
 
-test('POST /api/simulate con frequencyModel "compound" devuelve el mismo ALE pero una cola distinta', async () => {
-    const actual = await request(app)
+test('POST /api/simulate: el modelo compuesto da el mismo ALE que el anterior pero una cola distinta', async () => {
+    const anterior = await request(app)
         .post('/api/simulate')
         .set('X-API-Key', TEST_API_KEY)
-        .send(RIESGO_RARO_SEVERO_HTTP);
+        .send({ ...RIESGO_RARO_SEVERO_HTTP, frequencyModel: 'expected' });
     const compuesto = await request(app)
         .post('/api/simulate')
         .set('X-API-Key', TEST_API_KEY)
-        .send({ ...RIESGO_RARO_SEVERO_HTTP, frequencyModel: 'compound' });
+        .send(RIESGO_RARO_SEVERO_HTTP);
 
     assert.strictEqual(compuesto.status, 200);
     assert.strictEqual(compuesto.body.frequencyModel, 'compound');
-    assert.ok(compuesto.body.summary.cvar95 > actual.body.summary.cvar95 * 2);
-    // El P90 se va a cero: nueve de cada diez años no traen ningún evento.
+    assert.ok(compuesto.body.summary.cvar95 > anterior.body.summary.cvar95 * 2);
+    // El P90 se va a cero: nueve de cada diez años no traen ningún evento. Es verdad y es
+    // informativo, pero solo se entiende junto a zeroLossYearsPercent.
     assert.strictEqual(compuesto.body.summary.p90, 0);
+    assert.ok(compuesto.body.summary.zeroLossYearsPercent > 90);
+    assert.strictEqual(anterior.body.summary.zeroLossYearsPercent, 0);
 });
 
 test('POST /api/simulate rechaza un frequencyModel desconocido con 400', async () => {
@@ -639,18 +648,17 @@ test('POST /api/simulate rechaza un frequencyModel desconocido con 400', async (
     assert.match(res.body.error, /frequencyModel/);
 });
 
-test('POST /api/simulate rechaza el modelo compuesto con un TEF absurdo (protege el event loop, igual que MAX_ITERATIONS)', async () => {
+test('POST /api/simulate con un TEF muy alto cae solo al modelo anterior, sin error', async () => {
+    // Desde que el compuesto es el default, un riesgo muy frecuente es un riesgo válido y
+    // corriente: rechazarlo sería convertirlo en un error. A esa frecuencia los dos modelos ya
+    // coinciden, así que cae solo — y lo dice, para que nunca haya que adivinar con qué se calculó.
     const res = await request(app)
         .post('/api/simulate')
         .set('X-API-Key', TEST_API_KEY)
-        .send({ ...RIESGO_RARO_SEVERO_HTTP, tef: { min: 600, mode: 700, max: 800 }, frequencyModel: 'compound' });
-    assert.strictEqual(res.status, 400);
-    // El MISMO TEF con el modelo por defecto sí se acepta: el límite es del compuesto, no del TEF.
-    const conDefault = await request(app)
-        .post('/api/simulate')
-        .set('X-API-Key', TEST_API_KEY)
         .send({ ...RIESGO_RARO_SEVERO_HTTP, tef: { min: 600, mode: 700, max: 800 } });
-    assert.strictEqual(conDefault.status, 200);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.frequencyModel, 'expected');
+    assert.strictEqual(res.body.summary.zeroLossYearsPercent, 0);
 });
 
 test('POST /api/simulate/frequency-models corre los dos modelos con la MISMA semilla y devuelve ambos lado a lado', async () => {
@@ -2291,7 +2299,7 @@ test('PUT /api/register/:riskName sin curva la guarda como null (riesgos anterio
         .set('X-API-Key', TEST_API_KEY);
 });
 
-// El sello de calibración (ver VULNERABILITY_CALIBRATION_VERSION en lib/autocalc.js) permite
+// El sello de calibración (ver CALIBRATION_VERSION en lib/autocalc.js) permite
 // distinguir un riesgo calculado con el modelo de Vulnerabilidad vigente de uno calculado con una
 // calibración anterior, sin recalcularlo en silencio.
 test('PUT /api/register/:riskName persiste calibrationVersion, y null cuando no viene', async () => {
@@ -2340,7 +2348,7 @@ test('POST /api/simulate sella su resultado con la versión de calibración vige
             seed: 42,
         });
     assert.strictEqual(res.status, 200);
-    assert.strictEqual(res.body.calibrationVersion, VULNERABILITY_CALIBRATION_VERSION);
+    assert.strictEqual(res.body.calibrationVersion, CALIBRATION_VERSION);
 });
 
 test('PUT /api/register/:riskName rechaza una curva con puntos inválidos con 400', async () => {
