@@ -100,6 +100,10 @@ export const state = {
         // (después). Gobierna el Pareto y la columna resaltada de la tabla; la Matriz y el Monte
         // Carlo muestran siempre los dos, solo atenúan el que no está seleccionado.
         dashboardView: 'actual',
+        // Riesgo abierto ahora mismo en el modal de detalle. Lo necesita el comparador de modelos
+        // de frecuencia, que se dispara DESPUÉS (cuando el usuario hace clic) y tiene que volver a
+        // leer los inputs de ESE riesgo — y descartar su respuesta si para entonces ya se abrió otro.
+        detailRiskName: null,
         fairResultsChart: null,
         fairLecChart: null,
         // Curvas de Excedencia de Pérdidas de la última simulación (Actual e Inherente) — se

@@ -1721,6 +1721,24 @@ export const FairRegister = {
         const casa = document.getElementById('dashboard-risk-detail-home');
         if (!panel || !casa) return;
 
+        state.fair.detailRiskName = riskName;
+        this.wireFrequencyModelButton();
+
+        // El comparador de modelos re-simula desde los inputs GUARDADOS del riesgo, así que solo
+        // aparece cuando hay una entrada completa en el Registro — este modal también se abre desde
+        // el Paso 4 del wizard, donde el riesgo recién simulado puede no estar guardado todavía.
+        const freqPanel = document.getElementById('fair-frequency-models');
+        if (freqPanel) {
+            const guardado = (state.fair.riskRegister || []).find((r) => r.riskName === riskName);
+            freqPanel.classList.toggle(
+                'hidden',
+                !(guardado && guardado.tef && guardado.vuln && guardado.lossMagnitudes),
+            );
+            const salida = document.getElementById('fair-freqmodel-result');
+            salida.classList.add('hidden');
+            salida.innerHTML = '';
+        }
+
         Modal.setSize('xl');
         Modal.title.textContent = riskName;
         Modal.body.innerHTML = '';
@@ -1733,10 +1751,139 @@ export const FairRegister = {
             // próxima apertura no lo encontraría y los gráficos se perderían al vaciar el cuerpo.
             panel.classList.add('hidden');
             casa.appendChild(panel);
+            state.fair.detailRiskName = null;
             Modal.hide();
         };
         document.getElementById('risk-detail-close-btn').addEventListener('click', cerrar, { once: true });
         Modal.modal.classList.remove('hidden');
+    },
+
+    // El botón vive en HTML estático que nunca se reconstruye (el panel entero se MUEVE al modal y
+    // vuelve, ver openRiskDetailModal), así que basta con un listener registrado una sola vez —
+    // no hay un init() de este módulo donde ponerlo, y volver a registrarlo en cada apertura
+    // dispararía la comparación tantas veces como modales se hayan abierto.
+    wireFrequencyModelButton() {
+        if (this._freqModelWired) return;
+        const btn = document.getElementById('fair-freqmodel-btn');
+        if (!btn) return;
+        btn.addEventListener('click', () => this.compareFrequencyModels());
+        this._freqModelWired = true;
+    },
+
+    /**
+     * Corre el riesgo abierto con los DOS modelos de frecuencia y muestra ambos lado a lado.
+     *
+     * Es un diagnóstico: no guarda nada, no toca ninguna cifra del Registro. Está para poder ver,
+     * con datos reales, cuánto cambia la cola al dejar de repartir la frecuencia como una fracción
+     * continua de evento — antes de decidir si el modelo compuesto debe ser el default.
+     */
+    async compareFrequencyModels() {
+        const riskName = state.fair.detailRiskName;
+        const risk = (state.fair.riskRegister || []).find((r) => r.riskName === riskName);
+        const salida = document.getElementById('fair-freqmodel-result');
+        const btn = document.getElementById('fair-freqmodel-btn');
+        if (!salida || !btn) return;
+        if (!risk || !risk.tef || !risk.vuln || !risk.lossMagnitudes) {
+            showToast('Este riesgo no tiene los datos guardados para comparar. Vuelve a correrlo desde Análisis FAIR.');
+            return;
+        }
+
+        btn.disabled = true;
+        salida.classList.remove('hidden');
+        salida.innerHTML = '<p class="text-sm text-gray-500">Comparando los dos modelos…</p>';
+
+        try {
+            const data = await App.Api.request('/api/simulate/frequency-models', {
+                method: 'POST',
+                body: {
+                    iterations: 10000,
+                    seed: risk.seed || 0,
+                    tef: risk.tef,
+                    vuln: risk.vuln,
+                    lossMagnitudes: risk.lossMagnitudes,
+                },
+            });
+            // Si mientras tanto se cerró el modal o se abrió OTRO riesgo, esta respuesta ya no
+            // corresponde a lo que se está viendo (mismo criterio que el guardián de
+            // Treatment.updateReduccionALEAuto).
+            if (state.fair.detailRiskName !== riskName) return;
+            salida.innerHTML = this.buildFrequencyComparisonHTML(data);
+        } catch (e) {
+            if (state.fair.detailRiskName !== riskName) return;
+            salida.innerHTML = `<p class="text-sm text-red-600">${sanitizeHTML(e.userMessage || 'No se pudieron comparar los modelos.')}</p>`;
+        } finally {
+            btn.disabled = false;
+        }
+    },
+
+    buildFrequencyComparisonHTML(data) {
+        const actual = data.models.expected.summary;
+        const compuesto = data.models.compound.summary;
+        const info = data.models.compound;
+        const simple = App.UIMode.mode === 'simple';
+
+        const delta = (valor) => {
+            if (typeof valor !== 'number' || !Number.isFinite(valor)) return '—';
+            const signo = valor >= 0 ? '+' : '';
+            const color = Math.abs(valor) < 5 ? 'text-gray-500' : valor > 0 ? 'text-red-600' : 'text-green-700';
+            return `<span class="${color}">${signo}${valor.toFixed(1)}%</span>`;
+        };
+
+        const filas = [
+            [
+                shortMetricLabel('ale', 'Pérdida Anual Esperada (ALE)'),
+                actual.average,
+                compuesto.average,
+                data.delta.alePercent,
+            ],
+            [shortMetricLabel('p90', 'Pérdida en el peor 10% (P90)'), actual.p90, compuesto.p90, data.delta.p90Percent],
+            [shortMetricLabel('cvar95', 'CVaR 95%'), actual.cvar95, compuesto.cvar95, data.delta.cvar95Percent],
+        ]
+            .map(
+                ([etiqueta, a, c, d]) => `
+                <tr class="border-b">
+                    <td class="py-1 pr-3">${etiqueta}</td>
+                    <td class="py-1 pr-3 text-right">${formatCurrency(a)}</td>
+                    <td class="py-1 pr-3 text-right font-semibold">${formatCurrency(c)}</td>
+                    <td class="py-1 text-right">${delta(d)}</td>
+                </tr>`,
+            )
+            .join('');
+
+        // Los años agrupados por cuántos eventos trajeron. Es la lectura que el modelo de hoy no
+        // puede dar (ahí todos los años traen la misma fracción de evento) y la que hace evidente
+        // de dónde sale la diferencia en la cola.
+        const reparto = info.eventCountDistribution
+            .filter((d) => d.years > 0)
+            .map(
+                (d) =>
+                    `<li>${d.events === 0 ? 'Ningún evento' : d.events === 1 ? '1 evento' : `${d.events} eventos`}: <strong>${((d.years / data.iterations) * 100).toFixed(1)}%</strong> de los años</li>`,
+            )
+            .join('');
+
+        const lectura = simple
+            ? 'La primera columna es lo que la app muestra hoy. La segunda es la misma información contando los años uno por uno: unos sin nada y otros con el golpe completo. Fíjate en la última fila — ahí es donde de verdad cambia.'
+            : 'El promedio coincide por construcción (los dos modelos tienen la misma media). Lo que cambia es la forma: el modelo compuesto concentra la pérdida en pocos años en vez de repartirla, así que sube la cola de los riesgos raros y la baja en los frecuentes.';
+
+        return `
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm mb-3">
+                    <thead>
+                        <tr class="text-left border-b">
+                            <th class="py-1 pr-3"></th>
+                            <th class="py-1 pr-3 text-right">${simple ? 'Como se ve hoy' : 'Modelo actual'}</th>
+                            <th class="py-1 pr-3 text-right">${simple ? 'Contando año por año' : 'Modelo compuesto'}</th>
+                            <th class="py-1 text-right">${simple ? 'Cambio' : 'Diferencia'}</th>
+                        </tr>
+                    </thead>
+                    <tbody>${filas}</tbody>
+                </table>
+            </div>
+            <p class="text-sm text-gray-700 mb-2">${simple ? 'De 10.000 años simulados:' : `De ${data.iterations.toLocaleString('es-MX')} años simulados:`}</p>
+            <ul class="text-sm text-gray-700 list-disc list-inside mb-3">${reparto}</ul>
+            <p class="text-xs text-gray-600">${lectura}</p>
+            <p class="text-xs text-gray-500 mt-2">Las dos corridas usan la misma semilla (${data.usedSeed}), así que la diferencia es el modelo y no el azar. Esto no modifica ni guarda nada.</p>
+        `;
     },
 
     renderRiskDetail(result) {
