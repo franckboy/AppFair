@@ -83,6 +83,7 @@ function createTreatmentRouter() {
                 lossMagnitudes,
                 reductionPercent: mitigarResuelto.reductionPercent,
                 currentALE,
+                currentCVaR,
                 seed,
                 damageCap: mitigarResuelto.damageCap,
             });

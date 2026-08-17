@@ -3251,20 +3251,37 @@ test('calculateResidualFromReduction: el ALE residual es EXACTAMENTE el que el u
 test('calculateResidualFromReduction: con semilla pareada, hoy da EXACTAMENTE lo mismo que el escalado proporcional', () => {
     // El seguro de que este cambio no mueve ni un número con el modelo de frecuencia actual:
     // escalar la Vulnerabilidad por k multiplica cada pérdida simulada por k (en getPertRandom,
-    // escalar min/mode/max deja alpha/beta idénticos), así que con la MISMA semilla la corrida
-    // residual es la actual multiplicada por k, término a término. Sin parear la semilla el CVaR
-    // se movía ~3% sobre los mismos datos, que es ruido, no información.
+    // escalar min/mode/max deja alpha/beta idénticos), así que las dos corridas pareadas tienen la
+    // MISMA razón cola/media y el factor de deformación vale 1 exacto. Sin parear la semilla ese
+    // factor traía ~3% de ruido sobre los mismos datos, que es ruido y no información.
     const actual = simularActual();
     const res = calculateResidualFromReduction({
         ...RIESGO_MANUAL,
         reductionPercent: 60,
         currentALE: actual.average,
+        currentCVaR: actual.cvar95,
         seed: SEMILLA_MANUAL,
     });
     assert.ok(
         Math.abs(res.residualCVaR - actual.cvar95 * 0.4) < 1e-6,
         `esperaba ${actual.cvar95 * 0.4}, dio ${res.residualCVaR}`,
     );
+});
+
+test('calculateResidualFromReduction: la cola se ancla al CVaR que el usuario ya ve, no al simulado a secas', () => {
+    // Si el ale/cvar95 guardados no cuadran con los inputs guardados (dato viejo, inputs editados
+    // sin volver a simular), tomar el CVaR simulado directo haría que ese desajuste apareciera como
+    // si fuera efecto del tratamiento. Anclando a lo que la pantalla muestra, un 60% de reducción
+    // se ve como un 60% también en la cola mientras el modelo no la deforme.
+    const res = calculateResidualFromReduction({
+        ...RIESGO_MANUAL,
+        reductionPercent: 60,
+        currentALE: 100000, // a propósito, sin relación con lo que darían tef/vuln/lossMagnitudes
+        currentCVaR: 250000,
+        seed: SEMILLA_MANUAL,
+    });
+    assert.ok(Math.abs(res.residualALE - 40000) < 1e-6);
+    assert.ok(Math.abs(res.residualCVaR - 100000) < 1e-6, `esperaba 100000, dio ${res.residualCVaR}`);
 });
 
 test('calculateResidualFromReduction: devuelve la Curva de Excedencia del residual, a la escala declarada', () => {
@@ -3287,6 +3304,7 @@ test('calculateResidualFromReduction: con un tope de daño, la cola YA NO baja e
         ...RIESGO_MANUAL,
         reductionPercent: 60,
         currentALE: actual.average,
+        currentCVaR: actual.cvar95,
         seed: SEMILLA_MANUAL,
         damageCap: 40000,
     });
@@ -3295,4 +3313,23 @@ test('calculateResidualFromReduction: con un tope de daño, la cola YA NO baja e
         res.residualCVaR < actual.cvar95 * 0.4,
         `con tope, la cola debe quedar por DEBAJO del escalado proporcional (${actual.cvar95 * 0.4}), dio ${res.residualCVaR}`,
     );
+});
+
+test('calculateResidualFromReduction: con inputs que no producen pérdida, cae al escalado proporcional en vez de inventar un efecto', () => {
+    // Un riesgo cuyas Magnitudes de Pérdida están todas en cero (caso real: el wizard con perfiles
+    // por defecto, si nadie tocó el Paso 3) no le da a la simulación nada que medir sobre la forma
+    // de la cola. Ahí el factor de deformación debe ser 1 — devolver el ALE, o un 0, afirmaría un
+    // efecto del tratamiento que nunca se midió.
+    const res = calculateResidualFromReduction({
+        tef: { min: 1, mode: 2, max: 3 },
+        vuln: { min: 20, mode: 40, max: 70 },
+        lossMagnitudes: { respuesta: { min: 0, mode: 0, max: 0 } },
+        reductionPercent: 95,
+        currentALE: 100000,
+        currentCVaR: 200000,
+        seed: SEMILLA_MANUAL,
+    });
+    assert.ok(Math.abs(res.residualALE - 5000) < 1e-6);
+    assert.ok(Math.abs(res.residualCVaR - 10000) < 1e-6, `esperaba 10000, dio ${res.residualCVaR}`);
+    assert.deepStrictEqual(res.residualLossExceedanceCurve, []);
 });
