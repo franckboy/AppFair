@@ -293,7 +293,7 @@ export const buildHistogramBins = (losses, maxLoss, numBins = 20) => {
 // eso ya lo modela la Vulnerabilidad.
 const TEF_ANCHORS_BY_PROFILE_SCORE = [
     { profileScore: 18, eventsPerYear: 18 }, // intruso oportunista
-    { profileScore: 60, eventsPerYear: 1.2 }, // crimen organizado (y empleado desleal, mismo FA)
+    { profileScore: 60, eventsPerYear: 1.2 }, // crimen organizado
     { profileScore: 90, eventsPerYear: 0.02 }, // terrorista o espía
 ];
 

@@ -87,8 +87,16 @@ test.describe('Recalibración masiva', () => {
             { API, KEY, riskName },
         );
 
-        // Quedó sellado con la calibración vigente y con cifras nuevas.
-        expect(entry.calibrationVersion).toBe(5);
+        // Quedó sellado con la calibración vigente y con cifras nuevas. La versión se lee del
+        // backend, no se escribe a mano: subir CALIBRATION_VERSION no debe romper este test.
+        const vigente = await page.evaluate(
+            async ({ API, KEY }) => {
+                const res = await fetch(`${API}/api/config/profiles`, { headers: { 'X-API-Key': KEY } });
+                return (await res.json()).calibrationVersion;
+            },
+            { API, KEY },
+        );
+        expect(entry.calibrationVersion).toBe(vigente);
         expect(entry.ale).not.toBe(5000);
         expect(entry.cvar95).not.toBe(20000);
 

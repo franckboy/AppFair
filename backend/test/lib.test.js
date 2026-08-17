@@ -856,8 +856,15 @@ test('summarizeLosses: mediana par calcula bien el promedio de los dos centrales
 // determinista `attackerScore * (1 - defenseScore/100)`. Ya no hay un solo `mode` exacto por
 // llamada (es estocástico), así que estos tests son direccionales/estadísticos sobre muchas
 // muestras, no igualdades exactas.
-function averageVulnerability(attackerProfile, defenseProfile, confidence, iterations = 5000, rng = Math.random) {
-    const sampler = sampleVulnerabilityFromProfiles(attackerProfile, defenseProfile, confidence);
+function averageVulnerability(
+    attackerProfile,
+    defenseProfile,
+    confidence,
+    iterations = 5000,
+    rng = Math.random,
+    accessLevel = 'nulo',
+) {
+    const sampler = sampleVulnerabilityFromProfiles(attackerProfile, defenseProfile, confidence, accessLevel);
     let sum = 0;
     for (let i = 0; i < iterations; i++) sum += sampler(rng);
     return (sum / iterations) * 100;
@@ -871,13 +878,14 @@ function averageVulnerability(attackerProfile, defenseProfile, confidence, itera
 // Este test es el candado: nadie puede tocar `m`, el eje de contienda ni los atributos de un
 // Perfil de Atacante sin que la suite avise que el modelo dejó de coincidir con ese criterio.
 //
-// El nodo FA=60 del eje está SOBREDETERMINADO — tres de las seis anclas lo fijan y solo hay un
-// parámetro para absorberlas — así que estos residuos no son un ajuste garantizado, son una
-// comprobación real. Medido: peor residuo 0,43 puntos porcentuales.
+// Cada ancla se emite con el Nivel de Acceso que le corresponde. Cinco van con acceso NULO; la del
+// empleado desleal va con acceso MEDIO, porque "un insider sin ningún acceso" es una contradicción
+// de términos y leerla como si lo fuera era exactamente lo que volvía a ese perfil indistinguible
+// del crimen organizado (ver el bloque de calibración en autocalc.js).
 const CALIBRATION_ANCHORS = [
     { attacker: 'oportunista', defense: 'basica', expected: 5 },
     { attacker: 'vandalismo', defense: 'basica', expected: 35 },
-    { attacker: 'empleado-desleal', defense: 'avanzada', expected: 30 },
+    { attacker: 'empleado-desleal', defense: 'avanzada', access: 'medio', expected: 30 },
     { attacker: 'organizado', defense: 'estandar', expected: 60 },
     { attacker: 'organizado', defense: 'elite', expected: 15 },
     // Anclas de VALIDACIÓN: se emitieron DESPUÉS de fijar m y el eje de contienda, para
@@ -890,19 +898,61 @@ const CALIBRATION_ANCHORS = [
 ];
 
 test('CALIBRACIÓN: la Vulnerabilidad simulada reproduce las 6 anclas de juicio experto', () => {
-    for (const { attacker, defense, expected } of CALIBRATION_ANCHORS) {
+    for (const { attacker, defense, access = 'nulo', expected } of CALIBRATION_ANCHORS) {
         const avg = averageVulnerability(
             attackerProfiles[attacker],
             defenseProfiles[defense],
             'medio',
             60000,
             mulberry32(0x5eed),
+            access,
         );
         assert.ok(
             Math.abs(avg - expected) <= 1.5,
-            `${attacker} vs ${defense}: ancla ${expected}%, el modelo dio ${avg.toFixed(2)}%`,
+            `${attacker} vs ${defense} (acceso ${access}): ancla ${expected}%, el modelo dio ${avg.toFixed(2)}%`,
         );
     }
+});
+
+// Candado de la calibración 6: el Empleado Desleal y el Grupo Criminal Organizado tienen que dar
+// números DISTINTOS. Durante cuatro versiones dieron el mismo (FA 60,0 los dos, mismo nodo del eje
+// de contienda), así que la app ofrecía una distinción que no existía en el cálculo. Se prueba
+// contra defensa estándar, la banda donde la sigmoide de Tullock tiene su mejor resolución.
+test('CALIBRACIÓN: el Empleado Desleal ya no es indistinguible del Crimen Organizado', () => {
+    const insider = averageVulnerability(
+        attackerProfiles['empleado-desleal'],
+        defenseProfiles.estandar,
+        'medio',
+        60000,
+        mulberry32(0x5eed),
+    );
+    const banda = averageVulnerability(
+        attackerProfiles.organizado,
+        defenseProfiles.estandar,
+        'medio',
+        60000,
+        mulberry32(0x5eed),
+    );
+    assert.ok(
+        banda - insider > 10,
+        `sin acceso, el insider (${insider.toFixed(1)}%) debería quedar MUY por debajo de la banda ` +
+            `organizada (${banda.toFixed(1)}%) — su ventaja es el acceso, no la fuerza`,
+    );
+    // Y con el acceso que un insider sí tiene, alcanza a la banda organizada: la ventaja está en
+    // el Nivel de Acceso, que es donde el modelo la pone, y no diluida dentro del perfil.
+    const insiderConAcceso = averageVulnerability(
+        attackerProfiles['empleado-desleal'],
+        defenseProfiles.estandar,
+        'medio',
+        60000,
+        mulberry32(0x5eed),
+        'medio',
+    );
+    assert.ok(
+        insiderConAcceso > banda,
+        `con acceso operativo el insider (${insiderConAcceso.toFixed(1)}%) debería superar a la ` +
+            `banda organizada sin acceso (${banda.toFixed(1)}%)`,
+    );
 });
 
 // Anclas ESTRUCTURALES del Nivel de Acceso: una sola pareja (organizado vs. estándar) variando

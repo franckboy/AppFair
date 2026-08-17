@@ -28,9 +28,28 @@ function getConfidenceSpread(confidence) {
 // experto en seguridad patrimonial, emitidas por separado y ajustadas después contra la media
 // SIMULADA (no contra la fórmula central — ver la nota de sesgo más abajo):
 //
-//     oportunista      vs. básica    ->  5 %       organizado     vs. estándar  -> 60 %
-//     vandalismo       vs. básica    -> 35 %       organizado     vs. élite     -> 15 %
-//     empleado desleal vs. avanzada  -> 30 %       estado-nación  vs. élite     -> 45 %
+//     oportunista      vs. básica                 ->  5 %      organizado    vs. estándar -> 60 %
+//     vandalismo       vs. básica                 -> 35 %      organizado    vs. élite    -> 15 %
+//     empleado desleal vs. avanzada, acceso MEDIO -> 30 %      estado-nación vs. élite    -> 45 %
+//
+// Cinco de las seis anclas se emiten con Nivel de Acceso NULO. La del empleado desleal no puede:
+// "un insider sin ningún acceso" es una contradicción de términos, y leerla como si lo fuera es
+// lo que durante cuatro versiones hizo que el Empleado Desleal y el Crimen Organizado dieran el
+// MISMO número en las 4 bandas de Defensa. Forzar ese 30 % sobre el eje de "acceso nulo" empujaba
+// su nodo de contienda hasta 56,9 —la fuerza bruta de una banda criminal— para compensar un acceso
+// que el modelo ya cuenta aparte (ver ACCESS_LEVELS). Ese es el mismo error de "está adentro se
+// coló dentro de es capaz" que ya se había corregido en los atributos del perfil, pero que el
+// ancla volvía a meter por la puerta de atrás.
+//
+// El nivel de acceso con el que se relee —MEDIO / operativo— es el que tiene un empleado genérico
+// por su puesto, y es el más conservador de los dos candidatos: leerla con acceso ALTO daría un
+// nodo aún más bajo (33,0 en vez de 40,9) y un insider sin acceso aún más débil. Si algún día se
+// re-emite este juicio, es este supuesto —no el 30 %— lo que hay que revisar.
+//
+// Se relee el ancla donde corresponde —empleado desleal vs. avanzada CON acceso medio = 30 %— y el
+// juicio del experto se conserva intacto: con acceso medio el modelo sigue dando 30,0 %. Lo que
+// cambia es el mismo insider contra un activo al que NO tiene acceso, que pasa de 30 % a 6,9 % —
+// que es lo que siempre debió decir.
 //
 // `m` NO se eligió: queda determinado algebraicamente por las dos anclas de `organizado`, que
 // comparten atacante contra dos defensas distintas — el eje de contienda se cancela y solo
@@ -53,14 +72,24 @@ const TULLOCK_M = 6.8254;
 // Defensa. Hacía falta porque las dos escalas nunca se calibraron una contra otra — se venían
 // comparando como si un punto de atacante valiera lo mismo que un punto de defensa, y no es así.
 //
-// Los cuatro nodos salen de las seis anclas de arriba. El nodo FA=60 está SOBREDETERMINADO (tres
-// anclas lo fijan, un solo parámetro lo absorbe) y aun así el peor residuo de todo el conjunto es
-// de 0,44 puntos porcentuales — eso es validación, no ajuste: nada obligaba a que cuadraran.
+// Los cinco nodos salen de las seis anclas de arriba: cada ancla despeja el nodo de su propio
+// atacante, salvo las dos de `organizado`, que comparten atacante contra dos defensas distintas y
+// entre las dos identifican `m` y el nodo FA=60.
+//
+// El nodo 54,2 (empleado desleal) es nuevo desde la calibración 6. Antes ese perfil daba FA=60 y
+// compartía nodo con el crimen organizado, así que el modelo NO los distinguía: mismas cuatro
+// celdas de la grilla, con diferencias del orden del ruido de muestreo. Vale la pena decir qué se
+// perdió al separarlos: mientras compartían nodo, el ancla del empleado desleal era una
+// COMPROBACIÓN (tres anclas fijaban un solo parámetro, y el peor residuo del conjunto era de 0,44
+// pp — nada obligaba a que cuadraran). Con nodo propio esa comprobación desaparece: el ancla 5
+// ahora ajusta exactamente por construcción. Se cambió una validación por una distinción que el
+// usuario sí puede ver y usar; el resto de las anclas siguen validándose entre sí igual que antes.
 const ATTACKER_CONTEST_CALIBRATION = [
     { profileScore: 0, contestStrength: 0 },
     { profileScore: 18, contestStrength: 14.614 }, // intruso oportunista
     { profileScore: 43, contestStrength: 22.682 }, // vandalismo / hurtos comunes
-    { profileScore: 60, contestStrength: 56.911 }, // empleado desleal y crimen organizado
+    { profileScore: 54.2, contestStrength: 40.911 }, // empleado desleal
+    { profileScore: 60, contestStrength: 56.911 }, // crimen organizado
     { profileScore: 90, contestStrength: 75.748 }, // terrorista o espía
 ];
 
@@ -135,7 +164,14 @@ const VULNERABILITY_FLOOR = 0.005;
 //       eventos son raros (deja de esconder el año malo) y baja donde son frecuentes (deja de
 //       inventar dispersión). Cambia el CVaR95, el P90 y la probabilidad de excedencia de TODO
 //       riesgo, así que también puede mover su clasificación de severidad.
-const CALIBRATION_VERSION = 5;
+//   6 = el Empleado Desleal deja de ser indistinguible del Crimen Organizado. Su ancla se relee
+//       con acceso MEDIO (que es lo que un insider tiene por definición) en vez de acceso nulo, y
+//       el perfil estrena nodo propio en el eje de contienda (FA 60 -> 54,2). Solo cambia los
+//       números de los riesgos analizados con el perfil "Empleado Desleal": con acceso medio dan
+//       prácticamente lo mismo que antes (el juicio del experto se conserva); con acceso nulo o
+//       bajo bajan bastante, que es la corrección. Los otros cuatro perfiles no se mueven ni un
+//       décimo — medido celda por celda.
+const CALIBRATION_VERSION = 6;
 
 /**
  * Función de Éxito de Contienda de Tullock — probabilidad de que el lado "atacante" gane un
