@@ -142,7 +142,8 @@ test.describe('Maquetado: modales y acciones del Registro', () => {
         await page.waitForTimeout(1200);
         await expect(page.locator('#dashboard-risk-detail')).toBeHidden();
 
-        // Clic en la FILA (no en un botón) abre el detalle.
+        // Clic en la FILA (no en un botón) abre la FICHA del riesgo, que abre en Resultados — el
+        // mismo panel de siempre, ahora con Tratamiento y Gobernanza al lado (ver risk-card.spec.js).
         const fila = page.locator('#quick-concentrated-table-body tr[data-risk-row]').first();
         await fila.scrollIntoViewIfNeeded();
         await fila.locator('.risk-name-cell').click();
@@ -159,11 +160,11 @@ test.describe('Maquetado: modales y acciones del Registro', () => {
         expect(geom.xl).toBe(true);
         expect(geom.histograma).toBe(true);
         // Con el modal a 90vh, el botón de cerrar tiene que quedar alcanzable sin tocar el zoom.
-        await expect(page.locator('#risk-detail-close-btn')).toBeVisible();
+        await expect(page.locator('#risk-card-close-btn')).toBeVisible();
 
         // Al cerrar, el panel vuelve a su casa: si se quedara dentro del modal, la próxima
         // apertura no lo encontraría y los gráficos se perderían al vaciar el cuerpo.
-        await page.click('#risk-detail-close-btn');
+        await page.click('#risk-card-close-btn');
         await page.waitForTimeout(400);
         const trasCerrar = await page.evaluate(() => ({
             enSuCasa: !!document.querySelector('#dashboard-risk-detail-home #dashboard-risk-detail'),
