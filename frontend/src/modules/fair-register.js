@@ -655,8 +655,25 @@ export const FairRegister = {
             );
         }
 
+        // Contradicción en las dependencias declaradas: los padres de estos riesgos los causan más
+        // veces de las que el propio riesgo dice ocurrir. El motor ya lo acota para no inflar el
+        // portafolio (ver overCoupledRiskNames en portfolioSimulation.js), pero callarlo dejaría
+        // al usuario sin saber que sus datos se contradicen — y es un dato que solo él puede
+        // corregir, bajando la probabilidad de la arista o subiendo la frecuencia del hijo.
+        const contradictorios = data.overCoupledRiskNames || [];
+        const aviso =
+            contradictorios.length > 0
+                ? `<p class="text-xs mt-2 p-2 rounded bg-yellow-50 border-l-4 border-yellow-500 text-yellow-800">
+                       Revisa ${contradictorios.length === 1 ? 'este riesgo' : 'estos riesgos'}:
+                       <strong>${contradictorios.map((n) => sanitizeHTML(n)).join(', ')}</strong>.
+                       Las causas que le declaraste en el Árbol lo provocan más veces de las que dijiste que ocurre.
+                       Baja la probabilidad de esas causas, o sube su frecuencia.
+                   </p>`
+                : '';
+
         el.innerHTML =
             filas.join('') +
+            aviso +
             (data.skippedCount > 0
                 ? `<p class="text-xs text-gray-500 mt-2">${data.skippedCount} sin datos suficientes para simular.</p>`
                 : '');
