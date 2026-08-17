@@ -67,7 +67,18 @@ export const Modal = {
         };
     },
 
+    // Cosas que hay que deshacer ANTES de ocultar el modal, sin importar quién lo cierre. Hoy solo
+    // la ficha del riesgo (ver App.FairRegister.openRiskCard), que MUEVE paneles vivos al cuerpo y
+    // tiene que devolverlos a su página: si cualquier otro código llamara a hide() directamente,
+    // esos paneles quedarían huérfanos dentro de un modal oculto y sus páginas se verían vacías.
+    _beforeHide: [],
+
+    onBeforeHide(fn) {
+        this._beforeHide.push(fn);
+    },
+
     hide() {
+        this._beforeHide.forEach((fn) => fn());
         this.modal.classList.add('hidden');
         this.setSize();
     },

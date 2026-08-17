@@ -1886,6 +1886,15 @@ export const FairRegister = {
     // y su semilla — misma reproducibilidad exacta que documenta /api/simulate. Siempre a
     // 10,000 iteraciones (tope único para todas las simulaciones, ver backend/validate.js).
     async simulateRegisteredRisk(riskName) {
+        // Un clic en un riesgo abre su FICHA completa, no solo sus resultados. La pestaña inicial es
+        // Resultados, así que quien venía del botón "Simular" ve exactamente lo mismo que antes —
+        // más las otras dos pestañas al lado.
+        this.openRiskCard(riskName, 'resultados');
+    },
+
+    /** Llena la pestaña de Resultados. Separado de abrir el modal porque la ficha ya está abierta
+     *  cuando se llama, y volver a abrirla vaciaría lo que se acaba de montar. */
+    async simulateRegisteredRiskInto(riskName) {
         const risk = (state.fair.riskRegister || []).find((r) => r.riskName === riskName);
         if (!risk || !risk.tef || !risk.vuln || !risk.lossMagnitudes) {
             showToast(
@@ -1896,7 +1905,6 @@ export const FairRegister = {
 
         const loading = document.getElementById('dashboard-risk-detail-loading');
         const body = document.getElementById('dashboard-risk-detail-body');
-        this.openRiskDetailModal(risk.riskName);
         loading.classList.remove('hidden');
         loading.textContent = 'Simulando 10,000 escenarios…';
         body.classList.add('hidden');
@@ -1947,6 +1955,192 @@ export const FairRegister = {
      * Vive en un modal, y no colgando del Dashboard, porque el Dashboard responde "¿cómo está mi
      * portafolio?" — un análisis individual permanente ahí abajo mezcla dos niveles de lectura.
      */
+    // --- Ficha del riesgo -------------------------------------------------------------------
+    //
+    // Un riesgo, un lugar. Antes, dejar UN riesgo terminado obligaba a recorrer cuatro pestañas
+    // (Análisis → Dashboard → Tratamiento → Gestión) y en ninguna se veía su estado completo: la
+    // navegación estaba organizada por HERRAMIENTA y el trabajo real está organizado por RIESGO.
+    // Tratamiento y Gestión tenían cada una su propio selector de riesgo, que existía solo porque
+    // no había una ficha donde vivir.
+    //
+    // No se reconstruye HTML: se MUEVEN los paneles que ya existen y se devuelven a su sitio al
+    // cerrar — mismo patrón probado de openRiskDetailModal, que preserva ids, listeners y los
+    // <canvas> con sus gráficos ya dibujados. Por eso las páginas viejas siguen funcionando igual.
+    _cardPanels: {
+        resultados: { nodeId: 'dashboard-risk-detail', label: 'Resultados' },
+        tratamiento: { nodeId: 'fair-roi-content', label: 'Tratamiento' },
+        gobernanza: { nodeId: 'riskmgmt-per-risk', label: 'Gobernanza' },
+    },
+    _cardHomes: {},
+    _cardActive: null,
+
+    /** La casa de cada panel se recuerda la PRIMERA vez, antes de moverlo. Leerla después daría el
+     *  cuerpo del modal y el panel nunca volvería a su página. */
+    _cardHomeOf(key) {
+        if (!this._cardHomes[key]) {
+            const node = document.getElementById(this._cardPanels[key].nodeId);
+            if (node && node.parentNode) this._cardHomes[key] = node.parentNode;
+        }
+        return this._cardHomes[key];
+    },
+
+    /** Los cuatro hitos del ciclo de vida, derivados de lo que YA se guarda: nada de estado nuevo.
+     *  Es lo que hace legible el flujo sin mover ninguna página de sitio. */
+    riskProgress(entry) {
+        const vigente = state.config.calibrationVersion;
+        return [
+            { label: 'Analizado', done: !!entry.evaluationLevel },
+            { label: 'Tratado', done: !!entry.treatmentDecision },
+            { label: 'Con dueño', done: !!(entry.owner && entry.owner !== '—') },
+            { label: 'Con fecha de revisión', done: !!entry.reviewDate },
+            ...(vigente != null && (entry.calibrationVersion ?? 0) < vigente
+                ? [{ label: 'Recalibrar', done: false, warn: true }]
+                : []),
+        ];
+    },
+
+    renderRiskCardHeader(entry) {
+        const hitos = this.riskProgress(entry)
+            .map(
+                (h) =>
+                    `<span class="${h.warn ? 'text-orange-700' : h.done ? 'text-green-700' : 'text-gray-400'}">${h.done ? '✓' : '○'} ${h.label}</span>`,
+            )
+            .join('<span class="text-gray-300 mx-2">·</span>');
+
+        const decision = entry.treatmentDecision;
+        const vigenteALE = decision ? decision.residualALE : entry.ale;
+        const vigenteCVaR =
+            decision && typeof decision.residualCVaR === 'number' ? decision.residualCVaR : entry.cvar95;
+        const etiqueta = decision ? 'vigente (tras tratamiento)' : 'actual';
+
+        return `
+            <div class="mb-3 pb-3 border-b">
+                <div class="flex flex-wrap items-center gap-x-4 gap-y-1 mb-2">
+                    ${entry.evaluationLevel ? `<span class="px-2 py-1 rounded text-xs border-l-4 ${entry.evaluationClasses}">${sanitizeHTML(entry.evaluationLevel)}</span>` : ''}
+                    <span class="text-sm text-gray-700">${shortMetricLabel('ale', 'ALE')} ${etiqueta}: <strong>${formatCurrency(vigenteALE)}</strong></span>
+                    <span class="text-sm text-gray-700">${shortMetricLabel('cvar95', 'CVaR 95%')}: <strong>${formatCurrency(vigenteCVaR)}</strong></span>
+                </div>
+                <div class="text-xs flex flex-wrap items-center">${hitos}</div>
+            </div>
+            <div class="flex gap-1 border-b mb-3" id="risk-card-tabs"></div>
+            <div id="risk-card-slot" class="min-h-0"></div>
+        `;
+    },
+
+    /**
+     * Abre la ficha de un riesgo. `tab` elige la pestaña inicial.
+     * Oportunidad no tiene Tratamiento (ISO 31000, 6.5 asume una pérdida a reducir), así que esa
+     * pestaña no se ofrece — mismo criterio que ya excluye 'oportunidad' del selector de Tratamiento.
+     */
+    openRiskCard(riskName, tab = 'resultados') {
+        const entry = (state.fair.riskRegister || []).find((r) => r.riskName === riskName);
+        if (!entry) {
+            showToast('No se encontró este riesgo en el Registro.');
+            return;
+        }
+
+        const disponibles = Object.keys(this._cardPanels).filter(
+            (k) => !(k === 'tratamiento' && entry.riskType === 'oportunidad'),
+        );
+        if (!disponibles.includes(tab)) tab = disponibles[0];
+
+        state.fair.detailRiskName = riskName;
+        this.wireFrequencyModelButton();
+        // Registrado una sola vez: pase lo que pase, al ocultarse el modal los paneles vuelven a su
+        // página. Sin esto, cerrar por cualquier vía que no sea el botón "Cerrar" dejaría vacías
+        // las páginas de Tratamiento o Gestión.
+        if (!this._cardHideWired) {
+            Modal.onBeforeHide(() => this.returnRiskCardPanel());
+            this._cardHideWired = true;
+        }
+
+        Modal.setSize('xl');
+        Modal.title.textContent = riskName;
+        Modal.body.innerHTML = this.renderRiskCardHeader(entry);
+        Modal.footer.innerHTML = `<button id="risk-card-close-btn" class="btn btn-secondary">Cerrar</button>`;
+
+        const barra = document.getElementById('risk-card-tabs');
+        barra.innerHTML = disponibles
+            .map(
+                (k) =>
+                    `<button type="button" class="px-3 py-2 text-sm border-b-2 -mb-px" data-card-tab="${k}">${this._cardPanels[k].label}</button>`,
+            )
+            .join('');
+        barra.querySelectorAll('[data-card-tab]').forEach((btn) => {
+            btn.addEventListener('click', () => this.showRiskCardTab(btn.dataset.cardTab, riskName));
+        });
+
+        document.getElementById('risk-card-close-btn').addEventListener('click', () => this.closeRiskCard(), {
+            once: true,
+        });
+        Modal.modal.classList.remove('hidden');
+        this.showRiskCardTab(tab, riskName);
+    },
+
+    showRiskCardTab(key, riskName) {
+        const slot = document.getElementById('risk-card-slot');
+        if (!slot) return;
+
+        // Devolver el panel anterior a su página ANTES de traer el nuevo: dos paneles no pueden
+        // estar en el mismo sitio, y si uno se quedara aquí su página quedaría vacía.
+        this.returnRiskCardPanel();
+
+        const node = document.getElementById(this._cardPanels[key].nodeId);
+        if (!node) return;
+        this._cardHomeOf(key);
+        slot.appendChild(node);
+        node.classList.remove('hidden');
+        this._cardActive = key;
+
+        document.querySelectorAll('[data-card-tab]').forEach((btn) => {
+            const activo = btn.dataset.cardTab === key;
+            btn.className = `px-3 py-2 text-sm border-b-2 -mb-px ${activo ? 'border-blue-600 text-blue-700 font-semibold' : 'border-transparent text-gray-500'}`;
+        });
+
+        // Cada panel se llena por el MISMO camino que usa su página: no hay una segunda forma de
+        // pintar un riesgo que pueda desincronizarse de la primera.
+        if (key === 'resultados') {
+            // El comparador de modelos re-simula desde los inputs GUARDADOS, así que solo aparece
+            // cuando hay una entrada completa en el Registro.
+            const freqPanel = document.getElementById('fair-frequency-models');
+            if (freqPanel) {
+                const g = (state.fair.riskRegister || []).find((r) => r.riskName === riskName);
+                freqPanel.classList.toggle('hidden', !(g && g.tef && g.vuln && g.lossMagnitudes));
+                const salida = document.getElementById('fair-freqmodel-result');
+                salida.classList.add('hidden');
+                salida.innerHTML = '';
+            }
+            this.simulateRegisteredRiskInto(riskName);
+        }
+        if (key === 'tratamiento') {
+            const sel = document.getElementById('treatment-risk-select');
+            if (sel) sel.value = riskName;
+            App.Treatment.selectRisk(riskName);
+        }
+        if (key === 'gobernanza') {
+            const sel = document.getElementById('riskmgmt-risk-select');
+            if (sel) sel.value = riskName;
+            App.RiskManagement.selectRisk(riskName);
+        }
+    },
+
+    returnRiskCardPanel() {
+        if (!this._cardActive) return;
+        const key = this._cardActive;
+        const node = document.getElementById(this._cardPanels[key].nodeId);
+        const casa = this._cardHomes[key];
+        if (node && casa) {
+            if (key === 'resultados') node.classList.add('hidden');
+            casa.appendChild(node);
+        }
+        this._cardActive = null;
+    },
+
+    closeRiskCard() {
+        state.fair.detailRiskName = null;
+        Modal.hide(); // el gancho onBeforeHide devuelve el panel a su página
+    },
+
     openRiskDetailModal(riskName) {
         const panel = document.getElementById('dashboard-risk-detail');
         const casa = document.getElementById('dashboard-risk-detail-home');
