@@ -10,7 +10,8 @@ mal.
 > (contexto, identificación, análisis, evaluación, tratamiento, controles), pero **no prescriben
 > estas cifras ni estas fórmulas**, y la app no debe afirmar lo contrario.
 
-**Estado: calibración 5** (modelo compuesto de frecuencia, §7.1). Archivos de referencia:
+**Estado: calibración 6** (el Empleado Desleal deja de ser indistinguible del Crimen Organizado,
+§2.1). Archivos de referencia:
 
 | Pieza                                                  | Archivo                                  |
 | ------------------------------------------------------ | ---------------------------------------- |
@@ -54,14 +55,31 @@ atacante vale lo mismo que un punto de defensa, y eso nunca se validó. El eje d
 | ------------------ | ---------- | -------- | --------- | ------------ | ------------- | -------- |
 | `oportunista`      | 30         | 10       | 20        | 20           | 10            | **18,0** |
 | `vandalismo`       | 55         | 40       | 50        | 30           | 40            | **43,0** |
-| `empleado-desleal` | 80         | 52       | 58        | 62           | 48            | **60,0** |
+| `empleado-desleal` | 80         | 40       | 58        | 45           | 48            | **54,2** |
 | `organizado`       | 65         | 60       | 60        | 65           | 50            | **60,0** |
 | `estado-nacion`    | 90         | 90       | 90        | 90           | 90            | **90,0** |
 
-`empleado-desleal` comparte FA con `organizado` a propósito: la ventaja real de un insider es el
-**acceso**, no la capacidad, y el acceso se modela aparte (§4). El perfil anterior (FA 68) afirmaba
-que un empleado descontento tiene más capacidad y sofisticación que una organización criminal
-profesional, lo cual no se sostiene.
+La ventaja real de un insider es el **acceso**, no la capacidad, y el acceso se modela aparte (§4).
+El perfil original (FA 68) afirmaba que un empleado descontento tiene más capacidad y sofisticación
+que una organización criminal profesional, lo cual no se sostiene.
+
+**Corregido en la calibración 6.** Hasta la calibración 5, `empleado-desleal` daba FA **60,0** — el
+mismo que `organizado`— así que compartía nodo del eje de contienda (§3) y el modelo **no los
+distinguía en ninguna celda** de la grilla: 98,5 / 59,3 / 30,4 / 14,7 contra 98,5 / 59,6 / 30,8 /
+15,0, y esa diferencia era ruido de muestreo. La app ofrecía una elección que el cálculo ignoraba.
+
+El análisis de sensibilidad (§ tools/anchor-sensitivity) lo destapó y midió además algo que la
+explicación intuitiva —"el FA es un promedio simple y eso es lossy"— no anticipaba: **ponderar los
+atributos no lo habría arreglado**. Con el ancla 5 leída como estaba, bajar el FA del insider de 60
+a 45 movía la grilla menos de 1 punto, porque el nodo se re-ajustaba hacia arriba para compensar.
+La causa real estaba en el **ancla**, no en el promedio (§6.1).
+
+Se corrigen los dos atributos que estaban indefendiblemente pegados al crimen organizado:
+
+| Atributo     | Antes | Ahora | Por qué                                                                                   |
+| ------------ | ----- | ----- | ----------------------------------------------------------------------------------------- |
+| Recursos     | 52    | 40    | Actúa solo: sin financiamiento, sin cómplices reclutados, sin a quién colocar lo suyo     |
+| Persistencia | 62    | 45    | Ventana corta y situacional; el crimen organizado casa el objetivo, reintenta y se adapta |
 
 ### 2.2 Perfiles de Defensa
 
@@ -101,13 +119,17 @@ Interpolación lineal monótona entre nodos; por encima del último, extiende la
 C = attackerContestStrength(FA)
 ```
 
-| FA  | C          |
-| --- | ---------- |
-| 0   | 0          |
-| 18  | **14,614** |
-| 43  | **22,682** |
-| 60  | **56,911** |
-| 90  | **75,748** |
+| FA   | C          |
+| ---- | ---------- |
+| 0    | 0          |
+| 18   | **14,614** |
+| 43   | **22,682** |
+| 54,2 | **40,911** |
+| 60   | **56,911** |
+| 90   | **75,748** |
+
+El nodo 54,2 (`empleado-desleal`) es nuevo desde la calibración 6. Antes ese perfil caía en el nodo
+60 y era indistinguible de `organizado` (§2.1).
 
 **Regla de implementación crítica:** se aplica **una sola vez, al promedio del perfil** — nunca a
 cada muestra de Monte Carlo. Aplicarla por muestra introduce un sesgo de Jensen de hasta **11
@@ -248,18 +270,38 @@ a **0,96–1,01×**.
 ## 6. Las ocho anclas
 
 Son el cimiento del modelo y la única fuente de sus parámetros. Emitidas por un experto en
-seguridad patrimonial, todas con **confianza media** y **acceso nulo**.
+seguridad patrimonial, todas con **confianza media**. Siete van con **acceso nulo**; la 5 va con
+**acceso medio** — ver por qué justo abajo.
 
 ### 6.1 Las seis de calibración
 
-| #   | Atacante         | Defensa  | Vulnerabilidad |
-| --- | ---------------- | -------- | -------------- |
-| 1   | oportunista      | básica   | 5 %            |
-| 2   | vandalismo       | básica   | 35 %           |
-| 3   | organizado       | estándar | 60 %           |
-| 4   | organizado       | élite    | 15 %           |
-| 5   | empleado desleal | avanzada | 30 %           |
-| 6   | estado-nación    | élite    | 45 %           |
+| #   | Atacante         | Defensa  | Vulnerabilidad          |
+| --- | ---------------- | -------- | ----------------------- |
+| 1   | oportunista      | básica   | 5 %                     |
+| 2   | vandalismo       | básica   | 35 %                    |
+| 3   | organizado       | estándar | 60 %                    |
+| 4   | organizado       | élite    | 15 %                    |
+| 5   | empleado desleal | avanzada | 30 % (acceso **medio**) |
+| 6   | estado-nación    | élite    | 45 %                    |
+
+**Por qué el ancla 5 lleva acceso medio.** "Un insider sin ningún acceso" es una contradicción de
+términos. Hasta la calibración 5 esa ancla se leía sobre el eje de acceso nulo, y para hacer que un
+empleado _sin acceso_ diera 30 % contra defensa avanzada, la calibración tenía que empujar su nodo
+de contienda hasta **56,911** — la fuerza bruta de una banda criminal— compensando un acceso que el
+modelo ya cuenta aparte en §4. Es el mismo error de _"está adentro" se coló dentro de "es capaz"_
+que ya se había corregido en los atributos del perfil, pero que el ancla volvía a meter por la
+puerta de atrás; y es lo que hacía que el Empleado Desleal y el Crimen Organizado dieran el mismo
+número (§2.1).
+
+Releída donde corresponde, **el juicio del experto se conserva intacto**: con acceso medio el
+modelo sigue dando 30,0 %. Lo que cambia es el mismo insider contra un activo al que **no** tiene
+acceso, que pasa de 30 % a **6,9 %** — que es lo que siempre debió decir.
+
+Costo honesto del cambio: mientras `empleado-desleal` y `organizado` compartían nodo, el ancla 5
+era una **comprobación** (tres anclas fijaban un solo parámetro y el peor residuo del conjunto era
+de 0,44 pp — nada obligaba a que cuadraran). Con nodo propio, el ancla 5 ajusta exactamente por
+construcción y esa comprobación desaparece. Se cambió una validación interna por una distinción que
+el analista sí ve y usa; las anclas 3, 4, 7 y 8 se siguen validando entre sí igual que antes.
 
 **`m` no se eligió: las anclas 3 y 4 lo identifican.** Comparten atacante contra dos defensas
 distintas, así que el eje de contienda se cancela y solo sobrevive `m`:
@@ -307,9 +349,19 @@ Vulnerabilidad media (%), confianza media, acceso nulo. `*` = celda anclada.
 | ---------------- | ---------- | ---------- | ---------- | ---------- |
 | oportunista      | **5,0\***  | 0,5        | 0,5        | 0,5        |
 | vandalismo       | **35,1\*** | 1,2        | 0,5        | 0,5        |
-| empleado desleal | 98,5       | 59,3       | **30,4\*** | 14,7       |
+| empleado desleal | 90,0       | 24,2       | 6,9        | 2,1        |
 | organizado       | **98,5\*** | **59,6\*** | **30,8\*** | **15,0\*** |
 | estado-nación    | 99,8       | 84,4       | 62,1       | **45,1\*** |
+
+`empleado-desleal` no tiene celda anclada en esta tabla: su ancla se emitió con **acceso medio**
+(§6.1), y esta grilla es a acceso nulo. Ahí es donde vive:
+
+| empleado desleal, por Nivel de Acceso | básica | estándar | avanzada   | élite |
+| ------------------------------------- | ------ | -------- | ---------- | ----- |
+| nulo                                  | 90,0   | 24,2     | 6,9        | 2,1   |
+| bajo                                  | 94,9   | 36,5     | 12,9       | 4,5   |
+| medio                                 | 98,7   | 60,2     | **30,0\*** | 13,4  |
+| alto                                  | 99,7   | 80,1     | 52,3       | 30,0  |
 
 Rango cubierto: **0,5 % – 99,8 %**. El modelo anterior (`m = 1`, sin eje de contienda) comprimía
 toda la grilla entre 17,7 % y 76,3 %: pasar de defensa básica a élite apenas dividía la
@@ -595,22 +647,23 @@ El texto es sensible al Modo Simple: `CVaR95`/`p90` son jerga vetada ahí (ver
 `m`, el eje de contienda, los factores de acceso ni los atributos de un perfil sin que la suite
 avise que el modelo dejó de coincidir con ese criterio.
 
-| Invariante                | Verificación                                                                                                  |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| **Las 8 anclas**          | \|media simulada − ancla\| **≤ 1,5 puntos porcentuales** (60.000 iteraciones, semilla `0x5eed`)               |
-| **Monotonía en defensa**  | Para cada atacante: más defensa nunca sube la Vulnerabilidad (tolerancia 0,05)                                |
-| **Monotonía en atacante** | Para cada defensa: oportunista ≤ vandalismo ≤ empleado desleal ≤ organizado ≤ estado-nación (tolerancia 0,05) |
-| **Piso**                  | Ninguna combinación da 0 %; y el piso no infla el resultado (`< 2 %` en oportunista vs élite)                 |
-| **Eje de contienda**      | Reproduce exactamente sus nodos calibrados, y es monótono creciente en `[0, 100]` con paso 0,5                |
+| Invariante                 | Verificación                                                                                                                                            |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Las 8 anclas**           | \|media simulada − ancla\| **≤ 1,5 puntos porcentuales** (60.000 iteraciones, semilla `0x5eed`), cada una con su propio Nivel de Acceso (§6.1)          |
+| **Perfiles distinguibles** | Empleado Desleal y Crimen Organizado tienen que dar números distintos: sin acceso, el insider queda ≥ 10 pp por debajo; con acceso operativo, lo supera |
+| **Monotonía en defensa**   | Para cada atacante: más defensa nunca sube la Vulnerabilidad (tolerancia 0,05)                                                                          |
+| **Monotonía en atacante**  | Para cada defensa: oportunista ≤ vandalismo ≤ empleado desleal ≤ organizado ≤ estado-nación (tolerancia 0,05)                                           |
+| **Piso**                   | Ninguna combinación da 0 %; y el piso no infla el resultado (`< 2 %` en oportunista vs élite)                                                           |
+| **Eje de contienda**       | Reproduce exactamente sus nodos calibrados, y es monótono creciente en `[0, 100]` con paso 0,5                                                          |
 
-Las dos pruebas de monotonía cubren las **14 celdas que ningún ancla toca**: sin ellas, una
+Las dos pruebas de monotonía cubren las **15 celdas que ningún ancla de calibración toca**: sin ellas, una
 calibración podría acertar las 8 anclas y aun así producir absurdos en el resto de la grilla — que
 es exactamente lo que pasaba con los ajustes de forma libre antes de restringir la monotonía del
 eje.
 
 ### 9.1 Versionado de calibración
 
-`CALIBRATION_VERSION = 5`. Se sube cada vez que cambie algo que mueva los números de una simulación:
+`CALIBRATION_VERSION = 6`. Se sube cada vez que cambie algo que mueva los números de una simulación:
 `m`, el eje de contienda, el piso, los atributos de un perfil, o **el modelo de frecuencia del
 motor**.
 
@@ -626,6 +679,7 @@ motor**.
 | 3       | El Nivel de Confianza deja de mover la media                                                 |
 | 4       | Los factores α del Nivel de Acceso pasan de juicio directo a despejados por anclas           |
 | 5       | **Modelo compuesto de frecuencia** (§7.1). El ALE de cada riesgo se conserva; cambia la cola |
+| 6       | El **Empleado Desleal deja de ser indistinguible** del Crimen Organizado (§2.1, §6.1)        |
 
 Cada simulación sella su resultado con esta versión y el Registro la guarda. Los riesgos calculados
 con una versión anterior **no se recalculan solos**: en una herramienta de GRC, sobrescribir en
@@ -755,3 +809,5 @@ Decisiones tomadas con su razón, para que quien retome esto no las revierta por
 | Adelgazar la cascada quita eventos, no escala       | Escalar la cifra del año inventa años que cuestan una fracción de incendio — la misma falacia que el modelo compuesto corrige     |
 | La LEC recalcula su probabilidad empíricamente      | Con empates, la etiqueta de la escalera miente; y esa curva alimenta el eje Y de la Matriz                                        |
 | El residual guarda su receta, no solo su resultado  | Un número fija la media, nunca la forma: prevenir y contener dan la misma media y colas al triple                                 |
+| Cada ancla lleva su propio Nivel de Acceso          | Emitir la del insider sobre "acceso nulo" metía su acceso dentro de su fuerza, y lo volvía idéntico al crimen organizado          |
+| Dos perfiles no pueden dar el mismo número          | La app ofrecía una elección que el cálculo ignoraba; y ponderar los atributos —la corrección obvia— no lo habría arreglado        |

@@ -119,7 +119,15 @@ test.describe('Modelo de frecuencia: comparador en el detalle del riesgo', () =>
         });
 
         expect(sim.frequencyModel).toBe('compound');
-        expect(sim.calibrationVersion).toBe(5);
+        // Se compara contra lo que declara el backend, no contra un número escrito a mano: subir
+        // CALIBRATION_VERSION no debe romper este test.
+        const vigente = await page.evaluate(async () => {
+            const res = await fetch('http://localhost:3000/api/config/profiles', {
+                headers: { 'X-API-Key': 'test-e2e-key' },
+            });
+            return (await res.json()).calibrationVersion;
+        });
+        expect(sim.calibrationVersion).toBe(vigente);
         // Nueve de cada diez años no traen ningún evento, así que el P90 es $0. Es la respuesta
         // correcta — el modelo anterior la escondía repartiendo una fracción de evento en todos.
         expect(sim.summary.p90).toBe(0);

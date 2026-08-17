@@ -16,10 +16,25 @@ const attackerProfiles = {
     // y MÁS Sofisticación (60 vs 50) que una organización criminal profesional, algo que no se
     // sostiene. El error de fondo es que la ventaja real de un insider es el ACCESO — ya está
     // adentro — y el promedio FA no tiene ninguna dimensión de acceso, así que "está adentro" se
-    // había colado dentro de "es capaz". Se baja Recursos, Capacidad, Persistencia y Sofisticación
-    // por debajo del Crimen Organizado, y se CONSERVA Motivación en 80 (la más alta de los cinco
-    // perfiles): el agravio personal sí es el rasgo definitorio de esta amenaza. FA queda en 60,0.
-    'empleado-desleal': { name: 'Empleado Desleal', motivation: 80, resources: 52, capacity: 58, persistence: 62, sophistication: 48 },
+    // había colado dentro de "es capaz". Se bajaron Recursos, Capacidad, Persistencia y
+    // Sofisticación por debajo del Crimen Organizado, y se CONSERVA Motivación en 80 (la más alta
+    // de los cinco perfiles): el agravio personal sí es el rasgo definitorio de esta amenaza.
+    //
+    // Ese arreglo quedó a medias y el análisis de sensibilidad lo destapó (ver
+    // tools/anchor-sensitivity/): con Recursos 52 y Persistencia 62 el FA daba 60,0 — EXACTAMENTE
+    // el mismo que el Crimen Organizado — así que los dos perfiles compartían nodo del eje de
+    // contienda y el modelo no los distinguía en ninguna celda de la grilla. Un analista que
+    // elegía entre "Empleado Desleal" y "Grupo Criminal Organizado" elegía entre dos etiquetas con
+    // el mismo resultado. Se corrigen los dos atributos que estaban indefendiblemente pegados al
+    // crimen organizado:
+    //   - Recursos 52 -> 40: un empleado agraviado actúa solo. No tiene financiamiento, ni cómplices
+    //     reclutados, ni vehículos, ni a quién colocarle lo sustraído. 52 contra 60 afirmaba que
+    //     está casi tan bien equipado como una banda.
+    //   - Persistencia 62 -> 45: su ventana es corta y situacional (un turno, los días previos a una
+    //     baja). El Crimen Organizado "casa el objetivo, reintenta y se adapta" — ver el comentario
+    //     de ese perfil abajo. 62 contra 65 afirmaba que insisten casi igual.
+    // FA queda en 54,2 y estrena nodo propio en el eje de contienda.
+    'empleado-desleal': { name: 'Empleado Desleal', motivation: 80, resources: 40, capacity: 58, persistence: 45, sophistication: 48 },
     // Sesgo real encontrado: con persistence=40, el Crimen Organizado quedaba MENOS persistente
     // que el Vandalismo (60) — invertido respecto a la realidad de seguridad patrimonial, donde
     // un grupo organizado (robo de mercancía, bandas de asalto a instalaciones) case el objetivo,

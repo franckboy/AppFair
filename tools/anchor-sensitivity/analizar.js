@@ -24,7 +24,7 @@
  *     ancla 1 (oportunista vs básica)      → nodo FA=18
  *     ancla 2 (vandalismo vs básica)       → nodo FA=43
  *     anclas 3 y 4 (organizado)            → m  +  nodo FA=60
- *     ancla 5 (empleado desleal vs avanz.) → nodo FA=60  (sobredeterminado)
+ *     ancla 5 (empleado desleal vs avanz.) → nodo FA=54,2  (con acceso MEDIO, ver abajo)
  *     ancla 6 (estado-nación vs élite)     → nodo FA=90
  *
  * TODO se ajusta contra la MEDIA SIMULADA, nunca contra la fórmula central. Es la advertencia más
@@ -45,19 +45,25 @@ const {
 } = require('../../backend/src/lib/autocalc');
 const { attackerProfiles, defenseProfiles } = require('../../backend/src/data/profiles');
 
-// Las anclas se emitieron todas con confianza media y acceso nulo (§6). A confianza media la
-// corrección por confianza vale 1 exacto, así que no interfiere con la re-derivación.
+// Las anclas se emitieron todas con confianza media (§6). A confianza media la corrección por
+// confianza vale 1 exacto, así que no interfiere con la re-derivación.
 const CONFIANZA = 'medio';
-const ACCESO = 'nulo';
+// Nivel de Acceso de referencia para la GRILLA que se compara (nunca para las anclas, que traen el
+// suyo). Es el default de la app, así que la grilla que se mide es la que el analista ve al elegir
+// dos perfiles sin tocar nada más.
+const ACCESO_GRILLA = 'nulo';
 const SEMILLA = 0x5eed;
 
+// `acceso` es el del ancla: cinco se emitieron con acceso nulo, la del empleado desleal con acceso
+// medio (un insider sin ningún acceso es una contradicción de términos — ver el bloque de
+// calibración en autocalc.js).
 const ANCLAS = [
-    { n: 1, atacante: 'oportunista', defensa: 'basica', valor: 5, determina: 'nodo18' },
-    { n: 2, atacante: 'vandalismo', defensa: 'basica', valor: 35, determina: 'nodo43' },
-    { n: 3, atacante: 'organizado', defensa: 'estandar', valor: 60, determina: 'm+nodo60' },
-    { n: 4, atacante: 'organizado', defensa: 'elite', valor: 15, determina: 'm+nodo60' },
-    { n: 5, atacante: 'empleado-desleal', defensa: 'avanzada', valor: 30, determina: 'nodo60' },
-    { n: 6, atacante: 'estado-nacion', defensa: 'elite', valor: 45, determina: 'nodo90' },
+    { n: 1, atacante: 'oportunista', defensa: 'basica', acceso: 'nulo', valor: 5, determina: 'nodo18' },
+    { n: 2, atacante: 'vandalismo', defensa: 'basica', acceso: 'nulo', valor: 35, determina: 'nodo43' },
+    { n: 3, atacante: 'organizado', defensa: 'estandar', acceso: 'nulo', valor: 60, determina: 'm+nodo60' },
+    { n: 4, atacante: 'organizado', defensa: 'elite', acceso: 'nulo', valor: 15, determina: 'm+nodo60' },
+    { n: 5, atacante: 'empleado-desleal', defensa: 'avanzada', acceso: 'medio', valor: 30, determina: 'nodo54' },
+    { n: 6, atacante: 'estado-nacion', defensa: 'elite', acceso: 'nulo', valor: 45, determina: 'nodo90' },
 ];
 
 const DELTAS = [-8, -5, -3, 3, 5, 8];
@@ -70,12 +76,12 @@ const V_MIN_ALCANZABLE = 0.6;
 const V_MAX_ALCANZABLE = 99.4;
 
 /** Media simulada de Vulnerabilidad (%) de una celda, con una calibración dada. */
-function mediaCelda(atacanteKey, defensaKey, calib, iteraciones) {
+function mediaCelda(atacanteKey, defensaKey, calib, iteraciones, acceso = ACCESO_GRILLA) {
     const draw = sampleVulnerabilityFromProfiles(
         attackerProfiles[atacanteKey],
         defenseProfiles[defensaKey],
         CONFIANZA,
-        ACCESO,
+        acceso,
         calib,
     );
     const rng = mulberry32(SEMILLA);
@@ -100,7 +106,7 @@ function resolverNodo(ancla, objetivo, calibBase, profileScore, iteraciones) {
     for (let i = 0; i < 34; i++) {
         const mid = (lo + hi) / 2;
         const calib = { ...calibBase, contestNodes: conNodo(calibBase.contestNodes, profileScore, mid) };
-        if (mediaCelda(ancla.atacante, ancla.defensa, calib, iteraciones) < objetivo) lo = mid;
+        if (mediaCelda(ancla.atacante, ancla.defensa, calib, iteraciones, ancla.acceso) < objetivo) lo = mid;
         else hi = mid;
     }
     return (lo + hi) / 2;
@@ -119,7 +125,7 @@ function resolverMyNodo60(v3, v4, iteraciones) {
         const base = { m, contestNodes: ATTACKER_CONTEST_CALIBRATION };
         const nodo60 = resolverNodo(a3, v3, base, 60, iteraciones);
         const calib = { m, contestNodes: conNodo(ATTACKER_CONTEST_CALIBRATION, 60, nodo60) };
-        return { r: mediaCelda(a4.atacante, a4.defensa, calib, iteraciones) - v4, nodo60 };
+        return { r: mediaCelda(a4.atacante, a4.defensa, calib, iteraciones, a4.acceso) - v4, nodo60 };
     };
 
     let lo = 1.5;
@@ -179,7 +185,7 @@ function recalibrarCon(ancla, delta, iteraciones) {
         return { m, contestNodes: conNodo(ATTACKER_CONTEST_CALIBRATION, 60, nodo60) };
     }
 
-    const profileScore = { nodo18: 18, nodo43: 43, nodo60: 60, nodo90: 90 }[ancla.determina];
+    const profileScore = { nodo18: 18, nodo43: 43, nodo54: 54.2, nodo60: 60, nodo90: 90 }[ancla.determina];
     const base = { m: TULLOCK_M, contestNodes: ATTACKER_CONTEST_CALIBRATION };
     const nodo = resolverNodo(ancla, objetivo, base, profileScore, iteraciones);
     return { m: TULLOCK_M, contestNodes: conNodo(ATTACKER_CONTEST_CALIBRATION, profileScore, nodo) };
@@ -209,12 +215,23 @@ function main() {
     const control = resolverMyNodo60(ANCLAS[2].valor, ANCLAS[3].valor, iteraciones);
     const errM = Math.abs(control.m / TULLOCK_M - 1) * 100;
     const errNodo = Math.abs(control.nodo60 / 56.911 - 1) * 100;
+    // El nodo 54,2 (empleado desleal) se despeja de su propia ancla, así que entra al control por
+    // separado: no lo tocan ni `m` ni el nodo 60.
+    const nodo54 = resolverNodo(
+        ANCLAS[4],
+        ANCLAS[4].valor,
+        { m: TULLOCK_M, contestNodes: ATTACKER_CONTEST_CALIBRATION },
+        54.2,
+        iteraciones,
+    );
+    const errNodo54 = Math.abs(nodo54 / 40.911 - 1) * 100;
     if (!comoJson) {
         console.log(
             `Control de autoconsistencia — sin perturbar: m = ${control.m.toFixed(4)} (${errM.toFixed(1)} % de ` +
-                `desviación), nodo 60 = ${control.nodo60.toFixed(3)} (${errNodo.toFixed(1)} %)\n`,
+                `desviación), nodo 60 = ${control.nodo60.toFixed(3)} (${errNodo.toFixed(1)} %), ` +
+                `nodo 54,2 = ${nodo54.toFixed(3)} (${errNodo54.toFixed(1)} %)\n`,
         );
-        if (errM > 5 || errNodo > 5) {
+        if (errM > 5 || errNodo > 5 || errNodo54 > 5) {
             console.log('  ⚠ El método NO recupera la calibración vigente. Lo de abajo no es fiable.\n');
         }
     }
