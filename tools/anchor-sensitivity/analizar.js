@@ -214,7 +214,10 @@ function main() {
     // Si no la recupera, todo lo de abajo mide el error del método y no la sensibilidad del modelo.
     const control = resolverMyNodo60(ANCLAS[2].valor, ANCLAS[3].valor, iteraciones);
     const errM = Math.abs(control.m / TULLOCK_M - 1) * 100;
-    const errNodo = Math.abs(control.nodo60 / 56.911 - 1) * 100;
+    // Los valores de referencia se leen del propio eje calibrado, nunca se escriben a mano: así el
+    // control sigue siendo válido después de cualquier recalibración.
+    const nodoVigente = (fa) => ATTACKER_CONTEST_CALIBRATION.find((n) => n.profileScore === fa).contestStrength;
+    const errNodo = Math.abs(control.nodo60 / nodoVigente(60) - 1) * 100;
     // El nodo 54,2 (empleado desleal) se despeja de su propia ancla, así que entra al control por
     // separado: no lo tocan ni `m` ni el nodo 60.
     const nodo54 = resolverNodo(
@@ -224,7 +227,7 @@ function main() {
         54.2,
         iteraciones,
     );
-    const errNodo54 = Math.abs(nodo54 / 40.911 - 1) * 100;
+    const errNodo54 = Math.abs(nodo54 / nodoVigente(54.2) - 1) * 100;
     if (!comoJson) {
         console.log(
             `Control de autoconsistencia — sin perturbar: m = ${control.m.toFixed(4)} (${errM.toFixed(1)} % de ` +

@@ -164,18 +164,25 @@ fórmula ni estos porcentajes**, y la documentación de la app no debe afirmar l
 juicio experto en seguridad patrimonial — seis celdas de la grilla Atacante × Defensa cuya
 Vulnerabilidad se declaró por separado:
 
-| Atacante                    | Defensa  | Vulnerabilidad |
-| --------------------------- | -------- | -------------- |
-| Intruso oportunista         | Básica   | 5 %            |
-| Vandalismo / hurtos comunes | Básica   | 35 %           |
-| Empleado desleal            | Avanzada | 30 %           |
-| Grupo criminal organizado   | Estándar | 60 %           |
-| Grupo criminal organizado   | Élite    | 15 %           |
-| Terrorista o espía          | Élite    | 45 %           |
+| Atacante                    | Defensa  | Vulnerabilidad              |
+| --------------------------- | -------- | --------------------------- |
+| Intruso oportunista         | Básica   | 5 %                         |
+| Vandalismo / hurtos comunes | Básica   | 35 %                        |
+| Empleado desleal            | Avanzada | 30 % (con acceso **medio**) |
+| Grupo criminal organizado   | Estándar | 60 %                        |
+| Grupo criminal organizado   | Élite    | 15 %                        |
+| Terrorista o espía          | Élite    | 45 %                        |
 
 `m` **no se eligió**: queda determinado algebraicamente por las dos anclas de crimen organizado,
 que comparten atacante contra dos defensas distintas — el eje de contienda se cancela y solo
-sobrevive `m`.
+sobrevive `m`. Los decimales con que aparece en el código (`6,4073`) son para **reproducir** el
+ajuste, no una afirmación de precisión: el análisis de sensibilidad midió que un error de ±3 puntos
+en un ancla lo mueve un ±12 %. Fuera del código se cita «≈ 6,4».
+
+El ancla del empleado desleal se emite con **acceso medio** y no con acceso nulo como las otras
+cinco: "un insider sin ningún acceso" es una contradicción de términos, y leerla así hacía que ese
+perfil diera exactamente los mismos números que el crimen organizado. Ver §6.1 de
+`docs/modelo-de-riesgo.md`.
 
 ### Por qué hizo falta un "eje de contienda"
 
@@ -196,21 +203,25 @@ la estrategia de Mitigar. El rango real ahora es 0,5 % – 99,8 %.
 La calibración también obligó a corregir el Perfil de Atacante `empleado-desleal`, que afirmaba que
 un empleado descontento tiene más Capacidad y más Sofisticación que una organización criminal
 profesional. El error de fondo: la ventaja real de un insider es el **acceso** — ya está adentro —
-y el promedio del perfil no tiene ninguna dimensión de acceso.
+y el promedio del perfil no tiene ninguna dimensión de acceso. Ese acceso se modela aparte, como
+propiedad **del riesgo** (el mismo empleado tiene acceso total a su bodega y ninguno al centro de
+datos), y por eso el perfil sin acceso queda hoy muy por debajo del crimen organizado (23,7 % contra
+60,0 % ante defensa estándar) y lo alcanza en cuanto se le declara el acceso que de verdad tiene.
 
 ### Cómo se verifica
 
-`backend/test/lib.test.js` convierte las seis anclas en una regresión ejecutable: nadie puede
+`backend/test/lib.test.js` convierte las ocho anclas en una regresión ejecutable: nadie puede
 cambiar `m`, el eje de contienda ni los atributos de un Perfil de Atacante sin que la suite avise
-que el modelo dejó de coincidir con el criterio experto. El nodo del eje correspondiente a un
-Factor de Amenaza de 60 está **sobredeterminado** (tres de las seis anclas lo fijan, un solo
-parámetro las absorbe) y aun así el peor residuo del conjunto es de 0,43 puntos porcentuales — eso
-es comprobación, no ajuste. Otros dos tests verifican que las 14 celdas que ningún ancla toca sean
-monótonas en ambos ejes, y que ninguna combinación dé 0 % (ninguna defensa es invulnerable).
+que el modelo dejó de coincidir con el criterio experto. Las **seis de calibración** se exigen con
+tolerancia de 0,5 pp (el peor residuo medido es 0,15 pp); las **dos de validación** —emitidas
+después de fijar `m` y el eje, sin que se ajustara nada para acertarlas— con 2 pp, porque su residuo
+mide consistencia y no ajuste. Otros tests verifican que las celdas que ningún ancla toca sean
+monótonas en ambos ejes, que ninguna combinación dé 0 % (ninguna defensa es invulnerable), y que el
+triángulo de Resistencia no vuelva a toparse en 100.
 
 ### Riesgos guardados con una calibración anterior
 
-`VULNERABILITY_CALIBRATION_VERSION` sella cada simulación, y el Registro guarda ese sello por
+`CALIBRATION_VERSION` sella cada simulación, y el Registro guarda ese sello por
 riesgo. Los riesgos calculados con una versión anterior **no se recalculan solos**: en una
 herramienta de GRC, sobrescribir en silencio la evaluación guardada de un analista destruye la
 trazabilidad de por qué se decidió lo que se decidió. Se marcan con `⟳ Recalibrar` en el Registro y

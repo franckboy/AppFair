@@ -248,7 +248,7 @@ function pearsonCorrelation(x, y) {
  * Correlación de rangos de Spearman: Pearson aplicado a los RANGOS en vez de a los valores.
  *
  * Se usa en vez de Pearson porque este modelo no es lineal y Pearson solo mide relación lineal.
- * Tullock con m=6,8254 es fuertemente convexo, y la Magnitud de Pérdida es lognormal con cola
+ * Tullock con m≈6,4 es fuertemente convexo, y la Magnitud de Pérdida es lognormal con cola
  * pesada: unos pocos sorteos enormes de magnitud dominan la covarianza y aplastan el peso aparente
  * de los demás factores. Medido sobre el modelo real, Pearson subestimaba la Frecuencia y la
  * Vulnerabilidad a la MITAD:
