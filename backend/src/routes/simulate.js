@@ -11,7 +11,7 @@ const { evaluateFairThreat, evaluateFairOpportunity } = require('../lib/evaluati
 const {
     sampleVulnerabilityFromProfiles,
     calculateInherentRiskFromSimulation,
-    VULNERABILITY_CALIBRATION_VERSION,
+    CALIBRATION_VERSION,
 } = require('../lib/autocalc');
 const { defaultRiskCriteria, lossFormsKeys, attackerProfiles, defenseProfiles } = require('../data/profiles');
 const { normalizeRiskCriteria, validateRiskCriteriaOverride } = require('../lib/riskCriteria');
@@ -64,7 +64,7 @@ function validateSimulationInputs(body) {
         validateTriangularRange(tef, 'tef') ||
         validateTriangularRange(vuln, 'vuln', { min: 0, max: 100 }) ||
         validateLossMagnitudes(lossMagnitudes, lossFormsKeys) ||
-        validateFrequencyModel(frequencyModel, tef, FREQUENCY_MODELS);
+        validateFrequencyModel(frequencyModel, FREQUENCY_MODELS);
     if (error) return { error };
 
     // Si vienen attackerKey/defenseKey, deben ser válidos (400 si no) — a diferencia de
@@ -201,10 +201,10 @@ function createSimulateRouter(store) {
                 // ninguno, para que nunca haya que adivinar con qué modelo se calculó un número.
                 frequencyModel: usedFrequencyModel,
                 // Sello del modelo de Vulnerabilidad que produjo estos números (ver
-                // VULNERABILITY_CALIBRATION_VERSION en lib/autocalc.js). El frontend lo reenvía
+                // CALIBRATION_VERSION en lib/autocalc.js). El frontend lo reenvía
                 // tal cual al Registro, así cada riesgo guardado sabe con qué calibración se
                 // calculó y la app puede avisar cuáles quedaron desactualizados.
-                calibrationVersion: VULNERABILITY_CALIBRATION_VERSION,
+                calibrationVersion: CALIBRATION_VERSION,
                 summary: {
                     average: summary.average,
                     median: summary.median,
@@ -213,6 +213,10 @@ function createSimulateRouter(store) {
                     p90: summary.p90,
                     cvar95: summary.cvar95,
                     probExceedance: summary.probExceedance,
+                    // Qué porcentaje de los años simulados no costó nada — ver summarizeLosses. Sin
+                    // esto, un P90 de $0 (normal en un riesgo raro con el modelo compuesto) se ve
+                    // como un error de la app en vez de como la respuesta que es.
+                    zeroLossYearsPercent: summary.zeroLossYearsPercent,
                     exceedanceThreshold: criteria.aleUmbralExcedencia,
                     inherentALE: inherent.inherentALE,
                     inherentCVaR: inherent.inherentCVaR,

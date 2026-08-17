@@ -1106,7 +1106,7 @@ export const FairRegister = {
                     : '';
 
                 // Señal de calibración desactualizada: este riesgo se calculó con una versión
-                // anterior del modelo de Vulnerabilidad (ver VULNERABILITY_CALIBRATION_VERSION en
+                // anterior del modelo de Vulnerabilidad (ver CALIBRATION_VERSION en
                 // backend/src/lib/autocalc.js), así que sus números ya no son comparables con los
                 // de un riesgo recién simulado. No se recalcula solo a propósito — sobrescribir en
                 // silencio una evaluación guardada rompe la trazabilidad; el analista decide.

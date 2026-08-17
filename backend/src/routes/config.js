@@ -12,7 +12,7 @@ const {
 } = require('../data/profiles');
 const { hazardStandards, isoProcessClauses, rimsClauses } = require('../data/standardsReference');
 const { normalizeRiskCriteria } = require('../lib/riskCriteria');
-const { VULNERABILITY_CALIBRATION_VERSION, ACCESS_LEVELS } = require('../lib/autocalc');
+const { CALIBRATION_VERSION, ACCESS_LEVELS } = require('../lib/autocalc');
 const { asyncHandler } = require('../middleware/asyncHandler');
 
 function createConfigRouter(store) {
@@ -37,7 +37,7 @@ function createConfigRouter(store) {
             // compara contra el sello guardado en cada riesgo para avisar cuáles se calcularon
             // con una calibración anterior. Se expone desde aquí, y no como constante duplicada
             // en el frontend, para que no puedan quedar desincronizadas.
-            calibrationVersion: VULNERABILITY_CALIBRATION_VERSION,
+            calibrationVersion: CALIBRATION_VERSION,
             // Niveles de Acceso / Proximidad, para poblar el selector del Paso 2 sin duplicar la
             // tabla en el frontend (misma razón que calibrationVersion).
             accessLevels: ACCESS_LEVELS,

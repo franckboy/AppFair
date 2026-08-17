@@ -6,6 +6,19 @@ const { sampleCorrelation } = require('simple-statistics');
 
 const FREQUENCY_MODELS = ['expected', 'compound'];
 
+// Por encima de este TEF máximo, el modelo compuesto cae solo al de valor esperado. Dos razones,
+// y ninguna es de modelado:
+//  - Medido sobre el motor real, a 500 eventos/año los dos modelos ya coinciden (ALE −0,1%, cola
+//    ×0,72 por el promediado natural de la suma): con esa frecuencia nunca hay un año en cero. El
+//    modelo compuesto importa donde los eventos son RAROS.
+//  - El compuesto sortea una magnitud por CADA evento, así que el trabajo crece con el TEF. Sin
+//    este corte, un `tef` absurdo mantendría el event loop ocupado varios segundos — el mismo
+//    motivo que MAX_ITERATIONS en lib/validate.js.
+// Es una caída silenciosa a propósito, no un error: desde que el compuesto es el default, un
+// riesgo muy frecuente es un riesgo válido y corriente, no una petición mal formada. El modelo que
+// de verdad se usó siempre viaja de vuelta en `frequencyModel`.
+const MAX_COMPOUND_TEF = 500;
+
 // Tope duro de eventos simulados en UN año, solo en el modelo compuesto — mismo motivo que
 // MAX_ITERATIONS en lib/validate.js: sin él, un `tef` enorme haría que el motor sorteara una
 // magnitud por evento millones de veces de forma síncrona y bloqueara el event loop. No es un
@@ -53,23 +66,30 @@ const MAX_EVENTS_PER_ITERATION = 5000;
  *        duela menos cuando pase".
  *
  *        Sin tope (por defecto) el comportamiento es idéntico bit a bit al de antes.
- * @param {'expected'|'compound'} [params.frequencyModel='expected'] Cómo se convierte la frecuencia
+ * @param {'expected'|'compound'} [params.frequencyModel='compound'] Cómo se convierte la frecuencia
  *        (LEF, eventos por año) en la pérdida del año.
  *
- *        'expected' (por defecto, el modelo de siempre): `pérdida = LEF × Magnitud`. Reparte la
- *        frecuencia como una fracción continua de evento en TODOS los años por igual. Con LEF=0,1
- *        (una vez cada diez años) afirma que cada año se pierde la décima parte de un incendio —
- *        algo que no le pasa a nadie: o hay incendio, o no lo hay. El promedio (ALE) sale bien; la
- *        forma de la distribución, no.
+ *        'compound' (por defecto desde la calibración 5, colectivo de riesgo clásico):
+ *        `N ~ Poisson(LEF)` eventos ese año, y la pérdida es la SUMA de N magnitudes
+ *        independientes. Aparecen los años en cero (los más frecuentes cuando LEF < 1) y los años
+ *        con dos o tres eventos encimados. Es el modelo que corresponde a la propia ontología de
+ *        FAIR, donde LEF está definido como eventos por año, o sea una tasa de Poisson.
  *
- *        'compound' (modelo compuesto, colectivo de riesgo clásico): `N ~ Poisson(LEF)` eventos ese
- *        año, y la pérdida es la SUMA de N magnitudes independientes. Aparecen los años en cero
- *        (los más frecuentes cuando LEF < 1) y los años con dos o tres eventos encimados. El ALE se
- *        conserva por construcción (E[N]×E[M] = LEF×E[M], la misma cifra que 'expected'); lo que
- *        cambia es la COLA, que es justamente lo que se mira para decidir.
+ *        'expected' (el modelo anterior): `pérdida = LEF × Magnitud`. Reparte la frecuencia como
+ *        una fracción continua de evento en TODOS los años por igual. Con LEF=0,1 (una vez cada
+ *        diez años) afirma que cada año se pierde la décima parte de un incendio — algo que no le
+ *        pasa a nadie: o hay incendio, o no lo hay. No es un híbrido inocente: ya promedió la
+ *        variabilidad del CONTEO pero conserva entera la de la MAGNITUD, y de ahí salen dos errores
+ *        en direcciones OPUESTAS. Donde los eventos son raros, la variabilidad del conteo ES todo
+ *        el riesgo (0 contra 1 evento es la diferencia entera) y la borró. Donde son frecuentes, la
+ *        suma de ~20 eventos se promedia sola y su dispersión relativa cae, pero `20 × M` conserva
+ *        la dispersión completa de UN evento: inventa incertidumbre que no existe.
  *
- *        Se pide por corrida a propósito, para poder comparar ambos sobre los mismos datos con la
- *        misma semilla antes de decidir cuál debe ser el default (ver POST /api/simulate/comparar-frecuencia).
+ *        El ALE se conserva al cambiar de modelo, por construcción (E[N]×E[M] = LEF×E[M]) — o sea
+ *        que este cambio NO reabre las ocho anclas de calibración de Vulnerabilidad. Lo que cambia
+ *        es la COLA, que es justamente lo que se mira para decidir. Medido, con la misma semilla:
+ *        raro-severo (LEF 0,05) CVaR ×4,8 y 95% de años en cero; frecuente-menor (LEF 20) CVaR
+ *        ×0,63. Se puede comparar sobre datos propios en POST /api/simulate/frequency-models.
  * @returns {{annualLosses:number[], usedSeed:number, sensitivity:Array, lefSamples:number[], magnitudeSamples:number[], eventCounts:number[]|null, frequencyModel:string}}
  */
 function runMonteCarloSimulation({
@@ -80,7 +100,7 @@ function runMonteCarloSimulation({
     lossMagnitudes,
     sampleVuln,
     magnitudeCap,
-    frequencyModel = 'expected',
+    frequencyModel = 'compound',
 }) {
     const usedSeed = seed && seed > 0 ? seed : Math.floor(Math.random() * 2147483647);
     const rng = mulberry32(usedSeed);
@@ -92,7 +112,9 @@ function runMonteCarloSimulation({
     // (que significaría que ningún evento cuesta nada).
     const aplicaTope = typeof magnitudeCap === 'number' && Number.isFinite(magnitudeCap) && magnitudeCap > 0;
 
-    const compuesto = frequencyModel === 'compound';
+    // Ver MAX_COMPOUND_TEF: por encima de ese TEF los dos modelos ya coinciden y el compuesto solo
+    // costaría tiempo, así que cae solo. Nunca es un error — el modelo realmente usado se devuelve.
+    const compuesto = frequencyModel === 'compound' && !(tef && tef.max > MAX_COMPOUND_TEF);
 
     const activeKeys = lossFormsKeys.filter((key) => lossMagnitudes[key]);
     // Los parámetros de cada Magnitud se resuelven UNA vez (ver magnitudeParams en random.js) en vez
@@ -324,6 +346,13 @@ function summarizeLosses(losses, exceedanceThreshold) {
         probExceedance = (sorted.filter((l) => l > exceedanceThreshold).length / n) * 100;
     }
 
+    // Años que no costaron nada. Con el modelo compuesto es el dato que vuelve legible al resto:
+    // en un riesgo raro, el P90 y hasta la mediana salen en $0, y ese "$0" solo, sin decir que 9 de
+    // cada 10 años no pasa nada, se lee como si la app estuviera rota en vez de como la respuesta
+    // que es. Con el modelo de valor esperado siempre da 0% (ahí ningún año sale en cero, porque
+    // reparte una fracción de evento en todos), y eso también es información honesta.
+    const zeroLossYearsPercent = (sorted.filter((l) => l === 0).length / n) * 100;
+
     return {
         average: avg,
         median,
@@ -332,6 +361,7 @@ function summarizeLosses(losses, exceedanceThreshold) {
         p90,
         cvar95,
         probExceedance,
+        zeroLossYearsPercent,
         standardError,
         standardErrorPercent,
         iterations: n,
@@ -372,10 +402,32 @@ function buildLossExceedanceCurve(losses, probabilities = LEC_EXCEEDANCE_PROBABI
     if (!Array.isArray(losses) || losses.length === 0) return [];
     const sorted = [...losses].sort((a, b) => a - b);
     const n = sorted.length;
+
+    // Cuántos años superan `loss`, por búsqueda binaria sobre el arreglo ya ordenado: el primer
+    // índice cuyo valor es ESTRICTAMENTE mayor. Todo lo que quede a la derecha lo excede.
+    const excedenPorEncimaDe = (loss) => {
+        let lo = 0;
+        let hi = n;
+        while (lo < hi) {
+            const mid = (lo + hi) >> 1;
+            if (sorted[mid] > loss) hi = mid;
+            else lo = mid + 1;
+        }
+        return n - lo;
+    };
+
     return probabilities.map((probability) => {
         const cuantil = 1 - probability / 100;
         const idx = Math.min(n - 1, Math.max(0, Math.floor(cuantil * (n - 1))));
-        return { loss: sorted[idx], probability };
+        const loss = sorted[idx];
+        // La probabilidad se RECALCULA sobre las pérdidas reales en vez de devolver la de la
+        // escalera. Con una distribución continua las dos coinciden hasta el redondeo, pero en
+        // cuanto hay EMPATES el cuantil deja de ser inyectivo y la etiqueta miente: con el modelo
+        // compuesto, un riesgo raro tiene el 95% de sus años en $0 exacto, así que los puntos de
+        // 100%, 99%, 98%... caen todos en $0 y afirmarían "hay 100% de probabilidad de perder más
+        // de $0" cuando la respuesta real es 5%. Esta curva alimenta el eje Y de la Matriz y el
+        // punto residual, así que el error no se quedaba en el dibujo.
+        return { loss, probability: (excedenPorEncimaDe(loss) / n) * 100 };
     });
 }
 
@@ -389,4 +441,5 @@ module.exports = {
     LEC_EXCEEDANCE_PROBABILITIES,
     FREQUENCY_MODELS,
     MAX_EVENTS_PER_ITERATION,
+    MAX_COMPOUND_TEF,
 };

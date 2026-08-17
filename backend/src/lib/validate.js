@@ -149,37 +149,29 @@ function validateTreatmentBody(body) {
     return null;
 }
 
-// Tope de TEF para el modelo compuesto (ver frequencyModel en lib/simulation.js). El compuesto
-// sortea una magnitud por CADA evento del año, así que el trabajo crece linealmente con el TEF:
-// arriba de este número una sola petición mantendría el event loop ocupado varios segundos, igual
-// que el caso que motivó MAX_ITERATIONS.
-//
-// No se pierde nada por rechazarlo: medido sobre el motor real, a 500 eventos/año los dos modelos
-// ya coinciden (ALE −0,1%) porque con esa frecuencia nunca hay un año en cero y la suma de eventos
-// se comporta como su promedio. El modelo compuesto importa donde los eventos son RAROS.
-const MAX_COMPOUND_TEF = 500;
-
 /**
  * Valida el modelo de frecuencia pedido para una corrida Monte Carlo.
+ *
+ * Solo comprueba el NOMBRE. El tope de frecuencia por encima del cual el modelo compuesto no aporta
+ * nada (y sí cuesta tiempo) vive en el motor, que cae solo al modelo de valor esperado y lo reporta
+ * — ver MAX_COMPOUND_TEF en lib/simulation.js. Antes esto devolvía 400 ahí: tenía sentido mientras
+ * el compuesto era una petición explícita y opcional, pero desde que es el default, un riesgo muy
+ * frecuente es un riesgo válido y corriente, no una petición mal formada.
+ *
  * @param {*} frequencyModel
- * @param {{max:number}} tef Rango ya validado — su `max` acota el LEF y por lo tanto el trabajo.
  * @param {string[]} allowed Modelos válidos (FREQUENCY_MODELS de lib/simulation.js)
  * @returns {string|null} mensaje de error, o null si es válido
  */
-function validateFrequencyModel(frequencyModel, tef, allowed) {
+function validateFrequencyModel(frequencyModel, allowed) {
     if (frequencyModel === undefined) return null;
     if (!allowed.includes(frequencyModel)) {
         return `frequencyModel debe ser uno de: ${allowed.join(', ')}.`;
-    }
-    if (frequencyModel === 'compound' && tef && tef.max > MAX_COMPOUND_TEF) {
-        return `El modelo compuesto no admite un TEF máximo mayor a ${MAX_COMPOUND_TEF} eventos/año. A esa frecuencia ambos modelos dan el mismo resultado, así que usa el modelo por defecto.`;
     }
     return null;
 }
 
 module.exports = {
     MAX_ITERATIONS,
-    MAX_COMPOUND_TEF,
     isFiniteNumber,
     validateFrequencyModel,
     validateTriangularRange,

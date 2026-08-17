@@ -387,7 +387,7 @@ function createRegisterRouter(store) {
                 lossExceedanceCurve = null,
                 inherentLossExceedanceCurve = null,
                 // Sello del modelo de Vulnerabilidad con el que se calculó este riesgo (ver
-                // VULNERABILITY_CALIBRATION_VERSION en lib/autocalc.js). Llega desde la respuesta
+                // CALIBRATION_VERSION en lib/autocalc.js). Llega desde la respuesta
                 // de POST /api/simulate, vía el frontend. `null` = guardado antes de que existiera
                 // el sello, es decir, con la calibración vieja.
                 calibrationVersion = null,

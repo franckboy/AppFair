@@ -160,6 +160,11 @@ function simulatePortfolio(
     const lossesByRisk = new Map();
     const lefByRisk = new Map();
     const magnitudeByRisk = new Map();
+    // Cuántos eventos trajo cada año — lo necesita el adelgazamiento de la cascada para saber si
+    // "quitar el 30% de las ocurrencias" significa tirar una moneda (un año de UN evento) o
+    // multiplicar por 0,7 (un año de veinte). Es null con el modelo de valor esperado, donde la
+    // pregunta no tiene respuesta.
+    const eventCountByRisk = new Map();
 
     usable.forEach((risk, index) => {
         // Semilla derivada por posición: reproducible, y distinta para cada riesgo (con la misma
@@ -178,7 +183,7 @@ function simulatePortfolio(
         // prevención aparte al adoptar la decisión; queda anotado, no resuelto.
         const k = scaleOf(risk);
         const baseSampler = buildVulnSampler(risk);
-        const { annualLosses, lefSamples, magnitudeSamples } = runMonteCarloSimulation({
+        const { annualLosses, lefSamples, magnitudeSamples, eventCounts } = runMonteCarloSimulation({
             iterations,
             seed: seed + index * 7919,
             tef: risk.tef,
@@ -192,6 +197,7 @@ function simulatePortfolio(
             lossesByRisk.set(risk.riskName, annualLosses);
             lefByRisk.set(risk.riskName, lefSamples);
             magnitudeByRisk.set(risk.riskName, magnitudeSamples);
+            eventCountByRisk.set(risk.riskName, eventCounts);
         }
     });
 
@@ -271,9 +277,30 @@ function simulatePortfolio(
             if (share > 1) overCoupledRiskNames.push(risk.riskName);
             const espontanea = Math.max(0, 1 - share);
 
+            // Adelgazar un proceso de ocurrencias es quedarse con CADA evento con probabilidad
+            // `espontanea` — no multiplicar la cifra del año por esa fracción. La diferencia es la
+            // misma que motivó el modelo compuesto: un año con UN evento adelgazado al 30% no
+            // cuesta el 30% de un incendio, cuesta un incendio el 30% de las veces y cero el resto.
+            // Multiplicar inventaba años imposibles y, de paso, aplanaba la cola justo donde la
+            // cascada debía engordarla.
+            //
+            // Con muchos eventos en el año las dos cosas convergen (la fracción que sobrevive
+            // tiende a `espontanea`), así que arriba de este número se multiplica y ya — sortear
+            // cientos de Bernoullis por año no cambiaría el resultado y sí el tiempo.
+            const MAX_BERNOULLIS = 30;
+            const conteos = eventCountByRisk.get(risk.riskName);
             const magnitudes = magnitudeByRisk.get(risk.riskName);
             for (let i = 0; i < iterations; i++) {
-                coupledLosses[i] += espontanea * propias[i];
+                const n = conteos ? conteos[i] : 0;
+                if (conteos && n > 0 && n <= MAX_BERNOULLIS) {
+                    let sobreviven = 0;
+                    for (let j = 0; j < n; j++) if (cascadeRng() < espontanea) sobreviven++;
+                    coupledLosses[i] += (sobreviven / n) * propias[i];
+                } else {
+                    // Sin conteo de eventos (modelo de valor esperado, donde el año trae una
+                    // fracción continua de evento) o con demasiados: multiplicar es lo correcto.
+                    coupledLosses[i] += espontanea * propias[i];
+                }
                 if (marca[i]) {
                     coupledLosses[i] += magnitudes[i];
                     inducedLoss += magnitudes[i];
