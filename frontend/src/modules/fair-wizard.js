@@ -421,9 +421,14 @@ export const FairWizard = {
         // Los elementos ya quedaron pintados por la simulación que se acaba de correr, así que
         // solo hay que abrir el modal — no se vuelve a simular.
         document.getElementById('fair-goto-dashboard-btn').addEventListener('click', () => {
-            App.FairRegister.openRiskDetailModal(
-                document.getElementById('fair-riskName').value.trim() || 'Detalle del Riesgo',
-            );
+            const nombre = document.getElementById('fair-riskName').value.trim() || 'Detalle del Riesgo';
+            // Si el riesgo ya está en el Registro (el caso normal: simular lo guarda), se abre su
+            // FICHA completa, igual que al hacer clic desde la tabla — una sola forma de ver un
+            // riesgo. Si todavía no está guardado, la ficha no tendría de dónde leer, así que se
+            // cae al detalle suelto con lo que se acaba de simular en pantalla.
+            const guardado = (state.fair.riskRegister || []).some((r) => r.riskName === nombre);
+            if (guardado) App.FairRegister.openRiskCard(nombre, 'resultados');
+            else App.FairRegister.openRiskDetailModal(nombre);
         });
         // Escopado a Paso 2 (TEF/Vulnerabilidad) a propósito: los campos de Magnitud de
         // Pérdida (Paso 3) ya tienen su propio listener en populateLossMagnitudeForms(),

@@ -10,16 +10,18 @@ mal.
 > (contexto, identificación, análisis, evaluación, tratamiento, controles), pero **no prescriben
 > estas cifras ni estas fórmulas**, y la app no debe afirmar lo contrario.
 
-Archivos de referencia:
+**Estado: calibración 5** (modelo compuesto de frecuencia, §7.1). Archivos de referencia:
 
-| Pieza                                              | Archivo                              |
-| -------------------------------------------------- | ------------------------------------ |
-| Calibración, eje de contienda, acceso, re-centrado | `backend/src/lib/autocalc.js`        |
-| Perfiles y bandas de confianza                     | `backend/src/data/profiles.js`       |
-| Monte Carlo, percentiles, curva de excedencia      | `backend/src/lib/simulation.js`      |
-| Frecuencia sugerida                                | `frontend/src/modules/utils.js`      |
-| Equilibrio de Nash (panel aparte)                  | `backend/src/lib/nashEquilibrium.js` |
-| Invariantes ejecutables                            | `backend/test/lib.test.js`           |
+| Pieza                                                  | Archivo                                  |
+| ------------------------------------------------------ | ---------------------------------------- |
+| Calibración, eje de contienda, acceso, re-centrado     | `backend/src/lib/autocalc.js`            |
+| Perfiles y bandas de confianza                         | `backend/src/data/profiles.js`           |
+| Monte Carlo, modelo de frecuencia, curva de excedencia | `backend/src/lib/simulation.js`          |
+| Agregación de portafolio y cascada                     | `backend/src/lib/portfolioSimulation.js` |
+| Residual del Tratamiento                               | `backend/src/lib/autocalc.js`            |
+| Frecuencia sugerida                                    | `frontend/src/modules/utils.js`          |
+| Equilibrio de Nash (panel aparte)                      | `backend/src/lib/nashEquilibrium.js`     |
+| Invariantes ejecutables                                | `backend/test/lib.test.js`               |
 
 ---
 
@@ -334,11 +336,14 @@ Perfil de Defensa ──► ENC ──► × α (Nivel de Acceso) ──► R_ef
                                                           │
               TEF_i ~ BetaPERT ────────────► LEF_i = TEF_i × V_i
                                                           │
-              Magnitud_i ~ Lognormal ──────► Pérdida_i = LEF_i × Magnitud_i
+                                                          │
+              N_i ~ Poisson(LEF_i) ─────────► cuántos eventos ESTE año
+                                                          │
+              Magnitud_i ~ Lognormal ──────► Pérdida_i = Σ_{j=1..N_i} Magnitud_j
                                                           ▼
                         10.000 iteraciones ──► distribución de pérdidas
                                                           ▼
-                            ALE · p90 · CVaR95 · LEC · sensibilidad
+                  ALE · p90 · CVaR95 · LEC · años en cero · sensibilidad
 ```
 
 ### 7.1 Núcleo de la simulación
@@ -348,9 +353,43 @@ para i en 1..10.000:
     tef_i       ~ BetaPERT(tef.min, tef.mode, tef.max, λ=4)
     vuln_i      = sampleVuln(rng)                    # §5.3
     lef_i       = tef_i × vuln_i
-    magnitud_i  = Σ_categorías Lognormal(min, mode, max)
-    pérdida_i   = lef_i × magnitud_i
+    n_i         ~ Poisson(lef_i)                     # cuántos eventos ESTE año
+    pérdida_i   = Σ_{j=1..n_i} Σ_categorías Lognormal(min, mode, max)
 ```
+
+**Modelo COMPUESTO de frecuencia** (colectivo de riesgo clásico), default desde la calibración 5.
+El modelo anterior calculaba `pérdida_i = lef_i × magnitud_i`: repartía la frecuencia como una
+fracción continua de evento en TODOS los años por igual. Con `LEF = 0,1` afirmaba que cada año se
+pierde la décima parte de un incendio — algo que no le pasa a nadie: o hay incendio, o no lo hay.
+
+No era un híbrido inocente. Ya había promediado la variabilidad del **conteo** pero conservaba
+entera la de la **magnitud**, y de ahí salían dos errores en direcciones **opuestas**:
+
+- Donde los eventos son **raros**, la variabilidad del conteo _es_ todo el riesgo —0 contra 1 evento
+  es la diferencia entera— y la había borrado.
+- Donde son **frecuentes**, la suma de ~20 eventos se promedia sola y su dispersión relativa cae;
+  pero `20 × M` conserva la dispersión completa de UN evento: inventaba incertidumbre.
+
+El ALE **se conserva al cambiar de modelo, por construcción** (`E[N]×E[M] = LEF×E[M]`), así que este
+cambio NO reabre las ocho anclas de §6. Lo que cambia es la COLA. Medido con la misma semilla:
+
+| Régimen                  | ALE      | CVaR95     | Años en cero |
+| ------------------------ | -------- | ---------- | ------------ |
+| raro-severo (LEF 0,05)   | −0,5 %\* | **× 4,8**  | 95 %         |
+| anual (LEF 1)            | −1,7 %   | × 1,25     | 36 %         |
+| frecuente-menor (LEF 20) | +0,4 %   | **× 0,63** | 0 %          |
+| muy frecuente (LEF 475)  | −0,1 %   | × 0,72     | 0 %          |
+
+\* promedio sobre 40 semillas; en una sola corrida es ruido de muestreo.
+
+Se puede comparar sobre datos propios en `POST /api/simulate/frequency-models`, que corre ambos con
+la **misma semilla** para que la diferencia sea el modelo y no el azar.
+
+**Tope de frecuencia.** Por encima de `tef.max = 500` el compuesto cae solo al modelo anterior y lo
+reporta en `frequencyModel`. No es modelado: a esa frecuencia los dos modelos ya coinciden (ALE
+−0,1 %) y el compuesto solo costaría tiempo, porque sortea una magnitud por CADA evento. Es una
+caída silenciosa a propósito — desde que el compuesto es el default, un riesgo muy frecuente es un
+riesgo válido y corriente, no una petición mal formada.
 
 - **TEF y Vulnerabilidad → Beta-PERT (λ = 4)**, no triangular: PERT da 4× más peso al valor "más
   probable" que a los extremos, que es lo que un experto quiere decir al dar tres números.
@@ -384,15 +423,36 @@ baja frecuencia y alto impacto.
 
 ### 7.3 Métricas de salida
 
-| Métrica          | Definición                                                                                                           |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------- |
-| **ALE**          | Media aritmética de las 10.000 pérdidas anuales                                                                      |
-| **p90**          | `sorted[floor(n × 0,9)]`                                                                                             |
-| **CVaR95**       | **Media del peor 5 %** de las pérdidas. **No es un percentil** — por eso vale más que uno para dimensionar cobertura |
-| **LEC**          | Curva de excedencia: pérdida asociada a cada una de **34 probabilidades** entre 100 % y 0,1 %                        |
-| **Sensibilidad** | Correlación de **Pearson** entre cada variable de entrada y la pérdida simulada                                      |
+| Métrica          | Definición                                                                                                                                                                      |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **ALE**          | Media aritmética de las 10.000 pérdidas anuales                                                                                                                                 |
+| **p90**          | `sorted[floor(n × 0,9)]`                                                                                                                                                        |
+| **CVaR95**       | **Media del peor 5 %** de las pérdidas. **No es un percentil** — por eso vale más que uno para dimensionar cobertura                                                            |
+| **LEC**          | Curva de excedencia: pérdida asociada a cada una de **34 probabilidades** entre 100 % y 0,1 %, con la probabilidad **recalculada empíricamente** sobre las pérdidas (ver abajo) |
+| **Años en cero** | `zeroLossYearsPercent`: qué % de los años simulados no registró ningún evento                                                                                                   |
+| **Sensibilidad** | Correlación de **Spearman** (rangos) entre cada variable de entrada y la pérdida simulada                                                                                       |
 
 > **No existe `p95` en la salida.** Las métricas de cola son p90, CVaR95 y la LEC completa.
+
+**Por qué la LEC recalcula su probabilidad.** La curva se arma buscando, para cada probabilidad de
+la escalera, el cuantil correspondiente. Con una distribución continua la etiqueta y la realidad
+coinciden; en cuanto hay **empates**, el cuantil deja de ser inyectivo y la etiqueta miente. Con el
+modelo compuesto, un riesgo raro tiene el 95 % de sus años en `$0` exacto, así que los puntos de
+100 %, 99 %, 98 %… caían todos en `$0` y afirmaban _"100 % de probabilidad de perder más de \$0"_
+cuando la respuesta real es 5 %. Esa curva alimenta el eje Y de la Matriz de Riesgos y el punto
+residual, así que el error no se quedaba en el dibujo.
+
+**Por qué Spearman y no Pearson.** El modelo no es lineal y Pearson solo mide relación lineal:
+Tullock con `m = 6,8254` es fuertemente convexo y la Magnitud es lognormal de cola pesada, así que
+unos pocos sorteos enormes dominaban la covarianza y aplastaban el peso aparente de los demás
+factores. Medido sobre el modelo real, Pearson subestimaba Frecuencia y Vulnerabilidad **a la
+mitad** (0,244 vs 0,367 y 0,323 vs 0,496). Spearman es robusto a cualquier relación monótona, que
+es exactamente el caso.
+
+**El P90 en `$0` es una respuesta, no un error.** En un riesgo raro, el p90 y a veces la mediana
+salen en cero, porque nueve de cada diez años no traen ningún evento. Es justo lo que el modelo
+anterior escondía. La interfaz lo acompaña siempre de `zeroLossYearsPercent` — un `$0` a secas se
+lee como si la app estuviera rota.
 
 ---
 
@@ -455,32 +515,70 @@ correlaciones ajustada ni cópula: son las aristas dibujadas por el usuario, con
 para i en 1..10.000:
     activos = padres con  U(0,1) < 1 − e^(−LEF_i)      # ocurrió este año
     alcanzados = walkMarkovChain(activos, aristas)      # a quién arrastran
-    para cada alcanzado que NO sea un padre activo:
-        portfolioLosses[i] += magnitud_i
+
+para cada riesgo del portafolio:
+    tasa_inducida = veces que un padre lo arrastró / 10.000
+    tasa_propia   = LEF medio declarado
+    share         = tasa_inducida / tasa_propia         # qué fracción EXPLICA la cascada
+    espontánea    = max(0, 1 − share)
+
+    para i en 1..10.000:
+        sobreviven = Binomial(n_i, espontánea)          # adelgazado de eventos, §7.1
+        coupled[i] += (sobreviven / n_i) × propias[i]
+        si fue arrastrado este año:  coupled[i] += magnitud_i
 ```
 
-**Dos reglas que no son negociables:**
+**Tres reglas que no son negociables:**
 
 1. **Se SUMA sobre la base independiente, nunca la reemplaza.** Un portafolio sin dependencias
    declaradas da **exactamente** los mismos números que antes de existir esta capa — verificado con
    igualdad estricta y fijado con un test. Conectar la cascada no reescribe ninguna evaluación
    existente en silencio.
-2. **Un descendiente arrastrado aporta solo su MAGNITUD**, no `LEF × Magnitud`. Misma regla que ya
-   sigue `cascadeSimulation.js`: la compuerta de cascada ya decidió "ocurrió este año", y volver a
-   multiplicar por su `lef_i` descontaría la frecuencia dos veces. Para un riesgo raro pero severo
-   —el perfil típico de un riesgo patrimonial— ese doble descuento subestima el aporte en órdenes de
-   magnitud.
 
-Efecto medido (5 riesgos, 3 aristas):
+2. **La cascada EXPLICA ocurrencias, no las añade.** El TEF capturado es la frecuencia **propia** del
+   riesgo, estimada de datos de incidentes — y esos datos no vienen etiquetados por causa: ya
+   incluyen las veces que el hijo ocurrió _porque_ ocurrió el padre. Sumar la cascada encima contaba
+   esas veces **dos veces**. Con pocas aristas era un detalle; con un árbol denso pasaba a ser el
+   efecto dominante, y peor en los riesgos raros y severos (un hijo de 0,02/año arrastrado por un
+   padre frecuente podía multiplicar su aporte por decenas).
 
-|                              | sin cascada | con cascada |
-| ---------------------------- | ----------- | ----------- |
-| ALE                          | 113.842     | 136.974     |
-| CVaR95                       | 183.902     | **239.418** |
-| Beneficio de diversificación | 113.348     | **57.832**  |
+    Por eso la parte espontánea se **adelgaza** en la proporción que la cascada explica, y se añade la
+    arrastrada. El total esperado de cada riesgo queda igual al declarado —su ALE individual no se
+    mueve y el Registro no cambia— pero esas ocurrencias caen **el mismo año** que las del padre, que
+    es lo que engorda la cola conjunta.
 
-Riesgos acoplados diversifican la mitad. Ese es exactamente el efecto que la independencia no podía
-capturar.
+    Si los padres declarados inducen **más** ocurrencias de las que el hijo dice tener (`share > 1`),
+    los datos se contradicen entre sí. El motor acota la parte espontánea a cero y **lo reporta**
+    (`overCoupledRiskNames`); el Dashboard nombra esos riesgos y da las dos salidas: bajar la
+    probabilidad de esas causas, o subir la frecuencia del riesgo.
+
+3. **Adelgazar es quitar EVENTOS, no multiplicar la cifra del año.** Un año con UN evento adelgazado
+   al 30 % no cuesta el 30 % de un incendio: cuesta un incendio el 30 % de las veces y cero el resto.
+   Multiplicar es la misma falacia del evento fraccionario que el modelo compuesto vino a corregir
+   (§7.1), e inventaba años imposibles a la vez que aplanaba la cola justo donde la cascada debía
+   engordarla. Con muchos eventos en el año las dos cosas convergen, así que arriba de 30 se
+   multiplica y ya.
+
+4. **Un descendiente arrastrado aporta solo su MAGNITUD**, no `LEF × Magnitud`. La compuerta de
+   cascada ya decidió "ocurrió este año", y volver a multiplicar por su `lef_i` descontaría la
+   frecuencia dos veces. Para un riesgo raro pero severo —el perfil típico de un riesgo
+   patrimonial— ese doble descuento subestima el aporte en órdenes de magnitud.
+
+**Efecto medido** (5 riesgos, 3 aristas, mismos riesgos con y sin aristas). El efecto sobre la cola
+depende del **régimen de frecuencia**, y es máximo justo donde las cascadas importan:
+
+| LEF de los riesgos | ALE     | CVaR95      |
+| ------------------ | ------- | ----------- |
+| 0,05               | +0,45 % | **+17,9 %** |
+| 0,2                | −0,29 % | +7,7 %      |
+| 0,5                | −0,14 % | +2,2 %      |
+| 1                  | +0,20 % | +0,7 %      |
+| 3                  | −0,12 % | −0,6 %      |
+
+Tiene sentido: con eventos frecuentes, un año ya trae muchas ocurrencias de cada riesgo y hacer que
+algunas coincidan con el padre cambia poco; con eventos raros, que el año malo sea compartido o no
+**es toda la pregunta**. El ALE no se mueve en ningún régimen, que es la garantía de que la cascada
+reubica pérdida esperada en vez de crearla.
 
 ### 8.4 Qué se muestra
 
@@ -512,19 +610,75 @@ eje.
 
 ### 9.1 Versionado de calibración
 
-`VULNERABILITY_CALIBRATION_VERSION = 4`. Se sube cada vez que cambie `m`, el eje de contienda, el
-piso o los atributos de un perfil.
+`CALIBRATION_VERSION = 5`. Se sube cada vez que cambie algo que mueva los números de una simulación:
+`m`, el eje de contienda, el piso, los atributos de un perfil, o **el modelo de frecuencia del
+motor**.
 
-| Versión | Cambio                                                            |
-| ------- | ----------------------------------------------------------------- |
-| 1       | Tullock `m = 1` sobre el promedio crudo del perfil, sin piso      |
-| 2       | Eje de contienda calibrado con 6 anclas, `m = 6,8254`, piso 0,5 % |
-| 3       | El Nivel de Confianza deja de mover la media                      |
+> Se llamaba `VULNERABILITY_CALIBRATION_VERSION` mientras solo sellaba la calibración de
+> Vulnerabilidad. Desde la versión 5 sella también cómo se convierte la frecuencia en pérdida anual,
+> así que el nombre viejo quedaba corto. El campo persistido siempre se llamó `calibrationVersion`,
+> de modo que el cambio es interno y no toca ningún dato guardado.
+
+| Versión | Cambio                                                                                       |
+| ------- | -------------------------------------------------------------------------------------------- |
+| 1       | Tullock `m = 1` sobre el promedio crudo del perfil, sin piso                                 |
+| 2       | Eje de contienda calibrado con 6 anclas, `m = 6,8254`, piso 0,5 %                            |
+| 3       | El Nivel de Confianza deja de mover la media                                                 |
+| 4       | Los factores α del Nivel de Acceso pasan de juicio directo a despejados por anclas           |
+| 5       | **Modelo compuesto de frecuencia** (§7.1). El ALE de cada riesgo se conserva; cambia la cola |
 
 Cada simulación sella su resultado con esta versión y el Registro la guarda. Los riesgos calculados
 con una versión anterior **no se recalculan solos**: en una herramienta de GRC, sobrescribir en
 silencio la evaluación guardada de un analista destruye la trazabilidad de por qué se decidió lo
 que se decidió. Se marcan con `⟳ Recalibrar` y el analista decide cuáles vuelve a simular.
+
+Existe una **recalibración masiva** como salida explícita a esa regla: la dispara una persona, dice
+antes qué va a cambiar, y la evaluación anterior de cada riesgo pasa a su Historial de Revisiones
+(ISO 31000, 6.6). Añade historia en vez de borrarla. Va por el mismo camino que una re-simulación
+manual (`POST /api/simulate` + `PUT /api/register`), no por un atajo propio, para que no existan dos
+maneras distintas de producir un riesgo actualizado.
+
+### 9.1.1 Residual del Tratamiento
+
+Reducir la Vulnerabilidad y topar el daño por evento son **dos palancas distintas** que producen la
+misma media y colas completamente distintas: prevenir escala la frecuencia, contener trunca cada
+evento. El motor las expone por separado — la Vulnerabilidad por el sampler, y `magnitudeCap` como
+tope **por evento**, aplicado `min(lm_i, cap)` escenario por escenario, nunca sobre el promedio.
+
+**La escala la fija el usuario; la forma, la simulación.** En modo manual, _"reduce mi pérdida anual
+un r %"_ es una **definición**, no un estimado: `residualALE = currentALE × (1 − r/100)`, exacto. Ver
+`$39.847` después de teclear 60 % se lee como un error de la app. Lo que no se puede deducir del
+porcentaje es la cola, así que se corren los mismos inputs **dos veces con la misma semilla** —una
+tal cual y otra con la Vulnerabilidad escalada— y se compara la razón cola/media de cada corrida:
+
+```
+factorDeCola = (CVaR/media)_residual ÷ (CVaR/media)_actual
+residualCVaR = currentCVaR × k × factorDeCola
+```
+
+`factorDeCola` vale **1 exacto** con el modelo de frecuencia anterior y sin tope de daño, así que
+este mecanismo no movió ningún número al introducirse. Se despega de 1 justo donde el escalado
+proporcional deja de ser cierto: **baja** con un tope de daño (medido −51,6 %: la contención aplana
+la cola más que el promedio) y **sube** con el modelo compuesto.
+
+> **Corrección de una conclusión anterior.** Con el modelo de valor esperado, escalar la
+> Vulnerabilidad multiplicaba toda la distribución por una constante y la razón cola/media quedaba
+> **congelada**: de ahí salía la afirmación de que "la prevención no puede cambiar la forma de la
+> cola, solo su tamaño". Era un **artefacto del modelo**, no del mundo. Con el compuesto, prevenir
+> **sube** esa razón: reduce la cantidad de eventos, no lo que cuesta cada uno — hace los malos años
+> más **raros**, no menos malos. Un control que corta la pérdida promedio un 60 % **no** corta el mal
+> año un 60 %. El caso para la contención sale reforzado, no debilitado.
+
+**La Decisión guarda la receta, no solo el resultado.** De un solo número (`residualALE`) no se puede
+reconstruir una distribución: fija la media, nunca la forma. El portafolio reproducía cualquier
+tratamiento como si hubiera sido prevención pura — acertaba el ALE ($43.018 real contra $42.918
+reconstruido) y **casi triplicaba la cola** ($181.141 real contra $517.514). Por eso
+`treatmentDecision.residualInputs` guarda con qué se simuló: `targetDefenseKey` (modo automático,
+para reconstruir el mismo sampler calibrado) o `preventionScale` (modo manual), más `damageCap`.
+
+El tope se **copia** dentro de la decisión en vez de leerse del formulario: si el portafolio leyera
+el campo vivo, editarlo tras adoptar cambiaría la cola mientras `residualALE` sigue congelado, y los
+dos números se contradirían sin avisar.
 
 ### 9.2 Deuda conocida
 
@@ -534,6 +688,10 @@ que se decidió. Se marcan con `⟳ Recalibrar` y el analista decide cuáles vue
   Mantenido a propósito hasta que se pague ese re-ajuste.
 - **La Persistencia se cuenta dos veces** (dentro de FA y en la escalada). Absorbido por la
   calibración; documentado en el código.
+- **Decisiones adoptadas antes de `residualInputs`** no traen receta y el portafolio las reconstruye
+  con el escalado proporcional de siempre: exacto para prevención pura, aproximado si hubo
+  contención. Se resuelve solo al volver a adoptar la estrategia, y ya vienen marcadas con
+  `⟳ Recalibrar` por el salto a la calibración 5.
 - **El tope de 100 se conserva a propósito.** Quitarlo no es un ajuste de un nodo: rompe también
   `organizado vs élite` (15,0 % → 13,7 %), y ese perfil está en el nodo FA=60, no en el superior.
   Como `organizado` tiene dos anclas y un solo nodo, sin el tope ya no caben las dos a la vez —
@@ -592,3 +750,8 @@ Decisiones tomadas con su razón, para que quien retome esto no las revierta por
 | La frecuencia baja con la capacidad                 | La mandan cuántos actores hay y qué tan indiscriminados son, no el empeño de cada uno                                             |
 | Nash fuera de la ruta crítica                       | Sus insumos no son observables                                                                                                    |
 | Los riesgos viejos no se recalculan solos           | Sobrescribir una evaluación guardada destruye la trazabilidad                                                                     |
+| La pérdida del año es una SUMA de eventos           | `LEF × Magnitud` reparte fracciones de evento en todos los años; borra la variabilidad del conteo donde ésa _es_ todo el riesgo   |
+| La cascada explica ocurrencias, no las añade        | El TEF se estima de datos que ya incluyen las veces que un padre lo causó; sumarla encima las cuenta dos veces                    |
+| Adelgazar la cascada quita eventos, no escala       | Escalar la cifra del año inventa años que cuestan una fracción de incendio — la misma falacia que el modelo compuesto corrige     |
+| La LEC recalcula su probabilidad empíricamente      | Con empates, la etiqueta de la escalera miente; y esa curva alimenta el eje Y de la Matriz                                        |
+| El residual guarda su receta, no solo su resultado  | Un número fija la media, nunca la forma: prevenir y contener dan la misma media y colas al triple                                 |
