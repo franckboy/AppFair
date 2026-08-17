@@ -77,9 +77,8 @@ const ATTACKER_CONTEST_CALIBRATION = [
  * @param {number} profileScore Promedio del Perfil de Atacante, 0-100.
  * @returns {number} Fuerza en el eje de contienda. NO es un porcentaje y puede pasar de 100.
  */
-function attackerContestStrength(profileScore) {
+function attackerContestStrength(profileScore, nodes = ATTACKER_CONTEST_CALIBRATION) {
     const score = Math.max(0, profileScore);
-    const nodes = ATTACKER_CONTEST_CALIBRATION;
     for (let i = 1; i < nodes.length; i++) {
         if (score <= nodes[i].profileScore) {
             const prev = nodes[i - 1];
@@ -292,8 +291,11 @@ function confidenceMeanCorrection(contestStrength, defenseScore, persistence, co
     return factor;
 }
 
-function buildContestTriangles(attackerProfile, defenseProfile, confidence, accessLevel) {
-    const rawStrength = attackerContestStrength(calculateProfileAverage(attackerProfile));
+function buildContestTriangles(attackerProfile, defenseProfile, confidence, accessLevel, calib = {}) {
+    const rawStrength = attackerContestStrength(
+        calculateProfileAverage(attackerProfile),
+        calib.contestNodes || ATTACKER_CONTEST_CALIBRATION,
+    );
     // El alfa de acceso se aplica ANTES de abrir el triángulo (y antes del tope de 100), para que
     // la banda de incertidumbre se abra alrededor de la Resistencia que de verdad se interpone.
     const defenseScore = calculateProfileAverage(defenseProfile) * getAccessAlpha(accessLevel);
@@ -317,7 +319,7 @@ function buildContestTriangles(attackerProfile, defenseProfile, confidence, acce
  * escalada por persistencia y devuelve la probabilidad de éxito de Tullock con el piso.
  * Compartida por el sampler y por el muestreo pareado, para que no puedan divergir.
  */
-function resolveContest(tcapSample, rsSample, persistence, escalationRoll, escalationAmount) {
+function resolveContest(tcapSample, rsSample, persistence, escalationRoll, escalationAmount, m = TULLOCK_M) {
     // Escalada NO determinista: si la defensa va ganando ESTA iteración, un atacante persistente
     // tiene una probabilidad (proporcional a su PROPIA Persistencia, nunca a nada de la defensa)
     // de escalar su sofisticación en vez de desistir — un desafío que lo motiva más, no lo
@@ -328,7 +330,7 @@ function resolveContest(tcapSample, rsSample, persistence, escalationRoll, escal
     if (rsSample > tcapSample && escalationRoll < persistence / 100) {
         effectiveTcap = tcapSample * (1 + escalationAmount * MAX_ESCALATION);
     }
-    return Math.max(VULNERABILITY_FLOOR, tullockSuccessProbability(effectiveTcap, rsSample));
+    return Math.max(VULNERABILITY_FLOOR, tullockSuccessProbability(effectiveTcap, rsSample, m));
 }
 
 /**
@@ -354,13 +356,20 @@ function resolveContest(tcapSample, rsSample, persistence, escalationRoll, escal
  * @param {'alto'|'medio'|'bajo'} confidence
  * @returns {(rng: () => number) => number} Sampler que devuelve un decimal en [0,1] por llamada.
  */
-function sampleVulnerabilityFromProfiles(attackerProfile, defenseProfile, confidence, accessLevel) {
-    const { tcap, rs, persistence } = buildContestTriangles(attackerProfile, defenseProfile, confidence, accessLevel);
+function sampleVulnerabilityFromProfiles(attackerProfile, defenseProfile, confidence, accessLevel, calib = {}) {
+    const { tcap, rs, persistence } = buildContestTriangles(
+        attackerProfile,
+        defenseProfile,
+        confidence,
+        accessLevel,
+        calib,
+    );
+    const m = calib.m ?? TULLOCK_M;
 
     return (rng) => {
         const tcapSample = getPertRandom(tcap.min, tcap.mode, tcap.max, 4, rng);
         const rsSample = getPertRandom(rs.min, rs.mode, rs.max, 4, rng);
-        return resolveContest(tcapSample, rsSample, persistence, rng(), rng());
+        return resolveContest(tcapSample, rsSample, persistence, rng(), rng(), m);
     };
 }
 
