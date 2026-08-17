@@ -455,6 +455,110 @@ test('POST /api/simulate/evaluate sin ale/cvar95 numéricos responde 400', async
     assert.strictEqual(res.status, 400);
 });
 
+// --- Modelo de frecuencia (POST /api/simulate + POST /api/simulate/frequency-models) ---
+
+const RIESGO_RARO_SEVERO_HTTP = {
+    iterations: 10000,
+    seed: 42,
+    tef: { min: 0.05, mode: 0.1, max: 0.3 },
+    vuln: { min: 20, mode: 40, max: 70 },
+    lossMagnitudes: {
+        productividad: { min: 1000, mode: 5000, max: 20000 },
+        respuesta: { min: 5000, mode: 50000, max: 400000 },
+    },
+};
+
+test('POST /api/simulate informa siempre con qué modelo de frecuencia calculó, y el default sigue siendo "expected"', async () => {
+    const res = await request(app).post('/api/simulate').set('X-API-Key', TEST_API_KEY).send(RIESGO_RARO_SEVERO_HTTP);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.frequencyModel, 'expected');
+});
+
+test('POST /api/simulate con frequencyModel "compound" devuelve el mismo ALE pero una cola distinta', async () => {
+    const actual = await request(app)
+        .post('/api/simulate')
+        .set('X-API-Key', TEST_API_KEY)
+        .send(RIESGO_RARO_SEVERO_HTTP);
+    const compuesto = await request(app)
+        .post('/api/simulate')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ...RIESGO_RARO_SEVERO_HTTP, frequencyModel: 'compound' });
+
+    assert.strictEqual(compuesto.status, 200);
+    assert.strictEqual(compuesto.body.frequencyModel, 'compound');
+    assert.ok(compuesto.body.summary.cvar95 > actual.body.summary.cvar95 * 2);
+    // El P90 se va a cero: nueve de cada diez años no traen ningún evento.
+    assert.strictEqual(compuesto.body.summary.p90, 0);
+});
+
+test('POST /api/simulate rechaza un frequencyModel desconocido con 400', async () => {
+    const res = await request(app)
+        .post('/api/simulate')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ...RIESGO_RARO_SEVERO_HTTP, frequencyModel: 'poisson' });
+    assert.strictEqual(res.status, 400);
+    assert.match(res.body.error, /frequencyModel/);
+});
+
+test('POST /api/simulate rechaza el modelo compuesto con un TEF absurdo (protege el event loop, igual que MAX_ITERATIONS)', async () => {
+    const res = await request(app)
+        .post('/api/simulate')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ...RIESGO_RARO_SEVERO_HTTP, tef: { min: 600, mode: 700, max: 800 }, frequencyModel: 'compound' });
+    assert.strictEqual(res.status, 400);
+    // El MISMO TEF con el modelo por defecto sí se acepta: el límite es del compuesto, no del TEF.
+    const conDefault = await request(app)
+        .post('/api/simulate')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ...RIESGO_RARO_SEVERO_HTTP, tef: { min: 600, mode: 700, max: 800 } });
+    assert.strictEqual(conDefault.status, 200);
+});
+
+test('POST /api/simulate/frequency-models corre los dos modelos con la MISMA semilla y devuelve ambos lado a lado', async () => {
+    const res = await request(app)
+        .post('/api/simulate/frequency-models')
+        .set('X-API-Key', TEST_API_KEY)
+        .send(RIESGO_RARO_SEVERO_HTTP);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.usedSeed, 42);
+
+    const { expected, compound } = res.body.models;
+    // La comparación es pareada, así que la diferencia que se ve es el modelo, no el muestreo.
+    assert.ok(Math.abs(res.body.delta.alePercent) < 10, `el ALE se movió ${res.body.delta.alePercent}%`);
+    assert.ok(res.body.delta.cvar95Percent > 100, 'la cola del raro-severo debe crecer bastante');
+    assert.ok(expected.lossExceedanceCurve.length > 0 && compound.lossExceedanceCurve.length > 0);
+
+    // La lectura que el modelo actual no puede dar: cuántos años trajeron 0, 1, 2... eventos.
+    assert.ok(compound.zeroLossYearsPercent > 90);
+    assert.ok(compound.maxEventsInAYear >= 2);
+    const totalAños = compound.eventCountDistribution.reduce((acc, d) => acc + d.years, 0);
+    assert.strictEqual(totalAños, 10000);
+    assert.deepStrictEqual(
+        compound.eventCountDistribution.map((d) => d.events),
+        compound.eventCountDistribution.map((_, i) => i),
+    );
+});
+
+test('POST /api/simulate/frequency-models con la misma semilla explícita es reproducible', async () => {
+    const uno = await request(app)
+        .post('/api/simulate/frequency-models')
+        .set('X-API-Key', TEST_API_KEY)
+        .send(RIESGO_RARO_SEVERO_HTTP);
+    const dos = await request(app)
+        .post('/api/simulate/frequency-models')
+        .set('X-API-Key', TEST_API_KEY)
+        .send(RIESGO_RARO_SEVERO_HTTP);
+    assert.deepStrictEqual(uno.body.models, dos.body.models);
+});
+
+test('POST /api/simulate/frequency-models valida el body igual que /api/simulate', async () => {
+    const res = await request(app)
+        .post('/api/simulate/frequency-models')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ...RIESGO_RARO_SEVERO_HTTP, tef: { min: 5, mode: 1, max: 2 } });
+    assert.strictEqual(res.status, 400);
+});
+
 test('PUT /api/config/org-defaults guarda solo los campos enviados, conserva el resto', async () => {
     const putRes = await request(app)
         .put('/api/config/org-defaults')

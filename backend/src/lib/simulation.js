@@ -1,8 +1,18 @@
 'use strict';
 
-const { mulberry32, getPertRandom, getLognormalRandom } = require('./random');
+const { mulberry32, getPertRandom, magnitudeParams, sampleMagnitude, getPoissonRandom } = require('./random');
 const { lossFormsKeys, lossFormsLabels } = require('../data/profiles');
 const { sampleCorrelation } = require('simple-statistics');
+
+const FREQUENCY_MODELS = ['expected', 'compound'];
+
+// Tope duro de eventos simulados en UN año, solo en el modelo compuesto — mismo motivo que
+// MAX_ITERATIONS en lib/validate.js: sin él, un `tef` enorme haría que el motor sorteara una
+// magnitud por evento millones de veces de forma síncrona y bloqueara el event loop. No es un
+// parámetro de modelado: la ruta ya rechaza antes los TEF absurdos (ver MAX_COMPOUND_TEF), así que
+// este límite queda como red de seguridad para llamadas directas a la librería, muy por encima de
+// cualquier frecuencia que alguien vaya a estimar a mano.
+const MAX_EVENTS_PER_ITERATION = 5000;
 
 /**
  * Corre la simulación Monte Carlo completa de un riesgo FAIR. TEF y Vulnerabilidad se
@@ -43,9 +53,35 @@ const { sampleCorrelation } = require('simple-statistics');
  *        duela menos cuando pase".
  *
  *        Sin tope (por defecto) el comportamiento es idéntico bit a bit al de antes.
- * @returns {{annualLosses:number[], usedSeed:number, sensitivity:Array, lefSamples:number[], magnitudeSamples:number[]}}
+ * @param {'expected'|'compound'} [params.frequencyModel='expected'] Cómo se convierte la frecuencia
+ *        (LEF, eventos por año) en la pérdida del año.
+ *
+ *        'expected' (por defecto, el modelo de siempre): `pérdida = LEF × Magnitud`. Reparte la
+ *        frecuencia como una fracción continua de evento en TODOS los años por igual. Con LEF=0,1
+ *        (una vez cada diez años) afirma que cada año se pierde la décima parte de un incendio —
+ *        algo que no le pasa a nadie: o hay incendio, o no lo hay. El promedio (ALE) sale bien; la
+ *        forma de la distribución, no.
+ *
+ *        'compound' (modelo compuesto, colectivo de riesgo clásico): `N ~ Poisson(LEF)` eventos ese
+ *        año, y la pérdida es la SUMA de N magnitudes independientes. Aparecen los años en cero
+ *        (los más frecuentes cuando LEF < 1) y los años con dos o tres eventos encimados. El ALE se
+ *        conserva por construcción (E[N]×E[M] = LEF×E[M], la misma cifra que 'expected'); lo que
+ *        cambia es la COLA, que es justamente lo que se mira para decidir.
+ *
+ *        Se pide por corrida a propósito, para poder comparar ambos sobre los mismos datos con la
+ *        misma semilla antes de decidir cuál debe ser el default (ver POST /api/simulate/comparar-frecuencia).
+ * @returns {{annualLosses:number[], usedSeed:number, sensitivity:Array, lefSamples:number[], magnitudeSamples:number[], eventCounts:number[]|null, frequencyModel:string}}
  */
-function runMonteCarloSimulation({ iterations, seed, tef, vuln, lossMagnitudes, sampleVuln, magnitudeCap }) {
+function runMonteCarloSimulation({
+    iterations,
+    seed,
+    tef,
+    vuln,
+    lossMagnitudes,
+    sampleVuln,
+    magnitudeCap,
+    frequencyModel = 'expected',
+}) {
     const usedSeed = seed && seed > 0 ? seed : Math.floor(Math.random() * 2147483647);
     const rng = mulberry32(usedSeed);
 
@@ -56,8 +92,16 @@ function runMonteCarloSimulation({ iterations, seed, tef, vuln, lossMagnitudes, 
     // (que significaría que ningún evento cuesta nada).
     const aplicaTope = typeof magnitudeCap === 'number' && Number.isFinite(magnitudeCap) && magnitudeCap > 0;
 
+    const compuesto = frequencyModel === 'compound';
+
     const activeKeys = lossFormsKeys.filter((key) => lossMagnitudes[key]);
-    const lmInputs = activeKeys.map((key) => lossMagnitudes[key]);
+    // Los parámetros de cada Magnitud se resuelven UNA vez (ver magnitudeParams en random.js) en vez
+    // de reconstruirse en cada muestra. Resultado idéntico bit a bit, 18x más rápido — y sin esto el
+    // modelo compuesto sería inviable, porque sortea una magnitud por evento y no una por año.
+    const lmParams = activeKeys.map((key) => {
+        const { min, mode, max } = lossMagnitudes[key];
+        return magnitudeParams(min, mode, max);
+    });
 
     const annualLosses = new Array(iterations);
     const tefSamples = new Array(iterations);
@@ -76,6 +120,12 @@ function runMonteCarloSimulation({ iterations, seed, tef, vuln, lossMagnitudes, 
     // para decidir si el evento ocurrió y otra dentro del monto sumado). No cambia ningún
     // resultado existente.
     const magnitudeSamples = new Array(iterations);
+    // Cuántos eventos ocurrieron cada año — solo existe en el modelo compuesto (en 'expected' la
+    // pregunta no tiene respuesta: ahí un año siempre trae "LEF eventos", con decimales).
+    const eventCounts = compuesto ? new Array(iterations) : null;
+    // En 'expected' es el valor de la categoría en EL evento; en 'compound' es el total ANUAL de esa
+    // categoría (la suma sobre los N eventos del año, 0 si no hubo ninguno). En ambos casos es "lo
+    // que aportó esta categoría a la cifra del año", que es lo que el Análisis de Sensibilidad mide.
     const lmSamples = activeKeys.map(() => new Array(iterations));
 
     for (let i = 0; i < iterations; i++) {
@@ -83,9 +133,13 @@ function runMonteCarloSimulation({ iterations, seed, tef, vuln, lossMagnitudes, 
         const vuln_i = drawVuln(rng);
         const lef_i = tef_i * vuln_i;
 
+        // La magnitud de UN evento se sortea siempre, en los dos modelos: en 'expected' es el
+        // multiplicando de la fórmula, y en 'compound' es el primer evento del año (o, si el año
+        // sale en cero, la magnitud "representativa" que magnitudeSamples debe exponer de todos
+        // modos — cascadeSimulation.js la necesita para cuando un padre arrastra a este riesgo).
         let lm_i = 0;
-        lmInputs.forEach((input, idx) => {
-            const val = getLognormalRandom(input.min, input.mode, input.max, rng);
+        lmParams.forEach((params, idx) => {
+            const val = sampleMagnitude(params, rng);
             lmSamples[idx][i] = val;
             lm_i += val;
         });
@@ -100,12 +154,48 @@ function runMonteCarloSimulation({ iterations, seed, tef, vuln, lossMagnitudes, 
         vulnSamples[i] = vuln_i;
         lefSamples[i] = lef_i;
         magnitudeSamples[i] = lm_i;
-        annualLosses[i] = lef_i * lm_i;
+
+        if (!compuesto) {
+            annualLosses[i] = lef_i * lm_i;
+            continue;
+        }
+
+        const n_i = Math.min(getPoissonRandom(lef_i, rng), MAX_EVENTS_PER_ITERATION);
+        eventCounts[i] = n_i;
+
+        if (n_i === 0) {
+            // El sorteo de arriba fue solo el evento representativo: este año no pasó nada, así que
+            // ninguna categoría aportó al total anual.
+            for (let idx = 0; idx < lmParams.length; idx++) lmSamples[idx][i] = 0;
+            annualLosses[i] = 0;
+            continue;
+        }
+
+        let anual = lm_i; // el evento ya sorteado cuenta como el primero del año
+        for (let j = 1; j < n_i; j++) {
+            let evento = 0;
+            for (let idx = 0; idx < lmParams.length; idx++) {
+                const val = sampleMagnitude(lmParams[idx], rng);
+                lmSamples[idx][i] += val;
+                evento += val;
+            }
+            if (aplicaTope && evento > magnitudeCap) evento = magnitudeCap;
+            anual += evento;
+        }
+        annualLosses[i] = anual;
     }
 
     const sensitivity = calculateSensitivity(annualLosses, tefSamples, vulnSamples, lmSamples, activeKeys);
 
-    return { annualLosses, usedSeed, sensitivity, lefSamples, magnitudeSamples };
+    return {
+        annualLosses,
+        usedSeed,
+        sensitivity,
+        lefSamples,
+        magnitudeSamples,
+        eventCounts,
+        frequencyModel: compuesto ? 'compound' : 'expected',
+    };
 }
 
 /**
@@ -297,4 +387,6 @@ module.exports = {
     spearmanCorrelation,
     buildLossExceedanceCurve,
     LEC_EXCEEDANCE_PROBABILITIES,
+    FREQUENCY_MODELS,
+    MAX_EVENTS_PER_ITERATION,
 };

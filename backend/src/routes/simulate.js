@@ -1,7 +1,12 @@
 'use strict';
 
 const express = require('express');
-const { runMonteCarloSimulation, summarizeLosses, buildLossExceedanceCurve } = require('../lib/simulation');
+const {
+    runMonteCarloSimulation,
+    summarizeLosses,
+    buildLossExceedanceCurve,
+    FREQUENCY_MODELS,
+} = require('../lib/simulation');
 const { evaluateFairThreat, evaluateFairOpportunity } = require('../lib/evaluation');
 const {
     sampleVulnerabilityFromProfiles,
@@ -15,6 +20,7 @@ const {
     validateIterations,
     validateSeed,
     validateLossMagnitudes,
+    validateFrequencyModel,
 } = require('../lib/validate');
 const { asyncHandler } = require('../middleware/asyncHandler');
 
@@ -29,6 +35,53 @@ function makeCurrencyFormatter() {
         maximumFractionDigits: 0,
     });
     return (value) => fmt.format(value);
+}
+
+/**
+ * Validación compartida de los inputs de una corrida Monte Carlo, más la resolución del muestreo
+ * de Vulnerabilidad por perfiles. La usan POST /api/simulate y POST /api/simulate/frequency-models,
+ * que reciben exactamente el mismo body (el segundo solo lo corre dos veces, una por modelo).
+ * @returns {{error: string}|{sampleVuln: Function|undefined}}
+ */
+function validateSimulationInputs(body) {
+    const {
+        iterations = 10000,
+        seed = 0,
+        tef,
+        vuln,
+        attackerKey,
+        defenseKey,
+        confidence = 'medio',
+        accessLevel,
+        vulnManualOverride = false,
+        lossMagnitudes = {},
+        frequencyModel,
+    } = body;
+
+    const error =
+        validateIterations(iterations) ||
+        validateSeed(seed) ||
+        validateTriangularRange(tef, 'tef') ||
+        validateTriangularRange(vuln, 'vuln', { min: 0, max: 100 }) ||
+        validateLossMagnitudes(lossMagnitudes, lossFormsKeys) ||
+        validateFrequencyModel(frequencyModel, tef, FREQUENCY_MODELS);
+    if (error) return { error };
+
+    // Si vienen attackerKey/defenseKey, deben ser válidos (400 si no) — a diferencia de
+    // cuando faltan del todo (undefined), que es el caso normal de retrocompatibilidad y
+    // simplemente cae al camino legado, esto es un error real del cliente.
+    let sampleVuln;
+    if (attackerKey !== undefined || defenseKey !== undefined) {
+        const attackerProfile = attackerProfiles[attackerKey];
+        const defenseProfile = defenseProfiles[defenseKey];
+        if (!attackerProfile || !defenseProfile) {
+            return { error: 'attackerKey o defenseKey inválido.' };
+        }
+        if (!vulnManualOverride) {
+            sampleVuln = sampleVulnerabilityFromProfiles(attackerProfile, defenseProfile, confidence, accessLevel);
+        }
+    }
+    return { sampleVuln };
 }
 
 function createSimulateRouter(store) {
@@ -68,52 +121,15 @@ function createSimulateRouter(store) {
                 seed = 0,
                 tef,
                 vuln,
-                attackerKey,
-                defenseKey,
-                confidence = 'medio',
-                // Nivel de Acceso / Proximidad del riesgo (ver ACCESS_LEVELS en lib/autocalc.js) —
-                // modula la Fuerza de Resistencia. Ausente = 'nulo', que es un no-op exacto.
-                accessLevel,
-                vulnManualOverride = false,
                 lossMagnitudes = {},
                 riskType = 'amenaza',
                 riskCriteria,
+                frequencyModel,
             } = req.body;
 
-            const iterationsError = validateIterations(iterations);
-            if (iterationsError) return res.status(400).json({ error: iterationsError });
-
-            const seedError = validateSeed(seed);
-            if (seedError) return res.status(400).json({ error: seedError });
-
-            const tefError = validateTriangularRange(tef, 'tef');
-            if (tefError) return res.status(400).json({ error: tefError });
-
-            const vulnError = validateTriangularRange(vuln, 'vuln', { min: 0, max: 100 });
-            if (vulnError) return res.status(400).json({ error: vulnError });
-
-            const lossMagnitudesError = validateLossMagnitudes(lossMagnitudes, lossFormsKeys);
-            if (lossMagnitudesError) return res.status(400).json({ error: lossMagnitudesError });
-
-            // Si vienen attackerKey/defenseKey, deben ser válidos (400 si no) — a diferencia de
-            // cuando faltan del todo (undefined), que es el caso normal de retrocompatibilidad y
-            // simplemente cae al camino legado, esto es un error real del cliente.
-            let sampleVuln;
-            if (attackerKey !== undefined || defenseKey !== undefined) {
-                const attackerProfile = attackerProfiles[attackerKey];
-                const defenseProfile = defenseProfiles[defenseKey];
-                if (!attackerProfile || !defenseProfile) {
-                    return res.status(400).json({ error: 'attackerKey o defenseKey inválido.' });
-                }
-                if (!vulnManualOverride) {
-                    sampleVuln = sampleVulnerabilityFromProfiles(
-                        attackerProfile,
-                        defenseProfile,
-                        confidence,
-                        accessLevel,
-                    );
-                }
-            }
+            const validated = validateSimulationInputs(req.body);
+            if (validated.error) return res.status(400).json({ error: validated.error });
+            const { sampleVuln } = validated;
 
             // El global se resuelve SIEMPRE (haya o no override) porque validateRiskCriteriaOverride
             // necesita el ALE Crítico global real para exigir que un override individual nunca lo
@@ -133,13 +149,19 @@ function createSimulateRouter(store) {
             const criteria = normalizeRiskCriteria(riskCriteria || globalCriteria);
             const formatCurrency = makeCurrencyFormatter();
 
-            const { annualLosses, usedSeed, sensitivity } = runMonteCarloSimulation({
+            const {
+                annualLosses,
+                usedSeed,
+                sensitivity,
+                frequencyModel: usedFrequencyModel,
+            } = runMonteCarloSimulation({
                 iterations,
                 seed,
                 tef,
                 vuln,
                 lossMagnitudes,
                 sampleVuln,
+                frequencyModel,
             });
 
             const summary = summarizeLosses(annualLosses, criteria.aleUmbralExcedencia);
@@ -174,6 +196,10 @@ function createSimulateRouter(store) {
                 iterations,
                 currency: 'USD',
                 riskType,
+                // Modelo de frecuencia que produjo estas cifras (ver frequencyModel en
+                // lib/simulation.js) — se devuelve siempre, también cuando el cliente no pidió
+                // ninguno, para que nunca haya que adivinar con qué modelo se calculó un número.
+                frequencyModel: usedFrequencyModel,
                 // Sello del modelo de Vulnerabilidad que produjo estos números (ver
                 // VULNERABILITY_CALIBRATION_VERSION en lib/autocalc.js). El frontend lo reenvía
                 // tal cual al Registro, así cada riesgo guardado sabe con qué calibración se
@@ -238,6 +264,84 @@ function createSimulateRouter(store) {
             const formatCurrency = makeCurrencyFormatter();
 
             res.json({ evaluation: evaluateFairThreat(ale, cvar95, criteria, formatCurrency) });
+        }),
+    );
+
+    /**
+     * POST /api/simulate/frequency-models — corre el MISMO riesgo con los dos modelos de
+     * frecuencia (ver frequencyModel en lib/simulation.js) y devuelve ambos resultados lado a lado.
+     * Mismo body que POST /api/simulate (se ignora `frequencyModel` si viene: acá se usan los dos).
+     *
+     * Las dos corridas comparten la semilla a propósito. Así la diferencia que se ve es el MODELO y
+     * no el ruido de muestreo — el mismo criterio pareado que ya usa simulateResidualPortfolio para
+     * comparar el portafolio actual contra el residual.
+     *
+     * Es una herramienta de DIAGNÓSTICO: no guarda nada, no cambia ninguna cifra del Registro. Está
+     * para poder mirar los dos modelos sobre datos reales antes de decidir cuál debe ser el default.
+     */
+    router.post(
+        '/frequency-models',
+        asyncHandler(async (req, res) => {
+            const { iterations = 10000, seed = 0, tef, vuln, lossMagnitudes = {}, riskCriteria } = req.body;
+
+            // El modelo compuesto es el caro de los dos, así que su tope de TEF manda para la
+            // comparación entera — se valida como si se hubiera pedido explícitamente.
+            const validated = validateSimulationInputs({ ...req.body, frequencyModel: 'compound' });
+            if (validated.error) return res.status(400).json({ error: validated.error });
+            const { sampleVuln } = validated;
+
+            const globalCriteria = normalizeRiskCriteria((await store.get('riskCriteria')) || defaultRiskCriteria);
+            const overrideError = validateRiskCriteriaOverride(riskCriteria, globalCriteria);
+            if (overrideError) return res.status(400).json({ error: overrideError });
+            const criteria = normalizeRiskCriteria(riskCriteria || globalCriteria);
+
+            // La semilla se fija ANTES de las dos corridas (0 = "elige una" solo se resuelve una
+            // vez) — es lo que hace que la comparación sea pareada y no dos corridas distintas.
+            const sharedSeed = seed && seed > 0 ? seed : Math.floor(Math.random() * 2147483647);
+            const base = { iterations, seed: sharedSeed, tef, vuln, lossMagnitudes, sampleVuln };
+
+            const expected = runMonteCarloSimulation({ ...base, frequencyModel: 'expected' });
+            const compound = runMonteCarloSimulation({ ...base, frequencyModel: 'compound' });
+
+            const expectedSummary = summarizeLosses(expected.annualLosses, criteria.aleUmbralExcedencia);
+            const compoundSummary = summarizeLosses(compound.annualLosses, criteria.aleUmbralExcedencia);
+
+            // Cuántos años trajeron 0, 1, 2... eventos. Es la lectura que el modelo actual no puede
+            // dar (ahí todos los años traen "LEF eventos", con decimales) y la que hace evidente por
+            // qué la cola cambia: la pérdida no llega repartida, llega junta o no llega.
+            const maxEventsInAYear = compound.eventCounts.reduce((a, b) => Math.max(a, b), 0);
+            const yearsByEventCount = new Array(maxEventsInAYear + 1).fill(0);
+            compound.eventCounts.forEach((n) => yearsByEventCount[n]++);
+
+            const relativo = (nuevo, viejo) => (viejo > 0 ? (nuevo / viejo - 1) * 100 : null);
+
+            res.json({
+                usedSeed: sharedSeed,
+                iterations,
+                currency: 'USD',
+                exceedanceThreshold: criteria.aleUmbralExcedencia,
+                models: {
+                    expected: {
+                        summary: expectedSummary,
+                        lossExceedanceCurve: buildLossExceedanceCurve(expected.annualLosses),
+                    },
+                    compound: {
+                        summary: compoundSummary,
+                        lossExceedanceCurve: buildLossExceedanceCurve(compound.annualLosses),
+                        zeroLossYearsPercent: (yearsByEventCount[0] / iterations) * 100,
+                        maxEventsInAYear,
+                        eventCountDistribution: yearsByEventCount.map((years, events) => ({ events, years })),
+                    },
+                },
+                // El compuesto menos el actual, en %. El ALE debe salir cerca de 0 (los dos modelos
+                // tienen la MISMA media por construcción, E[N]×E[M] = LEF×E[M]) — lo que se mira acá
+                // es cuánto se mueven la cola y el P90, que es lo único que el modelo cambia.
+                delta: {
+                    alePercent: relativo(compoundSummary.average, expectedSummary.average),
+                    cvar95Percent: relativo(compoundSummary.cvar95, expectedSummary.cvar95),
+                    p90Percent: relativo(compoundSummary.p90, expectedSummary.p90),
+                },
+            });
         }),
     );
 
