@@ -1896,6 +1896,23 @@ export const FairRegister = {
         document.getElementById('cvar-95-result').textContent = formatCurrency(summary.cvar95);
         document.getElementById('prob-threshold-result').textContent = `${summary.probExceedance.toFixed(1)}%`;
 
+        // Años que no costaron nada. Con el modelo compuesto de frecuencia, un riesgo raro tiene
+        // la mayoría de sus años en $0 exacto, así que el P90 (y a veces la mediana) salen en cero.
+        // Es la respuesta correcta, pero un "$0" solo se lee como si la app estuviera rota — esta
+        // nota es la que lo convierte en información. No aparece cuando no hay años en cero.
+        const notaCeros = document.getElementById('fair-zero-years-note');
+        const pctCeros = summary.zeroLossYearsPercent;
+        if (notaCeros && typeof pctCeros === 'number' && pctCeros > 0) {
+            const deCada10 = Math.round(pctCeros / 10);
+            const simple = App.UIMode.mode === 'simple';
+            notaCeros.textContent = simple
+                ? `De cada 10 años, en ${deCada10} no perderías nada por este riesgo: simplemente no pasa. Por eso varias de las cifras de arriba salen en $0 — no es un error, es que la pérdida no llega repartida, llega de golpe el año que ocurre.`
+                : `El ${pctCeros.toFixed(1)}% de los años simulados no registró ningún evento. Por eso la mediana y el P90 pueden salir en $0: la pérdida no se reparte entre todos los años, se concentra en los pocos en que el evento ocurre.`;
+            notaCeros.classList.remove('hidden');
+        } else if (notaCeros) {
+            notaCeros.classList.add('hidden');
+        }
+
         // Riesgo Inherente: solo lo trae Amenaza (ver calculateInherentRiskFromSimulation en el
         // backend). Se oculta la línea entera en vez de mostrar "$NaN".
         const inherenteLine = document.getElementById('fair-inherente-line');
