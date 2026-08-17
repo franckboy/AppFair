@@ -2867,7 +2867,8 @@ test('simulatePortfolio: SIN dependencias declaradas da exactamente los mismos n
     assert.strictEqual(a.summary.cvar95, b.summary.cvar95);
     assert.strictEqual(a.summary.average, b.summary.average);
     assert.strictEqual(a.cascadeEdgeCount, 0);
-    assert.strictEqual(a.cascadeAddedALE, 0);
+    assert.strictEqual(a.cascadeInducedALE, 0);
+    assert.deepStrictEqual(a.overCoupledRiskNames, []);
 });
 
 test('simulatePortfolio: la correlación declarada ENGORDA la cola conjunta', () => {
@@ -2880,7 +2881,42 @@ test('simulatePortfolio: la correlación declarada ENGORDA la cola conjunta', ()
         `con cascada ${con.summary.cvar95.toFixed(0)} debería superar a sin cascada ${sin.summary.cvar95.toFixed(0)}`,
     );
     assert.strictEqual(con.cascadeEdgeCount, 3);
-    assert.ok(con.cascadeAddedALE > 0, 'la cascada debe añadir pérdida esperada');
+    // La cascada REUBICA pérdida esperada (de espontánea a inducida por un padre); no la crea.
+    assert.ok(con.cascadeInducedALE > 0, 'la cascada debe reubicar pérdida esperada hacia los padres');
+});
+
+test('simulatePortfolio: declarar la cascada NO cambia el ALE del portafolio — solo su cola', () => {
+    // El corazón de la corrección del doble conteo. El TEF capturado es la frecuencia PROPIA del
+    // riesgo, estimada de datos de incidentes que YA incluyen las veces que ocurrió porque ocurrió
+    // el padre. Sumar la cascada encima contaba esas veces dos veces e inflaba el ALE.
+    //
+    // Ahora la cascada EXPLICA parte de las ocurrencias que el hijo ya tenía en vez de añadirlas:
+    // el total esperado de cada riesgo queda igual al declarado (su ALE individual no se mueve, el
+    // Registro no cambia), pero esas ocurrencias caen el MISMO año que las del padre.
+    const conCascada = simulatePortfolio(makeCascadeFamilyPortfolio());
+    const sinAristas = simulatePortfolio(makeCascadeFamilyPortfolio().map((r) => ({ ...r, triggeredBy: [] })));
+
+    const desvio = Math.abs(conCascada.summary.average / sinAristas.summary.average - 1);
+    assert.ok(
+        desvio < 0.02,
+        `declarar la cascada no debe mover el ALE: ${sinAristas.summary.average.toFixed(0)} -> ${conCascada.summary.average.toFixed(0)} (${(desvio * 100).toFixed(1)}%)`,
+    );
+    // Pero la cola SÍ sube: los riesgos encadenados caen juntos.
+    assert.ok(conCascada.summary.cvar95 > sinAristas.summary.cvar95);
+});
+
+test('simulatePortfolio: avisa cuando los padres declarados inducen más eventos de los que el hijo tiene', () => {
+    // Contradicción real en los datos: dijiste que este hijo ocurre muy poco, pero también que
+    // tiene un padre frecuente que lo causa casi siempre. Antes se sumaba en silencio e inflaba el
+    // portafolio; ahora su parte espontánea se acota a cero y se reporta para poder revisarlo.
+    const risks = [
+        makePortfolioRisk('Padre frecuente', { tef: { min: 8, mode: 10, max: 12 } }),
+        makePortfolioRisk('Hijo rarisimo', {
+            tef: { min: 0.01, mode: 0.02, max: 0.03 },
+            triggeredBy: [{ riskName: 'Padre frecuente', probability: 90 }],
+        }),
+    ];
+    assert.deepStrictEqual(simulatePortfolio(risks).overCoupledRiskNames, ['Hijo rarisimo']);
 });
 
 test('simulatePortfolio: diversificación y correlación se miden POR SEPARADO, no revueltas', () => {

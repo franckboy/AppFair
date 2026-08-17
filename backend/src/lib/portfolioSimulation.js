@@ -157,6 +157,7 @@ function simulatePortfolio(
 
     // lefSamples por riesgo: hace falta para decidir, iteración por iteración, si el riesgo
     // ocurrió "este año" y puede arrastrar a sus hijos.
+    const lossesByRisk = new Map();
     const lefByRisk = new Map();
     const magnitudeByRisk = new Map();
 
@@ -182,34 +183,46 @@ function simulatePortfolio(
         for (let i = 0; i < iterations; i++) portfolioLosses[i] += annualLosses[i];
         sumOfIndividualCVaR += summarizeLosses(annualLosses).cvar95;
         if (hasCascade) {
+            lossesByRisk.set(risk.riskName, annualLosses);
             lefByRisk.set(risk.riskName, lefSamples);
             magnitudeByRisk.set(risk.riskName, magnitudeSamples);
         }
     });
 
     // --- Correlación por cascada -------------------------------------------------------------
-    // Hasta aquí cada riesgo se muestreó independiente. Ahora se AÑADE la pérdida de los riesgos
-    // que un padre arrastra al ocurrir: en esa iteración los dos caen juntos, y esa co-ocurrencia
-    // es exactamente lo que engorda la cola conjunta.
-    //
-    // Se SUMA sobre la base, nunca la reemplaza. Eso preserva un invariante que importa: un
-    // portafolio SIN dependencias declaradas da exactamente los mismos números que antes, así que
-    // conectar la cascada no reescribe en silencio ninguna evaluación existente.
-    //
-    // Un descendiente activado aporta solo su MAGNITUD, no LEF x Magnitud — misma regla que ya
-    // sigue cascadeSimulation.js: la compuerta de cascada ya decidió "ocurrió este año", y volver
-    // a multiplicar por su lef_i descontaría la frecuencia dos veces (para un riesgo raro pero
-    // severo eso subestima el aporte en órdenes de magnitud).
-    // Instantánea ANTES de añadir la cascada: sin ella no se pueden separar los dos efectos, que
-    // van en direcciones opuestas. Diversificar BAJA la cola; correlacionar la SUBE. Reportar solo
-    // la resta contra la suma los revuelve en un número que no mide ninguno de los dos.
+    // Instantánea ANTES de acoplar: sin ella no se pueden separar los dos efectos, que van en
+    // direcciones opuestas. Diversificar BAJA la cola; correlacionar la SUBE. Reportar solo la
+    // resta contra la suma los revuelve en un número que no mide ninguno de los dos.
     const independentSummary = summarizeLosses(portfolioLosses);
 
-    let cascadeAddedLoss = 0;
+    // Cómo se acopla, y por qué ya NO se suma encima.
+    //
+    // El TEF capturado es la frecuencia PROPIA del riesgo, estimada de datos de incidentes — y
+    // esos datos no vienen etiquetados por causa: ya incluyen las veces que el hijo ocurrió PORQUE
+    // ocurrió el padre. Sumar la cascada encima contaba esas veces DOS veces. Con pocas aristas
+    // era un detalle; con el árbol denso pasa a ser el efecto dominante, y peor en los riesgos
+    // raros y severos (un hijo de 0,02/año arrastrado por un padre frecuente podía multiplicar su
+    // aporte por decenas).
+    //
+    // La cascada no AÑADE ocurrencias: EXPLICA una parte de las que el hijo ya tenía. Se mide
+    // empíricamente cuántas veces lo arrastra un padre sobre estas mismas iteraciones, se adelgaza
+    // su parte espontánea en esa proporción, y se añade la arrastrada. El total esperado de cada
+    // riesgo queda igual al declarado — su ALE individual no se mueve y el Registro no cambia —
+    // pero esas ocurrencias caen EL MISMO AÑO que las del padre, que es lo que engorda la cola
+    // conjunta. El efecto de la cascada pasa a verse donde de verdad está: en la cola, no en la
+    // media.
+    let coupledLosses = portfolioLosses;
+    const overCoupledRiskNames = [];
+    let inducedLoss = 0;
     if (hasCascade) {
         const cascadeRng = mulberry32(seed + 104729);
         const parents = [...childrenOf.keys()];
         const getTransitions = (name) => childrenOf.get(name) || [];
+        // Solo pueden ser arrastrados los que tienen algún padre declarado.
+        const arrastrables = new Set();
+        childrenOf.forEach((hijos) => hijos.forEach((h) => arrastrables.add(h.state)));
+        const reached = new Map([...arrastrables].map((name) => [name, new Uint8Array(iterations)]));
+
         for (let i = 0; i < iterations; i++) {
             // Un padre "ocurre este año" con probabilidad 1 - e^(-LEF), misma conversión de
             // frecuencia a ocurrencia que usa el Árbol de Cascada.
@@ -219,19 +232,51 @@ function simulatePortfolio(
                 return cascadeRng() < p;
             });
             if (activos.length === 0) continue;
-            const alcanzados = walkMarkovChain(activos, getTransitions, cascadeRng);
-            alcanzados.forEach((name) => {
-                // Los padres ya aportaron su LEF x Magnitud arriba; solo se suma lo arrastrado.
+            walkMarkovChain(activos, getTransitions, cascadeRng).forEach((name) => {
+                // Los padres activos ocurrieron por su cuenta, no arrastrados.
                 if (activos.includes(name)) return;
-                const mag = magnitudeByRisk.get(name);
-                if (!mag) return;
-                portfolioLosses[i] += mag[i];
-                cascadeAddedLoss += mag[i];
+                const marca = reached.get(name);
+                if (marca) marca[i] = 1;
             });
         }
+
+        coupledLosses = new Array(iterations).fill(0);
+        usable.forEach((risk) => {
+            const propias = lossesByRisk.get(risk.riskName);
+            const marca = reached.get(risk.riskName);
+            if (!marca) {
+                for (let i = 0; i < iterations; i++) coupledLosses[i] += propias[i];
+                return;
+            }
+            // Ocurrencias/año que le inducen sus padres, medidas sobre estas mismas iteraciones.
+            let veces = 0;
+            for (let i = 0; i < iterations; i++) veces += marca[i];
+            const inducedRate = veces / iterations;
+            // Con cuántas ocurrencias/año contaba ya por su cuenta (LEF medio declarado).
+            const lef = lefByRisk.get(risk.riskName);
+            let ownRate = 0;
+            for (let i = 0; i < iterations; i++) ownRate += lef[i];
+            ownRate /= iterations;
+
+            // Contradicción en los datos: los padres declarados inducen MÁS ocurrencias de las que
+            // el hijo dice tener. Antes se sumaba en silencio e inflaba el portafolio; ahora su
+            // parte espontánea se acota a cero y se reporta para poder revisarlo.
+            const share = ownRate > 0 ? inducedRate / ownRate : 1;
+            if (share > 1) overCoupledRiskNames.push(risk.riskName);
+            const espontanea = Math.max(0, 1 - share);
+
+            const magnitudes = magnitudeByRisk.get(risk.riskName);
+            for (let i = 0; i < iterations; i++) {
+                coupledLosses[i] += espontanea * propias[i];
+                if (marca[i]) {
+                    coupledLosses[i] += magnitudes[i];
+                    inducedLoss += magnitudes[i];
+                }
+            }
+        });
     }
 
-    const summary = summarizeLosses(portfolioLosses);
+    const summary = summarizeLosses(coupledLosses);
     // Los dos efectos, medidos por separado contra la MISMA referencia:
     //   diversificationBenefit = cuánto sobrestimaba sumar colas (siempre >= 0)
     //   correlationPenalty     = cuánto engorda la cola la correlación declarada (siempre >= 0)
@@ -243,7 +288,7 @@ function simulatePortfolio(
 
     return {
         summary,
-        lossExceedanceCurve: buildLossExceedanceCurve(portfolioLosses),
+        lossExceedanceCurve: buildLossExceedanceCurve(coupledLosses),
         includedCount: usable.length,
         skippedCount: skipped.length,
         skippedRiskNames: skipped.map((r) => r.riskName),
@@ -252,7 +297,13 @@ function simulatePortfolio(
         correlationPenalty,
         independentCVaR: independentSummary.cvar95,
         cascadeEdgeCount: [...childrenOf.values()].reduce((n, c) => n + c.length, 0),
-        cascadeAddedALE: cascadeAddedLoss / iterations,
+        // Pérdida esperada que la cascada REUBICA (de espontánea a inducida por un padre). No es
+        // pérdida nueva: la media del portafolio se preserva por construcción — el efecto de la
+        // cascada vive en la cola, no en el promedio.
+        cascadeInducedALE: inducedLoss / iterations,
+        // Riesgos cuyos padres declarados inducen más ocurrencias de las que el propio riesgo
+        // declara tener: contradicción de datos que antes se sumaba en silencio.
+        overCoupledRiskNames,
     };
 }
 
