@@ -129,6 +129,7 @@ export const Treatment = {
                 // % que el usuario escriba ahora a mano.
                 state.treatment.mitigarResidualALE = null;
                 state.treatment.mitigarResidualCVaR = null;
+                state.treatment.mitigarResidualCurve = null;
                 showToast('Ahora puedes escribir la Reducción de ALE manualmente.');
             } else {
                 this.updateReduccionALEAuto();
@@ -301,6 +302,7 @@ export const Treatment = {
         // si corresponde, o se queda en null si este riesgo no tiene defenseKey/attackerKey.
         state.treatment.mitigarResidualALE = null;
         state.treatment.mitigarResidualCVaR = null;
+        state.treatment.mitigarResidualCurve = null;
         document.getElementById('treatment-risk-select').value = riskName;
         // Independiente de updateTreatmentView (más abajo) — el badge/banner de la decisión ya
         // adoptada debe verse de inmediato, sin esperar a la llamada async de evaluate.
@@ -555,6 +557,7 @@ export const Treatment = {
             if (requestId !== this._reduccionALERequestId) return; // ver el guardián documentado arriba, junto a Treatment
             state.treatment.mitigarResidualALE = null;
             state.treatment.mitigarResidualCVaR = null;
+            state.treatment.mitigarResidualCurve = null;
             explanationEl.textContent = 'No se pudo calcular automáticamente. Verifica tu conexión.';
             return;
         }
@@ -573,6 +576,7 @@ export const Treatment = {
         // modelo TCap/RS + Tullock, ver el plan de esta tarea).
         state.treatment.mitigarResidualALE = data.residualALE;
         state.treatment.mitigarResidualCVaR = data.residualCVaR;
+        state.treatment.mitigarResidualCurve = data.residualLossExceedanceCurve || null;
         explanationEl.textContent = `Calculado como: pasar de tu defensa actual (${data.currentScore.toFixed(0)}%) a "${state.quick.defenseProfiles[objetivoKey].name}" (${data.targetScore.toFixed(0)}%) = ${data.reductionPercent}% de reducción estimada.`;
         this.updateTreatmentView(true);
     },
@@ -652,7 +656,25 @@ export const Treatment = {
         try {
             result = await App.Api.request('/api/treatment/evaluate', {
                 method: 'POST',
-                body: { currentALE: aleActual, currentCVaR: entry.cvar95, mitigar, transferir, evitar },
+                body: {
+                    currentALE: aleActual,
+                    currentCVaR: entry.cvar95,
+                    mitigar,
+                    transferir,
+                    evitar,
+                    // Los inputs simulables del riesgo. Con ellos, el backend re-simula el residual
+                    // de Mitigar TAMBIÉN en modo manual (Reducción de ALE tecleada a mano), en vez
+                    // de suponer que la cola baja en la misma proporción que el promedio — ese
+                    // supuesto sobreestima lo que logra un control de prevención, porque prevenir
+                    // hace los malos años más RAROS, no menos malos.
+                    tef: entry.tef,
+                    vuln: entry.vuln,
+                    lossMagnitudes: entry.lossMagnitudes,
+                    // La misma semilla con la que se simuló el riesgo: parea las dos corridas, así
+                    // la diferencia entre la cola actual y la residual es el tratamiento y no el
+                    // azar. Sin esto el CVaR residual bailaba ~3% sin que nada hubiera cambiado.
+                    seed: entry.seed,
+                },
             });
         } catch (err) {
             showToast(err.userMessage || 'No se pudo calcular el tratamiento del riesgo.');
@@ -861,6 +883,19 @@ export const Treatment = {
         };
         if (typeof result[strategyKey].residualCVaR === 'number') {
             decision.residualCVaR = result[strategyKey].residualCVaR;
+        }
+        // Curva de Excedencia del residual re-simulado (solo Mitigar la trae). Viaja DENTRO de la
+        // decisión para que la Matriz de Riesgos lea el eje Y del punto verde de su propia curva,
+        // en vez de deducirlo escalando la curva actual — una deducción que asume que el
+        // tratamiento escala la distribución entera, y eso deja de ser cierto en cuanto hay un
+        // tope de daño de por medio (ver calculateResidualMatrixPoint en backend/lib/register.js).
+        // La trae el backend cuando re-simuló él (modo manual); en modo automático la calculó
+        // /api/autocalc/reduccion-ale y quedó en el estado. Cualquiera de las dos es una curva REAL.
+        const curvaResidual =
+            result[strategyKey].residualLossExceedanceCurve ||
+            (strategyKey === 'mitigar' ? state.treatment.mitigarResidualCurve : null);
+        if (Array.isArray(curvaResidual)) {
+            decision.residualLossExceedanceCurve = curvaResidual;
         }
         await this._persistDecision(entry, decision);
         showToast(`Se adoptó "${STRATEGY_LABELS[strategyKey]}" como la decisión de tratamiento de este riesgo.`);

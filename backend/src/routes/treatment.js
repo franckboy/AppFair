@@ -2,7 +2,9 @@
 
 const express = require('express');
 const { evaluateTreatmentStrategies } = require('../lib/treatment');
-const { validateTreatmentBody } = require('../lib/validate');
+const { calculateResidualFromReduction } = require('../lib/autocalc');
+const { validateTreatmentBody, validateTriangularRange, validateLossMagnitudes } = require('../lib/validate');
+const { lossFormsKeys } = require('../data/profiles');
 
 // La app solo calcula en USD (ver la nota equivalente en register.js/assets.js).
 function makeCurrencyFormatter() {
@@ -26,12 +28,31 @@ function createTreatmentRouter() {
      *    evaluateTreatmentStrategies)
      *  - annualLosses: number[] (opcional pero recomendado — necesario para un cálculo
      *    preciso de Transferir/Seguro; si no viene, se usa el ALE promedio como aproximación)
-     *  - mitigar: { cost, reductionPercent, reliability, delayDays }
+     *  - mitigar: { cost, reductionPercent, reliability, delayDays, residualALE, residualCVaR }
+     *  - tef, vuln, lossMagnitudes: (opcionales) los inputs simulables del riesgo. Si vienen Y
+     *    Mitigar no trae ya un residual re-simulado (modo manual: el usuario tecleó la Reducción
+     *    de ALE en vez de elegir un Nivel de Defensa Objetivo), el residual de Mitigar se calcula
+     *    corriendo Monte Carlo de verdad con la Vulnerabilidad escalada, en vez de suponer que la
+     *    cola se reduce en la misma proporción que el promedio (ver calculateResidualFromReduction).
+     *    Sin ellos se cae al escalado proporcional de siempre — retrocompatible.
+     *  - seed: (opcional) la semilla de la corrida original del riesgo. Parea las dos corridas para
+     *    que la diferencia sea el tratamiento y no el ruido de muestreo.
      *  - transferir: { premium, deductible, limit, unlimited, reliability, delayDays }
      *  - evitar: { cost, reliability, delayDays }
      */
     router.post('/evaluate', (req, res) => {
-        const { currentALE, currentCVaR, annualLosses, mitigar = {}, transferir = {}, evitar = {} } = req.body;
+        const {
+            currentALE,
+            currentCVaR,
+            annualLosses,
+            mitigar = {},
+            transferir = {},
+            evitar = {},
+            tef,
+            vuln,
+            lossMagnitudes,
+            seed,
+        } = req.body;
 
         if (typeof currentALE !== 'number') {
             return res.status(400).json({
@@ -42,6 +63,34 @@ function createTreatmentRouter() {
         const treatmentError = validateTreatmentBody(req.body);
         if (treatmentError) return res.status(400).json({ error: treatmentError });
 
+        // Residual REAL para el modo MANUAL de Mitigar. En modo automático el frontend ya lo trae
+        // re-simulado con el Nivel de Defensa Objetivo (POST /api/autocalc/reduccion-ale) y esto
+        // no se toca; acá se cubre el único hueco que quedaba, donde el residual se deducía
+        // multiplicando el CVaR actual por el mismo porcentaje que el ALE.
+        const mitigarResuelto = { ...mitigar };
+        const necesitaResidual =
+            typeof mitigarResuelto.residualCVaR !== 'number' && (mitigarResuelto.reductionPercent || 0) > 0;
+        if (necesitaResidual && tef && vuln && lossMagnitudes) {
+            const rangeError =
+                validateTriangularRange(tef, 'tef') ||
+                validateTriangularRange(vuln, 'vuln', { min: 0, max: 100 }) ||
+                validateLossMagnitudes(lossMagnitudes, lossFormsKeys);
+            if (rangeError) return res.status(400).json({ error: rangeError });
+
+            const residual = calculateResidualFromReduction({
+                tef,
+                vuln,
+                lossMagnitudes,
+                reductionPercent: mitigarResuelto.reductionPercent,
+                currentALE,
+                seed,
+                damageCap: mitigarResuelto.damageCap,
+            });
+            mitigarResuelto.residualALE = residual.residualALE;
+            mitigarResuelto.residualCVaR = residual.residualCVaR;
+            mitigarResuelto.residualLossExceedanceCurve = residual.residualLossExceedanceCurve;
+        }
+
         const formatCurrency = makeCurrencyFormatter();
 
         const result = evaluateTreatmentStrategies(
@@ -50,15 +99,18 @@ function createTreatmentRouter() {
                 currentCVaR,
                 annualLosses,
                 mitigar: {
-                    cost: mitigar.cost || 0,
-                    reductionPercent: mitigar.reductionPercent || 0,
+                    cost: mitigarResuelto.cost || 0,
+                    reductionPercent: mitigarResuelto.reductionPercent || 0,
                     // Residual REAL (re-simulado con el Nivel de Defensa Objetivo) — opcional, ver
                     // evaluateTreatmentStrategies. `typeof x === 'number'` en vez de `|| null`
                     // porque 0 es un residualALE válido (defensa perfecta) y no debe caer al `||`.
-                    residualALE: typeof mitigar.residualALE === 'number' ? mitigar.residualALE : undefined,
-                    residualCVaR: typeof mitigar.residualCVaR === 'number' ? mitigar.residualCVaR : undefined,
-                    reliability: mitigar.reliability || 'media',
-                    delayDays: mitigar.delayDays || 0,
+                    residualALE:
+                        typeof mitigarResuelto.residualALE === 'number' ? mitigarResuelto.residualALE : undefined,
+                    residualCVaR:
+                        typeof mitigarResuelto.residualCVaR === 'number' ? mitigarResuelto.residualCVaR : undefined,
+                    residualLossExceedanceCurve: mitigarResuelto.residualLossExceedanceCurve,
+                    reliability: mitigarResuelto.reliability || 'media',
+                    delayDays: mitigarResuelto.delayDays || 0,
                 },
                 transferir: {
                     premium: transferir.premium || 0,

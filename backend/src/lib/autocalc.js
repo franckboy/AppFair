@@ -587,7 +587,89 @@ function calculateResidualFromSimulation(
     const residualCVaR = summary.cvar95;
     const reductionPercent =
         currentALE > 0 ? Math.max(0, Math.min(100, Math.round((1 - residualALE / currentALE) * 100))) : 0;
-    return { residualALE, residualCVaR, reductionPercent };
+    return {
+        residualALE,
+        residualCVaR,
+        reductionPercent,
+        // Curva de Excedencia del RESIDUAL. Se devuelve para poder persistirla junto a la Decisión
+        // de Tratamiento: sin ella, el eje Y del punto verde de la Matriz tiene que deducirse
+        // leyendo la curva ACTUAL en `umbral / k`, que solo es correcto mientras el tratamiento
+        // escale la distribución entera por una constante (ver calculateResidualMatrixPoint en
+        // lib/register.js). Un tope de daño ya rompe ese supuesto hoy, y el modelo compuesto de
+        // frecuencia lo rompe siempre.
+        residualLossExceedanceCurve: buildLossExceedanceCurve(annualLosses),
+    };
+}
+
+/**
+ * Residual REAL cuando la Reducción de ALE se declaró A MANO (sin un Nivel de Defensa Objetivo
+ * que simular) — mismo propósito que calculateResidualFromSimulation, pero partiendo del único
+ * dato que hay en ese modo: el porcentaje que el usuario afirma que su control reduce.
+ *
+ * El reparto de responsabilidades entre el usuario y la simulación es deliberado:
+ *
+ *   - El ALE residual lo fija el USUARIO. "Reduce mi pérdida anual un r%" es una DEFINICIÓN, no un
+ *     estimado: residualALE = currentALE x (1 - r/100), exacto. Re-simularlo devolvería el mismo
+ *     número con ruido de muestreo encima (la media es proporcional a la Vulnerabilidad en los dos
+ *     modelos de frecuencia), y ver "$39.847" después de teclear 60% se lee como un error de la
+ *     app. En modo automático la causalidad es la contraria (el % se deriva del residual simulado),
+ *     por eso allá sí manda la simulación.
+ *
+ *   - La FORMA de la cola la fija la SIMULACIÓN. Eso es lo que no se puede deducir del porcentaje.
+ *     Se corre Monte Carlo con la Vulnerabilidad escalada por k y se toma la razón cola/media
+ *     (CVaR95 / promedio), que es invariante de escala, para aplicarla al ALE que el usuario fijó.
+ *
+ * Antes, la cola se deducía multiplicando el CVaR actual por el mismo r% que el promedio. Ese
+ * supuesto es exacto hoy (escalar la Vulnerabilidad multiplica cada pérdida simulada por k, y
+ * escalar una distribución escala todas sus estadísticas por igual) pero deja de serlo en cuanto
+ * hay un tope de daño de por medio, y sobre todo con el modelo compuesto de frecuencia: ahí bajar
+ * la Vulnerabilidad reduce la CANTIDAD de eventos, no lo que cuesta cada uno, así que la cola baja
+ * bastante MENOS que el promedio. Medido con k=0,5: la cola queda en x0,71 (no en x0,50) para un
+ * riesgo de frecuencia intermedia. Suponer proporcionalidad sobreestima lo que logra el control.
+ *
+ * @param {Object} params
+ * @param {{min:number, mode:number, max:number}} params.tef
+ * @param {{min:number, mode:number, max:number}} params.vuln Vulnerabilidad ACTUAL, en % (0-100)
+ * @param {Object<string,{min:number, mode:number, max:number}>} params.lossMagnitudes
+ * @param {number} params.reductionPercent Reducción de ALE declarada, 0-100
+ * @param {number} params.currentALE Pérdida Anual Esperada actual (ej. entry.ale)
+ * @param {number} [params.seed] Semilla de la corrida ORIGINAL del riesgo (entry.seed). Reusarla
+ *   hace la comparación PAREADA: las dos corridas ven los mismos sorteos, así que la diferencia
+ *   entre la cola actual y la residual es el tratamiento y no el ruido de muestreo. Sin pareo, el
+ *   CVaR residual se movía ~3% corrida a corrida sobre los mismos datos — suficiente para que una
+ *   decisión de tratamiento se viera distinta sin que nada hubiera cambiado.
+ * @param {number} [params.damageCap] Tope de daño por evento (contención), si lo hay
+ * @returns {{residualALE:number, residualCVaR:number|null, residualLossExceedanceCurve:Array}}
+ */
+function calculateResidualFromReduction({ tef, vuln, lossMagnitudes, reductionPercent, currentALE, seed, damageCap }) {
+    const k = Math.max(0, Math.min(1, 1 - (reductionPercent || 0) / 100));
+    const residualALE = currentALE * k;
+
+    const { annualLosses } = runMonteCarloSimulation({
+        iterations: RESIDUAL_SIMULATION_ITERATIONS,
+        seed: typeof seed === 'number' && seed > 0 ? seed : RESIDUAL_SIMULATION_SEED,
+        tef,
+        vuln: { min: vuln.min * k, mode: vuln.mode * k, max: vuln.max * k },
+        lossMagnitudes,
+        magnitudeCap: damageCap,
+    });
+    const summary = summarizeLosses(annualLosses);
+
+    // La simulación aporta la FORMA; el usuario aportó la escala. Se lleva todo al ALE declarado
+    // con un solo factor, para que el CVaR y la curva queden consistentes con el número que la
+    // pantalla muestra — y no un poco por encima o por debajo por ruido de muestreo.
+    if (!(summary.average > 0)) {
+        return { residualALE, residualCVaR: residualALE, residualLossExceedanceCurve: [] };
+    }
+    const aEscalaDeclarada = residualALE / summary.average;
+    return {
+        residualALE,
+        residualCVaR: summary.cvar95 * aEscalaDeclarada,
+        residualLossExceedanceCurve: buildLossExceedanceCurve(annualLosses).map((p) => ({
+            loss: p.loss * aEscalaDeclarada,
+            probability: p.probability,
+        })),
+    };
 }
 
 // Semilla fija propia (distinta de RESIDUAL_SIMULATION_SEED) para
@@ -655,5 +737,6 @@ module.exports = {
     calculateLossMagnitudeRange,
     calculateReduccionALEFromProfiles,
     calculateResidualFromSimulation,
+    calculateResidualFromReduction,
     calculateInherentRiskFromSimulation,
 };

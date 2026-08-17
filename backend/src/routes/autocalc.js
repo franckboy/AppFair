@@ -97,17 +97,25 @@ function createAutocalcRouter() {
                     return res.status(400).json({ error: 'damageCap debe ser un número mayor o igual a 0.' });
                 }
             }
-            const { residualALE, residualCVaR, reductionPercent } = calculateResidualFromSimulation(
-                attackerProfile,
-                targetProfile,
-                confidence,
-                tef,
-                lossMagnitudes,
-                currentALE,
-                accessLevel,
-                damageCap,
-            );
-            return res.json({ currentScore, targetScore, reductionPercent, residualALE, residualCVaR });
+            const { residualALE, residualCVaR, reductionPercent, residualLossExceedanceCurve } =
+                calculateResidualFromSimulation(
+                    attackerProfile,
+                    targetProfile,
+                    confidence,
+                    tef,
+                    lossMagnitudes,
+                    currentALE,
+                    accessLevel,
+                    damageCap,
+                );
+            return res.json({
+                currentScore,
+                targetScore,
+                reductionPercent,
+                residualALE,
+                residualCVaR,
+                residualLossExceedanceCurve,
+            });
         }
 
         const { reductionPercent } = calculateReduccionALEFromProfiles(

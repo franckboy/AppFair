@@ -497,6 +497,13 @@ function createRegisterRouter(store) {
             for (const [nombre, curva] of [
                 ['lossExceedanceCurve', lossExceedanceCurve],
                 ['inherentLossExceedanceCurve', inherentLossExceedanceCurve],
+                // La del RESIDUAL viaja dentro de la Decisión de Tratamiento (no como campo suelto
+                // de la entrada) porque pertenece a ESA decisión: quitar la decisión debe llevarse
+                // la curva con ella, sin dejar una curva huérfana que ya no describe nada.
+                [
+                    'treatmentDecision.residualLossExceedanceCurve',
+                    treatmentDecision && treatmentDecision.residualLossExceedanceCurve,
+                ],
             ]) {
                 if (curva === null || curva === undefined) continue;
                 if (!Array.isArray(curva)) {

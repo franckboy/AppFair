@@ -19,6 +19,7 @@ const {
     summarizeLosses,
     pearsonCorrelation,
     buildLossExceedanceCurve,
+    LEC_EXCEEDANCE_PROBABILITIES,
 } = require('../src/lib/simulation');
 const { simulatePortfolio, simulateResidualPortfolio, residualScaleFactor } = require('../src/lib/portfolioSimulation');
 const { spearmanCorrelation } = require('../src/lib/simulation');
@@ -32,6 +33,7 @@ const {
     summarizeVulnerabilitySamples,
     calculateReduccionALEFromProfiles,
     calculateResidualFromSimulation,
+    calculateResidualFromReduction,
     calculateInherentRiskFromSimulation,
     pairedVulnerabilitySample,
 } = require('../src/lib/autocalc');
@@ -3216,4 +3218,81 @@ test('frequencyModel compound: magnitudeSamples sigue siendo la magnitud de UN e
     const unEvento = compuesto.eventCounts.findIndex((n) => n === 1);
     assert.ok(unEvento >= 0);
     assert.strictEqual(compuesto.annualLosses[unEvento], compuesto.magnitudeSamples[unEvento]);
+});
+
+// --- Residual de Mitigar en modo MANUAL: la escala la fija el usuario, la forma la simulación ---
+
+const RIESGO_MANUAL = {
+    tef: { min: 0.5, mode: 1, max: 2 },
+    vuln: { min: 20, mode: 40, max: 70 },
+    lossMagnitudes: { respuesta: { min: 5000, mode: 50000, max: 400000 } },
+};
+const SEMILLA_MANUAL = 12345;
+
+function simularActual(extra = {}) {
+    return summarizeLosses(
+        runMonteCarloSimulation({ iterations: 10000, seed: SEMILLA_MANUAL, ...RIESGO_MANUAL, ...extra }).annualLosses,
+    );
+}
+
+test('calculateResidualFromReduction: el ALE residual es EXACTAMENTE el que el usuario declaró', () => {
+    // "Reduce mi pérdida anual un 60%" es una definición, no un estimado. Ver "$39.847" después de
+    // teclear 60% se lee como un error de la app, no como precisión.
+    const actual = simularActual();
+    const res = calculateResidualFromReduction({
+        ...RIESGO_MANUAL,
+        reductionPercent: 60,
+        currentALE: actual.average,
+        seed: SEMILLA_MANUAL,
+    });
+    assert.strictEqual(res.residualALE, actual.average * 0.4);
+});
+
+test('calculateResidualFromReduction: con semilla pareada, hoy da EXACTAMENTE lo mismo que el escalado proporcional', () => {
+    // El seguro de que este cambio no mueve ni un número con el modelo de frecuencia actual:
+    // escalar la Vulnerabilidad por k multiplica cada pérdida simulada por k (en getPertRandom,
+    // escalar min/mode/max deja alpha/beta idénticos), así que con la MISMA semilla la corrida
+    // residual es la actual multiplicada por k, término a término. Sin parear la semilla el CVaR
+    // se movía ~3% sobre los mismos datos, que es ruido, no información.
+    const actual = simularActual();
+    const res = calculateResidualFromReduction({
+        ...RIESGO_MANUAL,
+        reductionPercent: 60,
+        currentALE: actual.average,
+        seed: SEMILLA_MANUAL,
+    });
+    assert.ok(
+        Math.abs(res.residualCVaR - actual.cvar95 * 0.4) < 1e-6,
+        `esperaba ${actual.cvar95 * 0.4}, dio ${res.residualCVaR}`,
+    );
+});
+
+test('calculateResidualFromReduction: devuelve la Curva de Excedencia del residual, a la escala declarada', () => {
+    const actual = simularActual();
+    const res = calculateResidualFromReduction({
+        ...RIESGO_MANUAL,
+        reductionPercent: 60,
+        currentALE: actual.average,
+        seed: SEMILLA_MANUAL,
+    });
+    assert.strictEqual(res.residualLossExceedanceCurve.length, LEC_EXCEEDANCE_PROBABILITIES.length);
+    assert.ok(res.residualLossExceedanceCurve.every((p) => p.loss >= 0 && p.probability >= 0));
+});
+
+test('calculateResidualFromReduction: con un tope de daño, la cola YA NO baja en la misma proporción que el promedio', () => {
+    // Primera grieta del supuesto proporcional, y existe HOY, sin modelo compuesto de por medio:
+    // contener trunca los peores escenarios en vez de escalar toda la distribución.
+    const actual = simularActual();
+    const res = calculateResidualFromReduction({
+        ...RIESGO_MANUAL,
+        reductionPercent: 60,
+        currentALE: actual.average,
+        seed: SEMILLA_MANUAL,
+        damageCap: 40000,
+    });
+    assert.strictEqual(res.residualALE, actual.average * 0.4, 'el ALE declarado se respeta igual');
+    assert.ok(
+        res.residualCVaR < actual.cvar95 * 0.4,
+        `con tope, la cola debe quedar por DEBAJO del escalado proporcional (${actual.cvar95 * 0.4}), dio ${res.residualCVaR}`,
+    );
 });
