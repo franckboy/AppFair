@@ -24,6 +24,46 @@ entera, §4 y §9.1). Archivos de referencia:
 | Equilibrio de Nash (panel aparte)                      | `backend/src/lib/nashEquilibrium.js`     |
 | Invariantes ejecutables                                | `backend/test/lib.test.js`               |
 
+### Cómo leer este documento
+
+Las secciones **1 a 9** describen la ruta crítica: cómo un juicio experto se convierte en una
+distribución de pérdidas y esa distribución en una clasificación. Las secciones **12 a 16** son el
+detalle matemático de las piezas que esa ruta usa —las distribuciones, la clasificación, el
+tratamiento, la cascada, Nash— y se pueden leer sueltas.
+
+**La numeración de secciones es estable a propósito:** varios comentarios del código apuntan a ella
+por número (`ver §7.1`, `ver §8.3`). Al ampliar este documento se agregan secciones nuevas al final
+o subsecciones nuevas dentro de las existentes; **nunca se renumera** lo que ya está.
+
+### Notación
+
+Se usa de forma consistente en todo el documento. `x ~ D` significa "x se muestrea de la
+distribución D"; `E[·]` es la esperanza; `1{·}` es la función indicadora.
+
+| Símbolo      | Significa                                                    | Dominio      | Dónde se define |
+| ------------ | ------------------------------------------------------------ | ------------ | --------------- |
+| `FA`         | Factor de Amenaza — promedio de los 5 atributos del atacante | `[0, 100]`   | §2.1            |
+| `ENC`        | Nivel de Defensa — promedio de los 6 atributos de la defensa | `[0, 100]`   | §2.2            |
+| `C`          | Capacidad de Amenaza en el eje de contienda                  | `(0, ∞)`     | §3              |
+| `R`, `R_eff` | Fuerza de Resistencia; `R_eff = ENC · α`                     | `(0, ∞)`     | §4              |
+| `α`          | Factor del Nivel de Acceso                                   | `(0, 1]`     | §4              |
+| `m`          | Decisividad de la contienda de Tullock                       | `> 0`        | §5.1            |
+| `V`          | Vulnerabilidad — P(un intento se vuelve pérdida)             | `[0,005, 1]` | §5              |
+| `TEF`        | Frecuencia de Eventos de Amenaza (intentos/año)              | `[0, ∞)`     | §7.2            |
+| `LEF`        | Frecuencia de Eventos de Pérdida; `LEF = TEF · V`            | `[0, ∞)`     | §7.1            |
+| `N`          | Número de eventos de pérdida en un año; `N ~ Poisson(LEF)`   | `ℕ₀`         | §7.1            |
+| `M`          | Magnitud de UN evento — suma de las categorías activas       | `[0, ∞)`     | §12.3           |
+| `L`          | Pérdida anual de un riesgo; `L = Σ M_j`                      | `[0, ∞)`     | §7.1            |
+| `ALE`        | Pérdida Anual Esperada; `ALE = E[L]`                         | USD          | §7.3            |
+| `CVaR₉₅`     | Promedio del peor 5 % de los años                            | USD          | §7.3            |
+| `λ`          | Concentración de la Beta-PERT (fijo en 4)                    | `> 0`        | §12.1           |
+| `a, m̂, b`    | Mínimo, moda y máximo de un estimado de tres puntos          | —            | §12             |
+| `n`          | Iteraciones Monte Carlo (10.000 salvo que se diga otra cosa) | —            | §7.1            |
+
+> Cuidado con dos colisiones de letra, ambas heredadas de la literatura y conservadas para que las
+> fórmulas se puedan cotejar con ella: `m` es la decisividad de Tullock, y `m̂` la moda de un
+> estimado de tres puntos. `M` (mayúscula) es una magnitud de pérdida.
+
 ---
 
 ## 1. Desacoplamiento de magnitudes
@@ -882,3 +922,451 @@ Decisiones tomadas con su razón, para que quien retome esto no las revierta por
 | El residual guarda su receta, no solo su resultado       | Un número fija la media, nunca la forma: prevenir y contener dan la misma media y colas al triple                                 |
 | Cada ancla lleva su propio Nivel de Acceso               | Emitir la del insider sobre "acceso nulo" metía su acceso dentro de su fuerza, y lo volvía idéntico al crimen organizado          |
 | Dos perfiles no pueden dar el mismo número               | La app ofrecía una elección que el cálculo ignoraba; y ponderar los atributos —la corrección obvia— no lo habría arreglado        |
+
+---
+
+## 12. La capa de distribuciones de probabilidad
+
+Todo lo anterior descansa en cuatro distribuciones y un generador. Ninguna se eligió por costumbre:
+cada una responde a una propiedad concreta del dato que representa, y las tres primeras conviven
+porque **un estimado de tres puntos no significa lo mismo según qué esté estimando**.
+
+Archivo: `backend/src/lib/random.js`.
+
+### 12.1 Beta-PERT — para lo acotado (TEF y Vulnerabilidad)
+
+La Vulnerabilidad llega aquí por **dos rutas** que producen lo mismo: si el riesgo tiene Perfil de
+Atacante y Defensa, la PERT se abre sobre los triángulos de contienda (§5.2) y el resultado entra al
+motor como sampler inyectado; si la Vulnerabilidad se capturó a mano, la PERT se abre directamente
+sobre ese triángulo. El TEF siempre usa la segunda.
+
+Un experto da tres números: mínimo `a`, más probable `m̂`, máximo `b`. La lectura ingenua es una
+triangular, y sobre-estima los extremos: trata la moda como un punto más de una recta. PERT la
+convierte en una **Beta reescalada** que concentra masa alrededor de la moda:
+
+```
+α = 1 + λ·(m̂ − a)/(b − a)          β = 1 + λ·(b − m̂)/(b − a)          λ = 4
+X ~ Beta(α, β)
+muestra = a + X·(b − a)
+```
+
+Con `λ = 4` (el valor estándar de PERT) la media queda:
+
+```
+E[X] = (a + 4·m̂ + b) / 6
+```
+
+o sea la moda pesa cuatro veces más que cada extremo. Subir `λ` concentra más; bajarlo se acerca a
+la uniforme. La app lo deja fijo en 4 en todas partes.
+
+**Cómo se muestrea la Beta**, sin funciones especiales: si `X ~ Gamma(α,1)` e `Y ~ Gamma(β,1)` son
+independientes, entonces `X/(X+Y) ~ Beta(α,β)`. Las Gamma salen del método de **Marsaglia–Tsang
+(2000)**, que necesita una normal y un uniforme por intento y acepta con probabilidad muy alta; para
+`shape < 1` usa el truco estándar `Gamma(shape+1)·U^(1/shape)`. Las normales salen de **Box–Muller**
+(se descarta la segunda de cada par, a propósito: mantiene el consumo del generador simple y
+determinista, y desperdiciar una muestra por llamada no importa a esta escala).
+
+**Consecuencia que el motor usa a propósito:** escalar `a`, `m̂` y `b` por una constante `k` deja
+`α` y `β` **idénticos**, así que con el mismo generador la muestra resultante es exactamente `k`
+veces la original. Eso es lo que hace que la simulación pareada del residual (§9.1.1) sea exacta y
+no aproximada.
+
+### 12.2 Triangular — solo como respaldo
+
+Se conserva por dos motivos: es el respaldo cuando la lognormal no está definida (§12.3), y es la
+referencia de la que se toma la **varianza objetivo** para ajustarla:
+
+```
+Var_△(a, m̂, b) = (a² + m̂² + b² − a·m̂ − a·b − m̂·b) / 18
+```
+
+Se muestrea por transformación inversa con `F = (m̂ − a)/(b − a)`.
+
+### 12.3 Lognormal por igualación de momentos — para la Magnitud de Pérdida
+
+Una pérdida no tiene techo. Triangular y PERT sí: prometen que `b` es imposible de superar, y eso
+es falso justo donde más importa. Por eso la Magnitud se muestrea **lognormal**.
+
+El problema es cómo pasar de tres puntos a `(μ, σ)` sin inventar información. La ruta habitual
+—reinterpretar `a` y `b` como percentiles 5/95— infla la cola sin control, porque el usuario (o
+`calculateLossMagnitudeRange`) los eligió pensando en un rango acotado, no en una promesa
+estadística. AppFair ajusta **por momentos**, con dos condiciones:
+
+1. la moda de la lognormal es exactamente `m̂`, lo que fija `μ = ln(m̂) + σ²`;
+2. su varianza es la **misma** que la de la triangular con esos mismos tres puntos.
+
+Sustituyendo (1) en la varianza de la lognormal `(e^{σ²} − 1)·e^{2μ+σ²}` queda una ecuación
+trascendente en `s = σ²`:
+
+```
+m̂²·(e^s − 1)·e^{3s} = Var_△(a, m̂, b)
+```
+
+No tiene solución cerrada. Se resuelve por **bisección**: la función es monótona creciente en `s`
+para `s > 0`, así que se dobla el límite superior hasta encontrar un cambio de signo y se bisecta
+100 veces. Convergencia garantizada, sin Newton ni cotas mágicas.
+
+Lo que esto preserva es importante: **el ancho de incertidumbre que el usuario quiso decir queda
+intacto**; lo único que cambia es la forma — sesgo a la derecha y cola sin techo duro.
+
+**Respaldos, ambos casos reales:**
+
+| Condición | Qué se hace | Por qué                                                         |
+| --------- | ----------- | --------------------------------------------------------------- |
+| `a = b`   | constante   | No hay incertidumbre que muestrear                              |
+| `m̂ ≤ 0`   | triangular  | La lognormal no está definida en 0 — categoría sin costo típico |
+
+**Los parámetros se resuelven una sola vez por corrida**, no por muestra: la bisección es cara y
+`(a, m̂, b)` no cambian dentro de una simulación. Medido: 18× más rápido, bit a bit idéntico. Dejó
+de ser una optimización y pasó a ser un requisito con el modelo compuesto (§7.1), donde se sortea
+una magnitud por **cada evento** del año en vez de una por año.
+
+### 12.4 Poisson — el conteo de eventos del año
+
+El modelo compuesto (§7.1) necesita "¿cuántas veces pasó este año?". Dos algoritmos, con un corte
+en `λ = 30`:
+
+| Régimen  | Método              | Cómo                                             |
+| -------- | ------------------- | ------------------------------------------------ |
+| `λ ≤ 30` | Knuth (exacto)      | Multiplica uniformes hasta bajar de `e^{−λ}`     |
+| `λ > 30` | Aproximación normal | `max(0, round(λ + √λ · Z))`, `Z` normal estándar |
+
+El corte no es arbitrario: Knuth cuesta `λ+1` llamadas al generador por muestra, y a `λ = 30` la
+Poisson ya es prácticamente simétrica — el error relativo de la aproximación es de milésimas.
+
+### 12.5 El generador: mulberry32 y la reproducibilidad
+
+Todo el motor usa **mulberry32** sembrado, nunca `Math.random()`. La razón es auditoría: una
+evaluación de riesgo que no se puede reproducir no se puede defender en un comité ni revisar seis
+meses después.
+
+De ahí salen tres decisiones que aparecen por todo el código:
+
+- **Semillas derivadas por posición.** En el portafolio, el riesgo `i` usa `seed + i·7919` (primo).
+  Con la misma semilla para todos, los riesgos quedarían perfectamente correlacionados por accidente
+  y el beneficio de diversificación (§8.1) desaparecería sin que nadie lo notara.
+- **Números aleatorios comunes.** Cuando se comparan dos escenarios (actual contra residual, con y
+  sin tope de daño, una calibración contra otra), las dos corridas comparten semilla. Sin eso la
+  resta mezcla el efecto real con ruido de muestreo — a 10.000 iteraciones el error estándar ronda
+  el 0,6 %, suficiente para ensuciar un ahorro pequeño.
+- **Consumo constante del generador.** Varias funciones sortean un número aunque no lo vayan a usar
+  (ej. los candidatos a auto-inicio en §15), para que la secuencia no dependa de qué riesgos tengan
+  datos completos. Sin eso, agregar un riesgo incompleto cambiaría los resultados de todos los demás.
+
+El error estándar de la media se **reporta** (`standardErrorPercent`) pero nunca se usa como
+criterio de parada: un corte dinámico haría que dos corridas con los mismos datos terminaran en
+distinto `n` y dieran cifras distintas, que es exactamente lo que la semilla fija existe para evitar.
+
+---
+
+## 13. De número a decisión: cómo la app trata el riesgo
+
+Las secciones anteriores producen una **distribución**. Ésta describe cómo esa distribución se
+convierte en una decisión, que es donde el modelo se vuelve una herramienta de gestión y no un
+ejercicio estadístico.
+
+El principio que ordena todo: **la app nunca reduce un riesgo a un solo número.** El promedio sirve
+para presupuestar; la cola sirve para sobrevivir. Son preguntas distintas y se responden por
+separado, y en varios puntos la app clasifica por la cola aunque el promedio esté tranquilo.
+
+### 13.1 Los Criterios de Riesgo
+
+Toda clasificación se hace contra dos números que declara la organización (`backend/src/lib/riskCriteria.js`):
+
+```
+aleCritico            máxima pérdida anual que la organización acepta, en dinero
+aleAceptablePercent   apetito de riesgo: qué % de esa cifra se está dispuesto a asumir sin actuar
+```
+
+De ahí se derivan los dos umbrales que de verdad se usan:
+
+```
+aleAceptable = aleCritico · aleAceptablePercent/100
+aleMedio     = aleAceptable + (aleCritico − aleAceptable)/2
+```
+
+**Solo hay un ancla en dinero.** `aleAceptable` se deriva en vez de configurarse aparte para que no
+pueda quedar por encima del crítico por un descuido. Un riesgo puede traer su propio override, y se
+valida que sea **más restrictivo**, nunca más permisivo: "mi máximo global es $1M pero para este
+riesgo es $2M" se contradice a sí mismo, porque el global ya es el techo absoluto.
+
+### 13.2 Clasificación de una Amenaza
+
+En este orden exacto (`evaluateFairThreat`):
+
+| #   | Condición             | Nivel                               | Severidad |
+| --- | --------------------- | ----------------------------------- | --------- |
+| 1   | `ALE > aleCritico`    | Crítico — Requiere Acción Inmediata | crítico   |
+| 2   | `CVaR₉₅ > aleCritico` | **Crítico (riesgo de cola)**        | crítico   |
+| 3   | `ALE > aleMedio`      | Alto — Requiere Tratamiento         | alto      |
+| 4   | `ALE > aleAceptable`  | Medio — Vigilar                     | medio     |
+| 5   | resto                 | Aceptable                           | bajo      |
+
+**La fila 2 es la que justifica todo el modelo.** Un riesgo cuyo promedio está tranquilo pero cuyo
+peor 5 % de años supera el criterio crítico se clasifica como crítico igual. Ése es exactamente el
+perfil raro-y-severo de la seguridad patrimonial —un asalto cada ocho años que se lleva el
+inventario entero— y es el que un cálculo por valor esperado esconde. Sin esa fila, la app diría
+"aceptable" de un riesgo que puede cerrar la empresa.
+
+### 13.3 Oportunidades: los mismos umbrales, el significado invertido
+
+Un riesgo tipo `oportunidad` usa las mismas cifras pero al revés: un valor esperado **alto** es
+deseable. Se clasifica solo por la media (no hay "cola" que temer en un beneficio) en Significativa
+/ Moderada / Menor. Y se **excluye** del Pareto, del mapa de calor y de Tratamiento: sumar un
+beneficio a la "exposición total" o preguntarse cómo mitigarlo no tiene sentido.
+
+### 13.4 La Matriz de Riesgos: dos ejes que no son el mismo número
+
+```
+eje X (impacto)       = min(100, ALE / aleCritico · 100)
+eje Y (probabilidad)  = P(L > aleUmbralExcedencia), leída de la Curva de Excedencia
+```
+
+El eje Y **no sale del ALE**: depende de la distribución, no de su media. Dos riesgos con el mismo
+ALE pueden estar en extremos opuestos del eje vertical, y ésa es justamente la información que una
+matriz cualitativa de 5×5 pierde.
+
+Las zonas (Bajo/Medio/Alto/Crítico) se derivan de las bandas configuradas, no de números fijos.
+
+**El punto residual** (el verde al que apunta la flecha de migración) se calcula con `k = residualALE/ALE`:
+
+| Caso              | Eje Y                                                      |
+| ----------------- | ---------------------------------------------------------- |
+| `k = 1` (Aceptar) | El valor ya guardado — para que caiga exacto sobre el rojo |
+| `k = 0` (Evitar)  | 0 — no queda pérdida que pueda superar ningún umbral       |
+| Mitigar con curva | La curva **real** del residual, re-simulada y persistida   |
+| Mitigar sin curva | Respaldo: `P(actual > umbral/k)`                           |
+| **Transferir**    | **No se dibuja punto**                                     |
+
+Transferir se excluye a propósito: una póliza **trunca** la cola en vez de escalarla, así que se
+conoce X pero no Y. Mover solo X afirmaría que la probabilidad de excedencia no cambió — justo lo
+contrario de lo que hace un seguro. Mejor no dibujar nada que dibujar una mentira.
+
+### 13.5 Riesgo Inherente: la línea de base sin controles
+
+`calculateInherentRiskFromSimulation` corre el motor completo con `V ≡ 1` (100 %, sin ningún
+control), 10.000 iteraciones, semilla fija propia. **No es una des-mitigación algebraica** del
+resultado ya simulado: la versión anterior dividía el ALE entre la Vulnerabilidad media, lo cual
+solo era válido cuando la Vulnerabilidad era lineal en el Nivel de Defensa. Con el modelo de
+contienda dejó de serlo.
+
+Eso da el waterfall **Inherente → Actual → Residual**: cuánto separan tus controles el "sin nada"
+del "con lo que hay hoy", y cuánto más separa el tratamiento propuesto.
+
+### 13.6 Pareto y priorización
+
+Ordena por ALE descendente y acumula, para responder "cuántos riesgos concentran el 80 % de la
+exposición". Es una lectura del **año promedio**. La lectura del **año malo** es otra y vive aparte
+(§8.5) — los dos órdenes no coinciden, y confundirlos lleva a invertir en el riesgo equivocado.
+
+---
+
+## 14. Tratamiento: la matemática de las cuatro estrategias
+
+Archivo: `backend/src/lib/treatment.js`. Las cuatro estrategias de ISO 31000 se evalúan en paralelo
+como hipótesis comparables; la que se adopta se registra aparte (§9.1.1).
+
+### 14.1 La fiabilidad es una probabilidad, no una advertencia
+
+Cada estrategia declara una fiabilidad, que se traduce a probabilidad de éxito:
+
+```
+alta → 0,90        media → 0,70        baja → 0,40
+```
+
+El beneficio neto es entonces un **valor esperado** sobre un nodo de azar, no un número de un solo
+punto:
+
+```
+E[beneficio] = p·(evitado − costo) + (1 − p)·(−costo) = p·evitado − costo
+```
+
+Si la estrategia falla, el costo se pagó igual y no se evitó nada — relativo a Aceptar, que es el
+punto de comparación. Antes `reliability` solo disparaba un texto de advertencia; ahora entra al
+cálculo.
+
+`ROSI = (evitado − costo)/costo · 100` es ese mismo beneficio expresado como retorno.
+
+### 14.2 Transferir: el seguro se aplica escenario por escenario
+
+Lo que un deducible y un límite le hacen a una distribución **no** se puede representar con un
+factor. Se aplica sobre **cada una** de las 10.000 pérdidas simuladas:
+
+```
+retenida(L) = L                                     si L ≤ D
+              D + max(0, (L − D) − min(L − D, C))   si L > D
+              D                                     si L > D y cobertura ilimitada
+```
+
+y el ALE retenido es el promedio de eso. `C = 0` significa literalmente **cero cobertura** por
+encima del deducible, no "sin límite" — para una póliza sin tope hay que declararlo explícitamente.
+
+De aquí sale una limitación que se propaga a toda la app: como esto es una **truncación** y no un
+escalado, no existe ningún `k` que la represente. Por eso Transferir no tiene punto residual en la
+Matriz (§13.4), no se escala en el portafolio (§8.2), y su residual se marca como no calculable en
+vez de inventarse.
+
+### 14.3 Mitigar + Transferir: inducción hacia atrás
+
+La combinación no es "aplicar las dos y sumar los ahorros". Es un árbol de decisión de dos niveles
+(`backend/src/lib/decisionTree.js`), resuelto por **inducción hacia atrás** (de las hojas a la raíz):
+
+```
+[azar] ¿Mitigar funciona?  p = p_mitigar
+ ├─ sí  → residual = ALE_mitigado, pérdidas escaladas por k = ALE_mitigado/ALE
+ └─ no  → residual = ALE actual, pérdidas sin escalar
+          │
+          └─ [decisión] ¿qué hago con lo que queda?
+               ├─ aceptar    → valor = ALE − residual − costo_hundido
+               └─ transferir → [azar] ¿la póliza responde?  p = p_transferir
+                                ├─ sí → valor = ALE − retenida − costo − prima
+                                └─ no → valor = aceptar − prima
+```
+
+Tres cosas que este árbol modela y una fórmula plana no:
+
+1. **El costo de Mitigar ya está hundido** cuando se decide sobre el residual. Se resta en las dos
+   ramas, funcione o no.
+2. **El seguro se calcula sobre las pérdidas que de verdad quedarían en juego** en cada rama —
+   escaladas si Mitigar funcionó, sin escalar si no. Un deducible fijo muerde distinto según eso.
+3. **El nodo de decisión elige el máximo**, no promedia: si transferir el residual no conviene, el
+   árbol se queda con aceptar, que es lo que haría una persona.
+
+El motor de árboles valida que las probabilidades de cada nodo de azar sumen ≈ 1 y revienta con un
+mensaje claro si no — un error de captura ahí daría un valor esperado incorrecto sin ningún aviso.
+
+---
+
+## 15. Simular Familia: la cascada de un riesgo y sus descendientes
+
+Archivo: `backend/src/lib/cascadeSimulation.js`. Es distinta de la correlación del portafolio
+(§8.3): aquí se elige **una raíz** y se simula la pérdida conjunta de ella y todos sus
+descendientes, para responder "si esto pasa, ¿cuánto arrastra?".
+
+Un riesgo que no es la raíz se activa en una iteración por **dos vías independientes**:
+
+```
+P_propia   = 1 − e^(−LEF_i)          ← "al menos un evento este año" (proceso de Poisson)
+P_cascada  = probabilidad de la arista, por cada padre activo esa vuelta
+combinada  = 1 − (1 − P_propia)·Π(1 − P_cascada_i)
+```
+
+**Las dos vías se evalúan en momentos distintos, y ahí está toda la corrección del modelo:**
+
+- `P_propia` se tira **una sola vez por riesgo por iteración, ANTES** de recorrer la cascada. Los
+  que salen sorteados entran al recorrido como puntos de partida adicionales, junto a la raíz.
+- `P_cascada` se evalúa arista por arista **durante** el recorrido. Con varios padres, el hijo
+  recibe un intento por cada padre activo; como cada intento es Bernoulli independiente, "se activó
+  en cualquiera" ya da `1 − Π(1−p_i)` sin tocar el motor de recorrido.
+
+> **Bug real que esto corrigió.** Antes `P_propia` se evaluaba _dentro_ del recorrido, en la misma
+> compuerta que `P_cascada` — o sea, solo si el padre ya se había activado. La raíz siempre está
+> activa, así que sus hijos directos quedaban bien, pero **de la segunda generación en adelante la
+> frecuencia propia se perdía por completo** cuando el padre no ocurría. Medido: un nieto con ALE
+> propio de $1.000.000/año aportaba ~$0 a la familia (activación del 0,005 % en vez del ~63 % que le
+> corresponde por `1 − e^{−1}`). El error iba siempre hacia **subestimar** el riesgo, y era peor
+> mientras más profundo el árbol.
+
+> **Segundo bug real.** La raíz entraba al recorrido _siempre_, así que propagaba a sus hijos los
+> 10.000 años, no solo aquellos en que de verdad ocurría. Con una raíz que ocurre el 56 % de los
+> años y una compuerta del 70 %, el hijo recibía 0,70 activaciones/año en vez de 0,70 × 0,565 =
+> 0,395 — un 77 % de más. Era además incoherente consigo mismo: la _pérdida_ de la raíz sí estaba
+> escalada por su frecuencia.
+
+**La magnitud del evento arrastrado.** Cuando un padre arrastra a un hijo, el hijo aporta la
+magnitud de **un** evento, no su pérdida anual — la compuerta de cascada ya decidió "ocurrió este
+año", y volver a multiplicar por su frecuencia la descontaría dos veces (§8.3, punto 4). Por eso el
+motor sortea siempre la magnitud de un evento en cada iteración, **incluso en los años en que el
+conteo de Poisson sale 0**: ese sorteo no entra en la pérdida anual propia del riesgo (ese año no
+pasó nada por su cuenta), pero queda disponible como la magnitud representativa que la cascada
+necesita si un padre lo arrastra.
+
+El recorrido (`backend/src/lib/markov.js`) es un BFS por niveles con dos protecciones: cada estado
+se activa **como máximo una vez por iteración** (un ciclo `A→B→A` en los datos no cuelga nada) y
+`maxDepth = 20` como segunda barrera para cadenas genuinamente largas. Las probabilidades de salida
+de un nodo **no** tienen que sumar 1: no son mutuamente excluyentes — que ocurra un hijo no impide
+que ocurra otro.
+
+---
+
+## 16. Equilibrio de Nash: la matemática del panel exploratorio
+
+El deslinde está en §10 — esto **no** participa de ninguna cifra del Registro. Aquí queda solo el
+método, para completitud.
+
+Dado un Valor en Juego `V` y un costo unitario de esfuerzo para cada lado, se busca el par `(a*, d*)`
+donde ninguno mejora su resultado cambiando solo su propia jugada. Con `m` arbitrario **no hay
+fórmula cerrada**, así que se resuelve por **iteración de mejor respuesta**: el atacante optimiza su
+esfuerzo asumiendo fijo el de la defensa, luego la defensa hace lo propio, y así hasta que ninguno se
+mueve. Cada optimización interna es una **búsqueda ternaria** (reduce el intervalo a un tercio por
+paso).
+
+**Limitación declarada, no escondida:** la búsqueda ternaria asume que cada ganancia es cóncava en el
+propio esfuerzo. Es cierto para `m` moderado, pero la literatura documenta que valores altos de `m`
+pueden romper esa concavidad — el equilibrio en estrategias puras puede no existir o ser inestable.
+No se rechaza un `m` alto; si la iteración no converge se reporta `converged: false` en vez de
+devolver un número con falsa certeza.
+
+---
+
+## 17. El modelo en una página
+
+De un juicio experto a una decisión, con la sección donde vive cada paso:
+
+```
+Perfil de Atacante (5 atributos)          Perfil de Defensa (6 atributos)
+        │ promedio                                │ promedio
+        ▼                                         ▼
+       FA ──[eje de contienda calibrado §3]──► C  ENC ──[× α del acceso §4]──► R_eff
+                                               │        │
+                                               └──┬─────┘
+                            [triángulos PERT §5.2, escalada por persistencia §5.3]
+                                                  ▼
+                                    Tullock(C, R, m) + piso  ──►  V   §5
+                                                  │
+                    TEF ~ Beta-PERT §12.1 ────────┴──► LEF = TEF · V
+                                                  │
+                                        N ~ Poisson(LEF)          §12.4
+                                                  │
+                          M_j ~ lognormal §12.3   ▼
+                                    L = Σ_{j=1..N} M_j            §7.1
+                                                  │
+                          ×10.000 iteraciones     ▼
+                     distribución de pérdidas anuales
+                          │            │            │
+                        ALE        CVaR₉₅         curva de excedencia   §7.3
+                          │            │            │
+                          └────────────┴────────────┘
+                                       ▼
+                    clasificación contra Criterios de Riesgo   §13.2
+                                       ▼
+                    Tratamiento: 4 estrategias comparadas      §14
+                                       ▼
+                    Decisión adoptada + residual con receta    §9.1.1
+                                       ▼
+                    Portafolio: simulación conjunta            §8.2
+                       + correlación por cascada               §8.3
+                       + reparto del año malo (Euler)          §8.5
+```
+
+**Las cinco afirmaciones que sostienen todo esto**, y dónde se prueba cada una:
+
+| Afirmación                                                           | Prueba                      |
+| -------------------------------------------------------------------- | --------------------------- |
+| La Vulnerabilidad reproduce ocho juicios expertos independientes     | §6, §9                      |
+| El error de un juicio no se amplifica ni contamina celdas ajenas     | `tools/anchor-sensitivity/` |
+| La pérdida del año es una suma de eventos, no una fracción de evento | §7.1                        |
+| Sumar colas de riesgos sobrestima; hay que simularlos juntos         | §8.1, §8.2                  |
+| El reparto del año malo suma exactamente el año malo                 | §8.5, §9                    |
+
+**Y las tres cosas que el modelo NO afirma**, dichas aquí para que nadie las asuma:
+
+1. **No es predicción.** Es una descripción de incertidumbre bajo supuestos declarados. Si los
+   supuestos cambian, el número cambia — por eso cada resultado va sellado con su versión de
+   calibración (§9.1) y nada se recalcula solo.
+2. **No está validado contra datos reales.** Las ocho anclas son juicio experto, y el modelo está
+   probado de forma **interna** (coherencia, monotonía, sensibilidad), no **externa**. Comparar
+   contra un histórico de incidentes real es lo único que podría mostrar que está equivocado, y
+   sigue pendiente (`tools/bayesian-calibration/`).
+3. **No lo prescribe ninguna norma.** ISO 31000, ISO 28000 y ASIS aportan el marco de proceso. Estas
+   fórmulas son metodología propia de AppFair, y así debe citarse.
