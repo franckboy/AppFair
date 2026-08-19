@@ -13,6 +13,7 @@ const {
 const { hazardStandards, isoProcessClauses, rimsClauses } = require('../data/standardsReference');
 const { normalizeRiskCriteria } = require('../lib/riskCriteria');
 const { CALIBRATION_VERSION, ACCESS_LEVELS } = require('../lib/autocalc');
+const { DEFAULT_OUTSIDE_OPTION_FRACTION } = require('../lib/stackelbergDeterrence');
 const { asyncHandler } = require('../middleware/asyncHandler');
 
 function createConfigRouter(store) {
@@ -38,6 +39,13 @@ function createConfigRouter(store) {
             // con una calibración anterior. Se expone desde aquí, y no como constante duplicada
             // en el frontend, para que no puedan quedar desincronizadas.
             calibrationVersion: CALIBRATION_VERSION,
+            // Alternativa del atacante por perfil (ver lib/stackelbergDeterrence.js): cuánto
+            // consigue en OTRO objetivo, como fracción del botín de este. Es el parámetro del que
+            // depende la disuasión entera, y es juicio declarado, no medición. Se expone desde
+            // acá, y no como constante duplicada en el frontend, por el mismo motivo que
+            // calibrationVersion: dos copias del mismo juicio se desincronizan sin que nadie se
+            // entere, y esta manda sobre un número que después se lleva a un comité.
+            outsideOptionFractions: DEFAULT_OUTSIDE_OPTION_FRACTION,
             // Niveles de Acceso / Proximidad, para poblar el selector del Paso 2 sin duplicar la
             // tabla en el frontend (misma razón que calibrationVersion).
             accessLevels: ACCESS_LEVELS,

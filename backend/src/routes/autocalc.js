@@ -13,6 +13,11 @@ const {
     calculateResidualFromSimulation,
 } = require('../lib/autocalc');
 const { solveNashEquilibrium } = require('../lib/nashEquilibrium');
+const {
+    DEFAULT_OUTSIDE_OPTION_FRACTION,
+    deterrenceThreshold,
+    simulateDeterrence,
+} = require('../lib/stackelbergDeterrence');
 const { validatePositiveNumber, validateLossMagnitudes, validateTriangularRange } = require('../lib/validate');
 
 function createAutocalcRouter() {
@@ -204,6 +209,94 @@ function createAutocalcRouter() {
             defenseLoss: equilibrium.defenseLoss,
             converged: equilibrium.converged,
             iterations: equilibrium.iterations,
+        });
+    });
+
+    // POST /api/autocalc/deterrence
+    //   { attackerKey, m, lossMagnitudes, costAttacker, outsideOptionFraction, iterations, seed }
+    //
+    // ¿A partir de qué inversión deja de convenirle atacarme? Es la pregunta que el motor de
+    // simulación no puede responder: ahí subir las defensas baja cuántos LO LOGRAN, nunca cuántos
+    // LO INTENTAN, así que más defensa siempre es mejor y nunca hay un punto donde parar.
+    //
+    // Stackelberg y no Nash: el defensor juega primero y a la vista (el atacante ve la barda antes
+    // de decidir), así que se resuelve la mejor respuesta del atacante a una defensa ya
+    // comprometida. Ver backend/src/lib/stackelbergDeterrence.js para el desarrollo completo.
+    //
+    // Exploratorio: no alimenta ninguna cifra del Registro, mismo deslinde que nash-equilibrium.
+    router.post('/deterrence', (req, res) => {
+        const {
+            attackerKey,
+            m = 1,
+            lossMagnitudes = {},
+            costAttacker,
+            outsideOptionFraction,
+            iterations = 5000,
+            seed = 0,
+        } = req.body;
+
+        const attackerProfile = attackerProfiles[attackerKey];
+        if (!attackerProfile) return res.status(400).json({ error: 'attackerKey inválido.' });
+
+        const mError = validatePositiveNumber(m, 'm');
+        if (mError) return res.status(400).json({ error: mError });
+        const lossMagnitudesError = validateLossMagnitudes(lossMagnitudes, lossFormsKeys);
+        if (lossMagnitudesError) return res.status(400).json({ error: lossMagnitudesError });
+        const costError = validateTriangularRange(costAttacker, 'costAttacker');
+        if (costError) return res.status(400).json({ error: costError });
+        const fractionError = validateTriangularRange(outsideOptionFraction, 'outsideOptionFraction');
+        if (fractionError) return res.status(400).json({ error: fractionError });
+        // La alternativa es una FRACCIÓN del botín, así que arriba de 1 no significa nada: sería
+        // "en otro lado gano más de lo que acá vale todo", y con eso nunca ataca a nadie.
+        if (outsideOptionFraction.max > 1) {
+            return res.status(400).json({ error: 'outsideOptionFraction debe estar entre 0 y 1.' });
+        }
+        if (!Number.isInteger(iterations) || iterations < 100 || iterations > 50000) {
+            return res.status(400).json({ error: 'iterations debe ser un entero entre 100 y 50000.' });
+        }
+
+        // Mismo Valor en Juego que nash-equilibrium, con la misma simplificación declarada: no
+        // distingue qué parte del daño es botín para el atacante (una multa te duele a vos y no le
+        // sirve a él). Sobreestima su incentivo, así que el umbral que sale es conservador.
+        const valueAtStake = Object.values(lossMagnitudes).reduce((sum, range) => sum + range.mode, 0);
+        if (valueAtStake <= 0) {
+            return res.status(400).json({ error: 'lossMagnitudes tiene que sumar un Valor en Juego mayor que 0.' });
+        }
+
+        // El caso central (los tres parámetros en su valor más probable) se RESUELVE exacto — no
+        // sale de la simulación. La simulación responde otra pregunta: qué tan robusto es ese
+        // umbral cuando los tres parámetros son rangos y no puntos.
+        const central = deterrenceThreshold({
+            m,
+            valueAtStake,
+            costAttacker: costAttacker.mode,
+            outsideOption: outsideOptionFraction.mode * valueAtStake,
+        });
+
+        const simulation = simulateDeterrence({
+            m,
+            valueAtStake: {
+                min: Object.values(lossMagnitudes).reduce((s, r) => s + r.min, 0),
+                mode: valueAtStake,
+                max: Object.values(lossMagnitudes).reduce((s, r) => s + r.max, 0),
+            },
+            costAttacker,
+            outsideOptionFraction,
+            iterations,
+            seed,
+        });
+
+        res.json({
+            attackerKey,
+            attackerName: attackerProfile.name,
+            valueAtStake,
+            // El default por perfil viaja de vuelta para que la pantalla pueda decir si el usuario
+            // lo movió o dejó el sugerido — un supuesto escondido es lo que convierte esto en una
+            // máquina de justificar cualquier inversión.
+            suggestedOutsideOptionFraction: DEFAULT_OUTSIDE_OPTION_FRACTION[attackerKey] ?? null,
+            usedOutsideOptionFraction: outsideOptionFraction,
+            central,
+            simulation,
         });
     });
 
