@@ -19,6 +19,7 @@ const { normalizeRiskCriteria, validateRiskCriteriaOverride } = require('../lib/
 const { asyncHandler } = require('../middleware/asyncHandler');
 const { ACCESS_LEVELS, DEFAULT_ACCESS_LEVEL } = require('../lib/autocalc');
 const { simulatePortfolio, simulateResidualPortfolio, PORTFOLIO_ITERATIONS } = require('../lib/portfolioSimulation');
+const { validateFactorProvenance, normalizeFactorProvenance, summarizeProvenance } = require('../lib/provenance');
 
 // Caché de la simulación del portafolio (ver GET /portfolio-simulation). Vive en el módulo, no en
 // el store: es un resultado derivado, se puede recalcular siempre, y no tiene por qué sobrevivir a
@@ -87,6 +88,7 @@ function createRegisterRouter(store) {
                     residualPortfolio: null,
                     residualPareto: null,
                     inherentPortfolio: null,
+                    provenanceSummary: summarizeProvenance([]),
                 });
             }
 
@@ -98,6 +100,11 @@ function createRegisterRouter(store) {
             risks.forEach((r) => {
                 const efectivos = r.riskCriteriaOverride ? { ...criteria, ...r.riskCriteriaOverride } : criteria;
                 r.residualMatrixPoint = calculateResidualMatrixPoint(r, efectivos);
+                // Procedencia por factor SIEMPRE en la misma forma, incluso para los riesgos
+                // guardados antes de que existiera: se deriva de su `dataSource` (ver
+                // normalizeFactorProvenance). Es campo derivado, igual que residualMatrixPoint —
+                // no se persiste desde aquí.
+                r.factorProvenance = normalizeFactorProvenance(r);
             });
 
             const pareto = calculateParetoAnalysis(risks);
@@ -141,6 +148,10 @@ function createRegisterRouter(store) {
                 residualPortfolio,
                 residualPareto,
                 inherentPortfolio,
+                // Cuánto del Registro está sostenido por algo observado y cuánto por juicio. Los
+                // tres factores del ALE pesan igual (elasticidad 1 cada uno), así que el resumen
+                // los cuenta por separado en vez de mezclarlos en una sola etiqueta por riesgo.
+                provenanceSummary: summarizeProvenance(risks),
             });
         }),
     );
@@ -344,6 +355,9 @@ function createRegisterRouter(store) {
                 dataSource = null,
                 dataConfidence = null,
                 dataNotes = null,
+                // De dónde salió cada uno de los tres factores del ALE (ver lib/provenance.js).
+                // Opcional: no declararlo se normaliza a juicio experto al leer.
+                factorProvenance = null,
                 assessor = null,
                 assessmentDate = null,
                 assessmentLocation = null,
@@ -417,6 +431,13 @@ function createRegisterRouter(store) {
             }
             if (typeof ale !== 'number') {
                 return res.status(400).json({ error: 'ale (número) es requerido.' });
+            }
+            // La procedencia se valida al CAPTURAR, no al usar: un conteo de observaciones sin
+            // exposición es inservible para ponderar por credibilidad, y descubrirlo meses después
+            // —cuando ya no se le puede preguntar a nadie— no tiene arreglo.
+            const errorProcedencia = validateFactorProvenance(factorProvenance);
+            if (errorProcedencia) {
+                return res.status(400).json({ error: errorProcedencia });
             }
             // inherentALE/inherentCVaR se validan (a diferencia de median/min/max/p90, que son
             // puro dato histórico de display) porque SÍ se suman en un total de portafolio
@@ -616,6 +637,7 @@ function createRegisterRouter(store) {
                 dataSource,
                 dataConfidence,
                 dataNotes,
+                factorProvenance,
                 assessor,
                 assessmentDate,
                 assessmentLocation,

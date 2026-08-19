@@ -3823,3 +3823,116 @@ test('la receta con Nivel de Defensa objetivo re-simula con ESE perfil, no con e
         `de básica a élite debería bajar bastante: ${sinTratar.summary.average.toFixed(0)} -> ${conObjetivo.summary.average.toFixed(0)}`,
     );
 });
+
+// ---------------------------------------------------------------------------------------------
+// PROCEDENCIA POR FACTOR (lib/provenance.js)
+// ---------------------------------------------------------------------------------------------
+// No calcula nada — por eso lo que hay que proteger es distinto de lo habitual: que NO invente
+// evidencia donde no la hay, y que no deje pasar un dato que después no se pueda usar.
+const {
+    normalizeFactorProvenance,
+    validateFactorProvenance,
+    weakestOrigin,
+    summarizeProvenance,
+    FACTOR_KEYS,
+} = require('../src/lib/provenance');
+
+test('normalizeFactorProvenance: un riesgo sin procedencia declarada es juicio experto, no "desconocido"', () => {
+    const p = normalizeFactorProvenance({});
+    assert.deepStrictEqual(Object.keys(p), FACTOR_KEYS);
+    FACTOR_KEYS.forEach((k) => {
+        assert.strictEqual(p[k].origen, 'juicio-experto');
+        assert.strictEqual(p[k].observaciones, null);
+    });
+});
+
+test('normalizeFactorProvenance: los riesgos ya guardados heredan su origen del dataSource viejo', () => {
+    // Lo que el usuario SÍ había declarado no se tira a la basura: `dataSource` decía de qué tipo
+    // era la fuente, y eso se conserva por factor.
+    assert.strictEqual(normalizeFactorProvenance({ dataSource: 'historico' }).tef.origen, 'historico-propio');
+    assert.strictEqual(
+        normalizeFactorProvenance({ dataSource: 'benchmark' }).vulnerabilidad.origen,
+        'benchmark-sector',
+    );
+    assert.strictEqual(
+        normalizeFactorProvenance({ dataSource: 'experto-calibrado' }).magnitud.origen,
+        'juicio-experto',
+    );
+});
+
+test('normalizeFactorProvenance: NO inventa cuántas observaciones respaldan un dato heredado', () => {
+    // El `dataSource` viejo decía de qué TIPO era la fuente, nunca CUÁNTA evidencia había.
+    // Rellenar ahí un número sería exactamente la falsa precisión que este módulo existe para medir.
+    const p = normalizeFactorProvenance({ dataSource: 'historico' });
+    FACTOR_KEYS.forEach((k) => {
+        assert.strictEqual(p[k].observaciones, null);
+        assert.strictEqual(p[k].exposicion, null);
+    });
+});
+
+test('validateFactorProvenance: rechaza observaciones sin exposición (el conteo solo no se puede usar)', () => {
+    // "4 incidentes" no dice nada sin "en cuántos años". Sin exposición no hay unidades de riesgo,
+    // y sin unidades no hay Z = n/(n+k) que ponderar.
+    const error = validateFactorProvenance({ tef: { origen: 'historico-propio', observaciones: 4 } });
+    assert.ok(error && error.includes('exposición'), `esperaba un error sobre la exposición, dio: ${error}`);
+    assert.strictEqual(
+        validateFactorProvenance({ tef: { origen: 'historico-propio', observaciones: 4, exposicion: 3 } }),
+        null,
+    );
+});
+
+test('validateFactorProvenance: no declarar procedencia es válido — declararla mal, no', () => {
+    assert.strictEqual(validateFactorProvenance(null), null);
+    assert.strictEqual(validateFactorProvenance(undefined), null);
+    assert.ok(validateFactorProvenance({ tef: { origen: 'inventado' } }));
+    assert.ok(validateFactorProvenance({ noEsUnFactor: {} }));
+    assert.ok(validateFactorProvenance({ tef: { exposicion: -1 } }));
+    assert.ok(validateFactorProvenance([]));
+});
+
+test('weakestOrigin: el eslabón más débil manda, aunque los otros dos estén bien sostenidos', () => {
+    const p = normalizeFactorProvenance({
+        factorProvenance: {
+            tef: { origen: 'historico-propio', observaciones: 10, exposicion: 5 },
+            vulnerabilidad: { origen: 'benchmark-sector' },
+            magnitud: { origen: 'juicio-experto' },
+        },
+    });
+    assert.strictEqual(weakestOrigin(p), 'juicio-experto');
+});
+
+test('summarizeProvenance: mide por FACTOR, no por riesgo — los tres pesan igual en el ALE', () => {
+    // Un riesgo con Frecuencia histórica y Magnitud inventada no está "sostenido a medias": tiene
+    // un factor sostenido de tres. Como la elasticidad de los tres es 1, contar por riesgo
+    // escondería exactamente el desbalance que este resumen existe para mostrar.
+    const risk = (riskName, factorProvenance) => ({
+        riskName,
+        riskType: 'amenaza',
+        tef: { min: 1, mode: 2, max: 3 },
+        vuln: { min: 10, mode: 20, max: 30 },
+        lossMagnitudes: { respuesta: { min: 1, mode: 2, max: 3 } },
+        factorProvenance,
+    });
+    const resumen = summarizeProvenance([
+        risk('Con histórico en frecuencia', {
+            tef: { origen: 'historico-propio', observaciones: 6, exposicion: 4 },
+        }),
+        risk('Todo a juicio', null),
+    ]);
+    assert.strictEqual(resumen.total, 2);
+    assert.strictEqual(resumen.conAlgunDato, 1);
+    assert.strictEqual(resumen.porFactor.tef.conDatos, 1);
+    assert.strictEqual(resumen.porFactor.magnitud.conDatos, 0);
+    assert.strictEqual(resumen.porFactor.tef.observaciones, 6);
+    // 1 factor sostenido de 6 posibles (2 riesgos x 3 factores).
+    assert.ok(Math.abs(resumen.porcentajeSostenido - 100 / 6) < 1e-9);
+});
+
+test('summarizeProvenance: una oportunidad y un riesgo sin analizar no cuentan', () => {
+    const resumen = summarizeProvenance([
+        { riskName: 'Oportunidad', riskType: 'oportunidad', tef: {}, vuln: {}, lossMagnitudes: {} },
+        { riskName: 'Stub del árbol', riskType: 'amenaza' },
+    ]);
+    assert.strictEqual(resumen.total, 0);
+    assert.strictEqual(resumen.porcentajeSostenido, 0);
+});
