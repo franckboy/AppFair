@@ -508,6 +508,61 @@ test('POST /api/treatment/evaluate sin los inputs del riesgo cae al escalado pro
     assert.strictEqual(res.body.mitigar.residualLossExceedanceCurve, null);
 });
 
+test('POST /api/treatment/evaluate: coaseguro fuera de 0-100 se rechaza con 400', async () => {
+    for (const coveragePercent of [-1, 101, 'mitad']) {
+        const res = await request(app)
+            .post('/api/treatment/evaluate')
+            .set('X-API-Key', TEST_API_KEY)
+            .send({
+                currentALE: 100000,
+                transferir: { premium: 5000, deductible: 1000, unlimited: true, coveragePercent },
+            });
+        assert.strictEqual(res.status, 400, `coveragePercent=${coveragePercent}`);
+    }
+});
+
+test('POST /api/treatment/evaluate: un coaseguro de 0 se acepta y NO se trata como cobertura total', async () => {
+    // 0 es falsy: la trampa del `|| 100`. Una póliza que no responde por nada de esta pérdida
+    // tiene que dejar el residual igual al ALE actual, no bajarlo a nada.
+    const annualLosses = Array.from({ length: 100 }, () => 100000);
+    const cero = await request(app)
+        .post('/api/treatment/evaluate')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            currentALE: 100000,
+            annualLosses,
+            transferir: { premium: 5000, deductible: 10000, unlimited: true, coveragePercent: 0 },
+        });
+    assert.strictEqual(cero.status, 200);
+    assert.strictEqual(cero.body.transferir.residualALE, 100000);
+    assert.strictEqual(cero.body.transferir.coveragePercent, 0);
+
+    // Y omitirlo sigue dando cobertura total, como toda póliza ya guardada.
+    const omitido = await request(app)
+        .post('/api/treatment/evaluate')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            currentALE: 100000,
+            annualLosses,
+            transferir: { premium: 5000, deductible: 10000, unlimited: true },
+        });
+    assert.strictEqual(omitido.body.transferir.residualALE, 10000);
+    assert.strictEqual(omitido.body.transferir.coveragePercent, 100);
+});
+
+test('POST /api/treatment/evaluate: Fiabilidad "nula" deja el beneficio neto de Transferir en -prima', async () => {
+    const res = await request(app)
+        .post('/api/treatment/evaluate')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            currentALE: 100000,
+            annualLosses: Array.from({ length: 100 }, () => 100000),
+            transferir: { premium: 5000, deductible: 10000, unlimited: true, reliability: 'nula' },
+        });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.transferir.netBenefit, -5000);
+});
+
 test('GET /api/register: el punto residual de la Matriz lee la curva REAL del residual, no la deduce escalando la actual', async () => {
     const riskName = 'HTTP Curva Residual';
     // Curva ACTUAL: leída en umbral/k daría una probabilidad muy distinta a la que dice la

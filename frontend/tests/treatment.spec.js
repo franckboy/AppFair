@@ -225,6 +225,58 @@ test.describe('Tratamiento del Riesgo (página aparte)', () => {
         await expect(page.locator('#fair-seguro-verdict')).toContainText('NO conviene');
     });
 
+    test('Transferir distingue "la póliza no responde" de "responde y paga una parte" — y persiste los dos', async ({
+        page,
+    }) => {
+        // Son dos parámetros distintos del mismo árbol, y confundirlos deja el ALE correcto con la
+        // cola inflada (ver el JSDoc de calculateInsuranceRetainedALE en el backend). Este test no
+        // mide la cola —la página de Tratamiento no recibe los escenarios crudos— sino lo que sí
+        // es frágil: que ambos campos viajen al Registro y vuelvan, en vez de reaparecer como
+        // "cobertura total, fiabilidad media" en el próximo guardado.
+        const riskName = 'E2E Tratamiento — Póliza que no responde';
+        await connectAndBoot(page);
+        await runFullFairAnalysis(page, riskName);
+
+        // Los dos campos son `advanced-only`: en Modo Simple no se ven, así que hay que pasar a
+        // Modo Técnico antes de tocarlos (mismo patrón que fase0-transparencia.spec.js).
+        const toggleText = await page.locator('#mode-toggle-btn').textContent();
+        if (toggleText.includes('Modo Simple')) await page.click('#mode-toggle-btn');
+
+        await page.click('#nav-treatment');
+        await page.waitForTimeout(500);
+        await page.selectOption('#treatment-risk-select', riskName);
+        await page.waitForTimeout(500);
+
+        // Por default, ninguno de los dos cambia nada de lo que ya hacía la app.
+        await expect(page.locator('#fair-seguro-cobertura')).toHaveValue('100');
+        await expect(page.locator('#fair-seguro-fiabilidad')).toHaveValue('media');
+
+        await page.fill('#fair-seguro-prima', '5000');
+        await page.fill('#fair-seguro-cobertura', '25');
+        await page.selectOption('#fair-seguro-fiabilidad', 'nula');
+        await page.waitForTimeout(1000);
+
+        const register = await page.evaluate(async () => {
+            const res = await fetch('http://localhost:3000/api/register', { headers: { 'X-API-Key': 'test-e2e-key' } });
+            return res.json();
+        });
+        const entry = register.risks.find((r) => r.riskName === riskName);
+        expect(entry.transferir.coveragePercent).toBe(25);
+        expect(entry.transferir.reliability).toBe('nula');
+
+        // Y vuelven tal cual al recargar — el 25 no puede reaparecer como 100 ni la fiabilidad
+        // como "media", que es hacia donde caerían si algo los leyera con `||`.
+        await page.reload({ waitUntil: 'networkidle' });
+        const toggleTrasRecarga = await page.locator('#mode-toggle-btn').textContent();
+        if (toggleTrasRecarga.includes('Modo Simple')) await page.click('#mode-toggle-btn');
+        await page.click('#nav-treatment');
+        await page.waitForTimeout(1000);
+        await page.selectOption('#treatment-risk-select', riskName);
+        await page.waitForTimeout(500);
+        await expect(page.locator('#fair-seguro-cobertura')).toHaveValue('25');
+        await expect(page.locator('#fair-seguro-fiabilidad')).toHaveValue('nula');
+    });
+
     test('"Adoptar esta estrategia" persiste la Decisión de Tratamiento y sobrevive a re-simular el mismo riesgo', async ({
         page,
     }) => {

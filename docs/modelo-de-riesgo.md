@@ -1171,8 +1171,20 @@ como hipótesis comparables; la que se adopta se registra aparte (§9.1.1).
 Cada estrategia declara una fiabilidad, que se traduce a probabilidad de éxito:
 
 ```
-alta → 0,90        media → 0,70        baja → 0,40
+alta → 0,90        media → 0,70        baja → 0,40        nula → 0
 ```
+
+Los tres primeros son una calibración inicial razonable, no un dato medido. **`nula` es distinto**:
+no es el punto más bajo de esa escala sino un estado cualitativamente separado, y es el único valor
+de la tabla que no necesita calibrarse. Baja/media/alta responden "¿qué tan probable es que
+funcione?"; nula responde "esto no aplica a este peligro". El caso que lo motivó es una póliza de
+Interrupción de Negocio Contingente frente a una pérdida sin daño físico directo: no es que sea
+improbable que pague, es que está diseñada para no responder. Sin ese valor, la única forma de
+expresarlo era `baja = 0,40`, que afirma un 40 % de éxito que nadie sostiene.
+
+Con `p = 0` el beneficio neto queda en exactamente `−costo`, así que la estrategia aparece
+estrictamente dominada por Aceptar. Ese es el resultado correcto: la herramienta tiene que poder
+decir "no compres esto", no solo "esto es flojo".
 
 El beneficio neto es entonces un **valor esperado** sobre un nodo de azar, no un número de un solo
 punto:
@@ -1193,13 +1205,35 @@ Lo que un deducible y un límite le hacen a una distribución **no** se puede re
 factor. Se aplica sobre **cada una** de las 10.000 pérdidas simuladas:
 
 ```
-retenida(L) = L                                     si L ≤ D
-              D + max(0, (L − D) − min(L − D, C))   si L > D
-              D                                     si L > D y cobertura ilimitada
+retenida(L) = L                    si L ≤ D
+              L − pago(L)          si L > D
+
+pago(L)     = min( (L − D)·c , C )   con tope C
+              (L − D)·c              con cobertura ilimitada
 ```
 
-y el ALE retenido es el promedio de eso. `C = 0` significa literalmente **cero cobertura** por
-encima del deducible, no "sin límite" — para una póliza sin tope hay que declararlo explícitamente.
+donde `D` es el deducible, `C` el límite y `c ∈ [0,1]` la fracción de la que responde la
+aseguradora (**coaseguro**, 1 por defecto). El ALE retenido es el promedio de eso. `C = 0` significa
+literalmente **cero cobertura** por encima del deducible, no "sin límite" — para una póliza sin tope
+hay que declararlo explícitamente.
+
+El orden importa y es el de una póliza real: el coaseguro define **de cuánto responde** la
+aseguradora, y el límite topa **lo que efectivamente desembolsa**.
+
+**Por qué `c` es un parámetro y no se puede sustituir por ninguno de los otros dos.**
+
+Contra la fiabilidad: son dos nodos distintos. La fiabilidad es un Bernoulli —la póliza responde y
+paga lo que le toca, o no responde y te quedas con la pérdida completa—; `c` es estructura de
+cobertura, donde la póliza **sí** responde y paga una fracción de cada pérdida. Codificar "paga el
+25 % siempre" como fiabilidad 0,25 da la **misma media y una cola distinta**: medido sobre 200.000
+escenarios lognormales, el ALE coincide dentro del 1 % y el CVaR₉₅ sale ~11 % más alto, porque
+inventa años en que la póliza no pagó nada sobre una pérdida enorme en vez de años en que pagó poco
+sobre todas. El CVaR es justo lo que alimenta los Criterios de Riesgo (§13) y la atribución de cola
+(§8.5), así que el error sería invisible en el promedio y visible exactamente donde la app decide.
+
+Contra el límite: un sub-límite de 3 M sobre una pérdida de 12 M paga el 25 %, pero sobre una de
+4 M paga el 75 %. El coaseguro paga la misma fracción en toda la distribución. Coinciden en un
+punto y difieren en el resto, así que hacen falta los dos.
 
 De aquí sale una limitación que se propaga a toda la app: como esto es una **truncación** y no un
 escalado, no existe ningún `k` que la represente. Por eso Transferir no tiene punto residual en la

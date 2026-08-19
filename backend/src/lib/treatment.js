@@ -2,11 +2,23 @@
 
 const { evaluateDecisionTree } = require('./decisionTree');
 
-// Traduce Fiabilidad (Alta/Media/Baja, ver el <select> del formulario) a la probabilidad de que
-// la estrategia SÍ funcione como se espera — calibración inicial razonable, no un dato medido;
-// fácil de ajustar acá si en el futuro se calibra con casos reales. Fiabilidad "Baja" no es 0%
-// (un control poco confiable a veces sí funciona) ni "Alta" es 100% (nada es infalible).
-const RELIABILITY_TO_PROBABILITY = { alta: 0.9, media: 0.7, baja: 0.4 };
+// Traduce Fiabilidad (ver el <select> del formulario) a la probabilidad de que la estrategia SÍ
+// funcione como se espera — calibración inicial razonable, no un dato medido; fácil de ajustar
+// acá si en el futuro se calibra con casos reales. Fiabilidad "Baja" no es 0% (un control poco
+// confiable a veces sí funciona) ni "Alta" es 100% (nada es infalible).
+//
+// "Nula" (0) NO es el punto más bajo de esa escala: es un estado cualitativamente distinto, y por
+// eso es el único valor de la tabla que no necesita calibrarse. Baja/media/alta responden "¿qué
+// tan probable es que funcione?"; nula responde "esto no aplica a este peligro". El caso que la
+// motivó es una póliza de Interrupción de Negocio Contingente frente a una pérdida sin daño
+// físico directo: no es que sea improbable que pague, es que está diseñada para no responder
+// (ver tools/referencia-sector/, entrada LR09). Sin este valor, la única forma de expresarlo era
+// "baja: 0,4", que afirma un 40 % de éxito que nadie sostiene.
+//
+// Efecto en el árbol: p = 0 deja el beneficio neto en -costo exacto, así que la estrategia queda
+// visiblemente dominada por Aceptar. Ese es el resultado correcto — la herramienta debe poder
+// decir "no compres esto", no solo "esto es flojo".
+const RELIABILITY_TO_PROBABILITY = { alta: 0.9, media: 0.7, baja: 0.4, nula: 0 };
 
 /**
  * Beneficio neto ESPERADO de una estrategia, dado que tiene un costo real capturado — antes este
@@ -20,7 +32,7 @@ const RELIABILITY_TO_PROBABILITY = { alta: 0.9, media: 0.7, baja: 0.4 };
  * @param {number} cost
  * @param {number} avoidedLoss Lo que se evita SI la estrategia funciona (deterministico, ya
  *   calculado aparte — este valor no cambia, ver avoidedLoss en evaluateTreatmentStrategies).
- * @param {string} reliability 'alta' | 'media' | 'baja'
+ * @param {string} reliability 'alta' | 'media' | 'baja' | 'nula'
  * @returns {number}
  */
 function expectedNetBenefit(cost, avoidedLoss, reliability) {
@@ -36,27 +48,54 @@ function expectedNetBenefit(cost, avoidedLoss, reliability) {
     return evaluateDecisionTree(tree).value;
 }
 
+/** Cobertura proporcional por default: la póliza responde por el 100 % de lo que le toca. */
+const DEFAULT_COVERAGE_PERCENT = 100;
+
 /**
- * Calcula la pérdida retenida por año, aplicando un deducible y un límite de
- * cobertura de seguro sobre CADA escenario simulado (no una aproximación
- * sobre el promedio).
+ * Calcula la pérdida retenida por año, aplicando deducible, coaseguro y límite de cobertura sobre
+ * CADA escenario simulado (no una aproximación sobre el promedio).
  *
  * Importante: `limit=0` se interpreta literalmente como "cero cobertura
  * adicional" arriba del deducible — no como "sin límite". Para modelar una
  * póliza sin tope, usa unlimited=true explícitamente.
  *
+ * ## Por qué el coaseguro es un parámetro aparte y no "fiabilidad baja"
+ *
+ * Son dos cosas distintas y confundirlas rompe la cola. La Fiabilidad es un nodo Bernoulli —la
+ * póliza responde y paga lo que le toca, o no responde y te quedas con la pérdida completa—.
+ * `coveragePercent` es estructura de cobertura: la póliza SÍ responde, y paga una fracción de
+ * cada pérdida (exclusiones parciales, coaseguro pactado).
+ *
+ * Codificar "paga el 25 % siempre" como fiabilidad 0,25 da la MISMA media y una cola distinta:
+ * medido sobre 200.000 escenarios lognormales, el ALE coincide dentro del 1 % y el CVaR95 sale
+ * ~11 % más alto, porque inventa años en que la póliza no pagó nada sobre una pérdida enorme en
+ * vez de años en que pagó poco sobre todas. El CVaR es justo lo que alimenta los Criterios de
+ * Riesgo y la atribución de cola, así que el error sería invisible en el promedio y visible
+ * exactamente donde la app decide.
+ *
+ * Ojo con no confundirlo tampoco con el LÍMITE, que sí existía: un sub-límite de $3 M sobre una
+ * pérdida de $12 M paga 25 %, pero sobre una de $4 M paga 75 %. El coaseguro paga la misma
+ * fracción en toda la distribución. Se comportan igual en un punto y distinto en el resto, y por
+ * eso hacen falta los dos. El orden es el de una póliza real: el coaseguro define de cuánto
+ * responde la aseguradora, y el límite topa lo que efectivamente desembolsa.
+ *
  * @param {number[]} annualLosses Arreglo de pérdidas simuladas (del motor Monte Carlo)
  * @param {number} deductible Deducible por evento
  * @param {number} limit Límite de cobertura por evento (ignorado si unlimited=true)
  * @param {boolean} unlimited Si es true, la aseguradora cubre todo el excedente sobre el deducible
+ * @param {number} [coveragePercent=100] Porcentaje del excedente del que responde la aseguradora
  * @returns {number} Pérdida Anual Esperada retenida (promedio)
  */
-function calculateInsuranceRetainedALE(annualLosses, deductible, limit, unlimited) {
+function calculateInsuranceRetainedALE(annualLosses, deductible, limit, unlimited, coveragePercent) {
+    // `?? DEFAULT` y no `|| DEFAULT`: un coaseguro de 0 ("la póliza no responde por nada de esta
+    // pérdida") es un valor legítimo, y con `||` se convertiría en silencio en cobertura total.
+    const share = (typeof coveragePercent === 'number' ? coveragePercent : DEFAULT_COVERAGE_PERCENT) / 100;
     const retained = annualLosses.map((loss) => {
         if (loss <= deductible) return loss;
         const excess = loss - deductible;
-        const coveredAmount = unlimited ? excess : Math.min(excess, limit);
-        return deductible + Math.max(0, excess - coveredAmount);
+        const covered = excess * share;
+        const payout = unlimited ? covered : Math.min(covered, limit);
+        return loss - payout;
     });
     return retained.reduce((a, b) => a + b, 0) / retained.length;
 }
@@ -101,6 +140,7 @@ function evaluateMitigarConTransferir({ currentALE, annualLosses, mitigar, trans
                   transferir.deductible || 0,
                   transferir.limit || 0,
                   !!transferir.unlimited,
+                  transferir.coveragePercent,
               )
             : baseALE; // sin datos de póliza, transferir no aporta nada sobre aceptar tal cual.
 
@@ -316,6 +356,7 @@ function evaluateTreatmentStrategies(
                   transferir.deductible || 0,
                   transferir.limit || 0,
                   !!transferir.unlimited,
+                  transferir.coveragePercent,
               )
             : currentALE;
     const avoidedTransferir = currentALE - retainedALE;
@@ -332,6 +373,8 @@ function evaluateTreatmentStrategies(
         avoidedLoss: transferirCalculable ? avoidedTransferir : null,
         netBenefit: transferirCalculable ? netBenefitTransferir : null,
         reliability: transferir.reliability,
+        coveragePercent:
+            typeof transferir.coveragePercent === 'number' ? transferir.coveragePercent : DEFAULT_COVERAGE_PERCENT,
         delayDays: transferir.delayDays,
         verdict: !transferirCalculable
             ? {
