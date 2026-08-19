@@ -17,6 +17,7 @@ const {
 const {
     runMonteCarloSimulation,
     summarizeLosses,
+    summarizeEventCounts,
     pearsonCorrelation,
     buildLossExceedanceCurve,
     LEC_EXCEEDANCE_PROBABILITIES,
@@ -844,6 +845,66 @@ test('runMonteCarloSimulation: sampleVuln personalizado consume el mismo rng (la
     const runA = runMonteCarloSimulation(params);
     const runB = runMonteCarloSimulation(params);
     assert.deepStrictEqual(runA.annualLosses, runB.annualLosses);
+});
+
+test('summarizeEventCounts: cuenta golpes, no dinero', () => {
+    // 10 años: seis en cero, tres con un evento, uno con dos.
+    const r = summarizeEventCounts([0, 0, 0, 1, 2, 0, 1, 0, 0, 1]);
+    assert.strictEqual(r.years, 10);
+    assert.strictEqual(r.totalEvents, 5);
+    assert.strictEqual(r.meanEventsPerYear, 0.5);
+    assert.strictEqual(r.maxEventsInAYear, 2);
+    assert.deepStrictEqual(r.distribution, [
+        { events: 0, years: 6 },
+        { events: 1, years: 3 },
+        { events: 2, years: 1 },
+    ]);
+});
+
+test('summarizeEventCounts: la distribución cubre TODOS los años, sin huecos', () => {
+    // Invariante: si los años de la distribución no suman los años simulados, alguno se perdió por
+    // el camino y cualquier porcentaje que se calcule encima queda mal.
+    const counts = [0, 3, 0, 1, 0, 0, 7, 2];
+    const r = summarizeEventCounts(counts);
+    assert.strictEqual(
+        r.distribution.reduce((a, d) => a + d.years, 0),
+        r.years,
+    );
+    assert.strictEqual(
+        r.distribution.reduce((a, d) => a + d.events * d.years, 0),
+        r.totalEvents,
+    );
+});
+
+test('summarizeEventCounts: sin conteos devuelve null, no un cero engañoso', () => {
+    // El modelo 'expected' no produce conteos: ahí cada año trae "LEF eventos" con decimales y la
+    // pregunta no tiene respuesta. Devolver 0 diría "no pasó nada nunca", que es otra cosa.
+    assert.strictEqual(summarizeEventCounts(null), null);
+    assert.strictEqual(summarizeEventCounts([]), null);
+});
+
+test('summarizeEventCounts: el conteo total concuerda con el LEF que lo generó', () => {
+    // Prueba de fondo: no verifica la aritmética del resumen sino que el motor de verdad pega la
+    // cantidad de veces que su propio LEF promete. Es el invariante que hace que este número se
+    // pueda comparar algún día contra una bitácora real.
+    const iterations = 40000;
+    const { eventCounts } = runMonteCarloSimulation({
+        iterations,
+        seed: 4242,
+        tef: { min: 0.8, mode: 1.0, max: 1.2 },
+        vuln: { min: 28, mode: 30, max: 32 },
+        lossMagnitudes: { productividad: { min: 1000, mode: 2000, max: 4000 } },
+        frequencyModel: 'compound',
+    });
+    const r = summarizeEventCounts(eventCounts);
+    const lefEsperado = 1.0 * 0.3; // TEF moda x Vulnerabilidad moda
+    assert.ok(
+        Math.abs(r.meanEventsPerYear - lefEsperado) < 0.02,
+        `eventos/año medidos ${r.meanEventsPerYear} contra LEF esperado ${lefEsperado}`,
+    );
+    // Y con LEF < 1 la mayoría de los años tiene que venir en cero: e^-0,3 = 74 %.
+    const anosEnCero = r.distribution[0].years / r.years;
+    assert.ok(Math.abs(anosEnCero - Math.exp(-lefEsperado)) < 0.02, `años en cero ${anosEnCero}`);
 });
 
 test('summarizeLosses: mediana par calcula bien el promedio de los dos centrales', () => {

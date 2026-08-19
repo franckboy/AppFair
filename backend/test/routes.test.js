@@ -15,6 +15,15 @@ const { CALIBRATION_VERSION } = require('../src/lib/autocalc');
 const TEST_API_KEY = 'test-key-for-http-integration-tests';
 process.env.API_KEY = TEST_API_KEY;
 
+// El limitador de tasa cuenta TODA la suite como una sola IP, y su default son 300 peticiones en
+// 15 minutos. La suite venía a dos tests del tope: el que cruzara la línea iba a recibir un 429 en
+// vez de la respuesta que esperaba, y el test que fallara no iba a ser el culpable sino el
+// siguiente de la lista — un fallo movedizo, sin relación con lo que se rompió. Se levanta el tope
+// acá, antes de require('../server') (server.js lee la variable al cargar), con el mismo criterio y
+// la misma razón que ya usa playwright.config.js para el backend del E2E: una suite automatizada no
+// es abuso. El límite real de producción no se toca.
+process.env.RATE_LIMIT_MAX = process.env.RATE_LIMIT_MAX || '100000';
+
 // data/db.json es efímero (está en .gitignore) — se arranca cada corrida desde datos limpios,
 // igual que se hace manualmente al probar en local.
 const DB_PATH = path.join(__dirname, '..', 'data', 'db.json');
@@ -506,6 +515,52 @@ test('POST /api/treatment/evaluate sin los inputs del riesgo cae al escalado pro
     assert.strictEqual(res.body.mitigar.residualALE, 40000);
     assert.strictEqual(res.body.mitigar.residualCVaR, 100000);
     assert.strictEqual(res.body.mitigar.residualLossExceedanceCurve, null);
+});
+
+test('POST /api/simulate devuelve el conteo de ataques consumados, no solo el dinero', async () => {
+    const res = await request(app)
+        .post('/api/simulate')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            iterations: 5000,
+            seed: 77,
+            tef: { min: 0.8, mode: 1.0, max: 1.2 },
+            vuln: { min: 28, mode: 30, max: 32 },
+            lossMagnitudes: { productividad: { min: 1000, mode: 2000, max: 4000 } },
+        });
+    assert.strictEqual(res.status, 200);
+    const e = res.body.events;
+    assert.ok(e, 'el modelo compuesto (default) tiene que traer el conteo');
+    assert.strictEqual(e.years, 5000);
+    assert.ok(e.totalEvents > 0);
+    assert.ok(e.maxEventsInAYear >= 1);
+    // El conteo y el dinero tienen que contar la MISMA historia: los años sin ningún evento son
+    // exactamente los años que no costaron nada. Si estas dos cifras se separan, una de las dos
+    // está mal y la pantalla mostraría dos verdades incompatibles.
+    const anosEnCeroPorConteo = (e.distribution[0].years / e.years) * 100;
+    assert.ok(
+        Math.abs(anosEnCeroPorConteo - res.body.summary.zeroLossYearsPercent) < 1e-9,
+        `conteo dice ${anosEnCeroPorConteo} % y el dinero dice ${res.body.summary.zeroLossYearsPercent} %`,
+    );
+});
+
+test('POST /api/simulate con el modelo "expected" devuelve events en null, no en cero', async () => {
+    // Ahí cada año trae "LEF eventos" con decimales: la pregunta "¿cuántas veces te pegaron?" no
+    // tiene respuesta. Un 0 diría "nunca pasó nada", que es una afirmación distinta.
+    const res = await request(app)
+        .post('/api/simulate')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            iterations: 500,
+            seed: 77,
+            frequencyModel: 'expected',
+            tef: { min: 0.8, mode: 1.0, max: 1.2 },
+            vuln: { min: 28, mode: 30, max: 32 },
+            lossMagnitudes: { productividad: { min: 1000, mode: 2000, max: 4000 } },
+        });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.frequencyModel, 'expected');
+    assert.strictEqual(res.body.events, null);
 });
 
 test('POST /api/treatment/evaluate: coaseguro fuera de 0-100 se rechaza con 400', async () => {

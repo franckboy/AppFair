@@ -510,10 +510,19 @@ export const FairExport = {
         // 'oportunidad' se excluye de la exposición total y del mapa de calor — su "ale" es
         // un beneficio esperado, no una pérdida (mismo criterio que calculateParetoAnalysis
         // en el backend; ver también renderRiskRegister).
-        const threatRegister = register.filter((r) => r.riskType !== 'oportunidad');
-        const opportunityCount = register.length - threatRegister.length;
-        const totalALE = threatRegister.reduce((sum, r) => sum + r.ale, 0);
-        const criticos = threatRegister.filter((r) => r.evaluationLevel.includes('Crítico')).length;
+        // Un riesgo "Sin analizar" (los que crea el botón "+" del Árbol de Cascada) es una Amenaza
+        // sin `evaluationLevel` ni `ale`. Antes entraba igual acá y el informe entero moría en
+        // silencio: `r.evaluationLevel.includes(...)` tiraba sobre undefined, la excepción se comía
+        // el `window.print()` y el botón de exportar simplemente no hacía nada — sin aviso, sin
+        // reporte, sin pista. Bastaba UN riesgo hijo creado desde el árbol para dejar sin informe a
+        // todo el Registro. `!!evaluationLevel` es el mismo predicado de "Analizado" que ya usan la
+        // ficha del riesgo y Gestión de Riesgos.
+        const analizadas = register.filter((r) => r.riskType !== 'oportunidad' && !!r.evaluationLevel);
+        const sinAnalizar = register.filter((r) => r.riskType !== 'oportunidad' && !r.evaluationLevel).length;
+        const threatRegister = analizadas;
+        const opportunityCount = register.filter((r) => r.riskType === 'oportunidad').length;
+        const totalALE = threatRegister.reduce((sum, r) => sum + (r.ale || 0), 0);
+        const criticos = threatRegister.filter((r) => (r.evaluationLevel || '').includes('Crítico')).length;
         const exposicionTotalTexto = formatCurrency(totalALE);
 
         // Interpretación General y Sensibilidad Consolidada son texto puro (sin canvas) — se
@@ -603,7 +612,8 @@ export const FairExport = {
             <div class="print-section">
                 <h2>Resumen Ejecutivo</h2>
                 <table>
-                    <tr><td><strong>Riesgos Analizados</strong></td><td>${register.length}${opportunityCount > 0 ? ` (${threatRegister.length} amenaza${threatRegister.length === 1 ? '' : 's'}, ${opportunityCount} oportunidad${opportunityCount === 1 ? '' : 'es'})` : ''}</td></tr>
+                    <tr><td><strong>Riesgos Analizados</strong></td><td>${threatRegister.length + opportunityCount}${opportunityCount > 0 ? ` (${threatRegister.length} amenaza${threatRegister.length === 1 ? '' : 's'}, ${opportunityCount} oportunidad${opportunityCount === 1 ? '' : 'es'})` : ''}</td></tr>
+                    ${sinAnalizar > 0 ? `<tr><td><strong>Sin analizar (fuera de este informe)</strong></td><td>${sinAnalizar} riesgo${sinAnalizar === 1 ? '' : 's'} registrado${sinAnalizar === 1 ? '' : 's'} pero todavía sin simular — no aportan ninguna cifra de las de abajo.</td></tr>` : ''}
                     <tr><td><strong>Exposición Total (suma de ALE de las amenazas)</strong></td><td>${exposicionTotalTexto}</td></tr>
                     <tr><td><strong>Amenazas en nivel Crítico</strong></td><td>${criticos}</td></tr>
                 </table>

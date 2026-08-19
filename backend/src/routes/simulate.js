@@ -4,6 +4,7 @@ const express = require('express');
 const {
     runMonteCarloSimulation,
     summarizeLosses,
+    summarizeEventCounts,
     buildLossExceedanceCurve,
     FREQUENCY_MODELS,
 } = require('../lib/simulation');
@@ -153,6 +154,7 @@ function createSimulateRouter(store) {
                 annualLosses,
                 usedSeed,
                 sensitivity,
+                eventCounts,
                 frequencyModel: usedFrequencyModel,
             } = runMonteCarloSimulation({
                 iterations,
@@ -226,6 +228,10 @@ function createSimulateRouter(store) {
                 // arriba) — null para Oportunidad, igual que inherentALE/inherentCVaR.
                 inherentEvaluation,
                 sensitivity: sensitivity.slice(0, 10),
+                // Cuántos ataques prosperaron, no cuánto costaron (ver summarizeEventCounts). El
+                // motor ya sorteaba este conteo y lo tiraba: todo lo que la app mostraba estaba en
+                // dinero. `null` con el modelo 'expected', donde la pregunta no tiene respuesta.
+                events: summarizeEventCounts(eventCounts),
                 // Curva de Excedencia de Pérdidas (ver buildLossExceedanceCurve): ~34 puntos, lo
                 // bastante compacta para guardarse en el Registro y volver a dibujarse sin
                 // re-simular — a diferencia de annualLosses, que se manda pero no se persiste.

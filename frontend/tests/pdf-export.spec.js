@@ -1,6 +1,9 @@
 'use strict';
 const { test, expect, connectAndBoot, runFullFairAnalysis } = require('./helpers');
 
+const API = 'http://localhost:3000';
+const KEY = 'test-e2e-key';
+
 test.describe('Informe Consolidado (PDF único)', () => {
     test('incluye el resumen de portafolio y el detalle técnico completo de cada riesgo', async ({ page }) => {
         await page.addInitScript(() => {
@@ -30,10 +33,16 @@ test.describe('Informe Consolidado (PDF único)', () => {
         await expect(page.locator('#fair-export-report-btn')).toHaveCount(0);
 
         await page.click('#fair-export-consolidated-btn');
-        await page.waitForTimeout(3000); // recalcula Tratamiento por riesgo + regenera histogramas
 
-        const printCalled = await page.evaluate(() => window.__printCalled || 0);
-        expect(printCalled).toBeGreaterThan(0);
+        // Se espera a la CONDICIÓN, no a un reloj. Antes había un `waitForTimeout(3000)` fijo para
+        // un trabajo que crece con el Registro: el informe recalcula Tratamiento riesgo por riesgo
+        // y regenera un histograma por cada uno, y la suite comparte un backend donde los riesgos
+        // se acumulan corrida tras corrida. O sea que el margen se achicaba solo cada vez que
+        // alguien agregaba un test que sembrara un riesgo — hasta que un día no alcanzaba, y el
+        // que fallaba no era el test culpable sino este. `window.print()` se llama en la línea
+        // siguiente a escribir el HTML del informe (ver fair-export.js), así que este contador es
+        // señal fiable de que el informe ya está completo.
+        await expect.poll(() => page.evaluate(() => window.__printCalled || 0), { timeout: 30000 }).toBeGreaterThan(0);
 
         const reportHTML = await page.locator('#fair-print-report').innerHTML();
         expect(reportHTML).toContain('Informe Consolidado de Riesgos');
@@ -77,5 +86,45 @@ test.describe('Informe Consolidado (PDF único)', () => {
             const src = await img.getAttribute('src');
             expect(src.length).toBeGreaterThan(3000);
         }
+    });
+
+    test('un riesgo "Sin analizar" no rompe el informe: sale listado, no hace desaparecer todo', async ({ page }) => {
+        // Bug real. El botón "+" del Árbol de Cascada crea Amenazas sin `evaluationLevel` ni `ale`.
+        // El informe las metía igual en sus estadísticas y `r.evaluationLevel.includes(...)` tiraba
+        // sobre undefined; la excepción se comía el window.print() y el botón de exportar
+        // simplemente no hacía nada — sin aviso ni pista. UN riesgo hijo creado desde el árbol
+        // dejaba sin informe a todo el Registro. Lo encontró la suite, no una revisión.
+        await page.addInitScript(() => {
+            window.print = () => {
+                window.__printCalled = (window.__printCalled || 0) + 1;
+            };
+        });
+        await connectAndBoot(page);
+        await runFullFairAnalysis(page, 'E2E PDF — Riesgo analizado de verdad');
+
+        await page.evaluate(
+            async ({ API, KEY }) => {
+                await fetch(`${API}/api/register/${encodeURIComponent('E2E PDF — Stub sin analizar')}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'X-API-Key': KEY },
+                    // Exactamente lo que guarda el "+" del Árbol: una Amenaza y nada más.
+                    body: JSON.stringify({ riskType: 'amenaza' }),
+                });
+            },
+            { API, KEY },
+        );
+
+        await page.click('#nav-dashboard');
+        await page.waitForTimeout(1000);
+        await page.click('#fair-export-consolidated-btn');
+        await expect.poll(() => page.evaluate(() => window.__printCalled || 0), { timeout: 30000 }).toBeGreaterThan(0);
+
+        const reportHTML = await page.locator('#fair-print-report').innerHTML();
+        // El informe existe...
+        expect(reportHTML).toContain('Informe Consolidado de Riesgos');
+        // ...la exposición total es un número, no NaN...
+        expect(reportHTML).not.toContain('NaN');
+        // ...y el riesgo sin analizar se DECLARA en vez de desaparecer en silencio.
+        expect(reportHTML).toContain('Sin analizar');
     });
 });

@@ -533,9 +533,28 @@ baja frecuencia y alto impacto.
 | **CVaR95**       | **Media del peor 5 %** de las pérdidas. **No es un percentil** — por eso vale más que uno para dimensionar cobertura                                                            |
 | **LEC**          | Curva de excedencia: pérdida asociada a cada una de **34 probabilidades** entre 100 % y 0,1 %, con la probabilidad **recalculada empíricamente** sobre las pérdidas (ver abajo) |
 | **Años en cero** | `zeroLossYearsPercent`: qué % de los años simulados no registró ningún evento                                                                                                   |
+| **Eventos**      | `events`: cuántos ataques prosperaron, no cuánto costaron (ver abajo). `null` con el modelo `expected`                                                                          |
 | **Sensibilidad** | Correlación de **Spearman** (rangos) entre cada variable de entrada y la pérdida simulada                                                                                       |
 
 > **No existe `p95` en la salida.** Las métricas de cola son p90, CVaR95 y la LEC completa.
+
+**El conteo de eventos: la única salida que no está en dinero.** Todas las demás métricas de la
+tabla son pesos. Pero el motor, en cada iteración, sortea `N ~ Poisson(TEF · V)` — cuántos ataques
+superaron la defensa ese año — y hasta ahora ese conteo se descartaba después de usarlo para sumar
+magnitudes. `summarizeEventCounts` lo devuelve: total de eventos, media por año, máximo en un solo
+año, y la distribución completa (cuántos años trajeron 0, 1, 2… eventos).
+
+Importa por tres razones. Es **la lectura intuitiva**: "el ataque prosperó 4.012 veces en 10.000
+años" se entiende sin saber qué es un percentil. Es **la salida comparable contra la realidad**: una
+bitácora de incidentes cuenta eventos, no promedios, así que este es el único número del motor que
+un histórico real puede contradecir de frente (§17). Y es **coherente por construcción** con el
+dinero: con el modelo compuesto, cero eventos implica pérdida cero, así que
+`distribution[0].years / years` tiene que dar exactamente `zeroLossYearsPercent`. Hay un test que lo
+fija — si las dos cifras se separan, una de las dos está mal.
+
+No se devuelve un "porcentaje de años tranquilos" propio, justamente porque sería
+`zeroLossYearsPercent` con otro nombre. Dos cifras que siempre coinciden y que alguien puede
+desincronizar tocando una sola son una trampa, no una comodidad.
 
 **Por qué la LEC recalcula su probabilidad.** La curva se arma buscando, para cada probabilidad de
 la escalera, el cuantil correspondiente. Con una distribución continua la etiqueta y la realidad
