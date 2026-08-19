@@ -4049,3 +4049,130 @@ test('summarizeProvenance: una oportunidad y un riesgo sin analizar no cuentan',
     assert.strictEqual(resumen.total, 0);
     assert.strictEqual(resumen.porcentajeSostenido, 0);
 });
+
+// ============================================================
+// Disuasión (Stackelberg) — ver backend/src/lib/stackelbergDeterrence.js
+// ============================================================
+const {
+    DEFAULT_OUTSIDE_OPTION_FRACTION,
+    attackerBestResponse,
+    deterrenceThreshold,
+    simulateDeterrence,
+} = require('../src/lib/stackelbergDeterrence');
+
+test('disuasión: más defensa nunca le sube la ganancia al atacante', () => {
+    // El invariante más básico: si esto se rompe, todo lo demás (que el umbral exista y sea único)
+    // deja de tener sentido, porque la bisección asume exactamente esta monotonía.
+    let previo = Infinity;
+    for (let d = 0; d <= 100; d += 2) {
+        const p = attackerBestResponse(d, 1.5, 275000, 800).payoff;
+        assert.ok(p <= previo + 1e-9, `la ganancia subió al pasar a defensa ${d}: ${previo} -> ${p}`);
+        previo = p;
+    }
+});
+
+test('disuasión: el umbral baja cuando el atacante tiene mejores alternativas', () => {
+    // Cuanto más fácil le resulta irse a otro lado, menos inversión hace falta para que se vaya.
+    let previo = Infinity;
+    for (const f of [0.3, 0.4, 0.5, 0.6, 0.7, 0.8]) {
+        const { threshold } = deterrenceThreshold({
+            m: 1.5,
+            valueAtStake: 275000,
+            costAttacker: 800,
+            outsideOption: f * 275000,
+        });
+        assert.ok(threshold !== null, `sin umbral con alternativa ${f}`);
+        assert.ok(threshold <= previo + 1e-6, `el umbral subió con alternativa ${f}`);
+        previo = threshold;
+    }
+});
+
+test('disuasión: al que no tiene adónde ir NUNCA se lo disuade — a lo sumo desiste', () => {
+    // La afirmación central del módulo, y la versión PRECISA de ella. La versión fácil ("al
+    // insider no lo disuade nada") es falsa: con un activo chico y un costo de intento alto, hasta
+    // un atacante sin alternativas deja de atacar. Pero eso no es disuasión — no se fue a ningún
+    // lado, simplemente dejó de rentarle, y vuelve en cuanto suba el valor o se afloje un control.
+    // Lo que sí es invariante es que el MOTIVO nunca puede ser "alternativa" cuando vale cero.
+    let casos = 0;
+    for (const valueAtStake of [1e3, 1e4, 1e5, 275000, 1e6, 1e9]) {
+        for (const m of [0.5, 1, 1.5, 2, 3]) {
+            for (const costAttacker of [10, 50, 800, 3000, 20000]) {
+                const r = deterrenceThreshold({ m, valueAtStake, costAttacker, outsideOption: 0 });
+                assert.notStrictEqual(
+                    r.reason,
+                    'alternativa',
+                    `con alternativa 0 apareció disuasión real (V=${valueAtStake}, m=${m}, c=${costAttacker})`,
+                );
+                casos += 1;
+            }
+        }
+    }
+    assert.strictEqual(casos, 150);
+    // Y el default del perfil que representa ese caso es exactamente 0, no un número prudente.
+    assert.strictEqual(DEFAULT_OUTSIDE_OPTION_FRACTION['empleado-desleal'], 0);
+});
+
+test('disuasión: un atacante que eligió este objetivo es más caro de sacar que uno oportunista', () => {
+    // El resultado que hace que el análisis valga la pena: el mismo gasto compra cosas distintas
+    // según a quién enfrentes. Sin esto, la pantalla sugeriría gastar igual contra todos.
+    const base = { m: 1.5, valueAtStake: 275000, costAttacker: 800 };
+    const oportunista = deterrenceThreshold({
+        ...base,
+        outsideOption: DEFAULT_OUTSIDE_OPTION_FRACTION.oportunista * base.valueAtStake,
+    });
+    const organizado = deterrenceThreshold({
+        ...base,
+        outsideOption: DEFAULT_OUTSIDE_OPTION_FRACTION.organizado * base.valueAtStake,
+    });
+    assert.ok(oportunista.threshold !== null, 'al oportunista sí se lo debería poder disuadir');
+    // Al organizado o no se lo disuade, o cuesta estrictamente más.
+    assert.ok(
+        organizado.threshold === null || organizado.threshold > oportunista.threshold,
+        `organizado ${organizado.threshold} no es más caro que oportunista ${oportunista.threshold}`,
+    );
+});
+
+test('disuasión: la simulación reproduce el caso central y la curva es monótona', () => {
+    const params = {
+        m: 1.5,
+        valueAtStake: { min: 250000, mode: 275000, max: 300000 },
+        costAttacker: { min: 750, mode: 800, max: 850 },
+        outsideOptionFraction: { min: 0.48, mode: 0.5, max: 0.52 },
+        iterations: 4000,
+        seed: 99,
+    };
+    const sim = simulateDeterrence(params);
+    const central = deterrenceThreshold({
+        m: params.m,
+        valueAtStake: params.valueAtStake.mode,
+        costAttacker: params.costAttacker.mode,
+        outsideOption: params.outsideOptionFraction.mode * params.valueAtStake.mode,
+    });
+    // Con rangos estrechos, la mediana de la distribución tiene que caer cerca del caso resuelto
+    // exacto. Es la prueba de que la simulación envuelve al solver y no lo reemplaza.
+    assert.ok(
+        Math.abs(sim.thresholdMedian - central.threshold) < 5,
+        `mediana ${sim.thresholdMedian} lejos del central ${central.threshold}`,
+    );
+    // La curva "porcentaje disuadido" no puede bajar al subir la defensa.
+    let previo = -1;
+    sim.deterrenceCurve.forEach((p) => {
+        assert.ok(p.deterredPercent >= previo - 1e-9, `la curva bajó en defensa ${p.defenseEffort}`);
+        previo = p.deterredPercent;
+    });
+    // Y las tres cuentas de motivos tienen que cerrar contra el total.
+    const suma = sim.neverDeterredPercent + sim.byAlternativePercent + sim.byUnprofitablePercent;
+    assert.ok(Math.abs(suma - 100) < 1e-9, `los motivos suman ${suma} %, no 100`);
+});
+
+test('disuasión: misma semilla, mismo resultado', () => {
+    const p = {
+        m: 1.5,
+        valueAtStake: { min: 200000, mode: 275000, max: 400000 },
+        costAttacker: { min: 500, mode: 800, max: 1500 },
+        outsideOptionFraction: { min: 0.3, mode: 0.5, max: 0.7 },
+        iterations: 1000,
+        seed: 7,
+    };
+    assert.deepStrictEqual(simulateDeterrence(p), simulateDeterrence(p));
+});

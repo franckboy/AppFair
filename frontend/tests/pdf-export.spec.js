@@ -122,8 +122,11 @@ test.describe('Informe Consolidado (PDF único)', () => {
         const reportHTML = await page.locator('#fair-print-report').innerHTML();
         // El informe existe...
         expect(reportHTML).toContain('Informe Consolidado de Riesgos');
-        // ...la exposición total es un número, no NaN...
-        expect(reportHTML).not.toContain('NaN');
+        // ...la exposición total es un número, no NaN. Se quitan antes las imágenes embebidas: un
+        // PNG en base64 contiene "NaN" por pura casualidad de la codificación, y buscarlo sobre el
+        // HTML crudo daba un falso positivo que no tenía nada que ver con el informe.
+        const sinImagenes = reportHTML.replace(/src="data:[^"]*"/g, 'src="…"');
+        expect(sinImagenes).not.toContain('NaN');
         // ...y el riesgo sin analizar se DECLARA en vez de desaparecer en silencio.
         expect(reportHTML).toContain('Sin analizar');
     });

@@ -14,6 +14,21 @@ import { debounce, formatCurrency, getSafeNumber, sanitizeHTML, shortMetricLabel
 // silencio — o sea, el control MÁS débil sería el único que no puede ganar el mínimo.
 const RELIABILITY_ORDER = ['nula', 'baja', 'media', 'alta'];
 
+// Por qué el perfil tiene la alternativa que tiene. Los NÚMEROS viven en el backend (ver
+// stackelbergDeterrence.js) y llegan por el bootstrap; acá solo está el razonamiento en texto,
+// que es lo que el usuario necesita para decidir si mover el supuesto. Sin esta explicación el
+// campo es un número más; con ella se entiende por qué contra un insider no compra lo mismo.
+const OUTSIDE_OPTION_HINTS = {
+    oportunista:
+        'Tiene mil objetivos igual de fáciles y elige el más barato: la barda lo manda al vecino sin que lo piense.',
+    vandalismo: 'Parecido al oportunista, pero menos móvil — suele actuar cerca de donde ya está.',
+    organizado:
+        'Te eligió a ti, por tu carga y tu ruta. Cambiar de objetivo le cuesta información, contactos y tiempo.',
+    'estado-nacion': 'Te eligió por lo que eres. Prácticamente no hay objetivo sustituto.',
+    'empleado-desleal':
+        'Cero, y no por prudencia sino por definición: ya está adentro y su acceso es a ESTE activo. Contra él la inversión compra que le cueste más lograrlo, nunca que se vaya.',
+};
+
 /**
  * Tope de daño por evento tal como está en pantalla. Devuelve null —no 0— cuando el campo está
  * vacío: getSafeNumber daría 0, y un tope de 0 diría "ningún evento cuesta nada", que es lo
@@ -168,6 +183,7 @@ export const Treatment = {
         document.getElementById('treatment-decision-clear-btn').addEventListener('click', () => this.clearDecision());
         document.getElementById('fair-nash-open-btn').addEventListener('click', () => this.toggleNashPanel());
         document.getElementById('nash-calculate-btn').addEventListener('click', () => this.calculateNashEquilibrium());
+        document.getElementById('deterrence-calculate-btn').addEventListener('click', () => this.calculateDeterrence());
     },
 
     /**
@@ -253,6 +269,127 @@ export const Treatment = {
     },
 
     /**
+     * ¿A partir de qué inversión deja de convenirle atacarte? Es la pregunta que el motor de
+     * simulación no puede responder: ahí más defensa baja cuántos LO LOGRAN, nunca cuántos LO
+     * INTENTAN, así que más siempre es mejor y no hay punto donde parar.
+     *
+     * Los dos supuestos del atacante se piden en pantalla y se muestran de vuelta en el resultado
+     * a propósito. Son lo único que no se puede medir —nadie registra al ladrón que miró la reja y
+     * se fue— y si quedaran escondidos, esto sería una máquina de justificar cualquier inversión
+     * moviendo un número que nadie ve.
+     */
+    async calculateDeterrence() {
+        const entry = state.treatment.currentEntry;
+        if (!entry) return;
+
+        const m = getSafeNumber(document.getElementById('nash-m'));
+        const costAttacker = getSafeNumber(document.getElementById('nash-cost-attacker'));
+        const outsidePct = getSafeNumber(document.getElementById('deterrence-outside-option'));
+        const margenPct = getSafeNumber(document.getElementById('deterrence-uncertainty'));
+        if (m <= 0 || costAttacker <= 0) {
+            Modal.alert('Completa arriba qué tan decisivo es el esfuerzo y cuánto le cuesta al atacante esforzarse.');
+            return;
+        }
+        if (outsidePct < 0 || outsidePct > 100) {
+            Modal.alert(
+                'Lo que el atacante consigue en otro lado se expresa como porcentaje del botín, entre 0 y 100.',
+            );
+            return;
+        }
+
+        // El margen de incertidumbre se aplica a los dos supuestos a la vez: es una sola pregunta
+        // ("¿qué tan seguro estás?") en vez de seis campos que nadie quiere llenar.
+        const margen = margenPct / 100;
+        const rango = (valor, piso, techo) => ({
+            min: Math.max(piso, valor * (1 - margen)),
+            mode: valor,
+            max: Math.min(techo, valor * (1 + margen)),
+        });
+        const fraccion = outsidePct / 100;
+
+        const btn = document.getElementById('deterrence-calculate-btn');
+        btn.disabled = true;
+        try {
+            const r = await App.Api.request('/api/autocalc/deterrence', {
+                method: 'POST',
+                body: {
+                    attackerKey: entry.attackerKey,
+                    m,
+                    lossMagnitudes: entry.lossMagnitudes || undefined,
+                    costAttacker: rango(costAttacker, 0.01, Number.MAX_SAFE_INTEGER),
+                    // El margen no puede empujar la fracción fuera de [0,1]: arriba de 1 diría "en
+                    // otro lado gana más de lo que acá vale todo", que no significa nada.
+                    outsideOptionFraction: fraccion === 0 ? { min: 0, mode: 0, max: 0 } : rango(fraccion, 0, 1),
+                    iterations: 5000,
+                },
+            });
+
+            const headline = document.getElementById('deterrence-headline');
+            const detail = document.getElementById('deterrence-detail');
+            const sim = r.simulation;
+
+            if (r.central.threshold === null) {
+                headline.className = 'p-2 rounded text-sm mb-2 bg-red-50 border-l-4 border-red-500 text-red-900';
+                headline.innerHTML =
+                    r.usedOutsideOptionFraction.mode === 0
+                        ? `<strong>A este atacante no lo saca ninguna inversión.</strong> Declaraste que no consigue nada en otro lado — es el caso del empleado desleal: ya está adentro, no tiene adónde irse. Contra él la inversión compra que le cueste más lograrlo, nunca que deje de intentarlo.`
+                        : `<strong>Ni la defensa máxima lo hace irse.</strong> Con estos supuestos le sigue conviniendo atacarte aunque inviertas todo. Acá no se disuade: se contiene.`;
+            } else {
+                headline.className = 'p-2 rounded text-sm mb-2 bg-green-50 border-l-4 border-green-500 text-green-900';
+                const pctEnUmbral =
+                    sim.deterrenceCurve.find((p) => p.defenseEffort >= r.central.threshold)?.deterredPercent ?? 0;
+                headline.innerHTML =
+                    `<strong>Se va a partir de un esfuerzo de defensa de ${r.central.threshold.toFixed(0)} sobre 100.</strong> ` +
+                    `Con la incertidumbre que declaraste, ese nivel alcanza en el ${pctEnUmbral.toFixed(0)} % de los escenarios probados.`;
+            }
+
+            const filas = [];
+            if (sim.thresholdMedian !== null) {
+                filas.push(
+                    `<li class="flex justify-between"><span>Nivel de defensa que alcanza en la mitad de los escenarios:</span> <strong>${sim.thresholdMedian.toFixed(0)}</strong></li>`,
+                );
+                filas.push(
+                    `<li class="flex justify-between"><span>Nivel que alcanza en 9 de cada 10:</span> <strong>${sim.thresholdP90.toFixed(0)}</strong></li>`,
+                );
+            }
+            // Los dos motivos por los que deja de atacar NO son lo mismo y sostienen decisiones
+            // distintas: el que se fue no vuelve mientras el vecino siga siendo más barato; el que
+            // desistió sigue ahí y vuelve si sube el valor del activo o se afloja un control.
+            filas.push(
+                `<li class="flex justify-between"><span>Escenarios en que <strong>se va a otro objetivo</strong>:</span> <strong>${sim.byAlternativePercent.toFixed(0)} %</strong></li>`,
+            );
+            filas.push(
+                `<li class="flex justify-between"><span>Escenarios en que <strong>no se va, solo deja de rentarle</strong> (vuelve si sube el valor):</span> <strong>${sim.byUnprofitablePercent.toFixed(0)} %</strong></li>`,
+            );
+            filas.push(
+                `<li class="flex justify-between"><span>Escenarios en que <strong>no lo saca ninguna inversión</strong>:</span> <strong>${sim.neverDeterredPercent.toFixed(0)} %</strong></li>`,
+            );
+            detail.innerHTML = filas.join('');
+
+            const sugerido = r.suggestedOutsideOptionFraction;
+            const movido = sugerido !== null && Math.abs(sugerido - fraccion) > 1e-9;
+            document.getElementById('deterrence-assumption-note').textContent =
+                `Calculado sobre ${sim.iterations.toLocaleString('es-MX')} escenarios (semilla ${sim.usedSeed}). ` +
+                `Supuestos usados: el atacante consigue el ${(fraccion * 100).toFixed(0)} % del botín en otro lado` +
+                (sugerido === null
+                    ? ''
+                    : movido
+                      ? ` (tú lo cambiaste; el sugerido para este perfil era ${(sugerido * 100).toFixed(0)} %)`
+                      : ` (el sugerido para este perfil, sin cambiar)`) +
+                `. Ese número es criterio, no medición.`;
+
+            document.getElementById('deterrence-results').classList.remove('hidden');
+        } catch (error) {
+            Modal.alert(
+                error.userMessage || 'Error al calcular el punto de disuasión. Revisa los supuestos.',
+                'Error de Cálculo',
+            );
+        } finally {
+            btn.disabled = false;
+        }
+    },
+
+    /**
      * Nash necesita DOS lados que elijan esfuerzo. Una amenaza no deliberada (un sismo, una falla
      * eléctrica) no tiene atacante, así que la sección entera se oculta en vez de ofrecer un
      * cálculo que no significa nada — mismo criterio que ya usaba el wizard.
@@ -263,6 +400,20 @@ export const Treatment = {
         cont.classList.toggle('hidden', !(entry && entry.attackerKey && entry.defenseKey));
         // Resultados de OTRO riesgo no deben quedarse a la vista al cambiar de riesgo.
         document.getElementById('nash-results').classList.add('hidden');
+        document.getElementById('deterrence-results').classList.add('hidden');
+
+        // La alternativa del atacante se pre-carga con la sugerencia del perfil, que viene del
+        // backend (ver state.config.outsideOptionFractions). El texto de ayuda explica el porqué de
+        // ESE perfil, no una regla genérica: es la diferencia entre un oportunista que se va al
+        // vecino y un insider que no tiene adónde ir.
+        const campoAlternativa = document.getElementById('deterrence-outside-option');
+        const hint = document.getElementById('deterrence-outside-hint');
+        const fracciones = state.config.outsideOptionFractions || {};
+        if (campoAlternativa && entry && entry.attackerKey) {
+            const sugerido = fracciones[entry.attackerKey];
+            campoAlternativa.value = typeof sugerido === 'number' ? Math.round(sugerido * 100) : 25;
+            if (hint) hint.textContent = OUTSIDE_OPTION_HINTS[entry.attackerKey] || '';
+        }
         const panel = document.getElementById('fair-nash-panel');
         if (panel) panel.classList.add('hidden');
     },

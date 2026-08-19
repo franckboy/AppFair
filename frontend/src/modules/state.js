@@ -14,6 +14,11 @@ export const state = {
         // Catálogo de Niveles de Acceso / Proximidad servido por el backend en el arranque, para
         // poblar el selector del Paso 2 sin duplicar los factores en el frontend.
         accessLevels: null,
+        // Alternativa del atacante por perfil, para el análisis de disuasión (ver
+        // backend/src/lib/stackelbergDeterrence.js). Llega del backend en el bootstrap en vez de
+        // vivir duplicada acá: es juicio declarado y una copia desincronizada movería en silencio
+        // un número que después se usa para justificar una inversión.
+        outsideOptionFractions: null,
         // Criterios de Riesgo (Contexto — ISO 31000, cláusula 6.3.4).
         // Estos valores definen qué se considera un riesgo aceptable, alto o crítico
         // para esta organización. Son editables desde "Criterios de Riesgo" en el menú

@@ -517,6 +517,68 @@ test('POST /api/treatment/evaluate sin los inputs del riesgo cae al escalado pro
     assert.strictEqual(res.body.mitigar.residualLossExceedanceCurve, null);
 });
 
+const DETERRENCE_BODY = {
+    attackerKey: 'oportunista',
+    m: 1.5,
+    lossMagnitudes: { respuesta: { min: 250000, mode: 275000, max: 300000 } },
+    costAttacker: { min: 750, mode: 800, max: 850 },
+    outsideOptionFraction: { min: 0.45, mode: 0.5, max: 0.55 },
+    iterations: 2000,
+    seed: 11,
+};
+
+test('POST /api/autocalc/deterrence responde el umbral y devuelve el supuesto que usó', async () => {
+    const res = await request(app)
+        .post('/api/autocalc/deterrence')
+        .set('X-API-Key', TEST_API_KEY)
+        .send(DETERRENCE_BODY);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.valueAtStake, 275000);
+    assert.ok(res.body.central.threshold > 0);
+    assert.strictEqual(res.body.central.reason, 'alternativa');
+    // El supuesto del atacante viaja de vuelta —el sugerido y el usado— para que la pantalla pueda
+    // decir si el usuario lo movió. Un supuesto escondido convierte esto en una máquina de
+    // justificar cualquier inversión.
+    assert.strictEqual(res.body.suggestedOutsideOptionFraction, 0.5);
+    assert.deepStrictEqual(res.body.usedOutsideOptionFraction, DETERRENCE_BODY.outsideOptionFraction);
+    assert.ok(res.body.simulation.deterrenceCurve.length > 0);
+});
+
+test('POST /api/autocalc/deterrence: al empleado desleal no lo saca ninguna inversión', async () => {
+    const res = await request(app)
+        .post('/api/autocalc/deterrence')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            ...DETERRENCE_BODY,
+            attackerKey: 'empleado-desleal',
+            outsideOptionFraction: { min: 0, mode: 0, max: 0 },
+        });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.suggestedOutsideOptionFraction, 0);
+    // Ni umbral, ni disuasión por alternativa: ya está adentro, no tiene adónde irse.
+    assert.strictEqual(res.body.central.threshold, null);
+    assert.strictEqual(res.body.central.reason, null);
+    assert.strictEqual(res.body.simulation.byAlternativePercent, 0);
+    assert.strictEqual(res.body.simulation.neverDeterredPercent, 100);
+});
+
+test('POST /api/autocalc/deterrence rechaza entradas que no significarían nada', async () => {
+    const casos = [
+        [{ attackerKey: 'no-existe' }, 'perfil inexistente'],
+        [{ outsideOptionFraction: { min: 0.5, mode: 1.2, max: 1.5 } }, 'alternativa mayor que el botín entero'],
+        [{ costAttacker: { min: 900, mode: 800, max: 850 } }, 'rango de costo mal formado'],
+        [{ iterations: 10 }, 'muy pocas iteraciones'],
+        [{ lossMagnitudes: {} }, 'sin valor en juego'],
+    ];
+    for (const [patch, motivo] of casos) {
+        const res = await request(app)
+            .post('/api/autocalc/deterrence')
+            .set('X-API-Key', TEST_API_KEY)
+            .send({ ...DETERRENCE_BODY, ...patch });
+        assert.strictEqual(res.status, 400, motivo);
+    }
+});
+
 test('POST /api/simulate devuelve el conteo de ataques consumados, no solo el dinero', async () => {
     const res = await request(app)
         .post('/api/simulate')

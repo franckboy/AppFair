@@ -1360,6 +1360,58 @@ pueden romper esa concavidad — el equilibrio en estrategias puras puede no exi
 No se rechaza un `m` alto; si la iteración no converge se reporta `converged: false` en vez de
 devolver un número con falsa certeza.
 
+### 16.1 Disuasión: Stackelberg, no Nash
+
+Nash asume que los dos juegan **a la vez y a ciegas**. En seguridad física eso no es cierto: el
+defensor juega **primero y a la vista** — el atacante ve la barda, la custodia y la certificación
+antes de decidir. Es un juego de líder-seguidor, y su concepto de solución es el **equilibrio de
+Stackelberg**. La diferencia no es de notación: el líder hace estrictamente mejor que bajo Nash,
+porque comprometerse visiblemente vale, y **esa ventaja de compromiso es la disuasión**.
+
+Lo que agrega, y que el motor de simulación no puede dar por construcción: en §7 la frecuencia es un
+dato fijo, así que subir las defensas baja `V` (cuántos lo logran) y deja `TEF` intacto (cuántos lo
+intentan). Más defensa siempre es mejor, en línea recta, para siempre — el modelo **nunca puede
+decir "con esto alcanza"**. La disuasión da un **umbral**, no una pendiente.
+
+**El parámetro del que depende todo: la alternativa del atacante.** Ataca solo si lo mejor que puede
+sacar acá supera lo que consigue en OTRO objetivo con el mismo esfuerzo. La disuasión no es una
+propiedad de tus defensas, sino de tus defensas **relativa** a lo que el atacante puede hacer con su
+tiempo. Se expresa como fracción del Valor en Juego y tiene un sugerido por perfil (alto para el
+oportunista, que tiene mil objetivos; cero para el empleado desleal, que ya está adentro), **editable
+y visible en pantalla**: es juicio declarado, no medición, y escondido convertiría el panel en una
+máquina de justificar cualquier inversión.
+
+**Dos motivos distintos para no atacar.** Al construir esto apareció un caso que rompe la afirmación
+fácil ("al insider no lo disuade nada"): con un activo chico y un costo de intento alto, hasta un
+atacante sin alternativas deja de atacar. Pero eso no es disuasión:
+
+| Motivo | Qué pasó | Durabilidad |
+| --- | --- | --- |
+| `alternativa` | Se fue a otro objetivo. Disuasión real. | Dura mientras el vecino siga siendo más barato |
+| `no-rentable` | No se fue a ningún lado; el botín dejó de cubrir el esfuerzo. | Se revierte si sube el valor o se afloja un control |
+
+Por eso el resultado dice **cuál de los dos** es, y por eso la afirmación defendible sobre el
+empleado desleal es la precisa: **a alternativa cero nunca aparece disuadido — a lo sumo desiste.**
+Eso sí es invariante del modelo y está en las pruebas, junto con la monotonía del umbral respecto de
+la alternativa (mejores alternativas ⇒ umbral más bajo) y la monotonía de la ganancia del atacante
+respecto de la defensa.
+
+**El umbral se resuelve, no se sortea.** La ganancia del atacante decrece de forma monótona con la
+defensa, así que "el primer `d` que alcanza" está bien definido y se encuentra por **bisección**.
+Buscarlo muestreando no funciona: es un punto en un continuo y tiene probabilidad cero de salir
+sorteado — medido, un millón de pares al azar dio **cero** equilibrios.
+
+**Monte Carlo va alrededor del solver, no en su lugar.** Lo incierto no es el umbral sino los
+**pagos** (cuánto vale el botín, cuánto cuesta el operativo, cuánto consigue en otro lado). Cada
+iteración sortea un mundo posible, **resuelve** el umbral exacto de ese mundo, y se repite. Lo que
+sale no es un umbral sino una **distribución** de umbrales, que responde la pregunta que de verdad
+se lleva a un comité: _"con $X, en el 78 % de los escenarios deja de convenirle"_ en vez de un número
+único que se desarma al mover un supuesto.
+
+**Deslinde, igual que Nash (§10):** exploratorio. No alimenta ninguna cifra del Registro. Y no está
+validado — los pagos del atacante no se observan en ninguna bitácora, porque nunca vas a registrar al
+ladrón que miró la reja y se fue.
+
 ---
 
 ## 17. El modelo en una página
