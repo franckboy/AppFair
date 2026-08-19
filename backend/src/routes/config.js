@@ -14,6 +14,12 @@ const { hazardStandards, isoProcessClauses, rimsClauses } = require('../data/sta
 const { normalizeRiskCriteria } = require('../lib/riskCriteria');
 const { CALIBRATION_VERSION, ACCESS_LEVELS } = require('../lib/autocalc');
 const { DEFAULT_OUTSIDE_OPTION_FRACTION } = require('../lib/stackelbergDeterrence');
+const {
+    EXPOSURE_UNITS,
+    normalizeIncidentLog,
+    validateIncidentLog,
+    summarizeIncidentLog,
+} = require('../lib/incidentLog');
 const { asyncHandler } = require('../middleware/asyncHandler');
 
 function createConfigRouter(store) {
@@ -114,6 +120,36 @@ function createConfigRouter(store) {
             // dos llamadas (ver PostgresStore.mergeConfig).
             const updated = await store.mergeConfig('orgDefaults', req.body);
             res.json(updated);
+        }),
+    );
+
+    // --- Bitácora de Incidentes (ver lib/incidentLog.js) ---
+    //
+    // Lo único que puede CONTRADECIR al modelo. Todo lo demás que la app calcula sale de juicio
+    // experto y referencias del sector: un prior alimenta, no falsea. Todavía no se mezcla con
+    // nada — no hay ponderación por credibilidad ni cambia ninguna cifra del Registro. Es el
+    // enchufe puesto antes de que llegue la corriente.
+    router.get(
+        '/incident-log',
+        asyncHandler(async (req, res) => {
+            const log = normalizeIncidentLog(await store.get('incidentLog'));
+            // El diagnóstico se calcula al leer y no se persiste: depende del Registro, que cambia
+            // por su cuenta. Un resumen guardado envejecería en silencio.
+            const register = (await store.get('riskRegister')) || [];
+            res.json({ ...log, exposureUnits: EXPOSURE_UNITS, summary: summarizeIncidentLog(log, register) });
+        }),
+    );
+
+    router.put(
+        '/incident-log',
+        asyncHandler(async (req, res) => {
+            const error = validateIncidentLog(req.body);
+            if (error) return res.status(400).json({ error });
+            const log = normalizeIncidentLog(req.body);
+            log.actualizadoEn = new Date().toISOString();
+            await store.set('incidentLog', log);
+            const register = (await store.get('riskRegister')) || [];
+            res.json({ ...log, exposureUnits: EXPOSURE_UNITS, summary: summarizeIncidentLog(log, register) });
         }),
     );
 

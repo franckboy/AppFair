@@ -14,7 +14,7 @@ test.describe('Maquetado: modales y acciones del Registro', () => {
 
         await page.click('#nav-config');
         await page.waitForTimeout(400);
-        await page.click('[data-menu-option="1"]'); // Criterios de Riesgo
+        await page.click('#modalBody button:has-text("Criterios de Riesgo")'); // por etiqueta: el índice se corre al agregar entradas
         await page.waitForTimeout(500);
 
         const geom = await page.evaluate(() => {
