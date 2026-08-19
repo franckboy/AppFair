@@ -2942,6 +2942,46 @@ test('residualScaleFactor: k sale de residualALE/ale, sin casos especiales por e
     );
 });
 
+// Decisiones HEREDADAS: adoptadas antes de que existiera la receta (`residualInputs`). El
+// portafolio las reconstruye escalando, y eso sobreestima su cola hasta el triple. Antes el
+// respaldo ocurría en silencio; ahora se reportan para poder decirlo en la interfaz.
+//
+// Lo que este test protege no es que la lista exista, sino que sea PRECISA: marcar de más sería
+// alarmar sin motivo, y las otras tres estrategias no tienen el problema.
+test('simulateResidualPortfolio: legacyResidualRiskNames marca SOLO las mitigaciones sin receta', () => {
+    const decision = (strategy, residualALE, residualInputs) => ({
+        strategy,
+        residualALE,
+        decidedAt: '2026-01-01T00:00:00Z',
+        ...(residualInputs ? { residualInputs } : {}),
+    });
+    const riesgos = [
+        // El caso: mitigar sin receta. El escalado reconstruye una contención como prevención.
+        makePortfolioRisk('Mitigado sin receta', { ale: 10000, treatmentDecision: decision('mitigar', 4000) }),
+        // Con receta NO se marca: se re-simula con el Nivel de Defensa objetivo, no se escala.
+        makePortfolioRisk('Mitigado con receta', {
+            ale: 10000,
+            treatmentDecision: decision('mitigar', 4000, { targetDefenseKey: 'avanzada' }),
+        }),
+        // Aceptar da k = 1 exacto y Evitar da k = 0 exacto: el escalado NO es una aproximación ahí,
+        // así que marcarlos sería ruido.
+        makePortfolioRisk('Aceptado', { ale: 10000, treatmentDecision: decision('aceptar', 10000) }),
+        makePortfolioRisk('Evitado', { ale: 10000, treatmentDecision: decision('evitar', 0) }),
+        // Transferir ya se reporta aparte, por otra razón (su cola se trunca, no se escala).
+        makePortfolioRisk('Transferido', { ale: 10000, treatmentDecision: decision('transferir', 6000) }),
+        // Sin decisión no hay nada que reconstruir.
+        makePortfolioRisk('Sin tratar'),
+    ];
+    const r = simulateResidualPortfolio(riesgos);
+    assert.deepStrictEqual(r.legacyResidualRiskNames, ['Mitigado sin receta']);
+    assert.deepStrictEqual(r.nonScalableRiskNames, ['Transferido']);
+});
+
+test('simulateResidualPortfolio: legacyResidualRiskNames es una lista vacía cuando no hay nada heredado', () => {
+    const r = simulateResidualPortfolio([makePortfolioRisk('Limpio')]);
+    assert.deepStrictEqual(r.legacyResidualRiskNames, []);
+});
+
 test('simulateResidualPortfolio: escalar la Vulnerabilidad por k escala el ALE del portafolio por k', () => {
     const risks = [1, 2, 3].map((i) =>
         makePortfolioRisk(`R${i}`, {

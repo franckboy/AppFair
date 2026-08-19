@@ -145,6 +145,29 @@ function isNonScalableTreatment(risk) {
 }
 
 /**
+ * Decisión HEREDADA: adoptada antes de que existiera `residualInputs`, así que el portafolio tiene
+ * que reconstruir su residual escalando por `residualALE / ale` en vez de re-simular con la receta.
+ *
+ * Solo MITIGAR se ve afectado, y eso importa para no alarmar de más:
+ *   - `aceptar` da k = 1 y `evitar` da k = 0 — el escalado es EXACTO en los dos casos, no una
+ *     aproximación;
+ *   - `transferir` y `mitigarTransferir` ya se reportan aparte (nonScalableRiskNames);
+ *   - solo `mitigar` puede haber usado un tope de daño, y ahí el escalado proporcional reconstruye
+ *     una contención como si hubiera sido prevención pura.
+ *
+ * La DIRECCIÓN del error está medida y es lo que hace que esto se pueda decir con tranquilidad: el
+ * ALE sale bien ($43.018 real contra $42.918 reconstruido) y la cola se SOBREESTIMA — $517.514
+ * reconstruidos contra $181.141 reales, casi el triple. Es conservador, no peligroso, y por eso la
+ * interfaz lo dice así en vez de limitarse a pedir que se recalcule.
+ *
+ * Se arregla volviendo a adoptar la estrategia en Tratamiento: al adoptar se persiste la receta.
+ */
+function hasLegacyResidual(risk) {
+    const decision = risk && risk.treatmentDecision;
+    return !!decision && decision.strategy === 'mitigar' && !decision.residualInputs;
+}
+
+/**
  * @param {Array<Object>} risks Entradas del Registro (ver routes/register.js).
  * @param {Object} [options]
  * @param {number} [options.iterations=10000]
@@ -508,8 +531,10 @@ function simulatePortfolio(
  * exactamente k veces el original.
  *
  * @returns Lo mismo que simulatePortfolio, más `treatedCount` (cuántos riesgos traían una decisión
- *   adoptada) y `nonScalableRiskNames` (los tratados con Transferir, que entran sin escalar porque
- *   su cola no se puede representar con un factor — ver residualScaleFactor).
+ *   adoptada), `nonScalableRiskNames` (los tratados con Transferir, que entran sin escalar porque
+ *   su cola no se puede representar con un factor — ver residualScaleFactor) y
+ *   `legacyResidualRiskNames` (mitigaciones sin receta, cuya cola sale sobreestimada — ver
+ *   hasLegacyResidual).
  */
 function simulateResidualPortfolio(risks, options = {}) {
     const threats = (risks || []).filter((r) => r && r.riskType !== 'oportunidad' && hasCompleteInputs(r));
@@ -518,12 +543,16 @@ function simulateResidualPortfolio(risks, options = {}) {
         ...result,
         treatedCount: threats.filter((r) => r.treatmentDecision).length,
         nonScalableRiskNames: threats.filter(isNonScalableTreatment).map((r) => r.riskName),
+        // Mitigaciones adoptadas sin receta: su cola viene SOBREESTIMADA (ver hasLegacyResidual).
+        // Antes esto no se reportaba en ningún lado — el portafolio hacía el respaldo en silencio.
+        legacyResidualRiskNames: threats.filter(hasLegacyResidual).map((r) => r.riskName),
     };
 }
 
 module.exports = {
     simulatePortfolio,
     allocateTailContributions,
+    hasLegacyResidual,
     simulateResidualPortfolio,
     residualScaleFactor,
     residualSpecOf,

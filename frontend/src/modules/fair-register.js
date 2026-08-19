@@ -677,6 +677,26 @@ export const FairRegister = {
             );
         }
 
+        // Mitigaciones adoptadas antes de que la Decisión guardara su receta (ver hasLegacyResidual
+        // en el backend). El portafolio las reconstruye escalando, y eso SOBREESTIMA su cola — hasta
+        // el triple, medido. Decir solo "recalcula" dejaría al usuario sin saber hacia qué lado está
+        // el error, que es justo lo que necesita para decidir si le urge: una cola inflada es
+        // conservadora, no peligrosa, y eso cambia la prioridad con la que se atiende.
+        const heredados = (res && res.legacyResidualRiskNames) || [];
+        const avisoHeredado =
+            heredados.length > 0
+                ? `<p class="text-xs mt-2 p-2 rounded bg-blue-50 border-l-4 border-blue-500 text-blue-900">
+                       La cola de ${heredados.length === 1 ? 'este riesgo está' : 'estos riesgos está'}
+                       <strong>sobreestimada por seguridad</strong>:
+                       <strong>${heredados.map((n) => sanitizeHTML(n)).join(', ')}</strong>.
+                       ${heredados.length === 1 ? 'Su mitigación se adoptó' : 'Sus mitigaciones se adoptaron'}
+                       antes de que la decisión guardara con qué se simuló, así que el portafolio
+                       ${heredados.length === 1 ? 'la reconstruye' : 'las reconstruye'} como si toda la reducción
+                       hubiera sido prevención. El promedio sale bien; el mal año sale más alto de lo real.
+                       Vuelve a adoptar la estrategia en Tratamiento para ver su forma verdadera.
+                   </p>`
+                : '';
+
         // Contradicción en las dependencias declaradas: los padres de estos riesgos los causan más
         // veces de las que el propio riesgo dice ocurrir. El motor ya lo acota para no inflar el
         // portafolio (ver overCoupledRiskNames en portfolioSimulation.js), pero callarlo dejaría
@@ -695,6 +715,7 @@ export const FairRegister = {
 
         el.innerHTML =
             filas.join('') +
+            avisoHeredado +
             aviso +
             (data.skippedCount > 0
                 ? `<p class="text-xs text-gray-500 mt-2">${data.skippedCount} sin datos suficientes para simular.</p>`
