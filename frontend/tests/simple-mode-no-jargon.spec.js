@@ -103,9 +103,17 @@ test.describe('Modo Simple: sin jerga técnica en ninguna página', () => {
             containerSelector: '#fair-register-content',
             // #fair-register-legend (Matriz) y #fair-pareto-legend (Pareto) son DOS leyendas
             // separadas, cada una con la lista de nombres de TODOS los riesgos guardados;
-            // #fair-register-interpretation (síntesis del portafolio) también menciona nombres
-            // de riesgo específicos dentro de su propio texto (los que concentran el 80%).
-            excludeSelectors: ['#fair-register-legend', '#fair-pareto-legend', '#fair-register-interpretation'],
+            // #fair-register-interpretation (síntesis del portafolio) y #dashboard-tail-contrib
+            // (de quién es el año malo) también listan nombres de riesgo específicos dentro de su
+            // propio texto. En los cuatro casos son datos del usuario, no jerga de la app — el
+            // texto que SÍ genera la app alrededor de esa lista se cubre con su propia prueba en
+            // tail-contributors.spec.js.
+            excludeSelectors: [
+                '#fair-register-legend',
+                '#fair-pareto-legend',
+                '#fair-register-interpretation',
+                '#dashboard-tail-contrib',
+            ],
         });
 
         await page.click('#nav-risk-tree');

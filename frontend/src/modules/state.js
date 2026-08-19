@@ -110,6 +110,10 @@ export const state = {
         // (después). Gobierna el Pareto y la columna resaltada de la tabla; la Matriz y el Monte
         // Carlo muestran siempre los dos, solo atenúan el que no está seleccionado.
         dashboardView: 'actual',
+        // Última respuesta de /api/register/portfolio-simulation. Se cachea para que el
+        // interruptor Actual/Residual pueda repintar el reparto del año malo sin volver a pedir
+        // una simulación de 10.000 iteraciones por riesgo.
+        portfolioSimulation: null,
         // Riesgo abierto ahora mismo en el modal de detalle. Lo necesita el comparador de modelos
         // de frecuencia, que se dispara DESPUÉS (cuando el usuario hace clic) y tiene que volver a
         // leer los inputs de ESE riesgo — y descartar su respuesta si para entonces ya se abrió otro.

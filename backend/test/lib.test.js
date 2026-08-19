@@ -2589,6 +2589,134 @@ function makePortfolioRisk(riskName, overrides = {}) {
     };
 }
 
+// --- De quién es el año malo: asignación de Euler del CVaR95 --------------------------------
+// La propiedad que hace utilizable a esta asignación es que SUMA EXACTAMENTE el CVaR conjunto, sin
+// residuo que repartir a ojo. Se prueba como igualdad (tolerancia de punto flotante), no como
+// aproximación: si algún día la contribución acoplada dejara de sumar el total —por ejemplo si la
+// cascada añadiera un término al portafolio sin anotarlo en el aporte de nadie— este test lo dice.
+test('allocateTailContributions: las contribuciones suman EXACTAMENTE el CVaR95 del portafolio', () => {
+    const riesgos = [
+        makePortfolioRisk('Grande', { lossMagnitudes: { respuesta: { min: 20000, mode: 90000, max: 300000 } } }),
+        makePortfolioRisk('Mediano'),
+        makePortfolioRisk('Chico', { lossMagnitudes: { respuesta: { min: 500, mode: 2000, max: 6000 } } }),
+    ];
+    const r = simulatePortfolio(riesgos);
+    const suma = r.tailContributors.reduce((acc, t) => acc + t.contribution, 0);
+    assert.ok(
+        Math.abs(suma - r.summary.cvar95) < 1e-6,
+        `las contribuciones suman ${suma.toFixed(6)} pero el CVaR95 es ${r.summary.cvar95.toFixed(6)}`,
+    );
+    assert.strictEqual(r.tailContributors.length, 3);
+    // Y vienen ordenadas de mayor a menor, que es como se leen.
+    assert.ok(r.tailContributors[0].contribution >= r.tailContributors[1].contribution);
+    assert.ok(r.tailContributors[1].contribution >= r.tailContributors[2].contribution);
+});
+
+test('allocateTailContributions: la cuota del año malo NO es la del año promedio (si lo fuera, no diría nada nuevo)', () => {
+    // Un riesgo raro y severo contra dos frecuentes y menores. El raro pesa poco en el promedio y
+    // mucho en la cola: ésa es exactamente la distinción que esta asignación existe para mostrar,
+    // y la que el CVaR individual de cada riesgo no puede dar (no sabe con quién coincide).
+    const raroSevero = makePortfolioRisk('Raro y severo', {
+        tef: { min: 0.02, mode: 0.05, max: 0.1 },
+        lossMagnitudes: { respuesta: { min: 200000, mode: 800000, max: 3000000 } },
+    });
+    const frecuente = (n) =>
+        makePortfolioRisk(n, {
+            tef: { min: 8, mode: 12, max: 20 },
+            lossMagnitudes: { respuesta: { min: 500, mode: 1500, max: 4000 } },
+        });
+    const r = simulatePortfolio([raroSevero, frecuente('Frecuente A'), frecuente('Frecuente B')]);
+    const raro = r.tailContributors.find((t) => t.riskName === 'Raro y severo');
+    assert.ok(
+        raro.sharePercent > raro.expectedSharePercent + 10,
+        `el raro y severo debería pesar bastante más en la cola (${raro.sharePercent.toFixed(1)} %) que en ` +
+            `el promedio (${raro.expectedSharePercent.toFixed(1)} %)`,
+    );
+});
+
+test('allocateTailContributions: la cascada REUBICA la contribución de un riesgo, no la crea', () => {
+    // "La cascada explica ocurrencias, no las añade" es el invariante central del acoplamiento
+    // (ver §8.3 del documento del modelo), y hasta ahora solo se podía comprobar sobre el ALE del
+    // portafolio entero. La asignación lo hace verificable RIESGO POR RIESGO: la parte espontánea
+    // del hijo se adelgaza justo en la proporción que sus padres explican, así que su aporte
+    // ESPERADO no se mueve — lo que cambia es en qué años cae, y eso vive en la cola.
+    //
+    // Regímenes raros a propósito: es donde la cascada tiene efecto (medido: +17,9 % de cola a
+    // LEF 0,05 contra −0,6 % a LEF 3).
+    const raro = (riskName, overrides) =>
+        makePortfolioRisk(riskName, {
+            tef: { min: 0.1, mode: 0.25, max: 0.5 },
+            vuln: { min: 60, mode: 80, max: 95 },
+            lossMagnitudes: { respuesta: { min: 50000, mode: 200000, max: 800000 } },
+            ...overrides,
+        });
+    const conArista = (probability) =>
+        simulatePortfolio([raro('Padre'), raro('Hijo', { triggeredBy: [{ riskName: 'Padre', probability }] })]);
+
+    const sin = simulatePortfolio([raro('Padre'), raro('Hijo')]);
+    const base = sin.tailContributors.find((t) => t.riskName === 'Hijo').expectedLoss;
+    for (const probability of [25, 50, 90]) {
+        const r = conArista(probability);
+        assert.deepStrictEqual(r.overCoupledRiskNames, [], `la fixture no debe contradecirse a ${probability} %`);
+        const conAristaEsperado = r.tailContributors.find((t) => t.riskName === 'Hijo').expectedLoss;
+        assert.ok(
+            Math.abs(conAristaEsperado - base) / base < 0.05,
+            `con arista al ${probability} % el aporte esperado del hijo debería seguir siendo ~${base.toFixed(0)}, ` +
+                `dio ${conAristaEsperado.toFixed(0)}`,
+        );
+        // Y la suma exacta se conserva también por el camino de cascada, que es el que arma la
+        // contribución término por término.
+        const suma = r.tailContributors.reduce((acc, t) => acc + t.contribution, 0);
+        assert.ok(
+            Math.abs(suma - r.summary.cvar95) < 1e-6,
+            'con cascada las contribuciones deben seguir sumando el CVaR95',
+        );
+    }
+});
+
+// Invariante que el código AFIRMABA y no se cumple — encontrado al construir la asignación del año
+// malo, y documentado aquí para que nadie lo vuelva a dar por sentado.
+//
+// `correlationPenalty` (cuánto engorda la cola la correlación declarada) se describía como
+// "siempre >= 0". No lo es: con aristas de probabilidad alta se vuelve NEGATIVA. La causa es que
+// `marca` es un indicador 0/1 — un padre arrastra a su hijo COMO MUCHO UNA VEZ POR AÑO, aunque el
+// padre haya ocurrido tres veces. Cuando casi toda la ocurrencia del hijo pasa a ser inducida
+// (espontánea ~ 0), esa regla le borra sus años de VARIOS eventos, que son justo los que le
+// engordaban la cola. Concentrar al hijo con el padre sube la cola; taparle los años múltiples la
+// baja; a probabilidad alta gana lo segundo.
+//
+// Este test FIJA el comportamiento real, no el deseado. Si algún día el arrastre pasa a ser
+// multi-evento (proporcional al conteo del padre), este test debe fallar y actualizarse — es
+// justamente la señal que se quiere.
+test('cascada: correlationPenalty puede ser NEGATIVA con aristas de probabilidad alta (arrastre de a lo sumo uno por año)', () => {
+    const raro = (riskName, overrides) =>
+        makePortfolioRisk(riskName, {
+            tef: { min: 0.1, mode: 0.25, max: 0.5 },
+            vuln: { min: 60, mode: 80, max: 95 },
+            lossMagnitudes: { respuesta: { min: 50000, mode: 200000, max: 800000 } },
+            ...overrides,
+        });
+    const alta = simulatePortfolio([
+        raro('Padre'),
+        raro('Hijo', { triggeredBy: [{ riskName: 'Padre', probability: 90 }] }),
+    ]);
+    assert.ok(
+        alta.correlationPenalty < 0,
+        `esperaba penalización negativa con arista al 90 %, dio ${alta.correlationPenalty.toFixed(0)}`,
+    );
+    // Y el ALE se preserva igual: la anomalía vive en la cola, no en la media.
+    const sin = simulatePortfolio([raro('Padre'), raro('Hijo')]);
+    assert.ok(
+        Math.abs(alta.summary.average - sin.summary.average) / sin.summary.average < 0.02,
+        'la media del portafolio no debe moverse por declarar una dependencia',
+    );
+});
+
+test('allocateTailContributions: un portafolio sin riesgos simulables devuelve la lista vacía, no un error', () => {
+    const r = simulatePortfolio([{ riskName: 'Sin datos', riskType: 'amenaza' }]);
+    assert.deepStrictEqual(r.tailContributors, []);
+});
+
 test('simulatePortfolio: el ALE del portafolio SÍ es la suma de los ALE individuales (esperanza lineal)', () => {
     const uno = simulatePortfolio([makePortfolioRisk('P1')]);
     const cinco = simulatePortfolio([1, 2, 3, 4, 5].map((i) => makePortfolioRisk(`P${i}`)));
