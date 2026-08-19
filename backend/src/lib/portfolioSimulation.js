@@ -158,6 +158,78 @@ function isNonScalableTreatment(risk) {
  * @returns {{summary:Object, lossExceedanceCurve:Array, includedCount:number, skippedCount:number,
  *   skippedRiskNames:string[], sumOfIndividualCVaR:number|null, diversificationBenefit:number|null}}
  */
+/**
+ * ¿De quién es el año malo? — asignación de Euler del CVaR95 del portafolio.
+ *
+ * El CVaR conjunto es SUBADITIVO: vale menos que la suma de los individuales, porque los riesgos
+ * no ocurren todos el mismo año. Eso deja una pregunta sin responder, y es la que un comité hace
+ * primero: de ese año malo conjunto, ¿cuánto pone cada riesgo?
+ *
+ * La respuesta NO es su CVaR individual. Un riesgo enorme que nunca coincide con los demás aporta
+ * poco al año malo del portafolio; dos riesgos medianos que siempre caen juntos —porque uno
+ * dispara al otro en el Árbol de Cascada— aportan mucho más de lo que sugieren por separado.
+ *
+ * La asignación correcta es condicionar a la cola CONJUNTA y promediar ahí lo que puso cada uno:
+ *
+ *     contribución_i = E[ pérdida_i | pérdida_total está en el 5 % de años peores ]
+ *
+ * Su propiedad clave es que **suma exactamente al CVaR95 del portafolio**, sin residuo que
+ * repartir a ojo. No es una convención cómoda: es el teorema de Euler aplicado a una medida de
+ * riesgo homogénea de grado 1, y es el mismo criterio con el que una aseguradora asigna capital
+ * entre líneas de negocio. El test de la suite lo verifica como igualdad, no como aproximación.
+ *
+ * Detalle que hay que respetar o el total no cuadra: la cola tiene que ser EXACTAMENTE el mismo
+ * conjunto de iteraciones que usa summarizeLosses para su cvar95 — las `n - floor(0,95n)` peores.
+ * Por eso se ordenan ÍNDICES y no valores. Con empates da igual cuál de los empatados entre (su
+ * valor es el mismo por definición), así que la suma no depende del criterio de desempate.
+ *
+ * @param {number[]} totalLosses Pérdida del portafolio por iteración (ya acoplada).
+ * @param {Map<string, number[]>} contributionByRisk Lo que puso cada riesgo en cada iteración.
+ *   Tiene que sumar `totalLosses` iteración por iteración, o la asignación no cuadra.
+ * @returns {Array} Riesgos ordenados por contribución al año malo, de mayor a menor.
+ */
+function allocateTailContributions(totalLosses, contributionByRisk) {
+    const n = totalLosses.length;
+    if (n === 0 || contributionByRisk.size === 0) return [];
+
+    const orden = Array.from({ length: n }, (_, i) => i).sort((a, b) => totalLosses[a] - totalLosses[b]);
+    const cola = orden.slice(Math.floor(n * 0.95));
+    if (cola.length === 0) return [];
+
+    let cvarTotal = 0;
+    for (const i of cola) cvarTotal += totalLosses[i];
+    cvarTotal /= cola.length;
+    let aleTotal = 0;
+    for (let i = 0; i < n; i++) aleTotal += totalLosses[i];
+    aleTotal /= n;
+
+    const filas = [];
+    contributionByRisk.forEach((serie, riskName) => {
+        let enCola = 0;
+        for (const i of cola) enCola += serie[i];
+        const contribution = enCola / cola.length;
+        let esperada = 0;
+        for (let i = 0; i < n; i++) esperada += serie[i];
+        const expectedLoss = esperada / n;
+        filas.push({
+            riskName,
+            // Cuánto pone este riesgo en el año malo del PORTAFOLIO.
+            contribution,
+            sharePercent: cvarTotal > 0 ? (100 * contribution) / cvarTotal : 0,
+            // Cuánto pone en un año promedio. La comparación entre las dos cuotas es el dato que
+            // de verdad ordena un presupuesto: un riesgo que es el 8 % del promedio y el 31 % del
+            // año malo es un problema de COLA, y se trata distinto que un costo recurrente.
+            expectedLoss,
+            expectedSharePercent: aleTotal > 0 ? (100 * expectedLoss) / aleTotal : 0,
+            // Su propio año malo, a solas. Comparado con `contribution` dice qué parte de su cola
+            // coincide con la de los demás: muy por debajo = su mal año casi nunca es el mal año
+            // de todos.
+            standaloneCVaR: summarizeLosses(serie).cvar95,
+        });
+    });
+    return filas.sort((a, b) => b.contribution - a.contribution);
+}
+
 function simulatePortfolio(
     risks,
     { iterations = PORTFOLIO_ITERATIONS, seed = PORTFOLIO_BASE_SEED, specOf = () => ({ scale: 1 }) } = {},
@@ -175,6 +247,7 @@ function simulatePortfolio(
             skippedRiskNames: skipped.map((r) => r.riskName),
             sumOfIndividualCVaR: null,
             diversificationBenefit: null,
+            tailContributors: [],
         };
     }
 
@@ -204,6 +277,10 @@ function simulatePortfolio(
     // lefSamples por riesgo: hace falta para decidir, iteración por iteración, si el riesgo
     // ocurrió "este año" y puede arrastrar a sus hijos.
     const lossesByRisk = new Map();
+    // Lo que cada riesgo pone en CADA iteración del total. Con cascada se reescribe más abajo con
+    // la contribución ya acoplada (adelgazada + arrastrada). Es lo que alimenta la asignación del
+    // año malo, así que tiene que sumar `coupledLosses` iteración por iteración.
+    const contributionByRisk = new Map();
     const lefByRisk = new Map();
     const magnitudeByRisk = new Map();
     // Cuántos eventos trajo cada año — lo necesita el adelgazamiento de la cascada para saber si
@@ -239,6 +316,7 @@ function simulatePortfolio(
         });
         for (let i = 0; i < iterations; i++) portfolioLosses[i] += annualLosses[i];
         sumOfIndividualCVaR += summarizeLosses(annualLosses).cvar95;
+        contributionByRisk.set(risk.riskName, annualLosses);
         if (hasCascade) {
             lossesByRisk.set(risk.riskName, annualLosses);
             lefByRisk.set(risk.riskName, lefSamples);
@@ -302,8 +380,17 @@ function simulatePortfolio(
         usable.forEach((risk) => {
             const propias = lossesByRisk.get(risk.riskName);
             const marca = reached.get(risk.riskName);
+            // Contribución ACOPLADA de este riesgo: lo que de verdad aporta al total una vez
+            // adelgazada su parte espontánea y sumada la que le arrastran sus padres. Sin esto, la
+            // asignación del año malo repartiría sobre las pérdidas PREVIAS al acoplamiento y no
+            // sumaría el CVaR conjunto.
+            const aporte = new Array(iterations).fill(0);
+            contributionByRisk.set(risk.riskName, aporte);
             if (!marca) {
-                for (let i = 0; i < iterations; i++) coupledLosses[i] += propias[i];
+                for (let i = 0; i < iterations; i++) {
+                    coupledLosses[i] += propias[i];
+                    aporte[i] = propias[i];
+                }
                 return;
             }
             // Ocurrencias/año que le inducen sus padres, medidas sobre estas mismas iteraciones.
@@ -342,13 +429,16 @@ function simulatePortfolio(
                     let sobreviven = 0;
                     for (let j = 0; j < n; j++) if (cascadeRng() < espontanea) sobreviven++;
                     coupledLosses[i] += (sobreviven / n) * propias[i];
+                    aporte[i] += (sobreviven / n) * propias[i];
                 } else {
                     // Sin conteo de eventos (modelo de valor esperado, donde el año trae una
                     // fracción continua de evento) o con demasiados: multiplicar es lo correcto.
                     coupledLosses[i] += espontanea * propias[i];
+                    aporte[i] += espontanea * propias[i];
                 }
                 if (marca[i]) {
                     coupledLosses[i] += magnitudes[i];
+                    aporte[i] += magnitudes[i];
                     inducedLoss += magnitudes[i];
                 }
             }
@@ -358,10 +448,23 @@ function simulatePortfolio(
     const summary = summarizeLosses(coupledLosses);
     // Los dos efectos, medidos por separado contra la MISMA referencia:
     //   diversificationBenefit = cuánto sobrestimaba sumar colas (siempre >= 0)
-    //   correlationPenalty     = cuánto engorda la cola la correlación declarada (siempre >= 0)
+    //   correlationPenalty     = cuánto mueve la cola la correlación declarada
     // Antes esto era una sola resta contra la suma, que los revolvía: con cascada declarada, el
     // "beneficio de diversificación" salía artificialmente bajo porque le habían restado la
     // correlación sin decirlo.
+    //
+    // `correlationPenalty` decía aquí "siempre >= 0" y ES FALSO — medido al construir la
+    // asignación del año malo. Con aristas de probabilidad alta se vuelve NEGATIVA, y la causa es
+    // una limitación real del arrastre: `marca` es un indicador 0/1, así que un padre arrastra a
+    // su hijo COMO MUCHO UNA VEZ POR AÑO aunque haya ocurrido tres veces. Cuando casi toda la
+    // ocurrencia del hijo pasa a ser inducida (espontánea ~ 0), esa regla le borra sus años de
+    // VARIOS eventos, que son justo los que le engordaban la cola: concentrarlo con el padre sube
+    // la cola, taparle los años múltiples la baja, y a probabilidad alta gana lo segundo.
+    //
+    // Se deja el comportamiento tal cual y se nombra la limitación, en vez de taparla con un
+    // Math.max(0, ...) que escondería el síntoma. Arreglarlo de verdad es hacer el arrastre
+    // MULTI-EVENTO (proporcional al conteo del padre), que es un cambio de modelo con su propia
+    // calibración — no un parche. La suite lo fija en un test para que el día que se cambie, avise.
     const diversificationBenefit = sumOfIndividualCVaR - independentSummary.cvar95;
     const correlationPenalty = summary.cvar95 - independentSummary.cvar95;
 
@@ -383,6 +486,9 @@ function simulatePortfolio(
         // Riesgos cuyos padres declarados inducen más ocurrencias de las que el propio riesgo
         // declara tener: contradicción de datos que antes se sumaba en silencio.
         overCoupledRiskNames,
+        // De quién es el año malo: cuánto pone cada riesgo en la cola CONJUNTA. Suma exactamente
+        // el `summary.cvar95` de arriba (ver allocateTailContributions).
+        tailContributors: allocateTailContributions(coupledLosses, contributionByRisk),
     };
 }
 
@@ -417,6 +523,7 @@ function simulateResidualPortfolio(risks, options = {}) {
 
 module.exports = {
     simulatePortfolio,
+    allocateTailContributions,
     simulateResidualPortfolio,
     residualScaleFactor,
     residualSpecOf,

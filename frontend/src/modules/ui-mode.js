@@ -337,6 +337,13 @@ export const UIMode = {
             App.FairAnalysis.renderSensitivity(state.fair.lastSensitivity);
         }
 
+        // "De quién es el año malo" arma su HTML por JS (barras + nombres de riesgo), así que
+        // applyLabels no lo alcanza con textContent — hay que repintarlo. Usa el payload ya
+        // cacheado, no vuelve a pedir la simulación.
+        if (state.fair && state.fair.portfolioSimulation && App.FairRegister) {
+            App.FairRegister.renderTailContributors();
+        }
+
         // La Curva de Excedencia lleva sus etiquetas DENTRO del <canvas> (ejes, leyenda,
         // tooltips), que applyLabels no puede tocar con textContent — hay que redibujarla. Es de
         // solo lectura, así que no se pierde nada del usuario al reconstruirla.

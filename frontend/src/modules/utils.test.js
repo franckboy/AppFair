@@ -18,6 +18,7 @@ import {
     computeSuggestedTef,
     sortTriangularRange,
     pertMean,
+    tailContributorKind,
 } from './utils.js';
 
 describe('LOSS_FORMS_KEYS / LOSS_FORM_LABELS consistency', () => {
@@ -471,5 +472,34 @@ describe('pertMean', () => {
         const meanLambda4 = pertMean(0, 90, 100, 4);
         const meanLambda8 = pertMean(0, 90, 100, 8);
         expect(Math.abs(meanLambda8 - 90)).toBeLessThan(Math.abs(meanLambda4 - 90));
+    });
+});
+
+// Clasificación de un riesgo dentro del reparto del año malo. Es una afirmación estadística sobre
+// el portafolio, y se prueba AQUÍ y no en un E2E a propósito: contra el Registro compartido de la
+// suite, con riesgos de otros specs dominando la cola, la distinción desaparece de verdad — no por
+// un fallo de la prueba, sino porque en ese portafolio no la hay.
+describe('tailContributorKind', () => {
+    it('marca como riesgo de COLA al que pesa mucho más en los años malos que en el promedio', () => {
+        expect(tailContributorKind({ sharePercent: 94, expectedSharePercent: 41 })).toBe('cola');
+    });
+
+    it('marca como RECURRENTE al que pesa más en el promedio que en la cola', () => {
+        expect(tailContributorKind({ sharePercent: 9, expectedSharePercent: 33 })).toBe('recurrente');
+    });
+
+    it('no etiqueta al que pesa parecido en las dos (no habría nada que decir)', () => {
+        expect(tailContributorKind({ sharePercent: 30, expectedSharePercent: 28 })).toBeNull();
+    });
+
+    it('no etiqueta ruido: un riesgo diminuto no se marca aunque su razón se dispare', () => {
+        // 0,4 % contra 0,05 % es una razón de 8x y no cambia ninguna decisión — el umbral de
+        // relevancia existe justamente para no gritar por esto.
+        expect(tailContributorKind({ sharePercent: 0.4, expectedSharePercent: 0.05 })).toBeNull();
+    });
+
+    it('el umbral de relevancia se aplica a la cuota de la COLA, que es lo que ordena la lista', () => {
+        expect(tailContributorKind({ sharePercent: 4.9, expectedSharePercent: 0.5 })).toBeNull();
+        expect(tailContributorKind({ sharePercent: 5.1, expectedSharePercent: 0.5 })).toBe('cola');
     });
 });

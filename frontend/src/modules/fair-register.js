@@ -9,6 +9,7 @@ import {
     sanitizeHTML,
     sensitivityLabel,
     severityToClasses,
+    tailContributorKind,
     severityToHex,
     shortMetricLabel,
     showToast,
@@ -569,6 +570,10 @@ export const FairRegister = {
             return; // silencioso: es información complementaria, no debe romper la página
         }
         if (requestId !== this._portfolioMcRequestId || !data || !data.summary) return;
+        // Se cachea para que el interruptor Actual/Residual pueda repintar el reparto del año malo
+        // sin volver a pedir la simulación (es cara: 10.000 iteraciones por riesgo, dos corridas).
+        state.fair.portfolioSimulation = data;
+        this.renderTailContributors();
 
         // Modo Simple prohíbe los acrónimos (ver simple-mode-no-jargon.spec.js): se dice lo mismo
         // en palabras. Las dos redacciones describen exactamente las mismas cifras.
@@ -645,11 +650,28 @@ export const FairRegister = {
             );
         }
         if (data.cascadeEdgeCount > 0) {
+            // La penalización puede salir NEGATIVA — no es un caso imposible ni un error de signo:
+            // el arrastre de la cascada mueve como mucho UNA ocurrencia por año, así que en un
+            // riesgo casi enteramente inducido le tapa sus años de varios eventos y le adelgaza la
+            // cola (ver el comentario de correlationPenalty en portfolioSimulation.js). Etiquetarlo
+            // igual que un valor positivo diría lo contrario de lo que pasó.
+            const penaliza = data.correlationPenalty >= 0;
+            const dependencias = `${data.cascadeEdgeCount} ${
+                data.cascadeEdgeCount === 1 ? 'dependencia declarada' : 'dependencias declaradas'
+            } en el Árbol: esos riesgos caen el mismo año.`;
             filas.push(
                 fila(
-                    simple ? 'Suma de más porque unos riesgos arrastran a otros' : 'Penalización por correlación',
+                    penaliza
+                        ? simple
+                            ? 'Suma de más porque unos riesgos arrastran a otros'
+                            : 'Penalización por correlación'
+                        : simple
+                          ? 'Resta porque un riesgo pasa a ocurrir solo cuando lo arrastra otro'
+                          : 'Efecto de la correlación (a la baja)',
                     formatCurrency(data.correlationPenalty),
-                    `${data.cascadeEdgeCount} ${data.cascadeEdgeCount === 1 ? 'dependencia declarada' : 'dependencias declaradas'} en el Árbol: esos riesgos caen el mismo año.`,
+                    penaliza
+                        ? dependencias
+                        : `${dependencias} Sale a la baja porque una causa arrastra a su efecto como mucho una vez al año, y eso le quita los años de varios eventos.`,
                     'actual',
                 ),
             );
@@ -680,6 +702,113 @@ export const FairRegister = {
         // El bloque se acaba de repintar: hay que volver a aplicar la atenuación del estado que no
         // se está mirando, o las filas nuevas saldrían todas a plena opacidad.
         this.renderDashboardViewControls();
+    },
+
+    // Cuántos riesgos se listan antes de agrupar el resto en una sola fila. Más allá de esto la
+    // lista deja de ordenar un presupuesto y empieza a ser un volcado.
+    _TAIL_CONTRIB_VISIBLE: 8,
+
+    /**
+     * De quién es el año malo — reparto del CVaR95 conjunto entre los riesgos que lo componen.
+     *
+     * Qué pregunta responde, y por qué no la contesta ningún otro bloque del Dashboard: el Monte
+     * Carlo del Portafolio dice cuánto vale el año malo del conjunto, y el Pareto dice quién pesa
+     * más en el año PROMEDIO. Ninguno dice quién pesa en el año MALO, y no es lo mismo — un riesgo
+     * raro y severo puede ser el 8 % del promedio y el 31 % de la cola. Tampoco sirve mirar el
+     * CVaR de cada riesgo por separado: eso ignora con quién coincide, y coincidir es justamente
+     * lo que arma un mal año.
+     *
+     * El reparto suma exactamente el CVaR95 del portafolio (ver allocateTailContributions en el
+     * backend), así que los porcentajes cierran en 100 sin resto que repartir a ojo.
+     *
+     * Sigue el interruptor Actual/Residual: aquí sí se cambia el contenido entero en vez de
+     * atenuar, porque son dos repartos distintos de dos totales distintos y superponerlos no se
+     * podría leer.
+     */
+    renderTailContributors() {
+        const el = document.getElementById('dashboard-tail-contrib');
+        if (!el) return;
+        const data = state.fair.portfolioSimulation;
+        const residual = state.fair.dashboardView === 'residual';
+        const fuente = residual && data && data.residual ? data.residual : data;
+        const filas = (fuente && fuente.tailContributors) || [];
+        const total = fuente && fuente.summary ? fuente.summary.cvar95 : 0;
+
+        const desc = document.getElementById('dashboard-tail-contrib-desc');
+        if (desc) {
+            desc.textContent = residual
+                ? 'De los años peores del portafolio DESPUÉS de tratar, cuánto pone cada riesgo.'
+                : 'De los años peores del portafolio, cuánto pone cada riesgo. Sigue el interruptor de arriba.';
+        }
+
+        if (filas.length === 0 || !(total > 0)) {
+            el.innerHTML = '<p class="text-gray-500">Corre al menos una simulación para ver el reparto.</p>';
+            return;
+        }
+
+        const simple = App.UIMode.mode === 'simple';
+        // Cuántos riesgos hacen falta para juntar el 80 % del año malo. Es el titular: si son tres
+        // de veinte, el presupuesto ya está ordenado antes de leer la lista.
+        let acumulado = 0;
+        let cuantos = 0;
+        for (const f of filas) {
+            if (acumulado >= 80) break;
+            acumulado += f.sharePercent;
+            cuantos++;
+        }
+
+        const mayor = filas[0].sharePercent || 1;
+        const visibles = filas.slice(0, this._TAIL_CONTRIB_VISIBLE);
+        const resto = filas.slice(this._TAIL_CONTRIB_VISIBLE);
+
+        const barra = (f) => {
+            // La clasificación vive en utils.js (función pura) para poder probarla sin DOM: es una
+            // afirmación estadística sobre el portafolio, y verificarla en un E2E contra el
+            // Registro compartido no funciona — con riesgos ajenos dominando la cola, la
+            // distinción desaparece de verdad, no por un fallo de la prueba.
+            const clase = tailContributorKind(f);
+            const deCola = clase === 'cola';
+            const recurrente = clase === 'recurrente';
+            const etiqueta = deCola
+                ? `<span class="text-xs font-semibold text-orange-700 whitespace-nowrap">· pesa más en los años malos</span>`
+                : recurrente
+                  ? `<span class="text-xs text-gray-500 whitespace-nowrap">· costo recurrente</span>`
+                  : '';
+            return `
+                <div class="py-1 border-b border-gray-200 last:border-0">
+                    <div class="flex justify-between items-baseline gap-3">
+                        <span class="truncate">${sanitizeHTML(f.riskName)} ${etiqueta}</span>
+                        <strong class="whitespace-nowrap">${formatCurrency(f.contribution)} (${f.sharePercent.toFixed(1)}%)</strong>
+                    </div>
+                    <div class="h-1.5 bg-gray-200 rounded mt-1">
+                        <div class="h-1.5 rounded ${deCola ? 'bg-orange-500' : 'bg-blue-500'}" style="width: ${Math.max(1, (100 * f.sharePercent) / mayor).toFixed(1)}%"></div>
+                    </div>
+                </div>`;
+        };
+
+        // Concordancia: el sustantivo va con el TOTAL de riesgos y el verbo con cuántos hacen el
+        // 80 % ("1 de 4 riesgos explica", no "explican").
+        const sujeto = `<strong>${cuantos}</strong> de ${filas.length} ${filas.length === 1 ? 'riesgo' : 'riesgos'} ${
+            cuantos === 1 ? 'explica' : 'explican'
+        }`;
+        const cuota = `el ${Math.min(100, acumulado).toFixed(0)} %`;
+        const titular = simple
+            ? `<p class="mb-3">${sujeto} ${cuota} de lo que perderías en un año malo (${formatCurrency(total)}).</p>`
+            : `<p class="mb-3">${sujeto} ${cuota} del CVaR95 del portafolio (${formatCurrency(total)}).</p>`;
+
+        const filaResto =
+            resto.length > 0
+                ? `<div class="flex justify-between items-baseline gap-3 py-1 text-gray-500">
+                       <span>Otros ${resto.length} riesgos</span>
+                       <strong class="whitespace-nowrap">${formatCurrency(resto.reduce((a, f) => a + f.contribution, 0))} (${resto.reduce((a, f) => a + f.sharePercent, 0).toFixed(1)}%)</strong>
+                   </div>`
+                : '';
+
+        el.innerHTML =
+            titular +
+            visibles.map(barra).join('') +
+            filaResto +
+            `<p class="text-xs text-gray-500 mt-2">Reparto del año malo conjunto, no la suma de los años malos de cada uno: cuenta con quién coincide cada riesgo. Los porcentajes cierran en 100 %.</p>`;
     },
 
     renderRiskRegister() {
@@ -1449,6 +1578,7 @@ export const FairRegister = {
     setDashboardView(view) {
         state.fair.dashboardView = view === 'residual' ? 'residual' : 'actual';
         this.renderDashboardViewControls();
+        this.renderTailContributors();
         this.renderParetoChart();
         this.renderConcentratedTable(state.fair.concentratedRisks || []);
     },

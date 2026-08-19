@@ -652,6 +652,58 @@ un comité por qué su exposición cayó a la mitad. Si hay dependencias declara
 El texto es sensible al Modo Simple: `CVaR95`/`p90` son jerga vetada ahí (ver
 `simple-mode-no-jargon.spec.js`), así que en ese modo se dicen las mismas dos cifras en palabras.
 
+### 8.5 De quién es el año malo (asignación de Euler)
+
+El CVaR conjunto es subaditivo: vale menos que la suma de los individuales. Eso deja abierta la
+pregunta que un comité hace primero — de ese año malo, **¿cuánto pone cada riesgo?**
+
+La respuesta **no** es el CVaR de cada uno. Un riesgo enorme que nunca coincide con los demás
+aporta poco al año malo del conjunto; dos medianos que caen juntos —porque uno dispara al otro en
+el Árbol de Cascada— aportan mucho más de lo que sugieren por separado. El CVaR individual no sabe
+con quién coincide.
+
+La asignación correcta condiciona a la cola **conjunta**:
+
+```
+contribución_i = E[ pérdida_i | pérdida_total está en el 5 % de años peores ]
+```
+
+Su propiedad clave: **suma exactamente el CVaR95 del portafolio**, sin residuo que repartir a ojo.
+No es una convención cómoda — es el teorema de Euler sobre funciones homogéneas de grado 1, y es el
+mismo criterio con el que una aseguradora asigna capital entre líneas de negocio. La suite lo
+verifica como igualdad (tolerancia de punto flotante), no como aproximación.
+
+**Detalle de implementación que no es opcional:** la cola tiene que ser exactamente el mismo
+conjunto de iteraciones que usa `summarizeLosses` para su `cvar95` — las `n − ⌊0,95n⌋` peores. Por
+eso se ordenan **índices**, no valores. Con empates da igual cuál de los empatados entre (su valor
+es el mismo por definición), así que la suma no depende del criterio de desempate.
+
+**Qué añade sobre el Pareto.** El Pareto ordena por el año **promedio**; esto ordena por el año
+**malo**, y no dan lo mismo. Medido sobre un portafolio de cuatro riesgos: un asalto raro y severo
+pesa bastante menos en el promedio que en la cola, donde llega al **94 %**. Por eso cada riesgo se
+reporta con sus **dos** cuotas, y la interfaz marca al que pesa más en la cola que en el promedio:
+ése es un problema de año malo —le sirve más contener el daño por evento que bajar la frecuencia—
+y se trata distinto que un costo recurrente.
+
+### 8.6 Limitación conocida: el arrastre es de a lo sumo uno por año
+
+`correlationPenalty` se documentaba como "siempre ≥ 0". **Es falso**, y se descubrió al construir la
+asignación de arriba: con aristas de probabilidad alta se vuelve **negativa**.
+
+La causa es real y está en el motor de cascada: `marca` es un indicador 0/1, así que un padre
+arrastra a su hijo **como mucho una vez por año**, aunque haya ocurrido tres veces. Cuando casi toda
+la ocurrencia del hijo pasa a ser inducida (espontánea ≈ 0), esa regla le borra sus años de **varios
+eventos**, que son justo los que le engordaban la cola. Concentrar al hijo con el padre sube la
+cola; taparle los años múltiples la baja; a probabilidad alta gana lo segundo.
+
+Se deja el comportamiento tal cual y se **nombra** la limitación, en vez de taparla con un
+`Math.max(0, …)` que escondería el síntoma. La interfaz cambia la etiqueta cuando el valor sale
+negativo, para no llamar "penalización" a algo que restó. Arreglarlo de verdad es hacer el arrastre
+**multi-evento** (proporcional al conteo del padre) — un cambio de modelo con su propia calibración,
+no un parche. La suite fija el comportamiento actual en un test para que el día que se cambie, avise.
+
+---
+
 ## 9. Invariantes verificados por la suite
 
 `backend/test/lib.test.js` convierte el criterio experto en regresión ejecutable: nadie puede tocar
@@ -663,6 +715,8 @@ avise que el modelo dejó de coincidir con ese criterio.
 | **6 anclas de calibración** | \|media simulada − ancla\| **≤ 0,5 pp** (60.000 iteraciones, semilla `0x5eed`), cada una con su Nivel de Acceso (§6.1). Peor residuo medido: 0,15 pp con cuatro semillas |
 | **2 anclas de validación**  | \|media simulada − ancla\| **≤ 2 pp** — no se ajustaron a nada, así que su residuo mide consistencia y no ajuste (§6.2)                                                  |
 | **Tope de Resistencia**     | `buildContestTriangles` NO topa el triángulo de Resistencia en 100: su máximo es exactamente moda × 1,40 (§4)                                                            |
+| **Reparto del año malo**    | Las contribuciones suman **exactamente** el `cvar95` del portafolio (< 1e−6), con y sin cascada declarada (§8.5)                                                         |
+| **La cascada reubica**      | Declarar una dependencia no mueve el aporte **esperado** del hijo (< 5 %) — solo en qué años cae (§8.3, §8.5)                                                            |
 | **Perfiles distinguibles**  | Empleado Desleal y Crimen Organizado tienen que dar números distintos: sin acceso, el insider queda ≥ 10 pp por debajo; con acceso operativo, queda a la par (± 5 pp)    |
 | **Monotonía en defensa**    | Para cada atacante: más defensa nunca sube la Vulnerabilidad (tolerancia 0,05)                                                                                           |
 | **Monotonía en atacante**   | Para cada defensa: oportunista ≤ vandalismo ≤ empleado desleal ≤ organizado ≤ estado-nación (tolerancia 0,05)                                                            |
@@ -808,22 +862,23 @@ del Paso 2, y la interfaz lo advierte de forma explícita.
 
 Decisiones tomadas con su razón, para que quien retome esto no las revierta por desconocimiento.
 
-| Decisión                                            | Razón                                                                                                                             |
-| --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| Tullock sobre un eje calibrado, no `FA × (1 − ENC)` | La segunda tiene techo estructural (`V ≤ FA`): estado-nación contra defensa básica quedaba topado en 66 % cuando debe rondar 98 % |
-| `m` derivado, no ajustado                           | Dos anclas que comparten atacante cancelan el eje y lo determinan sin suposiciones                                                |
-| Eje de contienda solo en el atacante                | Validado fuera de muestra: la escala de defensa resultó consistente sin curva propia                                              |
-| Acceso modula R, no C                               | Describe lo que pasa: cuánto de tu defensa llega a interponerse. Sin el tope de 100 las dos rutas ya son exactamente equivalentes |
-| La Resistencia no se topa en 100                    | Tullock compara una RAZÓN, no dos porcentajes; topar el lado alto subvaloraba la defensa fuerte en toda la grilla                 |
-| Acceso es del riesgo, no del perfil                 | El mismo insider tiene acceso distinto a cada activo                                                                              |
-| Confianza no mueve la media                         | Es incertidumbre epistémica: habla del analista, no del atacante                                                                  |
-| La frecuencia baja con la capacidad                 | La mandan cuántos actores hay y qué tan indiscriminados son, no el empeño de cada uno                                             |
-| Nash fuera de la ruta crítica                       | Sus insumos no son observables                                                                                                    |
-| Los riesgos viejos no se recalculan solos           | Sobrescribir una evaluación guardada destruye la trazabilidad                                                                     |
-| La pérdida del año es una SUMA de eventos           | `LEF × Magnitud` reparte fracciones de evento en todos los años; borra la variabilidad del conteo donde ésa _es_ todo el riesgo   |
-| La cascada explica ocurrencias, no las añade        | El TEF se estima de datos que ya incluyen las veces que un padre lo causó; sumarla encima las cuenta dos veces                    |
-| Adelgazar la cascada quita eventos, no escala       | Escalar la cifra del año inventa años que cuestan una fracción de incendio — la misma falacia que el modelo compuesto corrige     |
-| La LEC recalcula su probabilidad empíricamente      | Con empates, la etiqueta de la escalera miente; y esa curva alimenta el eje Y de la Matriz                                        |
-| El residual guarda su receta, no solo su resultado  | Un número fija la media, nunca la forma: prevenir y contener dan la misma media y colas al triple                                 |
-| Cada ancla lleva su propio Nivel de Acceso          | Emitir la del insider sobre "acceso nulo" metía su acceso dentro de su fuerza, y lo volvía idéntico al crimen organizado          |
-| Dos perfiles no pueden dar el mismo número          | La app ofrecía una elección que el cálculo ignoraba; y ponderar los atributos —la corrección obvia— no lo habría arreglado        |
+| Decisión                                                 | Razón                                                                                                                             |
+| -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Tullock sobre un eje calibrado, no `FA × (1 − ENC)`      | La segunda tiene techo estructural (`V ≤ FA`): estado-nación contra defensa básica quedaba topado en 66 % cuando debe rondar 98 % |
+| `m` derivado, no ajustado                                | Dos anclas que comparten atacante cancelan el eje y lo determinan sin suposiciones                                                |
+| Eje de contienda solo en el atacante                     | Validado fuera de muestra: la escala de defensa resultó consistente sin curva propia                                              |
+| Acceso modula R, no C                                    | Describe lo que pasa: cuánto de tu defensa llega a interponerse. Sin el tope de 100 las dos rutas ya son exactamente equivalentes |
+| La Resistencia no se topa en 100                         | Tullock compara una RAZÓN, no dos porcentajes; topar el lado alto subvaloraba la defensa fuerte en toda la grilla                 |
+| Acceso es del riesgo, no del perfil                      | El mismo insider tiene acceso distinto a cada activo                                                                              |
+| Confianza no mueve la media                              | Es incertidumbre epistémica: habla del analista, no del atacante                                                                  |
+| La frecuencia baja con la capacidad                      | La mandan cuántos actores hay y qué tan indiscriminados son, no el empeño de cada uno                                             |
+| Nash fuera de la ruta crítica                            | Sus insumos no son observables                                                                                                    |
+| Los riesgos viejos no se recalculan solos                | Sobrescribir una evaluación guardada destruye la trazabilidad                                                                     |
+| La pérdida del año es una SUMA de eventos                | `LEF × Magnitud` reparte fracciones de evento en todos los años; borra la variabilidad del conteo donde ésa _es_ todo el riesgo   |
+| El año malo se reparte por Euler, no por CVaR individual | El CVaR de cada riesgo ignora con quién coincide, y coincidir es exactamente lo que arma un mal año                               |
+| La cascada explica ocurrencias, no las añade             | El TEF se estima de datos que ya incluyen las veces que un padre lo causó; sumarla encima las cuenta dos veces                    |
+| Adelgazar la cascada quita eventos, no escala            | Escalar la cifra del año inventa años que cuestan una fracción de incendio — la misma falacia que el modelo compuesto corrige     |
+| La LEC recalcula su probabilidad empíricamente           | Con empates, la etiqueta de la escalera miente; y esa curva alimenta el eje Y de la Matriz                                        |
+| El residual guarda su receta, no solo su resultado       | Un número fija la media, nunca la forma: prevenir y contener dan la misma media y colas al triple                                 |
+| Cada ancla lleva su propio Nivel de Acceso               | Emitir la del insider sobre "acceso nulo" metía su acceso dentro de su fuerza, y lo volvía idéntico al crimen organizado          |
+| Dos perfiles no pueden dar el mismo número               | La app ofrecía una elección que el cálculo ignoraba; y ponderar los atributos —la corrección obvia— no lo habría arreglado        |
