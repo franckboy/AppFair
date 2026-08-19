@@ -4,10 +4,15 @@ import { Modal } from './modal.js';
 import { debounce, formatCurrency, getSafeNumber, sanitizeHTML, shortMetricLabel, showToast } from './utils.js';
 
 // Orden de fiabilidad de más débil a más fuerte — mismo orden que
-// RELIABILITY_TO_PROBABILITY en backend/src/lib/treatment.js (baja: 0.4 < media: 0.7 <
-// alta: 0.9). Se usa para combinar varios controles nombrados en una sola fiabilidad
+// RELIABILITY_TO_PROBABILITY en backend/src/lib/treatment.js (nula: 0 < baja: 0.4 <
+// media: 0.7 < alta: 0.9). Se usa para combinar varios controles nombrados en una sola fiabilidad
 // agregada (la más débil presente), sin inventar una fórmula numérica nueva.
-const RELIABILITY_ORDER = ['baja', 'media', 'alta'];
+//
+// "nula" está acá aunque el <select> de Mitigar no la ofrezca (solo la ofrece Transferir, que es
+// donde hay evidencia de que existe: una póliza que excluye el peligro por diseño). Sin ella en
+// la lista, un control con esa fiabilidad daría indexOf === -1 y la agregación lo saltearía en
+// silencio — o sea, el control MÁS débil sería el único que no puede ganar el mínimo.
+const RELIABILITY_ORDER = ['nula', 'baja', 'media', 'alta'];
 
 /**
  * Tope de daño por evento tal como está en pantalla. Devuelve null —no 0— cuando el campo está
@@ -21,6 +26,19 @@ function readDamageCap() {
     return Number.isFinite(n) && n > 0 ? n : null;
 }
 
+/**
+ * Porcentaje del que responde la póliza, tal como está en pantalla. Devuelve 100 —no 0— si el
+ * campo está vacío o trae basura: getSafeNumber daría 0, y un 0 significa "la póliza no responde
+ * por nada", que es el lado hacia el que no se puede fallar. Un 0 escrito a propósito sí se
+ * respeta; lo que no se acepta es que un campo en blanco anule la cobertura en silencio.
+ */
+function readCoveragePercent() {
+    const el = document.getElementById('fair-seguro-cobertura');
+    if (!el || el.value.trim() === '') return 100;
+    const n = Number(el.value);
+    return Number.isFinite(n) && n >= 0 && n <= 100 ? n : 100;
+}
+
 // Texto de Fiabilidad + advertencia para la combinación Mitigar+Transferir — no tiene una única
 // Fiabilidad (trae mitigarReliability/transferirReliability, ver evaluateMitigarConTransferir en
 // el backend), a diferencia de las otras 4 estrategias (una sola stratData.reliability). Aparte
@@ -29,7 +47,9 @@ function readDamageCap() {
 function mitigarTransferirFiabilidadTexto(stratData, fiabilidadLabel) {
     const fiabilidadTexto = `Mitigar ${fiabilidadLabel[stratData.mitigarReliability] || stratData.mitigarReliability} / Transferir ${fiabilidadLabel[stratData.transferirReliability] || stratData.transferirReliability}`;
     let advertencia = '';
-    if (stratData.mitigarReliability === 'baja' || stratData.transferirReliability === 'baja') {
+    if (stratData.mitigarReliability === 'nula' || stratData.transferirReliability === 'nula') {
+        advertencia = ` <strong class="text-red-700">Atención:</strong> una parte de esta combinación está declarada como que no responde a este peligro — lo que se pague por esa parte no evita nada.`;
+    } else if (stratData.mitigarReliability === 'baja' || stratData.transferirReliability === 'baja') {
         advertencia = ` <strong class="text-orange-700">Atención:</strong> una parte de esta combinación tiene Fiabilidad Baja — el beneficio neto ya está ajustado por ese riesgo, pero el rango de resultados posibles es amplio (desde el beneficio completo hasta perder lo invertido, si esa parte no funciona).`;
     } else if (stratData.delayDays > 90) {
         advertencia = ` <strong class="text-orange-700">Atención:</strong> el tiempo de implementación es de ${stratData.delayDays} días — el riesgo actual sigue expuesto mientras tanto.`;
@@ -89,6 +109,7 @@ export const Treatment = {
             'fair-seguro-prima',
             'fair-seguro-deducible',
             'fair-seguro-limite',
+            'fair-seguro-cobertura',
             'fair-seguro-fiabilidad',
             'fair-seguro-retraso',
             'fair-evitar-costo',
@@ -348,6 +369,10 @@ export const Treatment = {
         document.getElementById('fair-seguro-sin-limite').checked = sinLimite;
         document.getElementById('fair-seguro-limite').disabled = sinLimite;
         document.getElementById('fair-seguro-limite').classList.toggle('bg-gray-100', sinLimite);
+        // `typeof x === 'number'` y no `|| 100`: un coaseguro de 0 guardado a propósito ("la
+        // póliza no responde por nada de esta pérdida") volvería a aparecer como cobertura total.
+        document.getElementById('fair-seguro-cobertura').value =
+            typeof transferir.coveragePercent === 'number' ? transferir.coveragePercent : 100;
         document.getElementById('fair-seguro-fiabilidad').value = transferir.reliability || 'media';
         document.getElementById('fair-seguro-retraso').value = transferir.delayDays || 0;
 
@@ -647,6 +672,7 @@ export const Treatment = {
             deductible: getSafeNumber(document.getElementById('fair-seguro-deducible')),
             limit: getSafeNumber(document.getElementById('fair-seguro-limite')),
             unlimited: document.getElementById('fair-seguro-sin-limite').checked,
+            coveragePercent: readCoveragePercent(),
             reliability: document.getElementById('fair-seguro-fiabilidad').value,
             delayDays: getSafeNumber(document.getElementById('fair-seguro-retraso')),
         };
@@ -688,7 +714,7 @@ export const Treatment = {
         // ya calculado de la estrategia elegida, sin tener que volver a pedirlo.
         state.treatment.lastResult = result;
 
-        const fiabilidadLabel = { alta: 'Alta', media: 'Media', baja: 'Baja' };
+        const fiabilidadLabel = { alta: 'Alta', media: 'Media', baja: 'Baja', nula: 'Nula' };
 
         document.getElementById('fair-roi-costo').textContent = formatCurrency(result.mitigar.cost);
         document.getElementById('fair-roi-ale-despues').textContent = formatCurrency(result.mitigar.residualALE);
@@ -777,7 +803,12 @@ export const Treatment = {
                 ({ fiabilidadTexto, advertencia } = mitigarTransferirFiabilidadTexto(stratData, fiabilidadLabel));
             } else {
                 fiabilidadTexto = fiabilidadLabel[stratData.reliability] || stratData.reliability;
-                if (stratData.reliability === 'baja') {
+                if (stratData.reliability === 'nula') {
+                    // Nula NO es "baja con más énfasis", y por eso no comparte su texto: con
+                    // probabilidad 0 el rango de resultados no es amplio, es un solo punto. No hay
+                    // nada que esperar — se paga el costo y no se evita nada.
+                    advertencia = ` <strong class="text-red-700">Atención:</strong> declaraste que esta opción no responde a este peligro, así que el beneficio neto es exactamente el costo, en negativo: se paga y no se evita nada. Si eso no es lo que quisiste decir, revisa la Fiabilidad.`;
+                } else if (stratData.reliability === 'baja') {
                     // El beneficio neto YA descuenta la Fiabilidad Baja (ver App.Treatment /
                     // expectedNetBenefit en el backend: es un valor esperado, no el resultado "si
                     // todo sale bien") — esta nota no advierte que el número podría estar mal, sino

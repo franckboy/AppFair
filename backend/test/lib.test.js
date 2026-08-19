@@ -1537,6 +1537,58 @@ test('calculateInsuranceRetainedALE: cobertura ilimitada sí cubre todo el exced
     assert.strictEqual(retained, 10000); // solo se retiene el deducible
 });
 
+test('calculateInsuranceRetainedALE: omitir el coaseguro deja el resultado idéntico al de siempre', () => {
+    // Guarda de regresión: `coveragePercent` se agregó después, y todo lo ya guardado llama sin
+    // él. Si el default no fuera 100, cada póliza del Registro cambiaría de valor en silencio.
+    const losses = [5000, 100000, 250000, 1000000];
+    assert.strictEqual(
+        calculateInsuranceRetainedALE(losses, 10000, 200000, false),
+        calculateInsuranceRetainedALE(losses, 10000, 200000, false, 100),
+    );
+});
+
+test('calculateInsuranceRetainedALE: el coaseguro paga solo su fracción del excedente', () => {
+    const losses = [100000];
+    // Deducible 10k, cobertura ilimitada arriba de él, pero la póliza responde por el 25 %:
+    // excedente 90k → paga 22,5k → se retienen 77,5k.
+    assert.strictEqual(calculateInsuranceRetainedALE(losses, 10000, 0, true, 25), 77500);
+});
+
+test('calculateInsuranceRetainedALE: un coaseguro de 0 NO se confunde con cobertura total', () => {
+    // El caso que `|| 100` habría roto en silencio: 0 es falsy. Una póliza que no responde por
+    // nada de esta pérdida deja la pérdida completa retenida, no cero.
+    const losses = [100000];
+    assert.strictEqual(calculateInsuranceRetainedALE(losses, 10000, 0, true, 0), 100000);
+});
+
+test('calculateInsuranceRetainedALE: coaseguro y sub-límite coinciden en un punto y difieren en el resto', () => {
+    // Es la razón entera por la que el coaseguro es un parámetro nuevo y no se podía expresar con
+    // el límite que ya existía. Un sub-límite de 3M sobre una pérdida de 12M paga el 25 %...
+    assert.strictEqual(calculateInsuranceRetainedALE([12e6], 0, 3e6, false), 9e6);
+    assert.strictEqual(calculateInsuranceRetainedALE([12e6], 0, 0, true, 25), 9e6);
+    // ...pero sobre una pérdida de 4M el sub-límite paga el 75 % y el coaseguro sigue pagando 25 %.
+    assert.strictEqual(calculateInsuranceRetainedALE([4e6], 0, 3e6, false), 1e6);
+    assert.strictEqual(calculateInsuranceRetainedALE([4e6], 0, 0, true, 25), 3e6);
+});
+
+test('calculateInsuranceRetainedALE: el límite topa lo que la aseguradora desembolsa, después del coaseguro', () => {
+    // Orden de una póliza real: el coaseguro define de cuánto responde, el límite topa el pago.
+    // Excedente 90k × 50 % = 45k de responsabilidad, pero el límite solo deja pagar 20k.
+    assert.strictEqual(calculateInsuranceRetainedALE([100000], 10000, 20000, false, 50), 80000);
+});
+
+test('expectedNetBenefit: Fiabilidad "nula" deja el beneficio neto en exactamente -costo', () => {
+    // "Nula" no es el punto más bajo de la escala, es un estado distinto: la póliza no responde a
+    // este peligro por diseño (ver tools/referencia-sector/, LR09: CBI sin daño físico directo).
+    // La app tiene que poder decir "no compres esto", y con piso 0,4 afirmaba un 40 % de éxito
+    // que nadie sostiene.
+    assert.strictEqual(RELIABILITY_TO_PROBABILITY.nula, 0);
+    assert.strictEqual(expectedNetBenefit(10000, 40000, 'nula'), -10000);
+    // Y queda estrictamente dominada por no hacer nada, que es el resultado correcto.
+    assert.ok(expectedNetBenefit(10000, 40000, 'nula') < 0);
+    assert.ok(expectedNetBenefit(10000, 40000, 'nula') < expectedNetBenefit(10000, 40000, 'baja'));
+});
+
 test('calculateROSI: costo 0 devuelve null (no está definido matemáticamente)', () => {
     assert.strictEqual(calculateROSI(0, 50000), null);
 });

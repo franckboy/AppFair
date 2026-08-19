@@ -118,6 +118,12 @@ function createTreatmentRouter() {
                     deductible: transferir.deductible || 0,
                     limit: transferir.limit || 0,
                     unlimited: !!transferir.unlimited,
+                    // `typeof x === 'number'` y no `|| 100`: un coaseguro de 0 es un valor
+                    // legítimo ("la póliza no responde por nada de esta pérdida") y con `||`
+                    // se convertiría en cobertura total, que es el lado hacia el que no se
+                    // puede fallar.
+                    coveragePercent:
+                        typeof transferir.coveragePercent === 'number' ? transferir.coveragePercent : undefined,
                     reliability: transferir.reliability || 'media',
                     delayDays: transferir.delayDays || 0,
                 },

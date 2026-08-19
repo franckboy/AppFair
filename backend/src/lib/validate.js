@@ -123,6 +123,19 @@ function validateTreatmentBody(body) {
         }
     }
 
+    // Coaseguro: porcentaje del excedente del que responde la aseguradora. 0 es válido (una
+    // cobertura que no responde por nada de esta pérdida) y por eso no entra a la lista de
+    // "mayor o igual a 0" de abajo: necesita además un tope de 100.
+    if (transferir.coveragePercent !== undefined && transferir.coveragePercent !== null) {
+        if (
+            !isFiniteNumber(transferir.coveragePercent) ||
+            transferir.coveragePercent < 0 ||
+            transferir.coveragePercent > 100
+        ) {
+            return 'transferir.coveragePercent debe ser un número entre 0 y 100.';
+        }
+    }
+
     const nonNegativeFields = [
         ['mitigar.cost', mitigar.cost],
         ['mitigar.delayDays', mitigar.delayDays],
