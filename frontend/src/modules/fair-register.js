@@ -9,6 +9,7 @@ import {
     sanitizeHTML,
     sensitivityLabel,
     severityToClasses,
+    tailContributorKind,
     severityToHex,
     shortMetricLabel,
     showToast,
@@ -761,14 +762,13 @@ export const FairRegister = {
         const resto = filas.slice(this._TAIL_CONTRIB_VISIBLE);
 
         const barra = (f) => {
-            // Un riesgo que pesa bastante más en la cola que en el promedio es un problema de AÑO
-            // MALO, y se trata distinto que un costo recurrente: contener el daño por evento le
-            // sirve más que bajar la frecuencia. Al revés, uno que pesa más en el promedio que en
-            // la cola es costo corriente. El umbral de 5 % evita etiquetar ruido de riesgos
-            // diminutos, donde la razón entre dos cifras pequeñas se dispara sin significar nada.
-            const relevante = f.sharePercent >= 5;
-            const deCola = relevante && f.sharePercent > f.expectedSharePercent * 1.25;
-            const recurrente = relevante && f.expectedSharePercent > f.sharePercent * 1.25;
+            // La clasificación vive en utils.js (función pura) para poder probarla sin DOM: es una
+            // afirmación estadística sobre el portafolio, y verificarla en un E2E contra el
+            // Registro compartido no funciona — con riesgos ajenos dominando la cola, la
+            // distinción desaparece de verdad, no por un fallo de la prueba.
+            const clase = tailContributorKind(f);
+            const deCola = clase === 'cola';
+            const recurrente = clase === 'recurrente';
             const etiqueta = deCola
                 ? `<span class="text-xs font-semibold text-orange-700 whitespace-nowrap">· pesa más en los años malos</span>`
                 : recurrente

@@ -437,3 +437,25 @@ export const computeCoveredIsoClauses = (risk) => {
     if (Array.isArray(risk.reviewHistory) && risk.reviewHistory.length >= 2) clauses.push('6.6');
     return clauses;
 };
+
+// Cómo se lee un riesgo dentro del reparto del año malo (ver renderTailContributors): comparando
+// su cuota de la COLA contra su cuota del PROMEDIO. Es la distinción que justifica ese bloque —
+// el Pareto ya ordena por el promedio, y ordenar por la cola solo aporta si las dos cosas
+// difieren:
+//
+//   'cola'       pesa bastante más en los años malos que en un año normal. Es un problema de
+//                cola: le sirve más contener el daño por evento que bajar la frecuencia.
+//   'recurrente' pesa más en el año promedio que en la cola. Es costo corriente, no un mal año.
+//   null         ninguna de las dos cosas de forma clara.
+//
+// El umbral de relevancia evita etiquetar ruido: entre dos cifras diminutas la razón se dispara
+// sin significar nada, y un riesgo que pone el 0,3 % del año malo no cambia ninguna decisión
+// aunque su razón sea 4x. Función pura y aparte del render para poder probarla sin DOM.
+export const TAIL_CONTRIBUTOR_MIN_SHARE = 5;
+export const TAIL_CONTRIBUTOR_RATIO = 1.25;
+export function tailContributorKind({ sharePercent, expectedSharePercent }) {
+    if (!(sharePercent >= TAIL_CONTRIBUTOR_MIN_SHARE)) return null;
+    if (sharePercent > expectedSharePercent * TAIL_CONTRIBUTOR_RATIO) return 'cola';
+    if (expectedSharePercent > sharePercent * TAIL_CONTRIBUTOR_RATIO) return 'recurrente';
+    return null;
+}

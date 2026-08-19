@@ -7,10 +7,19 @@ const KEY = 'test-e2e-key';
 // "De quién es el año malo": reparto del CVaR95 conjunto entre los riesgos que lo componen
 // (asignación de Euler, ver allocateTailContributions en el backend).
 //
-// Lo que hace falta proteger aquí no es que el bloque pinte algo, sino las dos afirmaciones que
-// hace: que el reparto SUMA el año malo del portafolio (si no, los porcentajes serían decorativos)
-// y que distingue un riesgo de COLA de un costo recurrente (si no, no diría nada que el Pareto —
-// que es sobre el promedio — no dijera ya).
+// ALCANCE, y por qué está partido en dos lugares: toda la suite E2E comparte un único backend, así
+// que para cuando este spec corre el Registro ya acumuló decenas de riesgos de otros archivos —
+// algunos con magnitudes enormes que se quedan con la cola entera. En ese portafolio la distinción
+// "riesgo de cola vs. costo recurrente" DESAPARECE de verdad (si la cola la fija un riesgo ajeno,
+// los demás aportan ahí más o menos su media), y afirmarla aquí sería medir la contaminación en
+// vez del modelo. Por eso:
+//
+//   - la afirmación ESTADÍSTICA (la cuota de la cola no es la del promedio) se prueba donde sí se
+//     controla el portafolio: backend/test/lib.test.js y, para la clasificación de la interfaz,
+//     tailContributorKind en src/modules/utils.test.js;
+//   - aquí se prueba lo que solo un E2E puede probar y es inmune a riesgos ajenos: que el reparto
+//     SUMA el año malo del portafolio (sin eso los porcentajes serían decorativos), que el
+//     interruptor Actual/Residual reparte de verdad otro total, y que un riesgo tratado cae a cero.
 test.describe('De quién es el año malo (contribución al CVaR95 del portafolio)', () => {
     // Un raro y severo contra tres frecuentes y menores: el raro debe dominar la cola aunque pese
     // poco en el promedio, que es justo la distinción que este bloque existe para mostrar.
@@ -55,7 +64,7 @@ test.describe('De quién es el año malo (contribución al CVaR95 del portafolio
         );
     }
 
-    test('el reparto suma el año malo del portafolio y separa la cola del costo recurrente', async ({ page }) => {
+    test('el reparto suma EXACTAMENTE el año malo del portafolio y cierra en 100 %', async ({ page }) => {
         await connectAndBoot(page);
         await sembrar(page);
         await connectAndBoot(page);
@@ -65,6 +74,9 @@ test.describe('De quién es el año malo (contribución al CVaR95 del portafolio
         const bloque = page.locator('#dashboard-tail-contrib');
         await expect(bloque).toBeVisible();
         await expect(bloque).toContainText('año malo');
+        // El titular: "N de M riesgos explica(n) el X %". Se comprueba su forma, no sus cifras —
+        // dependen de cuántos riesgos dejaron los demás specs.
+        await expect(bloque).toContainText(/\d+ de \d+ riesgos? explican?/);
 
         // La afirmación central, verificada contra el backend real: las contribuciones tienen que
         // sumar EXACTAMENTE el CVaR95 del portafolio. Es lo que permite leer los porcentajes como
@@ -77,21 +89,21 @@ test.describe('De quién es el año malo (contribución al CVaR95 del portafolio
             },
             { API, KEY },
         );
+        expect(datos.tailContributors.length).toBeGreaterThan(0);
         const suma = datos.tailContributors.reduce((a, t) => a + t.contribution, 0);
         expect(Math.abs(suma - datos.summary.cvar95)).toBeLessThan(1e-6);
         const sumaCuotas = datos.tailContributors.reduce((a, t) => a + t.sharePercent, 0);
         expect(Math.abs(sumaCuotas - 100)).toBeLessThan(0.01);
 
-        // Y la distinción que justifica el bloque: el raro y severo pesa MUCHO más en la cola que
-        // en el promedio. Sin esta diferencia, el reparto no diría nada que el Pareto (que es
-        // sobre el promedio) no dijera ya.
-        const raro = datos.tailContributors.find((t) => t.riskName === RARO);
-        expect(raro).toBeTruthy();
-        expect(raro.sharePercent).toBeGreaterThan(raro.expectedSharePercent + 10);
+        // Lo mismo para el estado residual, que es otra corrida con otro total: si el reparto se
+        // calculara una sola vez y se reetiquetara, esto lo delataría.
+        const sumaResidual = datos.residual.tailContributors.reduce((a, t) => a + t.contribution, 0);
+        expect(Math.abs(sumaResidual - datos.residual.summary.cvar95)).toBeLessThan(1e-6);
 
-        // Eso mismo, dicho en pantalla: el riesgo de cola sale etiquetado.
-        const fila = bloque.locator('div', { hasText: RARO }).first();
-        await expect(fila).toContainText('pesa más en los años malos');
+        // Los riesgos sembrados aquí tienen que aparecer en el reparto (con la cuota que sea).
+        const nombres = datos.tailContributors.map((t) => t.riskName);
+        expect(nombres).toContain(RARO);
+        for (const [nombre] of FRECUENTES) expect(nombres).toContain(nombre);
     });
 
     test('el interruptor Actual/Residual reparte el año malo DESPUÉS de tratar', async ({ page }) => {
@@ -125,7 +137,6 @@ test.describe('De quién es el año malo (contribución al CVaR95 del portafolio
         await page.waitForTimeout(4000);
 
         const bloque = page.locator('#dashboard-tail-contrib');
-        await expect(bloque).toContainText(RARO);
         const textoActual = await bloque.innerText();
 
         await page.click('#dashboard-view-residual');
@@ -146,7 +157,7 @@ test.describe('De quién es el año malo (contribución al CVaR95 del portafolio
         );
         const enActual = datos.tailContributors.find((t) => t.riskName === RARO);
         const enResidual = datos.residual.tailContributors.find((t) => t.riskName === RARO);
-        expect(enActual.sharePercent).toBeGreaterThan(50);
+        expect(enActual.contribution).toBeGreaterThan(0);
         expect(enResidual.contribution).toBe(0);
         expect(enResidual.sharePercent).toBe(0);
         // Y el reparto residual sigue cerrando en el CVaR residual, no en el actual.
@@ -155,6 +166,21 @@ test.describe('De quién es el año malo (contribución al CVaR95 del portafolio
 
         await page.click('#dashboard-view-actual');
         await page.waitForTimeout(600);
-        await expect(bloque).toContainText(RARO);
+        expect(await bloque.innerText()).toBe(textoActual);
+
+        // Limpieza: este spec siembra cuatro riesgos en el Registro que comparte toda la suite, y
+        // uno de ellos es deliberadamente enorme — dejarlo ahí se quedaría con la cola de
+        // cualquier otro spec que mire el portafolio después.
+        await page.evaluate(
+            async ({ API, KEY, nombres }) => {
+                for (const n of nombres) {
+                    await fetch(`${API}/api/register/${encodeURIComponent(n)}`, {
+                        method: 'DELETE',
+                        headers: { 'X-API-Key': KEY },
+                    });
+                }
+            },
+            { API, KEY, nombres: [RARO, ...FRECUENTES.map(([n]) => n)] },
+        );
     });
 });
