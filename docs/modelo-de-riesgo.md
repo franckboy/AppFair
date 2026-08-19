@@ -22,6 +22,10 @@ entera, §4 y §9.1). Archivos de referencia:
 | Residual del Tratamiento                               | `backend/src/lib/autocalc.js`            |
 | Frecuencia sugerida                                    | `frontend/src/modules/utils.js`          |
 | Equilibrio de Nash (panel aparte)                      | `backend/src/lib/nashEquilibrium.js`     |
+| Umbral de disuasión, Stackelberg (panel aparte)        | `backend/src/lib/stackelbergDeterrence.js` |
+| Procedencia por factor                                 | `backend/src/lib/provenance.js`          |
+| Bitácora de Incidentes                                 | `backend/src/lib/incidentLog.js`          |
+| Tabla de referencia del sector (datos, fuera de la app) | `tools/referencia-sector/`               |
 | Invariantes ejecutables                                | `backend/test/lib.test.js`               |
 
 ### Cómo leer este documento
@@ -29,7 +33,12 @@ entera, §4 y §9.1). Archivos de referencia:
 Las secciones **1 a 9** describen la ruta crítica: cómo un juicio experto se convierte en una
 distribución de pérdidas y esa distribución en una clasificación. Las secciones **12 a 16** son el
 detalle matemático de las piezas que esa ruta usa —las distribuciones, la clasificación, el
-tratamiento, la cascada, Nash— y se pueden leer sueltas.
+tratamiento, la cascada, Nash, la disuasión— y se pueden leer sueltas.
+
+Tres secciones no describen cálculo sino **de qué está hecho el cálculo**, y son las que hay que
+leer antes de citar cualquier cifra fuera de la app: §2.4 (de dónde salió cada número), §6.4 (por
+qué las anclas de calibración no pueden falsear el modelo) y §16.2 (qué haría falta para que
+alguna vez estuviera validado).
 
 **La numeración de secciones es estable a propósito:** varios comentarios del código apuntan a ella
 por número (`ver §7.1`, `ver §8.3`). Al ampliar este documento se agregan secciones nuevas al final
@@ -147,6 +156,43 @@ Incertidumbre **epistémica**: qué tan seguro está el analista de su propio es
 
 `medio` es el **nivel de referencia**: es el único en el que el modelo está anclado a juicio
 experto. La banda `bajo` es asimétrica (−0,65 / +0,80); el re-centrado (§5) lo absorbe.
+
+---
+
+### 2.4 Procedencia por factor: de dónde salió cada número
+
+`ALE = TEF · V · E[M]` es **multilineal**: la elasticidad de los tres factores es exactamente 1
+(§9), así que un error del 50 % en cualquiera de ellos es un error del 50 % en la respuesta. Pero el
+esfuerzo de calibración está repartido de forma muy desigual:
+
+| Factor | Cómo se obtiene hoy | Calibración |
+| --- | --- | --- |
+| **Vulnerabilidad** | Motor de contienda (§3-§6) | 8 anclas, análisis de sensibilidad, 7 versiones |
+| **TEF** | Sugerencia editable de 3 anclas (§7.2) | Sin validación ni sensibilidad |
+| **Magnitud** | La teclea el usuario; min/max por factor de confianza | Ninguna |
+
+Dos tercios del modelo, que pesan igual que el primero, no tienen ni un ancla ni una prueba. Por eso
+cada riesgo declara la procedencia **de cada factor por separado**, no una sola por riesgo:
+
+```
+origen ∈ { historico-propio, benchmark-sector, catalogo, juicio-experto }
+       + observaciones (cuántas)  + exposicion (en cuánto)  + fuente (texto)
+```
+
+El orden de la lista es de más a menos sostenido por evidencia, y define el **eslabón más débil** de
+un riesgo (`weakestOrigin`). El default es `juicio-experto`: no declarar nada es en sí una
+declaración, y es la más honesta de las cuatro.
+
+**Declarar observaciones sin exposición se rechaza al capturar.** "4 incidentes" no dice nada sin
+"en cuántos años", y descubrirlo cuando ya no se le puede preguntar a nadie es descubrirlo tarde.
+
+Del resumen del portafolio sale una cifra que cambia una conversación con un comité por sí sola: el
+**porcentaje del modelo sostenido por algo observado**, promediando los tres factores sin ponderar
+(elasticidad 1 cada uno). Un 33 % significa "uno de los tres factores tiene datos detrás", **no**
+"un tercio de la respuesta es correcta".
+
+Sin este campo no existe la ponderación por credibilidad (§16.2): `Z = n/(n+k)` necesita `n`, y `n`
+es exactamente lo que el `dataSource` viejo —uno por riesgo, en texto libre— nunca guardó.
 
 ---
 
@@ -421,6 +467,32 @@ seguridad**, y eso alimentaba directo a la estrategia de Mitigar.
 
 ---
 
+### 6.4 Cero grados de libertad: lo que las anclas de calibración NO pueden hacer
+
+Conviene decirlo sin adornos porque es la limitación epistemológica de fondo del motor de
+Vulnerabilidad, y no se arregla ajustando nada.
+
+El ajuste tiene **9 juicios** de entrada (las 6 anclas de calibración de §6.1 más las 3 de nivel de
+acceso de §4) y **9 parámetros** libres (`m`, los 5 nodos del eje de contienda de §3, y los 3
+factores `α` del acceso). Nueve ecuaciones, nueve incógnitas: el sistema está **exactamente
+identificado**.
+
+La consecuencia es que **las anclas de calibración no pueden falsear el modelo**. Reproducirlas no
+es evidencia de que el modelo sea correcto; es aritmética. Se midió durante la calibración 6: bajar
+la FA del empleado desleal de 60 a 45 respetando el ancla movió la grilla **menos de un punto**,
+porque el nodo se re-ajustaba hacia arriba para compensar. El ancla mandaba, no el atributo.
+
+Lo único que sí puede contradecir al motor son:
+
+1. **Las 2 anclas de validación fuera de muestra** (§6.2), que no participan del ajuste. Son las
+   únicas de las ocho con poder de falsear, y son dos.
+2. **Un histórico real de incidentes** (§16.2), que todavía no existe.
+
+Por eso este documento habla de verificación **interna** (coherencia, monotonía, sensibilidad) y
+nunca de validación externa: no son lo mismo y confundirlas sería el error más caro de todos.
+
+---
+
 ## 7. Ruta crítica
 
 ```
@@ -523,6 +595,21 @@ y qué tan indiscriminados son**, no el empeño de cada uno — el empeño deter
 
 No hay piso en 1 evento/año. El modelo anterior lo tenía y hacía imposible expresar una amenaza de
 baja frecuencia y alto impacto.
+
+**El estado real de este factor, dicho sin adornos.** No hay motor de autocálculo para la
+frecuencia: `/api/autocalc/vulnerability` existe, `/loss-magnitude` existe, `/reduccion-ale` existe
+— **frecuencia no**. Estas tres anclas son una sugerencia que el usuario pisa a mano, y pesan lo
+mismo en el ALE que las 8 anclas y las 7 calibraciones de la Vulnerabilidad (§2.4). Es el eslabón
+más flojo del modelo y conviene tenerlo presente al leer cualquier cifra.
+
+Hay dos piezas construidas alrededor de ese hueco, ninguna enchufada todavía a la ruta crítica:
+
+- **`tools/referencia-sector/`** — tablas de frecuencia y magnitud del sector con su cuarentena
+  verificable en código. Marcadas `benchmark-sector` y con `Z = 0` declarado: es un **prior**, no
+  una validación. Su verificador falla si alguien marca usable una entrada a la que le falta el
+  denominador, el factor de escala o el monto.
+- **El umbral de disuasión** (§16.1), que sí calcula una frecuencia a partir de los incentivos del
+  atacante, pero vive en el panel exploratorio y no toca ninguna cifra del Registro (§10).
 
 ### 7.3 Métricas de salida
 
@@ -882,7 +969,7 @@ dos números se contradirían sin avisar.
 
 ---
 
-## 10. Deslinde: el Equilibrio de Nash está FUERA de la ruta crítica
+## 10. Deslinde: Nash y la disuasión están FUERA de la ruta crítica
 
 **El Equilibrio de Nash es un panel exploratorio "qué pasaría si". No participa —ni directa ni
 indirectamente— en el cálculo de la Vulnerabilidad, el LEF, el ALE ni ninguna métrica del Registro.**
@@ -914,6 +1001,14 @@ selecciona un par `(a*, d*)` que después alimente el muestreo.
 La comparación "a esfuerzo fijo" que muestra el panel sí pasa por el eje de contienda calibrado,
 pero usa la `m` **de ese panel**, no la calibrada — por eso puede no coincidir con la Vulnerabilidad
 del Paso 2, y la interfaz lo advierte de forma explícita.
+
+**El umbral de disuasión (§16.1) hereda este mismo deslinde, y por el mismo motivo.**
+`stackelbergDeterrence.js` se invoca solo desde `POST /api/autocalc/deterrence`, disparado por un
+botón; `POST /api/simulate` no lo importa. Depende de los pagos del atacante —cuánto le vale el
+botín, cuánto le cuesta el operativo, cuánto consigue en otro lado— que **no se observan en ninguna
+bitácora**: nunca vas a registrar al ladrón que miró la reja y se fue. Por eso esos tres valores son
+entradas visibles y editables en pantalla, y el resultado declara cuál usó y si el usuario lo movió.
+Escondidos, el panel sería una máquina de justificar cualquier inversión.
 
 ---
 
@@ -1414,7 +1509,7 @@ ladrón que miró la reja y se fue.
 
 ---
 
-## 16.2 Bitácora de Incidentes: lo único que puede contradecir al modelo
+### 16.2 Bitácora de Incidentes: lo único que puede contradecir al modelo
 
 Todo lo que la app calcula sale de juicio experto y referencias del sector. Un prior **alimenta**
 el cálculo; no puede demostrar que esté mal. La bitácora es el otro lado: datos propios, que sí
@@ -1425,7 +1520,7 @@ cambia y nada se marca para recalibrar. Es el enchufe puesto antes de que llegue
 construye antes de tener el primer cliente porque meterle captura de datos a una app ya desplegada
 es mucho más caro que dejar el hueco listo.
 
-### Lo que la bitácora observa es LEF, no TEF
+#### Lo que la bitácora observa es LEF, no TEF
 
 La distinción más fácil de arruinar, y la más cara. `TEF` son **intentos**/año; `LEF = TEF · V` son
 **pérdidas**/año (§7.1-7.2). Una bitácora anota robos que **ocurrieron**: nadie registra al ladrón
@@ -1448,7 +1543,7 @@ saber: para un riesgo con bitácora, el motor de Vulnerabilidad queda **puentead
 observado ya integra amenaza y defensa. No es un defecto — si sabés cuántos robos hubo, no hace
 falta estimarlos. El motor sigue trabajando para los riesgos sin datos, que van a ser la mayoría.
 
-### Tres estados, no dos
+#### Tres estados, no dos
 
 | Estado | Significa | Se usa |
 | --- | --- | --- |
@@ -1461,7 +1556,7 @@ Tratar "no lo llené" como cero tiraría el riesgo al piso para todo lo que nadi
 al validar: significaría lo mismo por otro camino, y después nadie sabría si se midió o se tecleó
 por inercia.
 
-### Un cero no siempre dice lo mismo
+#### Un cero no siempre dice lo mismo
 
 La **regla de los tres** acota la tasa real a `3/n` con 95 % de confianza. Pero cuánto *informa* ese
 cero depende de lo que el modelo esperaba — `P(0 eventos) = e^{−LEF·n}`:
@@ -1476,7 +1571,7 @@ O sea que **el cero es fuerte justo donde los eventos son frecuentes, y no dice 
 catastróficos** — que son los que dominan la cola (§8.5). La interfaz muestra las dos cosas para que
 un cero no invite a bajar el riesgo catastrófico por ausencia de evidencia.
 
-### La exposición vive con cada entrada
+#### La exposición vive con cada entrada
 
 "4 incidentes" no significa nada sin "en cuánto", y el denominador no es el mismo para todos: robo
 en carretera por viaje, incendio por bodega-año, remolque robado por noche-estacionado. Un solo
@@ -1526,7 +1621,21 @@ Perfil de Atacante (5 atributos)          Perfil de Defensa (6 atributos)
                        + reparto del año malo (Euler)          §8.5
 ```
 
-**Las cinco afirmaciones que sostienen todo esto**, y dónde se prueba cada una:
+Y en paralelo, **sin tocar ninguna cifra de esa ruta** (§10):
+
+```
+   Panel exploratorio            Configuración
+   ──────────────────            ─────────────
+   Nash          §16     Procedencia por factor      §2.4  ─┐
+   Disuasión     §16.1   Bitácora de Incidentes      §16.2 ─┤
+   (Stackelberg)         Tabla de referencia (tools/) §7.2  ─┘
+        │                                                   │
+   responde "¿con cuánto              responden "¿sobre qué se
+   alcanza?", que la ruta             apoya este número, y qué
+   crítica no puede responder         lo podría contradecir?"
+```
+
+**Las siete afirmaciones que sostienen todo esto**, y dónde se prueba cada una:
 
 | Afirmación                                                           | Prueba                      |
 | -------------------------------------------------------------------- | --------------------------- |
@@ -1535,15 +1644,35 @@ Perfil de Atacante (5 atributos)          Perfil de Defensa (6 atributos)
 | La pérdida del año es una suma de eventos, no una fracción de evento | §7.1                        |
 | Sumar colas de riesgos sobrestima; hay que simularlos juntos         | §8.1, §8.2                  |
 | El reparto del año malo suma exactamente el año malo                 | §8.5, §9                    |
+| El motor pega tantas veces como su propio LEF promete                | §7.3, §9                    |
+| A quien no tiene adónde ir no lo disuade ninguna inversión           | §16.1, §9                   |
 
 **Y las tres cosas que el modelo NO afirma**, dichas aquí para que nadie las asuma:
 
 1. **No es predicción.** Es una descripción de incertidumbre bajo supuestos declarados. Si los
    supuestos cambian, el número cambia — por eso cada resultado va sellado con su versión de
    calibración (§9.1) y nada se recalcula solo.
-2. **No está validado contra datos reales.** Las ocho anclas son juicio experto, y el modelo está
-   probado de forma **interna** (coherencia, monotonía, sensibilidad), no **externa**. Comparar
-   contra un histórico de incidentes real es lo único que podría mostrar que está equivocado, y
-   sigue pendiente (`tools/bayesian-calibration/`).
+2. **No está validado contra datos reales, y el contador lo dice.** Las ocho anclas son juicio
+   experto, seis de ellas con **cero grados de libertad** (§6.4): reproducirlas es aritmética, no
+   evidencia. El modelo está probado de forma **interna** (coherencia, monotonía, sensibilidad), no
+   **externa**. Lo único que puede contradecirlo es un histórico real, y para eso ya existe el
+   enchufe —la Bitácora de Incidentes (§16.2), con su diagnóstico contra el LEF— pero **mientras su
+   contador `comparables` valga 0, ninguna cifra de esta app ha sido contrastada contra la
+   realidad ni una sola vez**. Las tablas de `tools/referencia-sector/` no cambian eso: son un
+   prior del sector con `Z = 0` declarado, y un prior alimenta el cálculo pero no puede falsearlo.
 3. **No lo prescribe ninguna norma.** ISO 31000, ISO 28000 y ASIS aportan el marco de proceso. Estas
    fórmulas son metodología propia de AppFair, y así debe citarse.
+
+### 17.1 Qué haría falta para que el punto 2 dejara de ser cierto
+
+En orden de cuánto mueven la aguja, y ninguno depende de escribir más código:
+
+| Falta | Desbloquea | Por qué importa |
+| --- | --- | --- |
+| **Bitácora propia** con fecha, tipo y exposición | Validación (§16.2) y la mezcla por credibilidad | Es lo único que puede contradecir al modelo. Incluye los ceros: "cero robos de carga en 6 años" es un dato, y de los que más bajan un TEF |
+| **Viajes al año** de la operación | Convertir las tasas por viaje del sector a eventos/año | Sin el denominador, una tasa por viaje abarca un rango de 8× |
+| **Factores de escala** al activo propio | Las colas catastróficas de referencia | Las citadas van de \$90 M a \$4,15 mil M; no son trasladables sin ese factor |
+
+Cuando llegue lo primero, la mezcla va a nivel **LEF y no TEF** (§16.2): el prior es `TEF · V` —lo
+que la app ya calcula— y la evidencia entra tal cual. Queda escrito acá para que no se decida
+distinto por olvido; el error en la otra dirección subestima hasta 14×, siempre hacia abajo.
