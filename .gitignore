@@ -1,0 +1,4 @@
+
+# Artefactos de Playwright si se corre la suite desde la raíz en vez de frontend/
+test-results/
+playwright-report/

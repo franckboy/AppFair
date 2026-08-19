@@ -169,6 +169,56 @@ test.describe('Modelo de frecuencia: comparador en el detalle del riesgo', () =>
         await expect(nota).toContainText('no perderías nada');
     });
 
+    test('el resultado cuenta ataques consumados, no solo dinero, y lo dice sin jerga', async ({ page }) => {
+        // El motor ya sorteaba este conteo en cada uno de los 10.000 años y lo tiraba: todo lo que
+        // la pantalla mostraba estaba en dinero. Es la lectura que hace intuitivo el resto.
+        const riskName = 'E2E Conteo de Eventos';
+        await connectAndBoot(page);
+        await page.evaluate(
+            async ({ API, KEY, riskName }) => {
+                await fetch(`${API}/api/register/${encodeURIComponent(riskName)}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'X-API-Key': KEY },
+                    body: JSON.stringify({
+                        riskType: 'amenaza',
+                        vulnManualOverride: true,
+                        tef: { min: 0.8, mode: 1.0, max: 1.2 },
+                        vuln: { min: 35, mode: 40, max: 45 },
+                        lossMagnitudes: { respuesta: { min: 5000, mode: 20000, max: 60000 } },
+                        seed: 42,
+                        ale: 8000,
+                        cvar95: 30000,
+                    }),
+                });
+            },
+            { API, KEY, riskName },
+        );
+
+        // En Modo Simple, que es donde el texto tiene que ser legible y sin siglas.
+        await expect(page.locator('#mode-toggle-btn')).not.toHaveText('');
+        if (!(await page.evaluate(() => document.body.classList.contains('modo-simple')))) {
+            await page.click('#mode-toggle-btn');
+            await page.waitForTimeout(300);
+        }
+        await page.click('#nav-dashboard');
+        await page.waitForTimeout(1500);
+        await page.click(`[data-simulate-risk="${riskName}"]`);
+
+        const nota = page.locator('#fair-events-note');
+        await expect(nota).toBeVisible({ timeout: 20000 });
+        const texto = await nota.innerText();
+
+        // Tiene que traer un conteo de verdad, no una plantilla vacía: al menos dos números (las
+        // veces que prosperó y los años simulados).
+        const numeros = texto.match(/[\d.,]+/g) || [];
+        expect(numeros.length, `la nota no trae conteos: "${texto}"`).toBeGreaterThanOrEqual(2);
+
+        const jerga = texto.match(
+            /\bCVaR\b|\bALE\b|\bP90\b|\bTEF\b|\bLEF\b|\bLEC\b|Beta-PERT|Monte Carlo|Poisson|Pareto|correlaci[oó]n|Excedencia/i,
+        );
+        expect(jerga, `el conteo muestra jerga en Modo Simple: "${jerga ? jerga[0] : ''}"`).toBeNull();
+    });
+
     // El detalle del riesgo vive en un modal y solo existe tras un clic, así que queda fuera del
     // alcance de simple-mode-no-jargon.spec.js (que recorre páginas). Este comparador es texto
     // nuevo visible para el usuario: su Modo Simple se verifica aquí, con la misma red de jerga.

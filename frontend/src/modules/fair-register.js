@@ -2553,6 +2553,27 @@ export const FairRegister = {
             notaCeros.classList.add('hidden');
         }
 
+        // Cuántas veces prosperó un ataque, no cuánto costó. Todo lo demás en esta pantalla está en
+        // dinero; el motor ya sorteaba este conteo y lo tiraba. Es la lectura que hace intuitivo el
+        // resto — "te pegaron 4.012 veces en 10.000 años" se entiende sin saber qué es un percentil.
+        // Solo existe con el modelo compuesto de frecuencia (ver summarizeEventCounts).
+        const notaEventos = document.getElementById('fair-events-note');
+        const eventos = result.events;
+        if (notaEventos && eventos && eventos.totalEvents > 0) {
+            const simple = App.UIMode.mode === 'simple';
+            const n = (x) => x.toLocaleString('es-MX');
+            const cadaCuanto =
+                eventos.meanEventsPerYear >= 1
+                    ? `${eventos.meanEventsPerYear.toFixed(1)} veces por año`
+                    : `una vez cada ${(1 / eventos.meanEventsPerYear).toFixed(1)} años`;
+            notaEventos.textContent = simple
+                ? `Contando golpes en vez de dinero: en los ${n(eventos.years)} años simulados el ataque prosperó ${n(eventos.totalEvents)} veces — en promedio ${cadaCuanto}. El peor año acumuló ${eventos.maxEventsInAYear}.`
+                : `Eventos consumados: ${n(eventos.totalEvents)} en ${n(eventos.years)} años simulados (${eventos.meanEventsPerYear.toFixed(3)} por año). Máximo en un solo año: ${eventos.maxEventsInAYear}. Es el conteo de ataques que superaron la defensa, antes de traducirlo a dinero.`;
+            notaEventos.classList.remove('hidden');
+        } else if (notaEventos) {
+            notaEventos.classList.add('hidden');
+        }
+
         // Riesgo Inherente: solo lo trae Amenaza (ver calculateInherentRiskFromSimulation en el
         // backend). Se oculta la línea entera en vez de mostrar "$NaN".
         const inherenteLine = document.getElementById('fair-inherente-line');

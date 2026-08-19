@@ -221,6 +221,53 @@ function runMonteCarloSimulation({
 }
 
 /**
+ * CUÁNTAS VECES PROSPERÓ UN ATAQUE, no cuánto costó.
+ *
+ * Todo lo que la app muestra hoy está en dinero: el año promedio, el año malo, la curva. Pero el
+ * motor ya sabe algo que nunca dice — en cada uno de los 10.000 años simulados sortea cuántos
+ * ataques pasaron la defensa (`n_i ~ Poisson(TEF × Vulnerabilidad)`), y ese conteo se tira.
+ *
+ * Es la lectura que hace intuitivo todo lo demás. "Te pegaron 4.012 veces en 10.000 años y el peor
+ * año trajo 5 golpes" se entiende sin saber qué es un percentil; "el 5 % peor de los años cuesta
+ * $800.000" no. Y es la única cifra del motor que se puede comparar de frente contra una bitácora
+ * real el día que exista: una bitácora cuenta eventos, no promedios.
+ *
+ * Solo existe con el modelo compuesto. Con el modelo 'expected' la pregunta no tiene respuesta —
+ * ahí cada año trae "LEF eventos" con decimales, y medio evento no es un evento.
+ *
+ * @param {number[]|null} eventCounts Conteo por iteración (ver runMonteCarloSimulation).
+ * @returns {{years:number, totalEvents:number, meanEventsPerYear:number, maxEventsInAYear:number,
+ *   distribution:Array<{events:number, years:number}>}|null}
+ */
+function summarizeEventCounts(eventCounts) {
+    if (!Array.isArray(eventCounts) || eventCounts.length === 0) return null;
+
+    let totalEvents = 0;
+    let maxEventsInAYear = 0;
+    for (const n of eventCounts) {
+        totalEvents += n;
+        if (n > maxEventsInAYear) maxEventsInAYear = n;
+    }
+
+    const distribution = new Array(maxEventsInAYear + 1).fill(0);
+    for (const n of eventCounts) distribution[n] += 1;
+
+    return {
+        // El denominador viaja con el numerador: "4.012 eventos" no significa nada sin "en cuántos
+        // años", y dejar que quien muestre el dato lo busque en otro campo es como se desincronizan.
+        years: eventCounts.length,
+        totalEvents,
+        meanEventsPerYear: totalEvents / eventCounts.length,
+        maxEventsInAYear,
+        // No se devuelve un "porcentaje de años tranquilos" a propósito: con el modelo compuesto,
+        // cero eventos implica pérdida cero y viceversa, así que sería `zeroLossYearsPercent`
+        // (summarizeLosses) con otro nombre. Dos cifras que siempre coinciden y que alguien puede
+        // desincronizar al tocar una sola es una trampa, no una comodidad.
+        distribution: distribution.map((years, events) => ({ events, years })),
+    };
+}
+
+/**
  * Correlación de Pearson entre dos arreglos numéricos del mismo largo. Envuelve
  * sampleCorrelation de simple-statistics (misma fórmula, cov/std/std) en vez de mantener a mano
  * la varianza + covarianza — pero simple-statistics NO protege dos casos que sí necesitamos:
@@ -435,6 +482,7 @@ module.exports = {
     runMonteCarloSimulation,
     calculateSensitivity,
     summarizeLosses,
+    summarizeEventCounts,
     pearsonCorrelation,
     spearmanCorrelation,
     buildLossExceedanceCurve,
