@@ -53,6 +53,9 @@ export const FairRegister = {
             // registerResidualPortfolio para armar las 3 etapas) — igual, ya calculado del lado
             // del servidor.
             state.fair.registerInherentPortfolio = registerData.inherentPortfolio || null;
+            // En qué se apoyan los números del Registro (ver renderProvenanceSummary) — también
+            // calculado del lado del servidor, con la misma normalización que usa el resto.
+            state.fair.registerProvenanceSummary = registerData.provenanceSummary || null;
             // Tabla concentrada: fusiona los riesgos de Análisis Rápido (/api/risks, pueden
             // no tener simulación FAIR todavía) con los ya simulados (state.fair.riskRegister)
             // — ver buildConcentratedList(). El resto (mapa de calor, Pareto, sensibilidad
@@ -449,6 +452,10 @@ export const FairRegister = {
                     timeHorizon: document.getElementById('fair-time-horizon').value,
                     reviewDate,
                     dataSource: document.getElementById('fair-data-source').value,
+                    // Procedencia por factor. Se manda siempre (los tres factores, forma completa):
+                    // el backend la normaliza igual, y mandarla explícita deja el Registro
+                    // autocontenido en vez de depender de una derivación al leer.
+                    factorProvenance: App.FairWizard.readProvenance(),
                     dataConfidence: document.getElementById('fair-data-confidence').value,
                     dataNotes: document.getElementById('fair-data-notes').value.trim() || null,
                     assessor,
@@ -832,6 +839,62 @@ export const FairRegister = {
             `<p class="text-xs text-gray-500 mt-2">Reparto del año malo conjunto, no la suma de los años malos de cada uno: cuenta con quién coincide cada riesgo. Los porcentajes cierran en 100 %.</p>`;
     },
 
+    /**
+     * ¿En qué se apoyan estos números? — cuánto del Registro está sostenido por algo observado.
+     *
+     * Se cuenta por FACTOR y no por riesgo, y ésa es la decisión que hace útil al bloque: los tres
+     * factores se multiplican para dar el ALE, así que pesan exactamente igual (la elasticidad de
+     * los tres es 1). Un riesgo con Frecuencia histórica y Magnitud inventada no está "sostenido a
+     * medias" — tiene un factor de tres. Contar por riesgo escondería justo el desbalance que este
+     * bloque existe para mostrar: hoy la Vulnerabilidad tiene nueve anclas de experto detrás y los
+     * otros dos factores, ninguna.
+     */
+    renderProvenanceSummary(resumen) {
+        const el = document.getElementById('dashboard-provenance');
+        if (!el) return;
+        if (!resumen || resumen.total === 0) {
+            el.innerHTML = '<p class="text-gray-500">Analiza al menos un riesgo para ver en qué se apoya.</p>';
+            return;
+        }
+
+        const ETIQUETAS = {
+            tef: 'Con qué frecuencia pasa',
+            vulnerabilidad: 'Qué tan probable es que funcione',
+            magnitud: 'Cuánto cuesta',
+        };
+        const filas = Object.entries(ETIQUETAS)
+            .map(([key, etiqueta]) => {
+                const f = resumen.porFactor[key] || { conDatos: 0, total: resumen.total, observaciones: 0 };
+                const pct = f.total > 0 ? (100 * f.conDatos) / f.total : 0;
+                const obs =
+                    f.observaciones > 0
+                        ? `<span class="text-xs text-gray-500">· ${f.observaciones} ${f.observaciones === 1 ? 'observación declarada' : 'observaciones declaradas'}</span>`
+                        : '';
+                return `
+                    <div class="py-1 border-b border-gray-200 last:border-0">
+                        <div class="flex justify-between items-baseline gap-3">
+                            <span>${etiqueta} ${obs}</span>
+                            <strong class="whitespace-nowrap">${f.conDatos} de ${f.total}</strong>
+                        </div>
+                        <div class="h-1.5 bg-gray-200 rounded mt-1">
+                            <div class="h-1.5 rounded ${pct > 0 ? 'bg-green-500' : 'bg-gray-300'}" style="width: ${Math.max(1, pct).toFixed(1)}%"></div>
+                        </div>
+                    </div>`;
+            })
+            .join('');
+
+        const pct = resumen.porcentajeSostenido;
+        const titular =
+            pct === 0
+                ? `<p class="mb-3">Ninguno de los tres factores se apoya todavía en algo observado: <strong>todo el Registro es juicio experto</strong>. No está mal — es el punto de partida normal — pero conviene saberlo antes de presentarlo.</p>`
+                : `<p class="mb-3"><strong>${pct.toFixed(0)} %</strong> de los factores del Registro se apoya en algo observado (histórico propio o referencia del sector). El resto es juicio experto.</p>`;
+
+        el.innerHTML =
+            titular +
+            filas +
+            `<p class="text-xs text-gray-500 mt-2">Los tres se multiplican entre sí, así que pesan igual: un error del 50 % en cualquiera es un error del 50 % en el resultado. Por eso se cuentan por separado y no como un promedio por riesgo.</p>`;
+    },
+
     renderRiskRegister() {
         const empty = document.getElementById('fair-register-empty');
         const content = document.getElementById('fair-register-content');
@@ -855,6 +918,7 @@ export const FairRegister = {
         content.classList.remove('hidden');
 
         this.renderPortfolioInterpretation(register);
+        this.renderProvenanceSummary(state.fair.registerProvenanceSummary);
         this.renderPortfolioMonteCarlo();
         this.renderDashboardViewControls();
 

@@ -110,6 +110,9 @@ export const state = {
         // (después). Gobierna el Pareto y la columna resaltada de la tabla; la Matriz y el Monte
         // Carlo muestran siempre los dos, solo atenúan el que no está seleccionado.
         dashboardView: 'actual',
+        // Resumen de en qué se apoyan los números del Registro (GET /api/register →
+        // provenanceSummary, ver backend/src/lib/provenance.js).
+        registerProvenanceSummary: null,
         // Última respuesta de /api/register/portfolio-simulation. Se cachea para que el
         // interruptor Actual/Residual pueda repintar el reparto del año malo sin volver a pedir
         // una simulación de 10.000 iteraciones por riesgo.

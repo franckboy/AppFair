@@ -1,5 +1,6 @@
 import { App } from './app-namespace.js';
 import { state } from './state.js';
+import { renderProvenanceRows, readProvenanceRows, emptyProvenance } from './provenance.js';
 import { Modal } from './modal.js';
 import {
     LOSS_FORMS_KEYS,
@@ -45,10 +46,24 @@ export const FairWizard = {
     _nextLossMagnitudeRequestId: 0,
     _lossMagnitudeRequestIds: {},
 
+    /** El `<tbody>` de la tabla de procedencia por factor (ver provenance.js). */
+    provenanceBody() {
+        return document.getElementById('fair-provenance-body');
+    },
+
+    /** Lo que hay hoy en esa tabla, listo para mandar a la API. */
+    readProvenance() {
+        return readProvenanceRows(this.provenanceBody());
+    },
+
     applyOrgDefaults() {
         document.getElementById('fair-defense-profile').value = App.OrgDefaults.defaults.defenseKey;
         document.getElementById('fair-data-source').value = App.OrgDefaults.defaults.dataSource;
         document.getElementById('fair-data-confidence').value = App.OrgDefaults.defaults.dataConfidence;
+        // La tabla de procedencia arranca pintada con el default (los tres factores a juicio
+        // experto). Sin esto quedaría vacía hasta el primer reset o hasta retomar un riesgo, y una
+        // tabla con encabezados y sin filas se lee como que la app está rota.
+        renderProvenanceRows(this.provenanceBody(), emptyProvenance());
         this.updateAttackerDefenseSummary();
     },
 
@@ -78,6 +93,7 @@ export const FairWizard = {
         document.getElementById('fair-data-source').value = data.dataSource || App.OrgDefaults.defaults.dataSource;
         document.getElementById('fair-data-confidence').value =
             data.dataConfidence || App.OrgDefaults.defaults.dataConfidence;
+        renderProvenanceRows(this.provenanceBody(), data.factorProvenance);
         if (data.attackerKey) document.getElementById('fair-attacker-profile').value = data.attackerKey;
         if (data.defenseKey) document.getElementById('fair-defense-profile').value = data.defenseKey;
         const esDeliberada = this.inferDeliberateThreat(data);
@@ -990,6 +1006,9 @@ export const FairWizard = {
         document.getElementById('fair-data-confidence').value =
             entry.dataConfidence || App.OrgDefaults.defaults.dataConfidence;
         document.getElementById('fair-data-notes').value = entry.dataNotes || '';
+        // El backend siempre devuelve la procedencia normalizada (los tres factores, misma forma),
+        // incluso para riesgos guardados antes de que existiera — ver normalizeFactorProvenance.
+        renderProvenanceRows(this.provenanceBody(), entry.factorProvenance);
         // attackerKey/defenseKey son necesarios además para que Tratamiento calcule bien la
         // Reducción de ALE (updateReduccionALEAuto compara el Nivel de Defensa GUARDADO contra
         // uno objetivo) — dejarlos en su default corrompía ese cálculo en otra página, sin
@@ -1526,6 +1545,7 @@ export const FairWizard = {
             document.getElementById('fair-data-source').value = App.OrgDefaults.defaults.dataSource;
             document.getElementById('fair-data-confidence').value = App.OrgDefaults.defaults.dataConfidence;
             document.getElementById('fair-data-notes').value = '';
+            renderProvenanceRows(this.provenanceBody(), emptyProvenance());
             document.getElementById('fair-simulation-seed').value = '0';
             document.getElementById('fair-seed-used').textContent = '';
             document.getElementById('fair-review-history-body').innerHTML = '';
@@ -2069,6 +2089,7 @@ export const FairWizard = {
                 dataSource: document.getElementById('fair-data-source').value,
                 dataConfidence: document.getElementById('fair-data-confidence').value,
                 dataNotes: document.getElementById('fair-data-notes').value,
+                factorProvenance: this.readProvenance(),
                 attackerKey: document.getElementById('fair-attacker-profile').value,
                 defenseKey: document.getElementById('fair-defense-profile').value,
                 isDeliberate: document.getElementById('fair-deliberate-threat').checked,
@@ -2165,6 +2186,7 @@ export const FairWizard = {
             document.getElementById('fair-data-source').value = data.dataSource || 'experto-sin-calibrar';
             document.getElementById('fair-data-confidence').value = data.dataConfidence || 'medio';
             document.getElementById('fair-data-notes').value = data.dataNotes || '';
+            renderProvenanceRows(this.provenanceBody(), data.factorProvenance);
             document.getElementById('fair-attacker-profile').value = data.attackerKey || 'empleado-desleal';
             document.getElementById('fair-defense-profile').value = data.defenseKey || 'estandar';
             const esDeliberada = this.inferDeliberateThreat(data);

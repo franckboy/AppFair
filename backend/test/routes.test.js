@@ -2603,3 +2603,67 @@ test('POST /api/autocalc/reduccion-ale rechaza un damageCap que no sea un númer
         .send({ ...cuerpo, damageCap: null });
     assert.strictEqual(sinTope.status, 200);
 });
+
+// --- Procedencia por factor (ver lib/provenance.js) ------------------------------------------
+test('PUT /api/register/:riskName persiste factorProvenance, y el GET lo normaliza siempre', async () => {
+    const riskName = 'Robo HTTP con procedencia';
+    const factorProvenance = {
+        tef: {
+            origen: 'historico-propio',
+            observaciones: 6,
+            exposicion: 4,
+            fuente: 'Bitácora de incidentes 2022-2025',
+        },
+        magnitud: { origen: 'benchmark-sector', fuente: 'Reporte sectorial' },
+    };
+    const putRes = await request(app)
+        .put(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            ale: 10000,
+            cvar95: 15000,
+            tef: { min: 1, mode: 2, max: 4 },
+            vuln: { min: 10, mode: 20, max: 30 },
+            lossMagnitudes: { respuesta: { min: 1000, mode: 2000, max: 5000 } },
+            factorProvenance,
+        });
+    assert.strictEqual(putRes.status, 200);
+    assert.strictEqual(putRes.body.entry.factorProvenance.tef.observaciones, 6);
+
+    const getRes = await request(app).get('/api/register').set('X-API-Key', TEST_API_KEY);
+    const saved = getRes.body.risks.find((r) => r.riskName === riskName);
+    assert.strictEqual(saved.factorProvenance.tef.origen, 'historico-propio');
+    assert.strictEqual(saved.factorProvenance.tef.fuente, 'Bitácora de incidentes 2022-2025');
+    // El factor que NO se declaró viene igual, normalizado — nunca undefined, para que el frontend
+    // no tenga que defenderse de tres formas distintas del mismo campo.
+    assert.strictEqual(saved.factorProvenance.vulnerabilidad.origen, 'juicio-experto');
+    assert.strictEqual(saved.factorProvenance.vulnerabilidad.observaciones, null);
+
+    // Y el resumen del Registro cuenta este riesgo: 2 de sus 3 factores tienen algo observado.
+    assert.ok(getRes.body.provenanceSummary.total >= 1);
+    assert.ok(getRes.body.provenanceSummary.porFactor.tef.conDatos >= 1);
+
+    await request(app)
+        .delete(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY);
+});
+
+test('PUT /api/register/:riskName rechaza una procedencia que no se podría usar después', async () => {
+    const riskName = 'Robo HTTP procedencia inválida';
+    const put = (factorProvenance) =>
+        request(app)
+            .put(`/api/register/${encodeURIComponent(riskName)}`)
+            .set('X-API-Key', TEST_API_KEY)
+            .send({ ale: 10000, cvar95: 15000, factorProvenance });
+
+    // Observaciones sin exposición: "4 incidentes" no dice nada sin "en cuántos años".
+    const sinExposicion = await put({ tef: { origen: 'historico-propio', observaciones: 4 } });
+    assert.strictEqual(sinExposicion.status, 400);
+    assert.ok(sinExposicion.body.error.includes('exposición'));
+
+    const origenInventado = await put({ tef: { origen: 'me-lo-imaginé' } });
+    assert.strictEqual(origenInventado.status, 400);
+
+    const factorInventado = await put({ noEsUnFactor: { origen: 'historico-propio' } });
+    assert.strictEqual(factorInventado.status, 400);
+});
