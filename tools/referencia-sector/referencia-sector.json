@@ -1,0 +1,347 @@
+{
+    "bloque_referencia_sector": {
+        "origen": "benchmark-sector",
+        "version": "2.1-r182-corregido",
+        "perfil_operativo": {
+            "flota": 120,
+            "bodegas": 3,
+            "cross_docks": 1,
+            "empleados": 450,
+            "corredor": "MX-US",
+            "certificacion": ["CTPAT", "OEA"]
+        },
+        "Z_credibilidad": 0,
+        "nota_Z": "Sin bitácora propia el blend es 100 % referencia. Es un prior, no una validación: nada de este bloque puede contradecir al modelo, solo alimentarlo.",
+
+        "correcciones_aplicadas": [
+            {
+                "que": "REF11 apuntaba a R182",
+                "correccion": "REF11 apunta a R057",
+                "por_que": "R182 está definido en la matriz v4.0 como 'Sismo o evento geológico mayor' (perfil null, ISO 22301, TEF 0,03). REF11 es contaminación narco en puerto, que sí tiene atacante. En la v1 del bloque, REF11 traía risk_ids ['R057','R182']; al podar a un solo id se conservó el segundo, mientras que los otros cuatro pares (REF02, REF05, REF09, REF15) conservaron el primero. R182 quedó fuera del manifiesto porque ninguna entrada le apunta ya."
+            },
+            {
+                "que": "p_det se componía con la tasa por viaje en la misma entrada",
+                "correccion": "renombrado a p_denuncia, marcado como metadato, tasa desactivada",
+                "por_que": "0,015/viaje ÷ 0,03 daría 0,50/viaje: la mitad de los viajes sufriendo el evento. Los 12-18 por mil ya son la tasa; el 0,03 mide denuncia formal, que es otra cosa."
+            },
+            {
+                "que": "REF13 mapeaba una tasa de extorsión al riesgo de hijacking (R001)",
+                "correccion": "partido en REF13a (R037, extorsión) y REF13b (R001, solo magnitud)",
+                "por_que": "Con la tasa colgada de R001 el TEF implícito era de 45 a 360 eventos/año contra el 1,0 declarado en la matriz — una discrepancia de ×45 a ×360."
+            },
+            {
+                "que": "cotas censuradas mezcladas con observaciones puntuales",
+                "correccion": "bucket propio, excluidas del ajuste por momentos",
+                "por_que": "Tratar 'costó al menos 500 M' como 'costó exactamente 500 M' sesga la cola hacia abajo."
+            }
+        ],
+
+        "faltantes_bloqueantes": [
+            {
+                "id": "viajes_anio",
+                "descripcion": "Viajes al año de la flota (o viajes por unidad por año).",
+                "desbloquea": ["tasas_por_viaje"],
+                "impacto": "Sin esto la tasa de REF13a abarca de 45 a 360 eventos/año (8x de punta a punta)."
+            },
+            {
+                "id": "factores_de_escala",
+                "descripcion": "Relación entre el activo de la referencia y el propio (sq ft, participación de flota).",
+                "desbloquea": ["colas_referencia_sector"],
+                "impacto": "Las colas citadas van de 90 M a 4,15 mil M USD; sin factor no son trasladables a una operación de 120 unidades."
+            },
+            {
+                "id": "bitacora_propia",
+                "descripcion": "Incidentes propios con fecha, tipo y exposición (aunque el conteo sea cero).",
+                "desbloquea": ["Z_credibilidad", "validacion"],
+                "impacto": "Es lo único que puede contradecir al modelo. Sin esto, Z = 0 y todo el bloque es prior."
+            }
+        ],
+
+        "manifiesto_riesgos": [
+            { "riesgo": "R001", "existe_en_registro": true, "descripcion": "Hijacking violento en carretera federal" },
+            { "riesgo": "R005", "existe_en_registro": true, "descripcion": "Robo de remolque estacionado" },
+            {
+                "riesgo": "R037",
+                "existe_en_registro": false,
+                "crear_con": {
+                    "perfil": "organizado",
+                    "acceso": "nulo",
+                    "descripcion": "Extorsión / cobro de piso a flota"
+                }
+            },
+            {
+                "riesgo": "R050",
+                "existe_en_registro": false,
+                "crear_con": {
+                    "perfil": "organizado",
+                    "acceso": "nulo",
+                    "descripcion": "Incendio intencional de instalación"
+                }
+            },
+            {
+                "riesgo": "R057",
+                "existe_en_registro": false,
+                "crear_con": {
+                    "perfil": "organizado",
+                    "acceso": "bajo",
+                    "descripcion": "Contaminación narco en puerto"
+                },
+                "nota_acceso": "El acceso 'bajo' es criterio, no dato: se eligió por analogía con R058 y porque contaminar un contenedor en patio es acceso perimetral. Si el vector real es alguien dentro de la maniobra, es 'medio' y cambia la vulnerabilidad de forma material."
+            },
+            {
+                "riesgo": "R058",
+                "existe_en_registro": false,
+                "crear_con": { "perfil": "organizado", "acceso": "bajo", "descripcion": "Contrabando en tránsito" }
+            },
+            {
+                "riesgo": "R067",
+                "existe_en_registro": false,
+                "crear_con": {
+                    "perfil": "organizado",
+                    "acceso": "nulo",
+                    "descripcion": "Fictitious pick-up / virtual hijacking"
+                }
+            },
+            {
+                "riesgo": "R077",
+                "existe_en_registro": false,
+                "crear_con": { "perfil": null, "acceso": null, "descripcion": "Incendio de bodega" }
+            },
+            {
+                "riesgo": "R078",
+                "existe_en_registro": false,
+                "crear_con": { "perfil": null, "acceso": null, "descripcion": "Incendio por batería de litio" }
+            },
+            {
+                "riesgo": "R099",
+                "existe_en_registro": false,
+                "crear_con": { "perfil": null, "acceso": null, "descripcion": "Huelga / congestión portuaria" }
+            },
+            {
+                "riesgo": "R100",
+                "existe_en_registro": false,
+                "crear_con": { "perfil": null, "acceso": null, "descripcion": "Bloqueo carretero nacional" }
+            }
+        ],
+
+        "anclas_magnitud": [
+            {
+                "id": "REF10",
+                "riesgo": "R001",
+                "usable": true,
+                "magnitud_usd": { "min": 200e3, "mode": 316e3, "max": 450e3 },
+                "fuente": "Forbes / TruckingInfo",
+                "linaje": "CargoNet",
+                "nota": "Converge con la matriz R001 (275 k) y REF13b (280 k) dentro del 15 %."
+            },
+            {
+                "id": "REF13b",
+                "riesgo": "R001",
+                "usable": true,
+                "magnitud_usd": { "min": 200e3, "mode": 280e3, "max": 350e3 },
+                "fuente": "cámaras empresariales (MX)",
+                "linaje": "cámaras empresariales",
+                "nota": "Solo magnitud del hijacking con asalto. La frecuencia queda abierta hasta tener viajes/año y bitácora."
+            },
+            {
+                "id": "REF13a",
+                "riesgo": "R037",
+                "usable": true,
+                "magnitud_usd": { "min": 5e3, "mode": 15e3, "max": 25e3 },
+                "fuente": "cámaras empresariales (MX)",
+                "linaje": "cámaras empresariales",
+                "rol_extra": "tasa_por_viaje",
+                "nota": "Extorsión / cobro de piso. NO es robo de carga completa; ya no toca R001."
+            },
+            {
+                "id": "REF11",
+                "riesgo": "R057",
+                "usable": true,
+                "magnitud_usd": { "min": 500e3, "mode": 1.5e6, "max": 3e6 },
+                "fuente": "reportes portuarios",
+                "linaje": "reportes portuarios",
+                "nota": "Costo integral: carga lícita destruida + multas + demoras. NO es el valor de la droga."
+            },
+            {
+                "id": "REF12",
+                "riesgo": "R058",
+                "usable": true,
+                "magnitud_usd": { "min": 80e3, "mode": 150e3, "max": 250e3 },
+                "fuente": "CBP",
+                "linaje": "CBP",
+                "nota": "Pérdida de la empresa re-expresada; no es el valor del estupefaciente."
+            },
+            {
+                "id": "REF15",
+                "riesgo": "R067",
+                "usable": true,
+                "magnitud_usd": { "min": 100e3, "mode": 175e3, "max": 250e3 },
+                "fuente": "FBI / CargoNet",
+                "linaje": "CargoNet",
+                "nota": "Virtual hijacking; subpoblación de cargas de alto valor."
+            }
+        ],
+
+        "tasas_por_viaje": [
+            {
+                "id": "REF13a",
+                "riesgo": "R037",
+                "usable": false,
+                "requiere": ["viajes_anio"],
+                "tasa_por_viaje": { "min": 0.012, "mode": 0.015, "max": 0.018 },
+                "p_denuncia": 0.03,
+                "nota_p_denuncia": "Metadato. Mide denuncia formal ante fiscalía, NO detección del evento. Fuera de la verosimilitud: componerlo con la tasa daría 0,50 eventos por viaje.",
+                "fuente": "cámaras empresariales (MX)",
+                "nota": "Carretera 57 / Bajío. Se activa cuando llegue viajes/año."
+            }
+        ],
+
+        "colas_referencia_sector": [
+            {
+                "id": "REF02",
+                "riesgo": "R077",
+                "usable": false,
+                "requiere": ["factores_de_escala"],
+                "magnitud_usd": { "min": 80e6, "mode": 90e6, "max": 100e6 },
+                "factor_escala": null,
+                "fuente": "ABC7 / CBS",
+                "nota": "Bodega de cámara fría. Sirve para validar la EXISTENCIA y dirección de la cola catastrófica, no la magnitud propia."
+            },
+            {
+                "id": "REF05",
+                "riesgo": "R050",
+                "usable": false,
+                "requiere": ["factores_de_escala"],
+                "magnitud_usd": { "min": 500e6, "mode": 550e6, "max": 600e6 },
+                "factor_escala": null,
+                "fuente": "Wikipedia / IndustrialSage",
+                "nota": "Incendio intencional por empleado: ancla cualitativa de sabotaje interno catastrófico."
+            },
+            {
+                "id": "REF07",
+                "riesgo": "R099",
+                "usable": false,
+                "requiere": ["factores_de_escala"],
+                "magnitud_usd": { "min": 3.8e9, "mode": 4.15e9, "max": 4.5e9 },
+                "macro": true,
+                "perdida_propia": 0,
+                "factor_escala": 0,
+                "fuente": "MBLB / CNS",
+                "nota": "Near-miss: evento evitado. Cuenta como EXPOSICIÓN con pérdida propia ~0. Su factor de escala es 0, así que nunca debe entrar a un ajuste de magnitud — su valor está en el denominador de la frecuencia, no en el numerador de la pérdida."
+            },
+            {
+                "id": "REF08",
+                "riesgo": "R100",
+                "usable": false,
+                "requiere": ["factores_de_escala"],
+                "magnitud_usd": { "min": 150e6, "mode": 225e6, "max": 300e6 },
+                "macro": true,
+                "factor_escala": null,
+                "fuente": "CNN / Aristegui",
+                "nota": "Escalar por participación de la flota propia en los tráileres detenidos."
+            }
+        ],
+
+        "cotas_censuradas": [
+            {
+                "id": "REF01",
+                "riesgo": "R077",
+                "usable": false,
+                "requiere": ["motor_de_censura"],
+                "tipo_cota": "superior_desconocida",
+                "magnitud_usd": null,
+                "fuente": "Zurich / NFPA",
+                "nota": "Bodega de 151k sq ft, pérdida total; monto no público."
+            },
+            {
+                "id": "REF03",
+                "riesgo": "R077",
+                "usable": false,
+                "requiere": ["motor_de_censura"],
+                "tipo_cota": "superior_desconocida",
+                "magnitud_usd": null,
+                "fuente": "CNN",
+                "nota": "1M sq ft, pérdida total."
+            },
+            {
+                "id": "REF04",
+                "riesgo": "R077",
+                "usable": false,
+                "requiere": ["motor_de_censura"],
+                "tipo_cota": "inferior",
+                "magnitud_usd": { "min": 500e6, "mode": null, "max": null },
+                "fuente": "FireHero",
+                "nota": "Costó AL MENOS 500 M. Como punto exacto sesgaría la cola hacia abajo."
+            },
+            {
+                "id": "REF06",
+                "riesgo": "R078",
+                "usable": false,
+                "requiere": ["motor_de_censura"],
+                "tipo_cota": "superior_desconocida",
+                "magnitud_usd": null,
+                "fuente": "NFPA",
+                "nota": "Celdas de litio, daño severo."
+            },
+            {
+                "id": "REF09",
+                "riesgo": "R005",
+                "usable": false,
+                "requiere": ["motor_de_censura"],
+                "tipo_cota": "superior_desconocida",
+                "magnitud_usd": null,
+                "fuente": "Fiscalía Qro",
+                "nota": "Unidad estacionada; valor comercial no público."
+            }
+        ],
+
+        "ratios_recuperacion_seguro": [
+            {
+                "id": "LR03",
+                "riesgo": "R077",
+                "respondio": true,
+                "perdida_bruta_usd": 12e6,
+                "recuperacion_usd": 12e6,
+                "ratio_recuperacion": 1.0,
+                "cobertura": ["propiedad"],
+                "fuente": "Law360 (CNA / Arbella)",
+                "nota": "Póliza de propiedad bien armada, paga completo."
+            },
+            {
+                "id": "LR04",
+                "riesgo": "R077",
+                "respondio": true,
+                "perdida_bruta_usd": 12e6,
+                "recuperacion_usd": 3e6,
+                "ratio_recuperacion": 0.25,
+                "cobertura": ["responsabilidad-civil"],
+                "fuente": "ABC7 / KTVU",
+                "nota": "RESPONDIÓ y pagó parcial por exclusiones. Esto NO es fiabilidad: es estructura de cobertura. Mide la misma pérdida bruta que LR03, así que puede ser el mismo incendio visto por dos pólizas distintas."
+            },
+            {
+                "id": "LR05",
+                "riesgo": "R077",
+                "respondio": true,
+                "perdida_bruta_usd": 1e6,
+                "recuperacion_usd": 1e6,
+                "ratio_recuperacion": 1.0,
+                "cobertura": ["contenido", "interrupcion-de-negocio"],
+                "fuente": "Chubb settlement",
+                "nota": "Contenido + BI liquidado completo."
+            },
+            {
+                "id": "LR09",
+                "riesgo": "R099",
+                "respondio": false,
+                "perdida_bruta_usd": null,
+                "recuperacion_usd": 0,
+                "ratio_recuperacion": 0.0,
+                "cobertura": ["interrupcion-de-negocio-contingente"],
+                "fuente": "litigio Andersen",
+                "nota": "La póliza NO respondió: CBI sin daño físico directo se niega por diseño. Esto SÍ es fiabilidad, y es el único de los cuatro que lo es."
+            }
+        ],
+
+        "nota_ratios": "Bajo la pregunta correcta —¿respondió la póliza?— son 1 negativa en 4 eventos (3 si LR03 y LR04 son el mismo incendio). Eso da p entre 0,67 y 0,75, que cae sobre la banda 'media' (0,70) que la app ya usa: los datos NO piden bajar el piso. Lo que piden es que el 0 sea alcanzable, porque LR09 no es un punto bajo de una escala sino un peligro que la póliza excluye por diseño."
+    }
+}
