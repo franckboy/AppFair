@@ -20,6 +20,11 @@ export const ConfigMenu = {
             { label: 'Criterios de Riesgo', icon: 'fa-sliders-h', onClick: () => App.Criteria.openEditor() },
             { label: 'Valores por Defecto', icon: 'fa-user-cog', onClick: () => App.OrgDefaults.openEditor() },
             {
+                label: 'Bitácora de Incidentes',
+                icon: 'fa-clipboard-list',
+                onClick: () => App.IncidentLog.openEditor(),
+            },
+            {
                 label: 'Catálogo de Activos',
                 icon: 'fa-boxes',
                 onClick: () => {

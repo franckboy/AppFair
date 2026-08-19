@@ -4176,3 +4176,174 @@ test('disuasión: misma semilla, mismo resultado', () => {
     };
     assert.deepStrictEqual(simulateDeterrence(p), simulateDeterrence(p));
 });
+
+// ============================================================
+// Bitácora de Incidentes — ver backend/src/lib/incidentLog.js
+// ============================================================
+const {
+    normalizeIncidentLog,
+    validateIncidentLog,
+    summarizeIncidentLog,
+    RULE_OF_THREE,
+} = require('../src/lib/incidentLog');
+
+test('bitácora: "no lo llené" y "lo revisé y fue cero" no son lo mismo', () => {
+    // El punto de diseño que más importa. Confundirlos tiraría el riesgo al piso para todo lo que
+    // nadie midió: ausencia de evidencia se convertiría en evidencia de ausencia.
+    const log = normalizeIncidentLog({
+        entries: [
+            { tipoEvento: 'Nadie lo midió' },
+            { tipoEvento: 'Revisado, no pasó', estado: 'cero', exposicion: { cantidad: 6, unidad: 'anios' } },
+        ],
+    });
+    assert.strictEqual(log.entries[0].estado, 'sin_datos', 'el default tiene que ser "nadie lo midió"');
+
+    const r = summarizeIncidentLog(log, []);
+    assert.strictEqual(r.sinDatos, 1);
+    assert.strictEqual(r.cerosDeclarados, 1);
+    // El que nadie midió no aporta ninguna tasa; el cero declarado sí, y viene con su cota.
+    assert.strictEqual(r.diagnostics[0].tasaObservada, null);
+    assert.strictEqual(r.diagnostics[1].tasaObservada, 0);
+    assert.strictEqual(r.diagnostics[1].cotaSuperior95, RULE_OF_THREE / 6);
+});
+
+test('bitácora: un cero solo es evidencia fuerte si el modelo esperaba algo', () => {
+    // La regla de los tres acota la tasa, pero no dice cuánto INFORMA el cero. Eso depende de lo
+    // que el modelo predecía: un cero es demoledor contra un riesgo frecuente y no dice nada
+    // contra uno raro — que son justo los que dominan la cola.
+    const log = normalizeIncidentLog({
+        entries: [
+            {
+                tipoEvento: 'Frecuente',
+                riskName: 'Frecuente',
+                estado: 'cero',
+                exposicion: { cantidad: 5, unidad: 'anios' },
+            },
+            { tipoEvento: 'Raro', riskName: 'Raro', estado: 'cero', exposicion: { cantidad: 5, unidad: 'anios' } },
+        ],
+    });
+    const registro = [
+        { riskName: 'Frecuente', tef: { mode: 4 }, vuln: { mode: 30 } }, // LEF 1,2/año
+        { riskName: 'Raro', tef: { mode: 0.25 }, vuln: { mode: 40 } }, // LEF 0,1/año
+    ];
+    const [frecuente, raro] = summarizeIncidentLog(log, registro).diagnostics;
+
+    // Los dos tienen la MISMA cota (misma exposición) pero informan cosas muy distintas.
+    assert.strictEqual(frecuente.cotaSuperior95, raro.cotaSuperior95);
+    assert.ok(
+        frecuente.probabilidadDeEseCero < 0.01,
+        `cero contra LEF 1,2 debería sorprender: ${frecuente.probabilidadDeEseCero}`,
+    );
+    assert.ok(
+        raro.probabilidadDeEseCero > 0.5,
+        `cero contra LEF 0,1 no debería decir nada: ${raro.probabilidadDeEseCero}`,
+    );
+});
+
+test('bitácora: se compara contra el LEF del modelo, no contra el TEF', () => {
+    // Una bitácora cuenta ROBOS QUE OCURRIERON, o sea LEF. Compararla contra el TEF (intentos)
+    // haría parecer que el modelo exagera cuando en realidad se están mirando dos cosas distintas,
+    // y enchufarla al TEF descontaría la Vulnerabilidad dos veces.
+    const log = normalizeIncidentLog({
+        entries: [
+            {
+                tipoEvento: 'Robo',
+                riskName: 'Robo',
+                estado: 'conteo',
+                conteo: 3,
+                exposicion: { cantidad: 5, unidad: 'anios' },
+            },
+        ],
+    });
+    const registro = [{ riskName: 'Robo', tef: { mode: 2 }, vuln: { mode: 30 } }];
+    const d = summarizeIncidentLog(log, registro).diagnostics[0];
+    assert.strictEqual(d.tasaObservada, 0.6);
+    assert.ok(Math.abs(d.lefModelo - 0.6) < 1e-9, `esperaba TEF x V = 0,6 y dio ${d.lefModelo}`);
+    assert.notStrictEqual(d.lefModelo, 2, 'comparó contra el TEF crudo en vez del LEF');
+});
+
+test('bitácora: con exposición que no está en años, se abstiene de comparar', () => {
+    // Una tasa por viaje no se puede poner al lado de un LEF anual sin saber los viajes por año.
+    // Inventar ese factor sería peor que no comparar.
+    const log = normalizeIncidentLog({
+        entries: [
+            {
+                tipoEvento: 'Robo en ruta',
+                riskName: 'Robo',
+                estado: 'conteo',
+                conteo: 9,
+                exposicion: { cantidad: 3000, unidad: 'viajes' },
+            },
+        ],
+    });
+    const d = summarizeIncidentLog(log, [{ riskName: 'Robo', tef: { mode: 1 }, vuln: { mode: 30 } }]).diagnostics[0];
+    assert.strictEqual(d.tasaObservada, 0.003);
+    assert.strictEqual(d.comparableConModelo, false);
+    assert.strictEqual(d.lefModelo, null);
+});
+
+test('bitácora: un vínculo roto se señala, no se descarta en silencio', () => {
+    // Sin vínculo a un riesgo del Registro, la bitácora es dato huérfano: cuenta eventos que no le
+    // corresponden a nada y no hay contra qué compararlos.
+    const log = normalizeIncidentLog({
+        entries: [
+            {
+                tipoEvento: 'Algo',
+                riskName: 'Riesgo que ya no existe',
+                estado: 'cero',
+                exposicion: { cantidad: 3, unidad: 'anios' },
+            },
+        ],
+    });
+    const r = summarizeIncidentLog(log, [{ riskName: 'Otro riesgo' }]);
+    assert.strictEqual(r.vinculosRotos, 1);
+    assert.strictEqual(r.diagnostics[0].vinculoRoto, true);
+    assert.strictEqual(r.comparables, 0);
+});
+
+test('bitácora: rechaza lo que no se podría usar después', () => {
+    const casos = [
+        [{ entries: [{ estado: 'cero' }] }, 'sin tipo de evento'],
+        [{ entries: [{ tipoEvento: 'X', estado: 'conteo', conteo: 4 }] }, 'conteo sin exposición'],
+        [{ entries: [{ tipoEvento: 'X', estado: 'cero' }] }, 'cero sin exposición'],
+        [{ entries: [{ tipoEvento: 'X', estado: 'inventado' }] }, 'estado inexistente'],
+        [
+            {
+                entries: [
+                    { tipoEvento: 'X', estado: 'conteo', conteo: 4, exposicion: { cantidad: 0, unidad: 'anios' } },
+                ],
+            },
+            'exposición en cero',
+        ],
+        [
+            {
+                entries: [
+                    { tipoEvento: 'X', estado: 'conteo', conteo: 4, exposicion: { cantidad: 2, unidad: 'lunas' } },
+                ],
+            },
+            'unidad de exposición inventada',
+        ],
+        // Un cero por la puerta de atrás: significa lo mismo que el estado "cero" pero después
+        // nadie sabe si se midió o se tecleó por inercia.
+        [
+            {
+                entries: [
+                    { tipoEvento: 'X', estado: 'conteo', conteo: 0, exposicion: { cantidad: 5, unidad: 'anios' } },
+                ],
+            },
+            'cero disfrazado de conteo',
+        ],
+    ];
+    for (const [valor, motivo] of casos) {
+        assert.ok(validateIncidentLog(valor), `debería rechazar: ${motivo}`);
+    }
+    // Y lo válido pasa, incluida la bitácora vacía (que es el estado inicial legítimo).
+    assert.strictEqual(validateIncidentLog({ entries: [] }), null);
+    assert.strictEqual(validateIncidentLog(null), null);
+    assert.strictEqual(
+        validateIncidentLog({
+            entries: [{ tipoEvento: 'X', estado: 'conteo', conteo: 2, exposicion: { cantidad: 5, unidad: 'anios' } }],
+        }),
+        null,
+    );
+});

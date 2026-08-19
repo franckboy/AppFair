@@ -2839,3 +2839,81 @@ test('PUT /api/register/:riskName rechaza una procedencia que no se podría usar
     const factorInventado = await put({ noEsUnFactor: { origen: 'historico-propio' } });
     assert.strictEqual(factorInventado.status, 400);
 });
+
+// Los dos tests de la Bitácora van AL FINAL del archivo a propósito: el primero siembra un riesgo
+// en el Registro para poder diagnosticar la bitácora contra él, y el runner corre los tests en el
+// orden del archivo sobre un mismo almacenamiento. Puestos más arriba, ese riesgo extra rompía dos
+// tests anteriores que verifican el Registro vacío y los agregados del portafolio.
+test('GET/PUT /api/config/incident-log persiste la bitácora y la diagnostica contra el Registro', async () => {
+    const riskName = 'HTTP Bitácora — Robo de carga';
+    await request(app)
+        .put(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            riskType: 'amenaza',
+            tef: { min: 1.6, mode: 2, max: 2.4 },
+            vuln: { min: 28, mode: 30, max: 32 },
+            lossMagnitudes: { respuesta: { min: 1000, mode: 2000, max: 3000 } },
+            ale: 1200,
+            cvar95: 5000,
+        });
+
+    const vacia = await request(app).get('/api/config/incident-log').set('X-API-Key', TEST_API_KEY);
+    assert.strictEqual(vacia.status, 200);
+    // Una bitácora en blanco significa "nadie midió nada", no "no pasó nada".
+    assert.deepStrictEqual(vacia.body.entries, []);
+    assert.strictEqual(vacia.body.summary.comparables, 0);
+
+    const guardada = await request(app)
+        .put('/api/config/incident-log')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            entries: [
+                {
+                    tipoEvento: 'Robo de carga completa',
+                    riskName,
+                    estado: 'conteo',
+                    conteo: 3,
+                    exposicion: { cantidad: 5, unidad: 'anios' },
+                },
+                { tipoEvento: 'Incendio de bodega' },
+            ],
+        });
+    assert.strictEqual(guardada.status, 200);
+    assert.ok(guardada.body.actualizadoEn, 'tiene que sellar cuándo se actualizó');
+    assert.strictEqual(guardada.body.summary.conEvidencia, 1);
+    assert.strictEqual(guardada.body.summary.sinDatos, 1);
+    assert.strictEqual(guardada.body.summary.comparables, 1);
+
+    const d = guardada.body.summary.diagnostics[0];
+    assert.strictEqual(d.tasaObservada, 0.6);
+    // Contra el LEF (TEF x V = 2 x 0,30), no contra el TEF crudo.
+    assert.ok(Math.abs(d.lefModelo - 0.6) < 1e-9, `lefModelo ${d.lefModelo}`);
+
+    const releida = await request(app).get('/api/config/incident-log').set('X-API-Key', TEST_API_KEY);
+    assert.strictEqual(releida.body.entries.length, 2);
+    assert.strictEqual(releida.body.entries[0].conteo, 3);
+    // La entrada sin datos NO se guarda con un conteo de 0 que después parezca una medición.
+    assert.strictEqual(releida.body.entries[1].estado, 'sin_datos');
+    assert.strictEqual(releida.body.entries[1].conteo, null);
+});
+
+test('PUT /api/config/incident-log rechaza evidencia que no se podría usar', async () => {
+    const casos = [
+        [{ entries: [{ tipoEvento: 'X', estado: 'conteo', conteo: 4 }] }, 'conteo sin exposición'],
+        [{ entries: [{ tipoEvento: 'X', estado: 'cero' }] }, 'cero sin exposición'],
+        [{ entries: [{ estado: 'cero', exposicion: { cantidad: 3, unidad: 'anios' } }] }, 'sin tipo de evento'],
+        [
+            {
+                entries: [
+                    { tipoEvento: 'X', estado: 'conteo', conteo: 0, exposicion: { cantidad: 5, unidad: 'anios' } },
+                ],
+            },
+            'cero disfrazado de conteo',
+        ],
+    ];
+    for (const [body, motivo] of casos) {
+        const res = await request(app).put('/api/config/incident-log').set('X-API-Key', TEST_API_KEY).send(body);
+        assert.strictEqual(res.status, 400, motivo);
+    }
+});

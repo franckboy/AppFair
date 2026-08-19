@@ -17,6 +17,7 @@ import './modules/risk-management.js';
 import './modules/ui-mode.js';
 import './modules/org-defaults.js';
 import './modules/org-context.js';
+import './modules/incident-log.js';
 import './modules/config-menu.js';
 import './modules/fair-export.js';
 import './modules/fair-register.js';

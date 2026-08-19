@@ -16,6 +16,9 @@ const DEFAULTS = {
         entornoLegal: '',
         alcanceCadenaSuministro: '',
     },
+    // Bitácora de incidentes reales (ver lib/incidentLog.js). Arranca vacía a propósito: una
+    // bitácora en blanco significa "nadie midió nada todavía", que es distinto de "no pasó nada".
+    incidentLog: { entries: [], actualizadoEn: null },
     riskRegister: [],
     assets: [],
     risks: [],

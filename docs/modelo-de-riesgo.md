@@ -1414,6 +1414,78 @@ ladrón que miró la reja y se fue.
 
 ---
 
+## 16.2 Bitácora de Incidentes: lo único que puede contradecir al modelo
+
+Todo lo que la app calcula sale de juicio experto y referencias del sector. Un prior **alimenta**
+el cálculo; no puede demostrar que esté mal. La bitácora es el otro lado: datos propios, que sí
+pueden falsear.
+
+Hoy solo **captura y diagnostica**. No hay ponderación por credibilidad, ninguna cifra del Registro
+cambia y nada se marca para recalibrar. Es el enchufe puesto antes de que llegue la corriente — se
+construye antes de tener el primer cliente porque meterle captura de datos a una app ya desplegada
+es mucho más caro que dejar el hueco listo.
+
+### Lo que la bitácora observa es LEF, no TEF
+
+La distinción más fácil de arruinar, y la más cara. `TEF` son **intentos**/año; `LEF = TEF · V` son
+**pérdidas**/año (§7.1-7.2). Una bitácora anota robos que **ocurrieron**: nadie registra al ladrón
+que probó la puerta y se fue. Un conteo de bitácora es, por lo tanto, una observación de **LEF**.
+
+Enchufarlo al TEF haría que el motor le volviera a aplicar la Vulnerabilidad y descontara las
+defensas **dos veces** — a un robo consumado ya le fallaron las cámaras; restárselas otra vez es
+contarlo dos veces:
+
+| V modelada | LEF real | LEF que reportaría la app | Error |
+| --- | --- | --- | --- |
+| 60 % | 0,40 | 0,240 | subestima 1,7× |
+| 30 % | 0,40 | 0,120 | subestima 3,3× |
+| 6,9 % | 0,40 | 0,028 | subestima 14,5× |
+
+Siempre hacia abajo, que es el lado en el que no se puede fallar, y **peor cuanto mejor modeladas
+estén las defensas**. Por eso el día que se mezcle, la mezcla va a nivel LEF: el prior es `TEF · V`
+(lo que la app ya calcula) y la evidencia entra tal cual. Tiene un efecto secundario que conviene
+saber: para un riesgo con bitácora, el motor de Vulnerabilidad queda **puenteado**, porque un LEF
+observado ya integra amenaza y defensa. No es un defecto — si sabés cuántos robos hubo, no hace
+falta estimarlos. El motor sigue trabajando para los riesgos sin datos, que van a ser la mayoría.
+
+### Tres estados, no dos
+
+| Estado | Significa | Se usa |
+| --- | --- | --- |
+| `sin_datos` | Nadie lo midió. Ausencia de evidencia. | No |
+| `cero` | Se revisó y no pasó. Evidencia de ausencia. | **Sí** |
+| `conteo` | Pasó N veces. | Sí |
+
+Tratar "no lo llené" como cero tiraría el riesgo al piso para todo lo que nadie midió, así que
+`sin_datos` es el default y `cero` hay que declararlo a propósito. Un cero **por conteo** se rechaza
+al validar: significaría lo mismo por otro camino, y después nadie sabría si se midió o se tecleó
+por inercia.
+
+### Un cero no siempre dice lo mismo
+
+La **regla de los tres** acota la tasa real a `3/n` con 95 % de confianza. Pero cuánto *informa* ese
+cero depende de lo que el modelo esperaba — `P(0 eventos) = e^{−LEF·n}`:
+
+| LEF del modelo | P(0 en 5 años) | Qué significa el cero |
+| --- | --- | --- |
+| 1,20 /año | 0,2 % | Evidencia demoledora: el modelo exagera |
+| 0,40 /año | 13,5 % | Débil |
+| 0,10 /año | 61 % | No dice nada |
+
+O sea que **el cero es fuerte justo donde los eventos son frecuentes, y no dice nada de los raros y
+catastróficos** — que son los que dominan la cola (§8.5). La interfaz muestra las dos cosas para que
+un cero no invite a bajar el riesgo catastrófico por ausencia de evidencia.
+
+### La exposición vive con cada entrada
+
+"4 incidentes" no significa nada sin "en cuánto", y el denominador no es el mismo para todos: robo
+en carretera por viaje, incendio por bodega-año, remolque robado por noche-estacionado. Un solo
+`viajes_anio` global terminaría escalando un incendio por viajes. Solo la unidad **años** es
+directamente comparable contra un LEF anual; con cualquier otra el diagnóstico reporta la tasa en su
+propia unidad y **se abstiene de comparar**, en vez de inventar el factor de conversión.
+
+---
+
 ## 17. El modelo en una página
 
 De un juicio experto a una decisión, con la sección donde vive cada paso:

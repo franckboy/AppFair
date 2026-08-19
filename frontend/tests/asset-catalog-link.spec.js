@@ -9,7 +9,9 @@ test.describe('Catálogo de Activos vinculado a riesgos', () => {
 
         // 1) Crear un activo con la categoría RIMS RA.1-2015 / ASIS PAP.1
         await page.click('#nav-config');
-        await page.click('button[data-menu-option="3"]'); // "Catálogo de Activos"
+        // Por etiqueta y no por índice: agregar una entrada al menú de Configuración corría
+        // el índice de esta y rompía el test sin que el Catálogo de Activos hubiera cambiado.
+        await page.click('#modalBody button:has-text("Catálogo de Activos")');
         await page.waitForSelector('#asset-nombre');
         await page.fill('#asset-nombre', 'E2E — Bodega de Mercancía');
         await page.fill('#asset-valor', '250000');
@@ -64,7 +66,7 @@ test.describe('Catálogo de Activos vinculado a riesgos', () => {
         // 4) Desde el Catálogo de Activos, el activo ahora debe mostrar 1 riesgo vinculado, y
         // al hacer clic debe listar el nombre correcto.
         await page.click('#nav-config');
-        await page.click('button[data-menu-option="3"]');
+        await page.click('#modalBody button:has-text("Catálogo de Activos")');
         await page.waitForSelector('#assets-table-body tr');
         await page.waitForTimeout(500);
 
@@ -83,7 +85,7 @@ test.describe('Catálogo de Activos vinculado a riesgos', () => {
 
         // 1) Crear un activo con un valor deliberadamente bajo.
         await page.click('#nav-config');
-        await page.click('button[data-menu-option="3"]');
+        await page.click('#modalBody button:has-text("Catálogo de Activos")');
         await page.waitForSelector('#asset-nombre');
         await page.fill('#asset-nombre', 'E2E — Caja Fuerte');
         await page.fill('#asset-valor', '50000');
@@ -155,7 +157,7 @@ test.describe('Catálogo de Activos vinculado a riesgos', () => {
         // 3) Desde el Catálogo de Activos, el riesgo vinculado debe listarse con su Costo de
         // Reemplazo resaltado por superar el valor declarado del activo.
         await page.click('#nav-config');
-        await page.click('button[data-menu-option="3"]');
+        await page.click('#modalBody button:has-text("Catálogo de Activos")');
         await page.waitForSelector('#assets-table-body tr');
         await page.waitForTimeout(500);
 
