@@ -86,18 +86,36 @@ const DEFAULT_COVERAGE_PERCENT = 100;
  * @param {number} [coveragePercent=100] Porcentaje del excedente del que responde la aseguradora
  * @returns {number} Pérdida Anual Esperada retenida (promedio)
  */
-function calculateInsuranceRetainedALE(annualLosses, deductible, limit, unlimited, coveragePercent) {
+function calculateInsuranceRetainedLosses(annualLosses, deductible, limit, unlimited, coveragePercent) {
     // `?? DEFAULT` y no `|| DEFAULT`: un coaseguro de 0 ("la póliza no responde por nada de esta
     // pérdida") es un valor legítimo, y con `||` se convertiría en silencio en cobertura total.
     const share = (typeof coveragePercent === 'number' ? coveragePercent : DEFAULT_COVERAGE_PERCENT) / 100;
-    const retained = annualLosses.map((loss) => {
+    return annualLosses.map((loss) => {
         if (loss <= deductible) return loss;
         const excess = loss - deductible;
         const covered = excess * share;
         const payout = unlimited ? covered : Math.min(covered, limit);
         return loss - payout;
     });
+}
+
+function calculateInsuranceRetainedALE(annualLosses, deductible, limit, unlimited, coveragePercent) {
+    const retained = calculateInsuranceRetainedLosses(annualLosses, deductible, limit, unlimited, coveragePercent);
     return retained.reduce((a, b) => a + b, 0) / retained.length;
+}
+
+/**
+ * CVaR95 de las pérdidas ya retenidas. A diferencia de Mitigar —donde el residual es la
+ * distribución entera escalada por una constante, así que TODAS sus estadísticas escalan igual—
+ * un seguro TRUNCA la cola en vez de encogerla: el deducible no cambia los años baratos y el
+ * límite deja de pagar justo en los caros. Por eso el CVaR retenido no se puede derivar del ALE
+ * retenido ni de ninguna proporción, y hay que sacarlo del arreglo escenario por escenario.
+ */
+function retainedTailAverage(retainedLosses) {
+    const ordenadas = [...retainedLosses].sort((a, b) => a - b);
+    const cola = ordenadas.slice(Math.floor(ordenadas.length * 0.95));
+    if (cola.length === 0) return null;
+    return cola.reduce((a, b) => a + b, 0) / cola.length;
 }
 
 /**
@@ -349,16 +367,20 @@ function evaluateTreatmentStrategies(
     // (transferirCalculable = false) de "no hay términos de seguro capturados todavía" (donde
     // avoidedLoss = $0 sí es la respuesta real, no un hueco de datos).
     const transferirCalculable = !hasInsuranceTerms || hasAnnualLosses;
-    const retainedALE =
+    const retainedLosses =
         hasInsuranceTerms && hasAnnualLosses
-            ? calculateInsuranceRetainedALE(
+            ? calculateInsuranceRetainedLosses(
                   annualLosses,
                   transferir.deductible || 0,
                   transferir.limit || 0,
                   !!transferir.unlimited,
                   transferir.coveragePercent,
               )
-            : currentALE;
+            : null;
+    const retainedALE = retainedLosses ? retainedLosses.reduce((a, b) => a + b, 0) / retainedLosses.length : currentALE;
+    // El CVaR retenido solo existe con los escenarios en la mano — ver retainedTailAverage: una
+    // póliza trunca la cola, no la escala, así que no hay proporción de la que derivarlo.
+    const retainedCVaR = retainedLosses ? retainedTailAverage(retainedLosses) : null;
     const avoidedTransferir = currentALE - retainedALE;
     // Mismo bug que Mitigar (ver comentario ahí): avoidedTransferir puede ser > 0 en cuanto se
     // captura deducible/límite, sin que el usuario haya escrito todavía la prima anual (0 por
@@ -370,6 +392,7 @@ function evaluateTreatmentStrategies(
     results.transferir = {
         cost: transferir.premium,
         residualALE: transferirCalculable ? retainedALE : null,
+        residualCVaR: retainedCVaR,
         avoidedLoss: transferirCalculable ? avoidedTransferir : null,
         netBenefit: transferirCalculable ? netBenefitTransferir : null,
         reliability: transferir.reliability,
@@ -381,7 +404,7 @@ function evaluateTreatmentStrategies(
                   verdict: 'sin_datos',
                   rosi: null,
                   message:
-                      'Definiste un deducible/límite de cobertura, pero no se puede calcular la Pérdida Evitada sin los datos completos de la simulación (el Registro solo guarda un resumen, no los 10,000 escenarios). Vuelve a simular este riesgo desde Análisis FAIR para obtener una cotización exacta.',
+                      'Definiste un deducible/límite de cobertura, pero la Pérdida Evitada no se puede calcular sin los escenarios de la simulación (el Registro solo guarda un resumen, no las pérdidas una por una). Usa "Cotizar con simulación" acá arriba para obtener la cotización exacta.',
               }
             : transferir.premium > 0
               ? getInvestmentVerdict(transferir.premium, netBenefitTransferir + transferir.premium, formatCurrency)
@@ -497,7 +520,9 @@ function evaluateTreatmentStrategies(
 }
 
 module.exports = {
+    calculateInsuranceRetainedLosses,
     calculateInsuranceRetainedALE,
+    retainedTailAverage,
     calculateROSI,
     getInvestmentVerdict,
     expectedNetBenefit,

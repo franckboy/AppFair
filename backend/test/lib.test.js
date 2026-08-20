@@ -1805,7 +1805,67 @@ test('evaluateTreatmentStrategies: sin residualALE/residualCVaR reales (modo man
     assert.strictEqual(result.evitar.residualCVaR, 0);
     assert.strictEqual(result.aceptar.residualALE, 100000);
     assert.strictEqual(result.aceptar.residualCVaR, 250000);
-    assert.strictEqual(result.transferir.residualCVaR, undefined); // fuera de alcance a propósito
+    // Transferir ya NO está fuera de alcance: tiene el campo, pero sin los escenarios crudos no
+    // hay de dónde sacarlo (una póliza trunca la cola, no la escala — ver retainedTailAverage).
+    assert.strictEqual(result.transferir.residualCVaR, null);
+});
+
+test('evaluateTreatmentStrategies: con escenarios, el CVaR de Transferir sale del truncamiento real, no de una proporción', () => {
+    const fmt = (n) => `$${n}`;
+    // Distribución con cola larga: la mayoría de los años baratos y unos pocos catastróficos.
+    const annualLosses = Array.from({ length: 1000 }, (_, i) => (i < 950 ? 1000 : 500000));
+    const base = {
+        currentALE: annualLosses.reduce((a, b) => a + b, 0) / annualLosses.length,
+        currentCVaR: 500000,
+        annualLosses,
+        mitigar: { cost: 0, reductionPercent: 0, reliability: 'media', delayDays: 0 },
+        evitar: { cost: 0, reliability: 'alta', delayDays: 0 },
+    };
+
+    // Cobertura ilimitada sobre un deducible bajo: la cola se TRUNCA en el deducible.
+    const conSeguro = evaluateTreatmentStrategies(
+        {
+            ...base,
+            transferir: {
+                premium: 20000,
+                deductible: 10000,
+                limit: 0,
+                unlimited: true,
+                reliability: 'media',
+                delayDays: 0,
+            },
+        },
+        fmt,
+    );
+    // Los años caros pasan de 500.000 a 10.000; los baratos (1.000 < deducible) no cambian.
+    assert.strictEqual(conSeguro.transferir.residualCVaR, 10000);
+
+    // La prueba de fondo: el CVaR NO baja en la misma proporción que el ALE. Escalar habría dado
+    // 500.000 x (ALE_retenido / ALE_actual), un número completamente distinto — y es exactamente
+    // el atajo que un seguro no admite.
+    const proporcional = base.currentCVaR * (conSeguro.transferir.residualALE / base.currentALE);
+    assert.ok(
+        Math.abs(proporcional - conSeguro.transferir.residualCVaR) > 1000,
+        `escalar proporcionalmente habría dado ${proporcional}, no ${conSeguro.transferir.residualCVaR}`,
+    );
+
+    // Y un límite bajo deja de pagar justo en los años caros: la cola retenida vuelve a subir.
+    const conLimite = evaluateTreatmentStrategies(
+        {
+            ...base,
+            transferir: {
+                premium: 20000,
+                deductible: 10000,
+                limit: 50000,
+                unlimited: false,
+                reliability: 'media',
+                delayDays: 0,
+            },
+        },
+        fmt,
+    );
+    assert.strictEqual(conLimite.transferir.residualCVaR, 450000, '500.000 - 50.000 de tope pagado');
+    assert.ok(conLimite.transferir.residualCVaR > conSeguro.transferir.residualCVaR);
 });
 
 // El arreglo real: con mitigar.residualALE/residualCVaR (ver calculateResidualFromSimulation),

@@ -3109,3 +3109,83 @@ test('GET /api/config/incident-log: una entrada en viajes se vuelve comparable c
         .delete(`/api/register/${encodeURIComponent(riskName)}`)
         .set('X-API-Key', TEST_API_KEY);
 });
+
+test('POST /api/treatment/evaluate con simulateForTransfer cotiza el seguro de verdad, sin los escenarios en el body', async () => {
+    // Fuera del wizard, el Registro solo guarda un histograma de 20 barras — no las pérdidas una
+    // por una — así que Transferir se declaraba "No calculable" y quedaba sin cotización.
+    const cuerpo = {
+        currentALE: 60000,
+        currentCVaR: 200000,
+        tef: { min: 8, mode: 12, max: 20 },
+        vuln: { min: 15, mode: 20, max: 25 },
+        lossMagnitudes: { reemplazo: { min: 20000, mode: 60000, max: 250000 } },
+        seed: 4242,
+        mitigar: { cost: 0, reductionPercent: 0, reliability: 'media', delayDays: 0 },
+        transferir: {
+            premium: 15000,
+            deductible: 10000,
+            limit: 0,
+            unlimited: true,
+            reliability: 'alta',
+            delayDays: 0,
+        },
+        evitar: { cost: 0, reliability: 'alta', delayDays: 0 },
+    };
+
+    const sinSimular = await request(app).post('/api/treatment/evaluate').set('X-API-Key', TEST_API_KEY).send(cuerpo);
+    assert.strictEqual(sinSimular.status, 200);
+    assert.strictEqual(sinSimular.body.transferir.residualALE, null, 'sin escenarios no se puede cotizar');
+    assert.strictEqual(sinSimular.body.transferSimulation, undefined);
+
+    const simulando = await request(app)
+        .post('/api/treatment/evaluate')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ...cuerpo, simulateForTransfer: true });
+    assert.strictEqual(simulando.status, 200);
+    assert.strictEqual(typeof simulando.body.transferir.residualALE, 'number');
+    assert.ok(simulando.body.transferir.avoidedLoss > 0, 'una cobertura ilimitada nunca ahorra $0');
+    // Y aparece el CVaR residual, que sin los escenarios no existía para Transferir.
+    assert.strictEqual(typeof simulando.body.transferir.residualCVaR, 'number');
+    assert.strictEqual(simulando.body.transferSimulation.iterations, 10000);
+    assert.strictEqual(simulando.body.transferSimulation.usedSeed, 4242);
+
+    // Mismo cuerpo, mismo resultado: es un botón, no una tirada de dados distinta cada vez.
+    const otraVez = await request(app)
+        .post('/api/treatment/evaluate')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ...cuerpo, simulateForTransfer: true });
+    assert.strictEqual(otraVez.body.transferir.residualALE, simulando.body.transferir.residualALE);
+});
+
+test('POST /api/treatment/evaluate: los escenarios del body ganan sobre simulateForTransfer', async () => {
+    // El wizard todavía los tiene en memoria; volver a simular ahí daría una cotización distinta
+    // de la que el usuario está viendo en pantalla.
+    const annualLosses = Array.from({ length: 500 }, (_, i) => (i < 480 ? 500 : 400000));
+    const res = await request(app)
+        .post('/api/treatment/evaluate')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            currentALE: annualLosses.reduce((a, b) => a + b, 0) / annualLosses.length,
+            annualLosses,
+            simulateForTransfer: true,
+            tef: { min: 8, mode: 12, max: 20 },
+            vuln: { min: 15, mode: 20, max: 25 },
+            lossMagnitudes: { reemplazo: { min: 20000, mode: 60000, max: 250000 } },
+            mitigar: { cost: 0, reductionPercent: 0, reliability: 'media', delayDays: 0 },
+            transferir: {
+                premium: 1000,
+                deductible: 1000,
+                limit: 0,
+                unlimited: true,
+                reliability: 'alta',
+                delayDays: 0,
+            },
+            evitar: { cost: 0, reliability: 'alta', delayDays: 0 },
+        });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.transferSimulation, undefined, 'no re-simuló: ya tenía los escenarios');
+    // Cola truncada en el deducible. El 5 % peor de 500 años son 25: los 20 de 400.000 (que la
+    // póliza deja en 1.000) más 5 años baratos de 500 que nunca llegaron al deducible.
+    // (5x500 + 20x1000) / 25 = 900.
+    assert.strictEqual(res.body.transferir.residualCVaR, 900);
+});

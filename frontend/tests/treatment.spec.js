@@ -225,6 +225,65 @@ test.describe('Tratamiento del Riesgo (página aparte)', () => {
         await expect(page.locator('#fair-seguro-verdict')).toContainText('NO conviene');
     });
 
+    test('"Cotizar con simulación" cotiza el seguro sin salir de Tratamiento, y trae su CVaR residual', async ({
+        page,
+    }) => {
+        // Antes había que volver al Análisis FAIR y re-simular el riesgo entero solo para poder
+        // cotizar una póliza, porque el deducible se aplica escenario por escenario y el Registro
+        // no guarda los escenarios.
+        await connectAndBoot(page);
+        // A mano y no con runFullFairAnalysis: ese helper deja las 9 magnitudes en 0, y con un ALE
+        // de $0 no hay nada que un seguro pueda ahorrar — la cotización saldría $0 por falta de
+        // pérdida, no por falta de cálculo, y la prueba no probaría nada.
+        await page.fill('#fair-riskName', 'E2E Tratamiento — Cotizar Seguro');
+        await page.click('#fair-step1-next');
+        await page.waitForTimeout(300);
+        await page.selectOption('#fair-attacker-profile', 'organizado');
+        await page.selectOption('#fair-defense-profile', 'basica');
+        await page.waitForTimeout(800);
+        await page.click('#fair-step2-next');
+        await page.waitForTimeout(400);
+        await page.fill('#lm-reemplazo-mode', '120000');
+        await page.waitForTimeout(700);
+        await page.click('#fair-step3-next');
+        await page.waitForTimeout(400);
+        await Promise.all([
+            page.waitForResponse((r) => r.url().includes('/api/simulate'), { timeout: 20000 }),
+            page.click('#run-simulation-btn'),
+        ]);
+        await page.waitForTimeout(1500);
+
+        await page.click('#nav-treatment');
+        await page.waitForTimeout(500);
+        await page.selectOption('#treatment-risk-select', 'E2E Tratamiento — Cotizar Seguro');
+        await page.waitForTimeout(500);
+
+        await page.fill('#fair-seguro-prima', '5000');
+        await page.fill('#fair-seguro-deducible', '1000');
+        await page.check('#fair-seguro-sin-limite');
+        await page.waitForTimeout(1000);
+        await expect(page.locator('#fair-seguro-residual')).toHaveText('No calculable');
+        await expect(page.locator('#fair-seguro-residual-cvar')).toHaveText('—');
+        // El mensaje manda al botón que está ahí mismo, no de vuelta al wizard.
+        await expect(page.locator('#fair-seguro-verdict')).toContainText('Cotizar con simulación');
+
+        await Promise.all([
+            page.waitForResponse((r) => r.url().includes('/api/treatment/evaluate'), { timeout: 20000 }),
+            page.click('#treatment-simulate-transfer-btn'),
+        ]);
+        await page.waitForTimeout(1200);
+
+        await expect(page.locator('#fair-seguro-residual')).not.toHaveText('No calculable');
+        await expect(page.locator('#fair-seguro-evitada')).not.toHaveText('No calculable');
+        // Una cobertura ilimitada sobre un deducible bajo NUNCA ahorra $0.
+        await expect(page.locator('#fair-seguro-evitada')).not.toHaveText('$0');
+        // El CVaR retenido solo existe con los escenarios en la mano: una póliza trunca la cola.
+        await expect(page.locator('#fair-seguro-residual-cvar')).not.toHaveText('—');
+        // Se dice cómo se cotizó, o dos cotizaciones distintas no se podrían explicar.
+        await expect(page.locator('#treatment-simulate-transfer-status')).toContainText('escenarios');
+        await expect(page.locator('#treatment-simulate-transfer-status')).toContainText('semilla');
+    });
+
     test('Transferir distingue "la póliza no responde" de "responde y paga una parte" — y persiste los dos', async ({
         page,
     }) => {

@@ -1122,9 +1122,20 @@
                                         <input type="number" id="fair-seguro-retraso" class="form-input" value="0" min="0" oninput="validity.valid||(value='');">
                                     </div>
                                 </div>
+                                <!-- Un deducible/límite se aplica escenario por escenario, y el
+                                     Registro solo guarda un histograma de 20 barras. Este botón
+                                     vuelve a correr la simulación para poder cotizar de verdad
+                                     (ver simulateForTransfer en backend/src/routes/treatment.js).
+                                     Es explícito y no automático porque el formulario recalcula
+                                     con debounce en cada tecla. -->
+                                <div class="mt-3">
+                                    <button type="button" id="treatment-simulate-transfer-btn" class="btn btn-secondary text-sm">🎲 Cotizar con simulación</button>
+                                    <span id="treatment-simulate-transfer-status" class="ml-2 text-sm text-gray-600"></span>
+                                </div>
                                 <div class="mt-2 text-sm grid grid-cols-2 md:grid-cols-4 gap-2">
                                     <p>Costo Anual (Prima): <strong id="fair-seguro-costo">$0.00</strong></p>
                                     <p>Pérdida Retenida (simulada): <strong id="fair-seguro-residual">$0.00</strong></p>
+                                    <p>Pérdida Residual (CVaR95): <strong id="fair-seguro-residual-cvar">—</strong></p>
                                     <p>Pérdida Evitada: <strong id="fair-seguro-evitada">$0.00</strong></p>
                                     <p>Beneficio Neto: <strong id="fair-seguro-beneficio" class="font-bold">$0.00</strong></p>
                                     <p class="advanced-only">ROSI: <strong id="fair-seguro-rosi">—</strong></p>

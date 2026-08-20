@@ -154,6 +154,9 @@ export const Treatment = {
         document
             .getElementById('treatment-manage-controls-btn')
             .addEventListener('click', () => this.openControlsModal());
+        document
+            .getElementById('treatment-simulate-transfer-btn')
+            .addEventListener('click', () => this.simulateTransfer());
         document.getElementById('fair-reduccionALE-manual-override').addEventListener('change', (e) => {
             const manual = e.target.checked;
             document.getElementById('fair-reduccionALE').readOnly = !manual;
@@ -792,7 +795,48 @@ export const Treatment = {
     // persistTreatment). Sin los 10,000 resultados crudos de la simulación (el Registro no los
     // guarda), "Transferir" se evalúa de forma conservadora — mismo criterio que ya usa
     // App.FairExport.buildFullRiskReportSection al reconstruir el PDF de un riesgo.
-    async updateTreatmentView(save) {
+    /**
+     * `simulateForTransfer`: vuelve a correr Monte Carlo en el backend para poder cotizar el
+     * seguro escenario por escenario. Va detrás de un botón y no automático porque esta función
+     * se llama con debounce en CADA tecla del formulario — simular en cada una lo volvería
+     * inusable. Ver el botón "Cotizar con simulación" en la sección de Transferir.
+     */
+    /**
+     * Cotiza el seguro con una simulación nueva. Sin esto, fuera del wizard Transferir se
+     * declaraba "No calculable": el deducible y el límite se aplican escenario por escenario, y el
+     * Registro solo persiste un histograma de 20 barras, no las pérdidas una por una.
+     *
+     * Antes había que volver al Análisis FAIR y re-simular el riesgo entero para cotizar un
+     * seguro. Ahora se hace desde acá, con los datos de la póliza ya cargados.
+     */
+    async simulateTransfer() {
+        const entry = state.treatment.currentEntry;
+        const estado = document.getElementById('treatment-simulate-transfer-status');
+        if (!entry) {
+            if (estado) estado.textContent = 'Elige primero un riesgo.';
+            return;
+        }
+        // Sin los tres factores no hay nada que simular: es un riesgo guardado antes de que se
+        // persistieran, o un stub "Sin analizar" creado desde el árbol.
+        if (!entry.tef || !entry.vuln || !entry.lossMagnitudes) {
+            if (estado) {
+                estado.textContent = 'Este riesgo no guardó sus factores — vuelve a simularlo desde Análisis FAIR.';
+            }
+            return;
+        }
+        const boton = document.getElementById('treatment-simulate-transfer-btn');
+        if (boton) boton.disabled = true;
+        if (estado) estado.textContent = 'Simulando…';
+        try {
+            // `true` en `save`: la cotización cambia lo que se muestra, así que se persiste igual
+            // que cualquier otra edición del formulario.
+            await this.updateTreatmentView(true, true);
+        } finally {
+            if (boton) boton.disabled = false;
+        }
+    },
+
+    async updateTreatmentView(save, simulateForTransfer = false) {
         const entry = state.treatment.currentEntry;
         if (!entry) return;
         const aleActual = entry.ale;
@@ -855,6 +899,7 @@ export const Treatment = {
                     // la diferencia entre la cola actual y la residual es el tratamiento y no el
                     // azar. Sin esto el CVaR residual bailaba ~3% sin que nada hubiera cambiado.
                     seed: entry.seed,
+                    simulateForTransfer,
                 },
             });
         } catch (err) {
@@ -891,6 +936,19 @@ export const Treatment = {
         document.getElementById('fair-seguro-evitada').textContent = transferirCalculable
             ? formatCurrency(result.transferir.avoidedLoss)
             : 'No calculable';
+        // El CVaR retenido solo existe cuando hubo escenarios: una póliza TRUNCA la cola en vez de
+        // encogerla, así que no se puede derivar del ALE retenido ni de ninguna proporción.
+        const cvarSeguro = document.getElementById('fair-seguro-residual-cvar');
+        if (cvarSeguro) {
+            cvarSeguro.textContent =
+                typeof result.transferir.residualCVaR === 'number'
+                    ? formatCurrency(result.transferir.residualCVaR)
+                    : '—';
+        }
+        const estadoSim = document.getElementById('treatment-simulate-transfer-status');
+        if (estadoSim && result.transferSimulation) {
+            estadoSim.textContent = `Cotizado con ${result.transferSimulation.iterations.toLocaleString('es-MX')} escenarios (semilla ${result.transferSimulation.usedSeed}).`;
+        }
         const seguroEl = document.getElementById('fair-seguro-beneficio');
         seguroEl.textContent = transferirCalculable ? formatCurrency(result.transferir.netBenefit) : 'No calculable';
         seguroEl.className = `font-bold ${
