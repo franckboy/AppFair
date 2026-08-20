@@ -3189,3 +3189,100 @@ test('POST /api/treatment/evaluate: los escenarios del body ganan sobre simulate
     // (5x500 + 20x1000) / 25 = 900.
     assert.strictEqual(res.body.transferir.residualCVaR, 900);
 });
+
+test('GET /api/register: el Riesgo Actual del portafolio se clasifica con promedio Y cola, no solo con el promedio', async () => {
+    // Bug real: la barra de resumen muestra el ACTUAL, pero la única evaluación de portafolio que
+    // existía era la del INHERENTE. El frontend fabricaba la del actual con un clasificador propio
+    // que solo miraba el ALE, así que un portafolio con promedio tolerable y cola crítica se
+    // pintaba en naranja al lado de otra tarjeta en rojo, mirando el mismo portafolio.
+    const criterios = await request(app).get('/api/config/criteria').set('X-API-Key', TEST_API_KEY);
+    const aleCritico = criterios.body.aleCritico;
+
+    const riskName = 'E2E cola crítica del portafolio';
+    await request(app)
+        .put(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            // Promedio muy por debajo del criterio Crítico...
+            ale: aleCritico * 0.1,
+            // ...y cola muy por encima. El promedio solo diría "tranquilo".
+            cvar95: aleCritico * 4,
+            evaluationLevel: 'Crítico (riesgo de cola) — Requiere Atención',
+            severity: 'critico',
+        });
+
+    const res = await request(app).get('/api/register').set('X-API-Key', TEST_API_KEY);
+    const p = res.body.inherentPortfolio;
+    // Acá se prueba el CABLEADO: que el campo exista y que el piso de cola cubra lo mismo que el
+    // promedio. Que la regla de cola escale la clasificación se prueba en lib.test.js, con una
+    // entrada controlada — el Registro de estas pruebas es compartido y otros specs ya empujan el
+    // promedio por encima del criterio, así que acá el motivo no sería reproducible.
+    assert.ok(p.actualEvaluation, 'el ACTUAL del portafolio ahora trae su propia evaluación');
+    assert.ok(['bajo', 'medio', 'alto', 'critico'].includes(p.actualEvaluation.severity));
+    assert.ok(p.totalActualCVaRFloor >= p.totalActualALE, 'el piso nunca es menor que el promedio');
+
+    await request(app)
+        .delete(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY);
+});
+
+test('GET /api/register: una amenaza sin CVaR no baja la clasificación del portafolio — se usa su ALE como piso', async () => {
+    // Ignorarla dejaría el total de cola cubriendo menos amenazas que el de promedio, y cruzar dos
+    // totales de distinta cobertura puede dejar de escalar a Crítico un portafolio que sí lo es.
+    const criterios = await request(app).get('/api/config/criteria').set('X-API-Key', TEST_API_KEY);
+    const aleCritico = criterios.body.aleCritico;
+
+    const conCola = 'E2E piso — con cola';
+    const sinCola = 'E2E piso — sin cola';
+    await request(app)
+        .put(`/api/register/${encodeURIComponent(conCola)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ale: aleCritico * 0.2, cvar95: aleCritico * 0.7 });
+    // Sin cvar95: un riesgo guardado antes de que se persistiera.
+    await request(app)
+        .put(`/api/register/${encodeURIComponent(sinCola)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ale: aleCritico * 0.5 });
+
+    const res = await request(app).get('/api/register').set('X-API-Key', TEST_API_KEY);
+    const p = res.body.inherentPortfolio;
+    // La amenaza sin CVaR aporta su ALE al piso en vez de desaparecer del total de cola.
+    assert.ok(p.totalActualCVaRFloor >= p.totalActualALE);
+    assert.ok(p.totalActualCVaRFloor > p.totalActualCVaR, 'el piso incluye lo que el CVaR crudo ignora');
+
+    for (const n of [conCola, sinCola]) {
+        await request(app)
+            .delete(`/api/register/${encodeURIComponent(n)}`)
+            .set('X-API-Key', TEST_API_KEY);
+    }
+});
+
+test('GET /api/register: cada riesgo trae la severidad de SU residual, clasificada con la cola incluida', async () => {
+    const criterios = await request(app).get('/api/config/criteria').set('X-API-Key', TEST_API_KEY);
+    const aleCritico = criterios.body.aleCritico;
+
+    const riskName = 'E2E residual con cola crítica';
+    await request(app)
+        .put(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            ale: aleCritico * 2,
+            cvar95: aleCritico * 6,
+            // Tratado: el promedio residual queda muy por debajo del criterio...
+            treatmentDecision: {
+                strategy: 'mitigar',
+                residualALE: aleCritico * 0.1,
+                // ...pero la cola residual sigue por encima. El promedio solo lo pintaría verde.
+                residualCVaR: aleCritico * 3,
+                decidedAt: new Date().toISOString(),
+            },
+        });
+
+    const res = await request(app).get('/api/register').set('X-API-Key', TEST_API_KEY);
+    const entry = res.body.risks.find((r) => r.riskName === riskName);
+    assert.strictEqual(entry.residualSeverity, 'critico');
+
+    await request(app)
+        .delete(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY);
+});

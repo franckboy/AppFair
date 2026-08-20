@@ -43,7 +43,14 @@ export const RiskSummaryBar = {
 
         const actualEl = document.getElementById('risk-summary-actual');
         if (hasActual) {
-            const severity = App.FairRegister.classifyAleAgainstCriteria(inherent.totalActualALE);
+            // La evaluación del backend mira promedio Y cola (ver actualEvaluation en
+            // GET /api/register). Antes esta tarjeta la calculaba con classifyAleAgainstCriteria,
+            // que solo mira el promedio — así que quedaba ciega al "Crítico por cola de riesgo" y
+            // podía contradecir a las otras dos tarjetas de al lado, que sí usan la del backend.
+            // La copia local queda como respaldo para respuestas de un backend anterior.
+            const severity = inherent.actualEvaluation
+                ? inherent.actualEvaluation.severity
+                : App.FairRegister.classifyAleAgainstCriteria(inherent.totalActualALE);
             actualEl.className = `p-3 rounded-lg border-l-4 shadow-sm cursor-pointer ${severityToClasses(severity)}`;
             document.getElementById('risk-summary-actual-value').textContent = formatCurrency(inherent.totalActualALE);
             document.getElementById('risk-summary-actual-detail').textContent =

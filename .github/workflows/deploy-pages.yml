@@ -1,0 +1,78 @@
+name: Deploy frontend to GitHub Pages
+
+# Publica SOLO `frontend/dist`, no el repositorio entero.
+#
+# Antes el sitio se servía con "Deploy from a branch" apuntando a la raíz de `main`, así que
+# GitHub publicaba el árbol completo: `backend/`, `tests/`, `docs/` y el código fuente sin
+# compilar quedaban accesibles por web, y la app se cargaba como 29 módulos ES sueltos.
+#
+# Requiere que Settings -> Pages -> Source esté en "GitHub Actions". Con el ajuste viejo
+# ("Deploy from a branch") este workflow corre pero no publica nada.
+
+on:
+    push:
+        branches: [main]
+        paths:
+            - "frontend/**"
+            - ".github/workflows/deploy-pages.yml"
+    # Para poder republicar sin tener que tocar un archivo (ej. después de reactivar Pages).
+    workflow_dispatch:
+
+# Solo lectura del repo: el despliegue se autoriza con `pages` e `id-token`, no con el token
+# de escritura de contenidos.
+permissions:
+    contents: read
+    pages: write
+    id-token: write
+
+# Un despliegue a la vez. `cancel-in-progress: false` a propósito: cancelar a mitad puede dejar
+# el sitio publicado en un estado intermedio, y es preferible encolar.
+concurrency:
+    group: pages
+    cancel-in-progress: false
+
+jobs:
+    build:
+        runs-on: ubuntu-latest
+        defaults:
+            run:
+                working-directory: frontend
+        steps:
+            - uses: actions/checkout@v4
+
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: "20"
+                  cache: "npm"
+                  cache-dependency-path: frontend/package-lock.json
+
+            - run: npm ci
+
+            # El <style> incrustado en app_fair.html se genera, no se escribe a mano. Regenerarlo
+            # acá y verificar que no cambió evita publicar una página cuyo CSS no corresponde a
+            # las clases que el HTML de verdad usa.
+            - name: Regenerar el CSS y confirmar que está al día
+              run: |
+                  npm run build:css
+                  git diff --exit-code app_fair.html \
+                    || (echo "::error::app_fair.html tiene CSS desactualizado — corre 'npm run build:css' y commitea." && exit 1)
+
+            # `base` se fija a /AppFair/ solo en el build (ver vite.config.js): en la raíz el sitio
+            # no existe, GitHub Pages lo sirve bajo el nombre del repositorio.
+            - run: npm run build
+
+            - uses: actions/configure-pages@v5
+
+            - uses: actions/upload-pages-artifact@v3
+              with:
+                  path: frontend/dist
+
+    deploy:
+        needs: build
+        runs-on: ubuntu-latest
+        environment:
+            name: github-pages
+            url: ${{ steps.deployment.outputs.page_url }}
+        steps:
+            - id: deployment
+              uses: actions/deploy-pages@v4

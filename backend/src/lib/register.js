@@ -139,6 +139,27 @@ function calculateConsolidatedSensitivity(risks, topN = 8) {
  * excluirlo de la suma.
  * @param {Array<{riskType?:string, ale:number, cvar95?:number, treatmentDecision?:{residualALE:number, residualCVaR?:number}|null}>} risks
  */
+/**
+ * El par (pérdida promedio, pérdida de la cola) RESIDUAL de un riesgo, con la convención del piso
+ * en un solo lugar — la usan tanto el total del portafolio como la severidad de cada renglón.
+ *
+ * `cvarFloor` cae al ALE cuando no hay CVaR residual conocido, y no es un relleno arbitrario: el
+ * promedio del peor 5 % nunca puede ser MENOR que el promedio de todos los años, así que el ALE es
+ * una cota inferior legítima. Ignorar esas amenazas en cambio dejaría el total de cola cubriendo
+ * menos riesgos que el total de ALE, y cruzar dos totales de distinta cobertura puede dejar de
+ * escalar a "Crítico por cola" un portafolio que sí lo es — subestimando, que es la dirección en
+ * la que no se puede fallar.
+ *
+ * @returns {{ale:number, cvar:number|null, cvarFloor:number}}
+ */
+function residualPair(risk) {
+    const decision = risk.treatmentDecision;
+    const ale = decision ? decision.residualALE : risk.ale;
+    const cvarCrudo = decision ? decision.residualCVaR : risk.cvar95;
+    const cvar = typeof cvarCrudo === 'number' ? cvarCrudo : null;
+    return { ale, cvar, cvarFloor: cvar !== null ? cvar : ale };
+}
+
 function calculateResidualPortfolio(risks) {
     const threats = risks.filter((r) => r.riskType !== 'oportunidad');
 
@@ -150,18 +171,15 @@ function calculateResidualPortfolio(risks) {
     let treatedCount = 0;
 
     threats.forEach((r) => {
-        const decision = r.treatmentDecision;
-        const residualALE = decision ? decision.residualALE : r.ale;
+        const { ale: residualALE, cvar: residualCVaR, cvarFloor } = residualPair(r);
         totalResidualALE += residualALE;
-        if (decision) treatedCount += 1;
+        if (r.treatmentDecision) treatedCount += 1;
 
-        const residualCVaR = decision ? decision.residualCVaR : r.cvar95;
-        if (typeof residualCVaR === 'number') {
+        totalResidualCVaRFloor += cvarFloor;
+        if (residualCVaR !== null) {
             totalResidualCVaR += residualCVaR;
-            totalResidualCVaRFloor += residualCVaR;
             cvarRiskCount += 1;
         } else {
-            totalResidualCVaRFloor += residualALE;
             cvarSkippedCount += 1;
         }
     });
@@ -365,11 +383,15 @@ function calculateInherentPortfolio(risks) {
     let inherentRiskCount = 0;
     let totalActualALE = 0;
     let totalActualCVaR = 0;
+    let totalActualCVaRFloor = 0;
     let actualCvarCount = 0;
     let comparableActualALE = 0;
 
     threats.forEach((r) => {
         totalActualALE += r.ale;
+        // Mismo criterio de piso que el residual (ver residualPair): sin CVaR conocido se suma el
+        // ALE, para que el total de cola cubra SIEMPRE las mismas amenazas que el de promedio.
+        totalActualCVaRFloor += typeof r.cvar95 === 'number' ? r.cvar95 : r.ale;
         if (typeof r.cvar95 === 'number') {
             totalActualCVaR += r.cvar95;
             actualCvarCount += 1;
@@ -391,12 +413,16 @@ function calculateInherentPortfolio(risks) {
         inherentMissingCount: threats.length - inherentRiskCount,
         totalActualALE,
         totalActualCVaR: actualCvarCount > 0 ? totalActualCVaR : null,
+        // Cubre siempre las mismas amenazas que totalActualALE — se usa para CLASIFICAR, no para
+        // mostrar (el número visible sigue siendo totalActualCVaR).
+        totalActualCVaRFloor: threats.length > 0 ? totalActualCVaRFloor : null,
         comparableActualALE: inherentRiskCount > 0 ? comparableActualALE : null,
         totalRiskCount: threats.length,
     };
 }
 
 module.exports = {
+    residualPair,
     calculateResidualMatrixPoint,
     exceedanceProbabilityAt,
     normalizeTriggeredBy,

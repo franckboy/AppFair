@@ -4851,3 +4851,53 @@ test('calibración: usa la MODA de V y no su media — la moda cancela el sesgo 
         `con la moda ${conTriangulo.tefObservadoAnual} debe superar a con la media ${conMedia.tefObservadoAnual}`,
     );
 });
+
+// --- Clasificación del portafolio con la cola incluida ------------------------------------------
+
+// calculateInherentPortfolio y evaluateFairThreat ya están importados más arriba en este archivo.
+const { residualPair } = require('../src/lib/register');
+
+test('portafolio: el piso de cola nunca es menor que el promedio, ni ignora amenazas sin CVaR', () => {
+    // Sin el piso, el total de cola cubriría MENOS amenazas que el de promedio, y cruzar dos
+    // totales de distinta cobertura puede dejar de escalar a Crítico un portafolio que sí lo es.
+    const p = calculateInherentPortfolio([
+        { riskType: 'amenaza', ale: 50000, cvar95: 175000 },
+        { riskType: 'amenaza', ale: 125000 }, // guardado antes de que se persistiera el CVaR
+    ]);
+    assert.strictEqual(p.totalActualALE, 175000);
+    assert.strictEqual(p.totalActualCVaR, 175000, 'el crudo solo suma la amenaza que sí lo trae');
+    assert.strictEqual(p.totalActualCVaRFloor, 300000, '175.000 + el ALE de la que no lo trae');
+    assert.ok(p.totalActualCVaRFloor >= p.totalActualALE);
+});
+
+test('portafolio: promedio tolerable + cola crítica se clasifica CRÍTICO, y dice que es por la cola', () => {
+    // El caso que el clasificador viejo del frontend no podía ver: miraba solo el promedio.
+    const criteria = { aleAceptablePercent: 20, aleCritico: 250000 };
+    const p = calculateInherentPortfolio([{ riskType: 'amenaza', ale: 30000, cvar95: 900000 }]);
+    const evaluacion = evaluateFairThreat(p.totalActualALE, p.totalActualCVaRFloor, criteria, (n) => `$${n}`);
+    assert.strictEqual(evaluacion.severity, 'critico');
+    assert.match(evaluacion.level, /cola/);
+
+    // Y el contraste: el mismo promedio con una cola tranquila NO escala.
+    const tranquilo = calculateInherentPortfolio([{ riskType: 'amenaza', ale: 30000, cvar95: 60000 }]);
+    const suave = evaluateFairThreat(
+        tranquilo.totalActualALE,
+        tranquilo.totalActualCVaRFloor,
+        criteria,
+        (n) => `$${n}`,
+    );
+    assert.strictEqual(suave.severity, 'bajo');
+});
+
+test('residualPair: sin decisión usa el riesgo tal cual; con decisión, su residual', () => {
+    const sinTratar = { ale: 1000, cvar95: 4000 };
+    assert.deepStrictEqual(residualPair(sinTratar), { ale: 1000, cvar: 4000, cvarFloor: 4000 });
+
+    const tratado = { ale: 1000, cvar95: 4000, treatmentDecision: { residualALE: 200, residualCVaR: 900 } };
+    assert.deepStrictEqual(residualPair(tratado), { ale: 200, cvar: 900, cvarFloor: 900 });
+
+    // Transferir sin cotizar, o una decisión adoptada antes de que existiera residualCVaR: el
+    // piso cae al ALE residual en vez de desaparecer del total.
+    const sinCola = { ale: 1000, cvar95: 4000, treatmentDecision: { residualALE: 200 } };
+    assert.deepStrictEqual(residualPair(sinCola), { ale: 200, cvar: null, cvarFloor: 200 });
+});

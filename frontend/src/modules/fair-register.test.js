@@ -175,6 +175,31 @@ describe('FairRegister.computeFairRiskEquivalents', () => {
         // 60000 > aleAceptable (50000) y <= aleMedio (150000) -> 'medio', vía la copia local.
         expect(result.inherentSeverity).toBe('medio');
     });
+
+    it('con entry.residualSeverity del backend, lo usa DIRECTO — el residual también tiene cola', () => {
+        // El mismo defecto que ya se había corregido para el inherente, vivo todavía en el
+        // residual: la copia local solo recibe el ALE, así que un residual cuya COLA supera el
+        // criterio Crítico se pintaba en verde. El backend ahora lo clasifica con las dos cosas
+        // (ver residualPair + evaluateFairThreat en GET /api/register).
+        const result = FairRegister.computeFairRiskEquivalents({
+            ale: 200000,
+            severity: 'alto',
+            treatmentDecision: { strategy: 'mitigar', residualALE: 20000, residualCVaR: 900000 },
+            residualSeverity: 'critico',
+        });
+        expect(result.residualMoney).toBe('$20,000');
+        // classifyAleAgainstCriteria(20000) habría dicho 'bajo': 20.000 < aleAceptable (50.000).
+        expect(result.residualSeverity).toBe('critico');
+    });
+
+    it('sin residualSeverity (respuesta de un backend anterior), cae a la copia local', () => {
+        const result = FairRegister.computeFairRiskEquivalents({
+            ale: 200000,
+            severity: 'alto',
+            treatmentDecision: { strategy: 'mitigar', residualALE: 20000 },
+        });
+        expect(result.residualSeverity).toBe('bajo');
+    });
 });
 
 describe('FairRegister.buildConcentratedList', () => {
