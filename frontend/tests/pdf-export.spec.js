@@ -107,12 +107,32 @@ test.describe('Informe Consolidado (PDF único)', () => {
                 await fetch(`${API}/api/register/${encodeURIComponent('E2E PDF — Stub sin analizar')}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json', 'X-API-Key': KEY },
-                    // Exactamente lo que guarda el "+" del Árbol: una Amenaza y nada más.
-                    body: JSON.stringify({ riskType: 'amenaza' }),
+                    // Exactamente lo que guarda el "+" del Árbol (ver openCreateChildModal):
+                    // una Amenaza con ale/cvar95 en 0 y sin ninguna evaluación.
+                    //
+                    // Antes esto mandaba solo { riskType: 'amenaza' }, que el backend rechaza con
+                    // 400 desde el primer commit ("ale (número) es requerido"). O sea que el stub
+                    // NUNCA se creaba y la prueba pasaba de rebote, por algún riesgo sin analizar
+                    // que otro spec dejaba en el Registro compartido. Cuando ese riesgo ajeno dejó
+                    // de estar, la prueba falló — sin que hubiera ninguna regresión.
+                    body: JSON.stringify({ riskType: 'amenaza', ale: 0, cvar95: 0 }),
                 });
             },
             { API, KEY },
         );
+
+        // Se confirma que el stub existe ANTES de exportar. Sin esto, un PUT rechazado deja la
+        // prueba verde por accidente en cuanto otro spec aporte un riesgo sin analizar.
+        const stubGuardado = await page.evaluate(
+            async ({ API, KEY }) => {
+                const res = await fetch(`${API}/api/register`, { headers: { 'X-API-Key': KEY } });
+                const data = await res.json();
+                const e = (data.risks || []).find((r) => r.riskName === 'E2E PDF — Stub sin analizar');
+                return { existe: !!e, evaluado: !!(e && e.evaluationLevel) };
+            },
+            { API, KEY },
+        );
+        expect(stubGuardado).toEqual({ existe: true, evaluado: false });
 
         await page.click('#nav-dashboard');
         await page.waitForTimeout(1000);
