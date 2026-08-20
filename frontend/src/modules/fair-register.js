@@ -449,7 +449,6 @@ export const FairRegister = {
                     // riesgo del Registro, no solo el que esté abierto ahora mismo.
                     threat: document.getElementById('fair-threat').value.trim() || '—',
                     effect: document.getElementById('fair-effect').value,
-                    timeHorizon: document.getElementById('fair-time-horizon').value,
                     reviewDate,
                     dataSource: document.getElementById('fair-data-source').value,
                     // Procedencia por factor. Se manda siempre (los tres factores, forma completa):
