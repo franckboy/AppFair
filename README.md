@@ -19,8 +19,9 @@ un cliente de su API REST.
 
 ## En producción
 
-- **Frontend**: https://franckboy.github.io/AppFair/frontend/app_fair.html (GitHub Pages,
-  rama `main`)
+- **Frontend**: https://franckboy.github.io/AppFair/ (GitHub Pages, publicado por
+  `.github/workflows/deploy-pages.yml` en cada push a `main`). La URL anterior,
+  `/AppFair/frontend/app_fair.html`, sigue funcionando por redirección.
 - **Backend**: https://motor-riesgos-fair-backend.onrender.com (Render, nivel gratis — se
   duerme tras ~15 min sin tráfico; la primera petición después de eso tarda ~30-50s)
 
@@ -55,8 +56,20 @@ producción sigue funcionando igual, sin cambios — ver abajo).
 - **Backend**: `render.yaml` en la raíz define el [Blueprint de Render](https://render.com)
   (nivel gratis, sin tarjeta) — ver "Despliegue en Render" en `backend/README.md` para el
   paso a paso, por si necesitas recrearlo.
-- **Frontend**: `frontend/app_fair.html` es estático — GitHub Pages lo sirve tal cual desde
-  `main`, sin build (Settings → Pages → Deploy from a branch).
+- **Frontend**: GitHub Actions compila con Vite y publica **solo `frontend/dist`**
+  (Settings → Pages → Source: **GitHub Actions**). Antes se usaba "Deploy from a branch"
+  apuntando a la raíz de `main`, lo que publicaba el repositorio ENTERO —`backend/`,
+  `tests/`, `docs/`— y servía la app como 29 módulos ES sin compilar.
+    - `base` se fija a `/AppFair/` **solo en el build** (ver `frontend/vite.config.js`):
+      hacerlo también en desarrollo movería el servidor de Vite a ese subpath y rompería
+      las pruebas E2E, que navegan a `/app_fair.html` en la raíz.
+    - `frontend/public/index.html` y `frontend/public/frontend/app_fair.html` son
+      redirecciones: cubren la raíz del sitio y la URL vieja, para no romper marcadores.
+    - El workflow **falla** si `app_fair.html` trae el CSS desactualizado. No es
+      ceremonia: una clase de Tailwind usada solo desde JS que no se recompila deja el
+      elemento sin estilo en silencio (ver el comentario de `tailwind.config.js`).
+    - Ojo: poner el repositorio en **privado desactiva GitHub Pages**, y volverlo público
+      **no** lo reactiva. Hay que volver a elegir el Source a mano.
 - El `ALLOWED_ORIGIN` del backend en Render está fijado al origen de GitHub Pages
   (`https://franckboy.github.io`), y la URL/API key del backend están cargadas en el
   frontend publicado vía **Conexión API** (se guardan en el navegador, no en el repo).

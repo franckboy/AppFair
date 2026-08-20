@@ -2,14 +2,21 @@
 const { resolve } = require('path');
 const { defineConfig } = require('vite');
 
-// Fase 1 del plan de migración: Vite se usa solo como servidor de desarrollo y build local
-// todavía. Producción sigue sirviendo `app_fair.html` tal cual desde `main` (GitHub Pages,
-// "Deploy from a branch", sin build) — ver README.md, sección "Plan de migración". Por eso:
-//   - el entry point se llama explícitamente `app_fair.html` (no se renombra a `index.html`),
-//     para no romper la URL de producción el día que sí se decida servir el build.
-//   - `base` queda en el valor por defecto ('/'): no hace falta fijar el subpath de GitHub
-//     Pages porque este build no se despliega todavía.
-module.exports = defineConfig({
+/** Subpath de GitHub Pages: el sitio vive en https://franckboy.github.io/AppFair/, no en la raíz. */
+const GITHUB_PAGES_BASE = '/AppFair/';
+
+// Producción SÍ sirve este build desde GitHub Pages (ver .github/workflows/deploy-pages.yml).
+// Antes se publicaba el repositorio entero desde `main` con "Deploy from a branch", así que la app
+// se cargaba como árbol de módulos sin compilar y el backend, las pruebas y los docs quedaban
+// accesibles por web. Ahora se publica solo `dist/`.
+//
+// El entry point se sigue llamando `app_fair.html` (no se renombra a `index.html`): es la URL que
+// el README documenta y la que puede estar en un marcador. `public/index.html` y
+// `public/frontend/app_fair.html` son redirecciones que cubren la raíz y la URL vieja.
+module.exports = defineConfig(({ command }) => ({
+    // `base` SOLO en el build. Fijarlo también en desarrollo movería el servidor de `vite` a
+    // /AppFair/ y rompería las 91 pruebas E2E, que navegan a `/app_fair.html` en la raíz.
+    base: command === 'build' ? GITHUB_PAGES_BASE : '/',
     build: {
         outDir: 'dist',
         rollupOptions: {
@@ -24,4 +31,4 @@ module.exports = defineConfig({
         environment: 'jsdom',
         include: ['src/**/*.test.js'],
     },
-});
+}));
