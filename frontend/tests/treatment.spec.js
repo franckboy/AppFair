@@ -225,6 +225,77 @@ test.describe('Tratamiento del Riesgo (página aparte)', () => {
         await expect(page.locator('#fair-seguro-verdict')).toContainText('NO conviene');
     });
 
+    test('adoptar Transferir sin cotizar no miente: no dice "Se adoptó" cuando el servidor lo rechazó', async ({
+        page,
+    }) => {
+        // Bug real reportado: el usuario cargaba la póliza, pulsaba "Adoptar esta estrategia",
+        // leía "Se adoptó Transferir (Seguro)" y no cambiaba nada. Por dentro el PUT se iba con
+        // residualALE: null (Transferir no tiene residual hasta que se cotiza), el servidor
+        // respondía 400, _persistDecision no avisaba de la falla y adoptStrategy cantaba victoria
+        // igual. Silencioso y engañoso a la vez.
+        await connectAndBoot(page);
+        await page.fill('#fair-riskName', 'E2E Tratamiento — Adoptar Sin Cotizar');
+        await page.click('#fair-step1-next');
+        await page.waitForTimeout(300);
+        await page.selectOption('#fair-attacker-profile', 'organizado');
+        await page.selectOption('#fair-defense-profile', 'basica');
+        await page.waitForTimeout(800);
+        await page.click('#fair-step2-next');
+        await page.waitForTimeout(400);
+        await page.fill('#lm-reemplazo-mode', '120000');
+        await page.waitForTimeout(700);
+        await page.click('#fair-step3-next');
+        await page.waitForTimeout(400);
+        await Promise.all([
+            page.waitForResponse((r) => r.url().includes('/api/simulate'), { timeout: 20000 }),
+            page.click('#run-simulation-btn'),
+        ]);
+        await page.waitForTimeout(1500);
+
+        await page.click('#nav-treatment');
+        await page.waitForTimeout(600);
+        await page.selectOption('#treatment-risk-select', 'E2E Tratamiento — Adoptar Sin Cotizar');
+        await page.waitForTimeout(800);
+        await page.fill('#fair-seguro-prima', '5000');
+        await page.fill('#fair-seguro-deducible', '1000');
+        await page.check('#fair-seguro-sin-limite');
+        await page.waitForTimeout(1200);
+
+        // Un botón que al pulsarse no puede hacer nada es peor que uno apagado.
+        const adoptar = page.locator('#treatment-adopt-transferir-btn');
+        await expect(adoptar).toBeDisabled();
+
+        // Y aunque se fuerce el clic, ni sale el PUT ni aparece el banner de decisión.
+        const puts = [];
+        page.on('response', (r) => {
+            if (r.url().includes('/api/register/') && r.request().method() === 'PUT') puts.push(r.status());
+        });
+        await adoptar.dispatchEvent('click');
+        await page.waitForTimeout(1000);
+        expect(puts).toEqual([]);
+        await expect(page.locator('#treatment-adopted-transferir-badge')).toBeHidden();
+
+        // Después de cotizar sí se puede, y ahí el banner aparece de verdad.
+        await Promise.all([
+            page.waitForResponse((r) => r.url().includes('/api/treatment/evaluate'), { timeout: 20000 }),
+            page.click('#treatment-simulate-transfer-btn'),
+        ]);
+        await page.waitForTimeout(1200);
+        await expect(adoptar).toBeEnabled();
+        await adoptar.click();
+        await page.waitForTimeout(1200);
+        await expect(page.locator('#treatment-adopted-transferir-badge')).toBeVisible();
+        await expect(page.locator('#treatment-decision-summary-text')).toContainText('Transferir');
+
+        const entry = await page.evaluate(async () => {
+            const res = await fetch('http://localhost:3000/api/register', { headers: { 'X-API-Key': 'test-e2e-key' } });
+            const data = await res.json();
+            return data.risks.find((r) => r.riskName === 'E2E Tratamiento — Adoptar Sin Cotizar');
+        });
+        expect(typeof entry.treatmentDecision.residualALE).toBe('number');
+        expect(typeof entry.treatmentDecision.residualCVaR).toBe('number');
+    });
+
     test('"Cotizar con simulación" cotiza el seguro sin salir de Tratamiento, y trae su CVaR residual', async ({
         page,
     }) => {

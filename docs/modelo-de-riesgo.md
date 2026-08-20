@@ -666,6 +666,37 @@ pérdidas en 1.200 viajes con V = 20 %:
 Con la misma tasa observada durante 10 años en vez de 1, Z sube a 0,817 y el TEF a 14,2. El
 resultado siempre queda **entre** el prior y lo observado, y nunca lo adopta entero.
 
+#### El sesgo de Jensen, y por qué se divide por la MODA de V
+
+`V` no es un número, es una distribución. Y `1/V` es convexa, así que por la desigualdad de Jensen
+`E[1/V] ≥ 1/E[V]`: dividir por **cualquier** estimador puntual subestima el TEF. Es real, y siempre
+va hacia abajo — el lado en el que no se puede fallar.
+
+Medido con 2.000.000 de muestras del mismo PERT que usa el motor:
+
+| Rango de V   | E[1/V] | Error con `1/media` | Error con `1/MODA` |
+| ------------ | ------ | ------------------- | ------------------ |
+| 20 / 30 / 42 | 3,361  | −1,9 %              | **−0,8 %**         |
+| 10 / 25 / 50 | 4,085  | −8,2 %              | **−2,1 %**         |
+| 5 / 20 / 60  | 5,048  | −18,0 %             | **−1,0 %**         |
+| 45 / 50 / 55 | 2,003  | −0,1 %              | **−0,1 %**         |
+| 2 / 10 / 45  | 9,515  | −27,5 %             | **+5,1 %**         |
+
+Con la media el error llega al **27 %** en un triángulo ancho —eso no es despreciable—, pero con la
+**moda** queda por debajo del 2 % en los rangos realistas. La razón es geométrica: en un PERT
+sesgado a la derecha la moda cae por debajo de la media, y `1/moda` sobreestima `1/media` en casi
+exactamente la dirección que Jensen pide.
+
+**Es una coincidencia afortunada, no un diseño, y por eso se documenta.** Quien lea `vuln.mode` y
+piense "debería ser la media, la media es más correcta" empeoraría el modelo **13×** en el caso
+5/20/60. Hay una prueba en la suite que fija esta elección precisamente para que ese cambio falle
+en vez de pasar inadvertido.
+
+No se corrige porque con menos del 2 % de sesgo residual el error queda muy por debajo del error de
+la propia evidencia: un conteo de 3 eventos trae ~58 % de error de muestreo (1/√n), que lo domina
+por completo. Si algún día se quiere el cálculo exacto, el arreglo es **muestrear V del mismo PERT
+y promediar `1/V`** — sin aproximaciones de Taylor ni constantes nuevas.
+
 Hay dos piezas construidas alrededor de ese hueco, ninguna enchufada todavía a la ruta crítica:
 
 - **`tools/referencia-sector/`** — tablas de frecuencia y magnitud del sector con su cuarentena
@@ -1184,6 +1215,7 @@ Decisiones tomadas con su razón, para que quien retome esto no las revierta por
 | Un campo que no gobierna nada no se guarda               | El Horizonte Temporal se capturaba y se imprimía junto a cifras anuales sin entrar en ningún cálculo: un control que no hace nada enseña una creencia falsa |
 | Una Oportunidad no tiene Perfil de Atacante              | Derivar su Probabilidad de Captura de la contienda de Tullock afirma que mientras mejor defendido estés, menos capturas tu propia oportunidad               |
 | Las 9 magnitudes de una Oportunidad son positivas        | El motor las SUMA; una sola redactada como costo en que se incurre convertiría el Beneficio Anual Esperado en una mezcla de gastos y ganancias              |
+| Se divide por la MODA de V, no por su media              | La moda cancela el sesgo de Jensen de dividir por una distribución; cambiarla por la media multiplica el error por hasta 13× (medido)                       |
 
 ---
 

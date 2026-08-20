@@ -4821,3 +4821,33 @@ test('calibración: sin exposición declarada la unidad es años y el factor 1 �
     assert.ok(Math.abs(enAnios.tefObservadoAnual - 10) < 1e-9);
     assert.strictEqual(enAnios.exposicionObservadaEnAnios, 2);
 });
+
+test('calibración: usa la MODA de V y no su media — la moda cancela el sesgo de Jensen', () => {
+    // 1/V es convexa, así que E[1/V] >= 1/E[V]: dividir por cualquier estimador puntual subestima
+    // el TEF. En un PERT sesgado a la derecha la moda cae por debajo de la media justo lo
+    // suficiente para cancelar casi todo ese sesgo.
+    //
+    // Esta prueba existe para que nadie "corrija" mode -> mean pensando que la media es más
+    // correcta: medido con 2.000.000 de muestras, en el rango 5/20/60 el error pasa de -1,0 % (con
+    // la moda) a -18,0 % (con la media). Trece veces peor.
+    const vulnTriangulo = { min: 5, mode: 20, max: 60 };
+    const base = { tef: { min: 5, mode: 10, max: 18 }, observedEvents: 3, observedExposure: 10 };
+
+    const conTriangulo = calibrateFrequency({ ...base, vuln: vulnTriangulo });
+    const conModaSuelta = calibrateFrequency({ ...base, vuln: vulnTriangulo.mode });
+    assert.strictEqual(
+        conTriangulo.vulnerabilidadUsada,
+        vulnTriangulo.mode,
+        'del triángulo se toma la moda, no la media PERT',
+    );
+    assert.strictEqual(conTriangulo.tefObservadoAnual, conModaSuelta.tefObservadoAnual);
+
+    // Y que quede fijado el número: con la media PERT (28,33) el TEF observado saldría MENOR.
+    const mediaPert = (vulnTriangulo.min + 4 * vulnTriangulo.mode + vulnTriangulo.max) / 6;
+    assert.ok(mediaPert > vulnTriangulo.mode, 'este triángulo está sesgado a la derecha');
+    const conMedia = calibrateFrequency({ ...base, vuln: mediaPert });
+    assert.ok(
+        conTriangulo.tefObservadoAnual > conMedia.tefObservadoAnual,
+        `con la moda ${conTriangulo.tefObservadoAnual} debe superar a con la media ${conMedia.tefObservadoAnual}`,
+    );
+});
