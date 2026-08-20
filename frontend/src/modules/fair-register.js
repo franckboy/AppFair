@@ -2025,7 +2025,9 @@ export const FairRegister = {
         const result = await App.Api.request('/api/simulate', {
             method: 'POST',
             body: {
-                iterations: 10000,
+                // Sin `iterations`: el backend decide cuántas hacen falta según el riesgo (ver
+                // lib/adaptiveSimulation.js). Un riesgo raro necesita muchas más que uno frecuente,
+                // y el viejo 10.000 fijo sobraba en unos y faltaba en otros.
                 seed: entry.seed || 0,
                 tef: entry.tef,
                 vuln: entry.vuln,
@@ -2129,7 +2131,8 @@ export const FairRegister = {
             result = await App.Api.request('/api/simulate', {
                 method: 'POST',
                 body: {
-                    iterations: 10000,
+                    // Sin `iterations`: lo decide el backend (ver la nota de la otra llamada). El
+                    // comparador de modelos de frecuencia, más abajo, SÍ las fija a propósito.
                     seed: risk.seed || 0,
                     tef: risk.tef,
                     vuln: risk.vuln,
@@ -2599,9 +2602,21 @@ export const FairRegister = {
                 typeof errCvar === 'number'
                     ? `±${errAle.toFixed(1)} % en el promedio y ±${errCvar.toFixed(1)} % en el año malo`
                     : `±${errAle.toFixed(1)} % en el promedio`;
+            const n = (result.iterations || 0).toLocaleString('es-MX');
             const base = simple
-                ? `Estas cifras salen de simular ${(result.iterations || 0).toLocaleString('es-MX')} años al azar, así que traen algo de ruido propio: ${cifras}. Volver a calcular da números un poco distintos, y eso es normal.`
-                : `Ruido de muestreo por usar ${(result.iterations || 0).toLocaleString('es-MX')} escenarios en vez de infinitos: ${cifras}.`;
+                ? `Estas cifras salen de simular ${n} años al azar, así que traen algo de ruido propio: ${cifras}. Volver a calcular da números un poco distintos, y eso es normal.`
+                : `Ruido de muestreo por usar ${n} escenarios en vez de infinitos: ${cifras}.`;
+            // Cuántos escenarios se corrieron ya no es fijo: lo decide el backend según el riesgo.
+            // Se dice CÓMO se eligió, y sobre todo si se quedó corto — entregar un resultado con
+            // más ruido del pedido es aceptable, entregarlo sin avisar no.
+            const prec = result.precision;
+            let comoSeEligio = '';
+            if (prec && prec.mode === 'adaptativo') {
+                comoSeEligio =
+                    prec.stoppedBy === 'objetivo'
+                        ? ` Se corrieron los escenarios necesarios para bajar de ±${prec.targetCvarErrorPercent} % y no más.`
+                        : ` Se cortó ${prec.stoppedBy === 'tiempo' ? 'por tiempo' : 'en el máximo de escenarios'} antes de llegar al ±${prec.targetCvarErrorPercent} % buscado, así que estas cifras traen más ruido del deseado.`;
+            }
             const aviso = alto
                 ? ' Es bastante: en un riesgo poco frecuente la mayoría de los años no pasa nada y no aportan información, así que la muestra útil es mucho más chica de lo que parece. Conviene tomar estas cifras como aproximadas.'
                 : '';
@@ -2610,7 +2625,7 @@ export const FairRegister = {
             const encuadre = simple
                 ? ' Ojo: esto solo mide el ruido del cálculo, no si los datos que le diste son buenos.'
                 : ' Mide solo el error numérico, no la incertidumbre de las entradas (ver Calidad de la Información).';
-            notaError.textContent = base + aviso + encuadre;
+            notaError.textContent = base + comoSeEligio + aviso + encuadre;
             notaError.classList.remove('hidden');
         } else if (notaError) {
             notaError.classList.add('hidden');

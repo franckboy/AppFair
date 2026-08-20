@@ -4446,3 +4446,125 @@ test('el error del CVaR baja como 1/raíz(N), igual que el de la media', () => {
     const razon = a.cvar95StandardErrorPercent / b.cvar95StandardErrorPercent;
     assert.ok(razon > 1.3 && razon < 3.2, `razón ${razon} fuera de lo esperable para un 1/raíz(N)`);
 });
+
+// ============================================================
+// Iteraciones adaptativas — ver backend/src/lib/adaptiveSimulation.js
+// ============================================================
+const { runAdaptiveSimulation, firstBatchSize, MIN_BATCH } = require('../src/lib/adaptiveSimulation');
+
+const PERFIL_RARO = {
+    tef: { min: 0.08, mode: 0.1, max: 0.12 },
+    vuln: { min: 45, mode: 50, max: 55 },
+    lossMagnitudes: { respuesta: { min: 200000, mode: 500000, max: 2000000 } },
+};
+const PERFIL_FRECUENTE = {
+    tef: { min: 12, mode: 16, max: 20 },
+    vuln: { min: 45, mode: 50, max: 55 },
+    lossMagnitudes: { respuesta: { min: 3000, mode: 8000, max: 20000 } },
+};
+
+test('adaptativo: el riesgo raro recibe MUCHAS más iteraciones que el frecuente', () => {
+    // Es la razón de ser del módulo. Con el tope fijo los dos recibían 10.000: sobraba 8× en uno y
+    // faltaba 6× en el otro. La causa es que un año sin eventos vale 0 y no aporta información, así
+    // que la muestra útil es n·(1−e^−LEF) y no n.
+    const raro = runAdaptiveSimulation({ ...PERFIL_RARO, seed: 7 });
+    const frecuente = runAdaptiveSimulation({ ...PERFIL_FRECUENTE, seed: 7 });
+    assert.ok(
+        raro.usedIterations > frecuente.usedIterations * 5,
+        `raro ${raro.usedIterations} contra frecuente ${frecuente.usedIterations}`,
+    );
+    // Y el frecuente usa MENOS que el viejo tope fijo: antes se le regalaban iteraciones.
+    assert.ok(
+        frecuente.usedIterations < 10000,
+        `el frecuente no debería necesitar 10.000: ${frecuente.usedIterations}`,
+    );
+});
+
+test('adaptativo: alcanza la precisión pedida, y el modo fijo de 10.000 no la alcanzaba', () => {
+    const objetivo = 2;
+    const r = runAdaptiveSimulation({ ...PERFIL_RARO, seed: 7, targetCvarErrorPercent: objetivo });
+    assert.strictEqual(r.stoppedBy, 'objetivo');
+    assert.ok(r.achievedCvarErrorPercent <= objetivo, `logrado ${r.achievedCvarErrorPercent} > ${objetivo}`);
+
+    // El mismo riesgo con 10.000 fijas se queda claramente corto — que es el problema que esto
+    // resuelve, no una mejora cosmética.
+    const fijo = summarizeLosses(runMonteCarloSimulation({ ...PERFIL_RARO, iterations: 10000, seed: 7 }).annualLosses);
+    assert.ok(fijo.cvar95StandardErrorPercent > objetivo, `10.000 fijas dieron ${fijo.cvar95StandardErrorPercent} %`);
+});
+
+test('adaptativo: el primer lote se despeja del LEF, no es un número redondo', () => {
+    // n = años_útiles_objetivo / (1 − e^−LEF). Con LEF 0,05 hacen falta ~41.000 iteraciones para
+    // juntar 2.000 años en que algo pasó; con LEF 8 alcanzan 2.000, y ahí manda el piso.
+    const raro = firstBatchSize(PERFIL_RARO.tef, PERFIL_RARO.vuln);
+    const frecuente = firstBatchSize(PERFIL_FRECUENTE.tef, PERFIL_FRECUENTE.vuln);
+    assert.ok(raro > 35000 && raro < 45000, `primer lote del raro: ${raro}`);
+    assert.strictEqual(frecuente, MIN_BATCH);
+    // Sin LET utilizable cae al piso en vez de inventar una estimación.
+    assert.strictEqual(firstBatchSize({ mode: 0 }, { mode: 0 }), MIN_BATCH);
+    assert.strictEqual(firstBatchSize(null, null), MIN_BATCH);
+});
+
+test('adaptativo: la misma semilla da el mismo resultado Y el mismo n', () => {
+    const a = runAdaptiveSimulation({ ...PERFIL_RARO, seed: 99 });
+    const b = runAdaptiveSimulation({ ...PERFIL_RARO, seed: 99 });
+    assert.strictEqual(a.usedIterations, b.usedIterations);
+    assert.deepStrictEqual(a.annualLosses, b.annualLosses);
+});
+
+test('adaptativo: con semilla 0 el resultado se reproduce con el usedSeed que devuelve', () => {
+    // Bug real: los lotes 2..n derivaban del `seed` recibido (0) en vez de la semilla realmente
+    // sorteada, así que el resultado no se podía reproducir ni conociendo usedSeed — que es
+    // exactamente para lo que se devuelve.
+    const a = runAdaptiveSimulation({ ...PERFIL_RARO, seed: 0 });
+    assert.ok(a.batches > 1, 'este perfil debería necesitar más de un lote para que la prueba valga');
+    const b = runAdaptiveSimulation({ ...PERFIL_RARO, seed: a.usedSeed });
+    assert.strictEqual(b.usedIterations, a.usedIterations);
+    assert.deepStrictEqual(b.annualLosses, a.annualLosses);
+});
+
+test('adaptativo: el techo y el presupuesto de tiempo cortan, y el resultado DICE que cortaron', () => {
+    // Entregar un resultado con más ruido del pedido es aceptable; entregarlo sin avisar, no.
+    const porTecho = runAdaptiveSimulation({ ...PERFIL_RARO, seed: 7, maxIterations: 6000 });
+    assert.strictEqual(porTecho.stoppedBy, 'techo');
+    assert.strictEqual(porTecho.usedIterations, 6000);
+    assert.ok(porTecho.achievedCvarErrorPercent > 2, 'con 6.000 no debería alcanzar el objetivo');
+
+    // Reloj controlado: cada consulta avanza 500 ms, así que el presupuesto de 400 se agota apenas
+    // termina el primer lote.
+    let t = 0;
+    const reloj = () => {
+        t += 500;
+        return t;
+    };
+    const porTiempo = runAdaptiveSimulation({ ...PERFIL_RARO, seed: 7, timeBudgetMs: 400, now: reloj });
+    assert.strictEqual(porTiempo.stoppedBy, 'tiempo');
+    assert.strictEqual(porTiempo.batches, 1);
+});
+
+test('adaptativo: cuando un solo lote alcanza, es idéntico bit a bit a la corrida fija equivalente', () => {
+    // El primer lote usa la semilla tal cual justamente para esto: el caso normal (un solo lote) no
+    // introduce ninguna diferencia respecto del motor de siempre.
+    const r = runAdaptiveSimulation({ ...PERFIL_FRECUENTE, seed: 55 });
+    assert.strictEqual(r.batches, 1);
+    const fijo = runMonteCarloSimulation({ ...PERFIL_FRECUENTE, iterations: r.usedIterations, seed: 55 });
+    assert.deepStrictEqual(r.annualLosses, fijo.annualLosses);
+});
+
+test('adaptativo: los lotes concatenados dan lo mismo que una corrida larga equivalente', () => {
+    // La base de todo el esquema: si los lotes con semillas derivadas no fueran independientes, el
+    // total no valdría como una muestra de ese tamaño.
+    const perfil = {
+        tef: { min: 1.6, mode: 2, max: 2.4 },
+        vuln: { min: 28, mode: 30, max: 32 },
+        lossMagnitudes: { respuesta: { min: 50000, mode: 120000, max: 400000 } },
+    };
+    const adaptativo = runAdaptiveSimulation({ ...perfil, seed: 12345, targetCvarErrorPercent: 0.7 });
+    assert.ok(adaptativo.batches > 1, 'hace falta más de un lote para que la comparación tenga sentido');
+    const largo = summarizeLosses(
+        runMonteCarloSimulation({ ...perfil, iterations: adaptativo.usedIterations, seed: 12345 }).annualLosses,
+    );
+    const porLotes = summarizeLosses(adaptativo.annualLosses);
+    // Dentro del error de muestreo de ese tamaño (~1 %), con margen.
+    assert.ok(Math.abs(porLotes.average / largo.average - 1) < 0.03, `ALE ${porLotes.average} vs ${largo.average}`);
+    assert.ok(Math.abs(porLotes.cvar95 / largo.cvar95 - 1) < 0.05, `CVaR ${porLotes.cvar95} vs ${largo.cvar95}`);
+});

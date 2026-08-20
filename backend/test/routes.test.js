@@ -2840,6 +2840,62 @@ test('PUT /api/register/:riskName rechaza una procedencia que no se podría usar
     assert.strictEqual(factorInventado.status, 400);
 });
 
+test('POST /api/simulate SIN iterations decide solo cuántas hacen falta', async () => {
+    // Riesgo raro-severo: con el viejo tope fijo de 10.000 el año malo quedaba con ~5 % de ruido.
+    const res = await request(app)
+        .post('/api/simulate')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            seed: 7,
+            tef: { min: 0.08, mode: 0.1, max: 0.12 },
+            vuln: { min: 45, mode: 50, max: 55 },
+            lossMagnitudes: { respuesta: { min: 200000, mode: 500000, max: 2000000 } },
+        });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.precision.mode, 'adaptativo');
+    assert.strictEqual(res.body.precision.stoppedBy, 'objetivo');
+    // Corrió MÁS que el viejo tope, que es justo lo que este riesgo necesitaba.
+    assert.ok(res.body.usedIterations > 10000, `usó ${res.body.usedIterations}`);
+    assert.strictEqual(res.body.iterations, res.body.usedIterations);
+    assert.ok(res.body.precision.achievedCvarErrorPercent <= res.body.precision.targetCvarErrorPercent);
+});
+
+test('POST /api/simulate CON iterations explícitas se comporta igual que siempre', async () => {
+    // Compatibilidad: todo lo ya guardado y cualquier cliente viejo pide un número y lo recibe tal
+    // cual. El modo adaptativo es para quien NO pide.
+    const res = await request(app)
+        .post('/api/simulate')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            iterations: 3000,
+            seed: 7,
+            tef: { min: 0.08, mode: 0.1, max: 0.12 },
+            vuln: { min: 45, mode: 50, max: 55 },
+            lossMagnitudes: { respuesta: { min: 200000, mode: 500000, max: 2000000 } },
+        });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.precision.mode, 'fijo');
+    assert.strictEqual(res.body.usedIterations, 3000);
+    assert.strictEqual(res.body.iterations, 3000);
+    // Sin bloque de precisión adaptativa: no hubo objetivo que perseguir ni nada que reportar.
+    assert.strictEqual(res.body.precision.achievedCvarErrorPercent, undefined);
+});
+
+test('POST /api/simulate: un riesgo frecuente gasta MENOS que el viejo tope fijo', async () => {
+    const res = await request(app)
+        .post('/api/simulate')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            seed: 7,
+            tef: { min: 12, mode: 16, max: 20 },
+            vuln: { min: 45, mode: 50, max: 55 },
+            lossMagnitudes: { respuesta: { min: 3000, mode: 8000, max: 20000 } },
+        });
+    assert.strictEqual(res.status, 200);
+    assert.ok(res.body.usedIterations < 10000, `un riesgo frecuente no necesita 10.000: ${res.body.usedIterations}`);
+    assert.strictEqual(res.body.precision.stoppedBy, 'objetivo');
+});
+
 // Los dos tests de la Bitácora van AL FINAL del archivo a propósito: el primero siembra un riesgo
 // en el Registro para poder diagnosticar la bitácora contra él, y el runner corre los tests en el
 // orden del archivo sobre un mismo almacenamiento. Puestos más arriba, ese riesgo extra rompía dos
