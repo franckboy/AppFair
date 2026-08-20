@@ -401,7 +401,6 @@ export const FairExport = {
                     <tr><td><strong>Agente de Amenaza</strong></td><td>${sanitizeHTML(r.threat) || '—'}</td></tr>
                     <tr><td><strong>Efecto / Pérdida</strong></td><td>${this.EFFECT_LABELS[r.effect] || r.effect || '—'}</td></tr>
                     <tr><td><strong>Tipo de Riesgo</strong></td><td>${riskTypeLabel}</td></tr>
-                    <tr><td><strong>Horizonte Temporal</strong></td><td>${r.timeHorizon || '1'} año(s)</td></tr>
                 </table>
                 <h3>Gobernanza y Calidad de la Información</h3>
                 <table>

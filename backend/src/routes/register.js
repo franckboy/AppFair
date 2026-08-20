@@ -350,7 +350,6 @@ function createRegisterRouter(store) {
                 // este archivo) porque es información descriptiva, no un cálculo.
                 threat = '—',
                 effect = 'material',
-                timeHorizon = '1',
                 reviewDate = null,
                 dataSource = null,
                 dataConfidence = null,
@@ -632,7 +631,6 @@ function createRegisterRouter(store) {
                 reviewHistory,
                 threat,
                 effect,
-                timeHorizon,
                 reviewDate,
                 dataSource,
                 dataConfidence,

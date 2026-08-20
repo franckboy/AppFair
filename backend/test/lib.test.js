@@ -4515,9 +4515,18 @@ test('adaptativo: con semilla 0 el resultado se reproduce con el usedSeed que de
     // Bug real: los lotes 2..n derivaban del `seed` recibido (0) en vez de la semilla realmente
     // sorteada, así que el resultado no se podía reproducir ni conociendo usedSeed — que es
     // exactamente para lo que se devuelve.
-    const a = runAdaptiveSimulation({ ...PERFIL_RARO, seed: 0 });
+    //
+    // El objetivo estricto NO es decorativo: con `seed: 0` la semilla se sortea, así que cuántos
+    // lotes hacen falta depende de cuál salió — a veces el primero ya baja del 2 % y la prueba
+    // pasaba sin ejercitar nunca el camino que dice probar. Con 0,5 % el camino multi-lote queda
+    // garantizado salga la semilla que salga. El techo tiene que quedar POR ENCIMA del primer
+    // lote (~41.000 para este perfil, ver firstBatchSize) o el primer lote se corta contra el
+    // techo y vuelve a haber uno solo. Y el presupuesto de tiempo se abre a propósito: la
+    // reproducibilidad que esta prueba verifica solo existe si la parada no depende del reloj.
+    const estricto = { ...PERFIL_RARO, targetCvarErrorPercent: 0.5, maxIterations: 120000, timeBudgetMs: 60000 };
+    const a = runAdaptiveSimulation({ ...estricto, seed: 0 });
     assert.ok(a.batches > 1, 'este perfil debería necesitar más de un lote para que la prueba valga');
-    const b = runAdaptiveSimulation({ ...PERFIL_RARO, seed: a.usedSeed });
+    const b = runAdaptiveSimulation({ ...estricto, seed: a.usedSeed });
     assert.strictEqual(b.usedIterations, a.usedIterations);
     assert.deepStrictEqual(b.annualLosses, a.annualLosses);
 });

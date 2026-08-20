@@ -88,7 +88,6 @@ export const FairWizard = {
 
         document.getElementById('fair-effect').value = data.effect || 'material';
         document.getElementById('fair-risk-type').value = data.riskType || 'amenaza';
-        document.getElementById('fair-time-horizon').value = data.timeHorizon || '1';
         this.toggleRiskTypeLabels();
         document.getElementById('fair-data-source').value = data.dataSource || App.OrgDefaults.defaults.dataSource;
         document.getElementById('fair-data-confidence').value =
@@ -284,7 +283,6 @@ export const FairWizard = {
             threat: document.getElementById('fair-threat').value.trim(),
             effect: document.getElementById('fair-effect').value,
             riskType: document.getElementById('fair-risk-type').value,
-            timeHorizon: document.getElementById('fair-time-horizon').value,
             triggeredBy: (() => {
                 this.syncTriggeredByDraftFromDom();
                 return state.fair.triggeredByDraft.filter((t) => t.riskName);
@@ -816,7 +814,6 @@ export const FairWizard = {
         if (data.threat) document.getElementById('fair-threat').value = data.threat;
         document.getElementById('fair-effect').value = data.effect || 'material';
         document.getElementById('fair-risk-type').value = data.riskType || 'amenaza';
-        document.getElementById('fair-time-horizon').value = data.timeHorizon || '1';
         this.toggleRiskTypeLabels();
 
         if (data.attackerKey) document.getElementById('fair-attacker-profile').value = data.attackerKey;
@@ -1001,7 +998,6 @@ export const FairWizard = {
         // restoreFairAnalysis() (el camino de borrador en localStorage) para los mismos campos.
         document.getElementById('fair-threat').value = entry.threat && entry.threat !== '—' ? entry.threat : '';
         document.getElementById('fair-effect').value = entry.effect || 'material';
-        document.getElementById('fair-time-horizon').value = entry.timeHorizon || '1';
         document.getElementById('fair-data-source').value = entry.dataSource || App.OrgDefaults.defaults.dataSource;
         document.getElementById('fair-data-confidence').value =
             entry.dataConfidence || App.OrgDefaults.defaults.dataConfidence;
@@ -1538,7 +1534,6 @@ export const FairWizard = {
             document.getElementById('fair-threat').value = '';
             document.getElementById('fair-effect').value = 'material';
             document.getElementById('fair-risk-type').value = 'amenaza';
-            document.getElementById('fair-time-horizon').value = '1';
             state.fair.triggeredByDraft = [];
             this.renderTriggeredByRows();
             this.toggleRiskTypeLabels();
@@ -2085,7 +2080,6 @@ export const FairWizard = {
                 threat: document.getElementById('fair-threat').value,
                 effect: document.getElementById('fair-effect').value,
                 riskType: document.getElementById('fair-risk-type').value,
-                timeHorizon: document.getElementById('fair-time-horizon').value,
                 dataSource: document.getElementById('fair-data-source').value,
                 dataConfidence: document.getElementById('fair-data-confidence').value,
                 dataNotes: document.getElementById('fair-data-notes').value,
@@ -2181,7 +2175,6 @@ export const FairWizard = {
             document.getElementById('fair-threat').value = data.threat || '';
             document.getElementById('fair-effect').value = data.effect || 'material';
             document.getElementById('fair-risk-type').value = data.riskType || 'amenaza';
-            document.getElementById('fair-time-horizon').value = data.timeHorizon || '1';
             this.toggleRiskTypeLabels();
             document.getElementById('fair-data-source').value = data.dataSource || 'experto-sin-calibrar';
             document.getElementById('fair-data-confidence').value = data.dataConfidence || 'medio';

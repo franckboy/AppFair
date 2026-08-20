@@ -140,7 +140,7 @@ test.describe('Análisis FAIR completo', () => {
         await expect(page.locator('#vuln-manual-override')).toBeChecked();
     });
 
-    test('retomar un riesgo del Registro restaura Amenaza, Efecto, Horizonte, Fuente/Confianza/Notas de Datos y Perfil de Atacante/Defensa (regresión)', async ({
+    test('retomar un riesgo del Registro restaura Amenaza, Efecto, Fuente/Confianza/Notas de Datos y Perfil de Atacante/Defensa (regresión)', async ({
         page,
     }) => {
         // Bug real corregido: loadRegisteredRiskIntoForm() llama a resetForm(false), que pone
@@ -161,7 +161,6 @@ test.describe('Análisis FAIR completo', () => {
         await page.fill('#fair-riskName', riskName);
         await page.fill('#fair-threat', 'Grupo criminal organizado E2E');
         await page.selectOption('#fair-effect', 'reputacional');
-        await page.selectOption('#fair-time-horizon', '3');
         await page.click('#fair-step1-next');
         await page.waitForTimeout(300);
         await page.selectOption('#fair-attacker-profile', 'organizado');
@@ -187,7 +186,6 @@ test.describe('Análisis FAIR completo', () => {
         let entry = register.risks.find((r) => r.riskName === riskName);
         expect(entry.threat).toBe('Grupo criminal organizado E2E');
         expect(entry.effect).toBe('reputacional');
-        expect(entry.timeHorizon).toBe('3');
         expect(entry.dataSource).toBe('benchmark');
         expect(entry.dataConfidence).toBe('alto');
         expect(entry.dataNotes).toBe('Notas E2E de prueba — no debería perderse al retomar.');
@@ -205,7 +203,6 @@ test.describe('Análisis FAIR completo', () => {
 
         await expect(page.locator('#fair-threat')).toHaveValue('Grupo criminal organizado E2E');
         await expect(page.locator('#fair-effect')).toHaveValue('reputacional');
-        await expect(page.locator('#fair-time-horizon')).toHaveValue('3');
         await expect(page.locator('#fair-attacker-profile')).toHaveValue('organizado');
         await expect(page.locator('#fair-defense-profile')).toHaveValue('basica');
         // Fuente/Notas están en el Paso 4 — se navega ahí para confirmar sin re-simular.
