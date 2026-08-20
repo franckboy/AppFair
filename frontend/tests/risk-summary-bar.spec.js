@@ -1,5 +1,5 @@
 'use strict';
-const { test, expect, connectAndBoot } = require('./helpers');
+const { test, expect, connectAndBoot, runFullFairAnalysis } = require('./helpers');
 
 // La barra persistente de riesgo (App.RiskSummaryBar, ver #risk-summary-bar en app_fair.html)
 // vive fuera de #fair-wizard-wrapper, entre el header y el contenido de cada página. Sin datos
@@ -67,5 +67,39 @@ test.describe('Barra persistente de riesgo (Actual/Residual del portafolio + rie
         await page.waitForTimeout(500);
         await expect(page.locator('#risk-summary-current')).toBeHidden();
         await expect(page.locator('#risk-summary-bar')).toBeVisible();
+    });
+
+    test('el color del tile "Riesgo Actual" viene del backend, no de un clasificador propio ciego a la cola', async ({
+        page,
+    }) => {
+        // Bug real: las tres tarjetas de la barra usaban DOS escalas distintas. Residual y "en
+        // curso" toman la evaluación del backend, que mira promedio Y cola; "Riesgo Actual" la
+        // fabricaba con classifyAleAgainstCriteria, que solo mira el promedio. Dos tarjetas
+        // pegadas podían contradecirse sobre el mismo portafolio.
+        //
+        // La aserción es de COHERENCIA, no de un color fijo: el Registro es compartido por toda la
+        // suite, así que la severidad concreta depende de qué otros specs corrieron antes — pero
+        // el tile y el backend tienen que decir lo mismo pase lo que pase.
+        await connectAndBoot(page);
+        await runFullFairAnalysis(page, 'E2E Barra — Coherencia de color');
+        await page.click('#nav-dashboard');
+        await page.waitForTimeout(800);
+
+        const backend = await page.evaluate(async () => {
+            const res = await fetch('http://localhost:3000/api/register', { headers: { 'X-API-Key': 'test-e2e-key' } });
+            const data = await res.json();
+            return data.inherentPortfolio;
+        });
+        expect(backend.actualEvaluation).toBeTruthy();
+        // El piso de cola cubre siempre las mismas amenazas que el promedio (ver residualPair).
+        expect(backend.totalActualCVaRFloor).toBeGreaterThanOrEqual(backend.totalActualALE);
+
+        const clases = {
+            critico: 'bg-red-50',
+            alto: 'bg-orange-50',
+            medio: 'bg-yellow-50',
+            bajo: 'bg-green-50',
+        }[backend.actualEvaluation.severity];
+        await expect(page.locator('#risk-summary-actual')).toHaveClass(new RegExp(clases));
     });
 });

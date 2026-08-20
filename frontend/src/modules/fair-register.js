@@ -190,8 +190,16 @@ export const FairRegister = {
             actualMoney: fmt(entry.ale),
             actualSeverity: entry.severity || null,
             residualMoney: residualAle != null ? fmt(residualAle) : null,
+            // Mismo criterio que inherentSeverity de abajo: gana la clasificación YA CALCULADA por
+            // el backend (entry.residualSeverity, ver GET /api/register), que mira promedio Y cola.
+            // La copia local solo mira el promedio, así que un residual con la cola por encima del
+            // criterio Crítico se pintaba en verde. Se conserva como respaldo para respuestas de un
+            // backend anterior, sin forzar una migración.
             residualSeverity:
-                residualAle != null ? this.classifyAleAgainstCriteria(residualAle, entry.riskCriteriaOverride) : null,
+                residualAle == null
+                    ? null
+                    : entry.residualSeverity ||
+                      this.classifyAleAgainstCriteria(residualAle, entry.riskCriteriaOverride),
             residualStrategy: decision ? decision.strategy : null,
             inherentMoney: inherentAle != null ? fmt(inherentAle) : null,
             // Preferir la clasificación YA CALCULADA por el backend (entry.inherentSeverity, ver

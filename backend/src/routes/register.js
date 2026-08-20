@@ -12,6 +12,7 @@ const {
     calculateResidualParetoAnalysis,
     calculateResidualMatrixPoint,
     calculateInherentPortfolio,
+    residualPair,
 } = require('../lib/register');
 const { evaluateFairThreat } = require('../lib/evaluation');
 const { defaultRiskCriteria, defenseProfiles } = require('../data/profiles');
@@ -106,6 +107,16 @@ function createRegisterRouter(store) {
                 // normalizeFactorProvenance). Es campo derivado, igual que residualMatrixPoint —
                 // no se persiste desde aquí.
                 r.factorProvenance = normalizeFactorProvenance(r);
+                // Severidad del residual de ESTE riesgo, con la MISMA regla que todo lo demás:
+                // promedio Y cola (ver evaluateFairThreat). Antes la tabla del Registro la
+                // calculaba en el frontend mirando solo el promedio, así que un residual con la
+                // cola por encima del criterio Crítico se pintaba en verde. Se clasifica acá, como
+                // el resto de la app, para no tener la fórmula de umbrales duplicada en JS.
+                const { ale: residualALE, cvarFloor } = residualPair(r);
+                r.residualSeverity =
+                    typeof residualALE === 'number'
+                        ? evaluateFairThreat(residualALE, cvarFloor, efectivos, makeCurrencyFormatter()).severity
+                        : null;
             });
 
             const pareto = calculateParetoAnalysis(risks);
@@ -140,6 +151,19 @@ function createRegisterRouter(store) {
             } else {
                 inherentPortfolio.evaluation = null;
             }
+            // La de arriba evalúa el INHERENTE (sin ningún control). La barra de resumen muestra el
+            // ACTUAL, y para ese par de totales no existía ninguna evaluación — así que el frontend
+            // la fabricaba con un clasificador propio que solo miraba el promedio. Resultado: tres
+            // tarjetas pegadas, dos escalas distintas, y la de Riesgo Actual ciega a la cola.
+            inherentPortfolio.actualEvaluation =
+                inherentPortfolio.totalRiskCount > 0
+                    ? evaluateFairThreat(
+                          inherentPortfolio.totalActualALE,
+                          inherentPortfolio.totalActualCVaRFloor,
+                          criteria,
+                          makeCurrencyFormatter(),
+                      )
+                    : null;
 
             res.json({
                 risks,
