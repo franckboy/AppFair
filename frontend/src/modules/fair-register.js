@@ -2,7 +2,7 @@ import { App } from './app-namespace.js';
 import { state } from './state.js';
 import {
     LOSS_FORMS_KEYS,
-    LOSS_FORM_LABELS,
+    lossFormLabels,
     classifyPointSeverity,
     formatCurrency,
     getSafeNumber,
@@ -386,10 +386,6 @@ export const FairRegister = {
                     // ciclo de vida que inherentALE/inherentCVaR arriba. Reemplaza la copia local
                     // classifyAleAgainstCriteria (bug real: esa copia solo miraba inherentALE,
                     // nunca inherentCVaR, así que nunca detectaba "Crítico por cola de riesgo").
-                    inherentEvaluationLevel: inherentEvaluation ? inherentEvaluation.level : null,
-                    inherentEvaluationClasses: inherentEvaluation
-                        ? severityToClasses(inherentEvaluation.severity)
-                        : null,
                     inherentSeverity: inherentEvaluation ? inherentEvaluation.severity : null,
                     evaluationLevel: evaluation.level,
                     evaluationClasses: severityToClasses(evaluation.severity),
@@ -484,7 +480,6 @@ export const FairRegister = {
                     // buildLossExceedanceCurve en el backend). Sin mandarla acá se perdería: este
                     // PUT reconstruye la entrada completa, así que lo que no viaja se borra.
                     lossExceedanceCurve: state.fair.lastLossExceedanceCurve || null,
-                    inherentLossExceedanceCurve: state.fair.lastInherentLossExceedanceCurve || null,
                     calibrationVersion: state.fair.lastCalibrationVersion ?? null,
                     isDeliberate: deliberada,
                     accessLevel: deliberada ? document.getElementById('fair-access-level').value : 'nulo',
@@ -1589,12 +1584,12 @@ export const FairRegister = {
             ? LOSS_FORMS_KEYS.map((key) => {
                   const f = entry.lossMagnitudes[key];
                   if (!f) return '';
-                  return `<tr><td class="py-1 pr-3 text-gray-600">${LOSS_FORM_LABELS.tecnico[key]}</td><td class="py-1 pr-3">${fmt(f.min)}</td><td class="py-1 pr-3 font-semibold">${fmt(f.mode)}</td><td class="py-1">${fmt(f.max)}</td></tr>`;
+                  return `<tr><td class="py-1 pr-3 text-gray-600">${lossFormLabels(entry.riskType, 'tecnico')[key]}</td><td class="py-1 pr-3">${fmt(f.min)}</td><td class="py-1 pr-3 font-semibold">${fmt(f.mode)}</td><td class="py-1">${fmt(f.max)}</td></tr>`;
               }).join('')
             : '';
         const sensitivityHTML = (entry.sensitivity || [])
             .slice(0, 5)
-            .map((s) => `<li>${sensitivityLabel(s)}: ${(s.correlation * 100).toFixed(1)}%</li>`)
+            .map((s) => `<li>${sensitivityLabel(s, entry.riskType)}: ${(s.correlation * 100).toFixed(1)}%</li>`)
             .join('');
 
         return `
@@ -2071,8 +2066,6 @@ export const FairRegister = {
                 probExceedance: summary.probExceedance,
                 inherentALE: summary.inherentALE,
                 inherentCVaR: summary.inherentCVaR,
-                inherentEvaluationLevel: inherentEvaluation ? inherentEvaluation.level : null,
-                inherentEvaluationClasses: inherentEvaluation ? severityToClasses(inherentEvaluation.severity) : null,
                 inherentSeverity: inherentEvaluation ? inherentEvaluation.severity : null,
                 evaluationLevel: evaluation.level,
                 evaluationClasses: severityToClasses(evaluation.severity),
@@ -2080,7 +2073,6 @@ export const FairRegister = {
                 evaluationJustification: evaluation.justification,
                 sensitivity: (result.sensitivity || []).slice(0, 5),
                 lossExceedanceCurve: result.lossExceedanceCurve || null,
-                inherentLossExceedanceCurve: result.inherentLossExceedanceCurve || null,
                 calibrationVersion: result.calibrationVersion ?? null,
                 // El histograma guardado (lo usa el PDF) es de la corrida vieja. Se limpia en vez de
                 // dejarlo: el reporte ya sabe omitirlo cuando falta, y un histograma del modelo

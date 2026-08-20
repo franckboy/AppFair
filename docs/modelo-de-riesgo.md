@@ -13,20 +13,20 @@ mal.
 **Estado: calibración 7** (se quita el tope de 100 de la Fuerza de Resistencia y se recalibra
 entera, §4 y §9.1). Archivos de referencia:
 
-| Pieza                                                  | Archivo                                  |
-| ------------------------------------------------------ | ---------------------------------------- |
-| Calibración, eje de contienda, acceso, re-centrado     | `backend/src/lib/autocalc.js`            |
-| Perfiles y bandas de confianza                         | `backend/src/data/profiles.js`           |
-| Monte Carlo, modelo de frecuencia, curva de excedencia | `backend/src/lib/simulation.js`          |
-| Agregación de portafolio y cascada                     | `backend/src/lib/portfolioSimulation.js` |
-| Residual del Tratamiento                               | `backend/src/lib/autocalc.js`            |
-| Frecuencia sugerida                                    | `frontend/src/modules/utils.js`          |
-| Equilibrio de Nash (panel aparte)                      | `backend/src/lib/nashEquilibrium.js`     |
-| Umbral de disuasión, Stackelberg (panel aparte)        | `backend/src/lib/stackelbergDeterrence.js` |
-| Procedencia por factor                                 | `backend/src/lib/provenance.js`          |
-| Bitácora de Incidentes                                 | `backend/src/lib/incidentLog.js`          |
-| Tabla de referencia del sector (datos, fuera de la app) | `tools/referencia-sector/`               |
-| Invariantes ejecutables                                | `backend/test/lib.test.js`               |
+| Pieza                                                   | Archivo                                    |
+| ------------------------------------------------------- | ------------------------------------------ |
+| Calibración, eje de contienda, acceso, re-centrado      | `backend/src/lib/autocalc.js`              |
+| Perfiles y bandas de confianza                          | `backend/src/data/profiles.js`             |
+| Monte Carlo, modelo de frecuencia, curva de excedencia  | `backend/src/lib/simulation.js`            |
+| Agregación de portafolio y cascada                      | `backend/src/lib/portfolioSimulation.js`   |
+| Residual del Tratamiento                                | `backend/src/lib/autocalc.js`              |
+| Frecuencia sugerida                                     | `frontend/src/modules/utils.js`            |
+| Equilibrio de Nash (panel aparte)                       | `backend/src/lib/nashEquilibrium.js`       |
+| Umbral de disuasión, Stackelberg (panel aparte)         | `backend/src/lib/stackelbergDeterrence.js` |
+| Procedencia por factor                                  | `backend/src/lib/provenance.js`            |
+| Bitácora de Incidentes                                  | `backend/src/lib/incidentLog.js`           |
+| Tabla de referencia del sector (datos, fuera de la app) | `tools/referencia-sector/`                 |
+| Invariantes ejecutables                                 | `backend/test/lib.test.js`                 |
 
 ### Cómo leer este documento
 
@@ -165,11 +165,11 @@ experto. La banda `bajo` es asimétrica (−0,65 / +0,80); el re-centrado (§5) 
 (§9), así que un error del 50 % en cualquiera de ellos es un error del 50 % en la respuesta. Pero el
 esfuerzo de calibración está repartido de forma muy desigual:
 
-| Factor | Cómo se obtiene hoy | Calibración |
-| --- | --- | --- |
-| **Vulnerabilidad** | Motor de contienda (§3-§6) | 8 anclas, análisis de sensibilidad, 7 versiones |
-| **TEF** | Sugerencia editable de 3 anclas (§7.2) | Sin validación ni sensibilidad |
-| **Magnitud** | La teclea el usuario; min/max por factor de confianza | Ninguna |
+| Factor             | Cómo se obtiene hoy                                   | Calibración                                     |
+| ------------------ | ----------------------------------------------------- | ----------------------------------------------- |
+| **Vulnerabilidad** | Motor de contienda (§3-§6)                            | 8 anclas, análisis de sensibilidad, 7 versiones |
+| **TEF**            | Sugerencia editable de 3 anclas (§7.2)                | Sin validación ni sensibilidad                  |
+| **Magnitud**       | La teclea el usuario; min/max por factor de confianza | Ninguna                                         |
 
 Dos tercios del modelo, que pesan igual que el primero, no tienen ni un ancla ni una prueba. Por eso
 cada riesgo declara la procedencia **de cada factor por separado**, no una sola por riesgo:
@@ -641,11 +641,11 @@ número sin sentido.
 
 Validado contra la verdad — el desvío real del CVaR entre 40 semillas distintas:
 
-| Perfil | Error real | Estimado de 1 corrida |
-| --- | --- | --- |
-| raro-severo (LEF 0,05) | 4,91 % | 4,61 % |
-| medio (LEF 0,6) | 1,54 % | 1,72 % |
-| frecuente (LEF 8) | 0,72 % | 0,56 % |
+| Perfil                 | Error real | Estimado de 1 corrida |
+| ---------------------- | ---------- | --------------------- |
+| raro-severo (LEF 0,05) | 4,91 %     | 4,61 %                |
+| medio (LEF 0,6)        | 1,54 %     | 1,72 %                |
+| frecuente (LEF 8)      | 0,72 %     | 0,56 %                |
 
 **Por qué importa que se reporten.** La muestra útil no es `n`: con el modelo compuesto un año sin
 eventos vale 0 y no aporta información, así que es
@@ -664,10 +664,10 @@ extremos. Sirve de más a un riesgo frecuente y de menos a uno raro.
 
 `POST /api/simulate` tiene dos modos, y manda si el cliente pidió un número:
 
-| `iterations` | Modo | Qué hace |
-| --- | --- | --- |
-| explícito | `fijo` | Corre ese número exacto. Comportamiento de siempre, para reproducir cifras viejas |
-| omitido | `adaptativo` | Corre por lotes hasta bajar del error objetivo del CVaR (2 % por defecto) |
+| `iterations` | Modo         | Qué hace                                                                          |
+| ------------ | ------------ | --------------------------------------------------------------------------------- |
+| explícito    | `fijo`       | Corre ese número exacto. Comportamiento de siempre, para reproducir cifras viejas |
+| omitido      | `adaptativo` | Corre por lotes hasta bajar del error objetivo del CVaR (2 % por defecto)         |
 
 **El primer lote se despeja del LEF**, no es un número redondo: `n = años_útiles_objetivo /
 (1 − e^−LEF)`, apuntando a ~2.000 años en que algo pasó. Después el bucle mide el error real y
@@ -676,11 +676,11 @@ ruidosa no se coma el presupuesto de una.
 
 Medido, con objetivo ±2 %:
 
-| Perfil | 1.er lote | `n` final | Lotes | Error logrado | Tiempo |
-| --- | --- | --- | --- | --- | --- |
-| raro-severo (LEF 0,05) | 41.009 | 74.862 | 2 | 1,82 % | 299 ms |
-| medio (LEF 0,6) | 5.000 | 5.000 | 1 | 1,98 % | 14 ms |
-| frecuente (LEF 8) | 5.000 | 5.000 | 1 | 0,81 % | 25 ms |
+| Perfil                 | 1.er lote | `n` final | Lotes | Error logrado | Tiempo |
+| ---------------------- | --------- | --------- | ----- | ------------- | ------ |
+| raro-severo (LEF 0,05) | 41.009    | 74.862    | 2     | 1,82 %        | 299 ms |
+| medio (LEF 0,6)        | 5.000     | 5.000     | 1     | 1,98 %        | 14 ms  |
+| frecuente (LEF 8)      | 5.000     | 5.000     | 1     | 0,81 %        | 25 ms  |
 
 El raro pasó de 4,91 % a 1,82 % de ruido; los otros dos usan **la mitad** que el viejo tope y
 terminan antes.
@@ -1097,26 +1097,29 @@ Escondidos, el panel sería una máquina de justificar cualquier inversión.
 
 Decisiones tomadas con su razón, para que quien retome esto no las revierta por desconocimiento.
 
-| Decisión                                                 | Razón                                                                                                                             |
-| -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| Tullock sobre un eje calibrado, no `FA × (1 − ENC)`      | La segunda tiene techo estructural (`V ≤ FA`): estado-nación contra defensa básica quedaba topado en 66 % cuando debe rondar 98 % |
-| `m` derivado, no ajustado                                | Dos anclas que comparten atacante cancelan el eje y lo determinan sin suposiciones                                                |
-| Eje de contienda solo en el atacante                     | Validado fuera de muestra: la escala de defensa resultó consistente sin curva propia                                              |
-| Acceso modula R, no C                                    | Describe lo que pasa: cuánto de tu defensa llega a interponerse. Sin el tope de 100 las dos rutas ya son exactamente equivalentes |
-| La Resistencia no se topa en 100                         | Tullock compara una RAZÓN, no dos porcentajes; topar el lado alto subvaloraba la defensa fuerte en toda la grilla                 |
-| Acceso es del riesgo, no del perfil                      | El mismo insider tiene acceso distinto a cada activo                                                                              |
-| Confianza no mueve la media                              | Es incertidumbre epistémica: habla del analista, no del atacante                                                                  |
-| La frecuencia baja con la capacidad                      | La mandan cuántos actores hay y qué tan indiscriminados son, no el empeño de cada uno                                             |
-| Nash fuera de la ruta crítica                            | Sus insumos no son observables                                                                                                    |
-| Los riesgos viejos no se recalculan solos                | Sobrescribir una evaluación guardada destruye la trazabilidad                                                                     |
-| La pérdida del año es una SUMA de eventos                | `LEF × Magnitud` reparte fracciones de evento en todos los años; borra la variabilidad del conteo donde ésa _es_ todo el riesgo   |
-| El año malo se reparte por Euler, no por CVaR individual | El CVaR de cada riesgo ignora con quién coincide, y coincidir es exactamente lo que arma un mal año                               |
-| La cascada explica ocurrencias, no las añade             | El TEF se estima de datos que ya incluyen las veces que un padre lo causó; sumarla encima las cuenta dos veces                    |
-| Adelgazar la cascada quita eventos, no escala            | Escalar la cifra del año inventa años que cuestan una fracción de incendio — la misma falacia que el modelo compuesto corrige     |
-| La LEC recalcula su probabilidad empíricamente           | Con empates, la etiqueta de la escalera miente; y esa curva alimenta el eje Y de la Matriz                                        |
-| El residual guarda su receta, no solo su resultado       | Un número fija la media, nunca la forma: prevenir y contener dan la misma media y colas al triple                                 |
-| Cada ancla lleva su propio Nivel de Acceso               | Emitir la del insider sobre "acceso nulo" metía su acceso dentro de su fuerza, y lo volvía idéntico al crimen organizado          |
-| Dos perfiles no pueden dar el mismo número               | La app ofrecía una elección que el cálculo ignoraba; y ponderar los atributos —la corrección obvia— no lo habría arreglado        |
+| Decisión                                                 | Razón                                                                                                                                                       |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Tullock sobre un eje calibrado, no `FA × (1 − ENC)`      | La segunda tiene techo estructural (`V ≤ FA`): estado-nación contra defensa básica quedaba topado en 66 % cuando debe rondar 98 %                           |
+| `m` derivado, no ajustado                                | Dos anclas que comparten atacante cancelan el eje y lo determinan sin suposiciones                                                                          |
+| Eje de contienda solo en el atacante                     | Validado fuera de muestra: la escala de defensa resultó consistente sin curva propia                                                                        |
+| Acceso modula R, no C                                    | Describe lo que pasa: cuánto de tu defensa llega a interponerse. Sin el tope de 100 las dos rutas ya son exactamente equivalentes                           |
+| La Resistencia no se topa en 100                         | Tullock compara una RAZÓN, no dos porcentajes; topar el lado alto subvaloraba la defensa fuerte en toda la grilla                                           |
+| Acceso es del riesgo, no del perfil                      | El mismo insider tiene acceso distinto a cada activo                                                                                                        |
+| Confianza no mueve la media                              | Es incertidumbre epistémica: habla del analista, no del atacante                                                                                            |
+| La frecuencia baja con la capacidad                      | La mandan cuántos actores hay y qué tan indiscriminados son, no el empeño de cada uno                                                                       |
+| Nash fuera de la ruta crítica                            | Sus insumos no son observables                                                                                                                              |
+| Los riesgos viejos no se recalculan solos                | Sobrescribir una evaluación guardada destruye la trazabilidad                                                                                               |
+| La pérdida del año es una SUMA de eventos                | `LEF × Magnitud` reparte fracciones de evento en todos los años; borra la variabilidad del conteo donde ésa _es_ todo el riesgo                             |
+| El año malo se reparte por Euler, no por CVaR individual | El CVaR de cada riesgo ignora con quién coincide, y coincidir es exactamente lo que arma un mal año                                                         |
+| La cascada explica ocurrencias, no las añade             | El TEF se estima de datos que ya incluyen las veces que un padre lo causó; sumarla encima las cuenta dos veces                                              |
+| Adelgazar la cascada quita eventos, no escala            | Escalar la cifra del año inventa años que cuestan una fracción de incendio — la misma falacia que el modelo compuesto corrige                               |
+| La LEC recalcula su probabilidad empíricamente           | Con empates, la etiqueta de la escalera miente; y esa curva alimenta el eje Y de la Matriz                                                                  |
+| El residual guarda su receta, no solo su resultado       | Un número fija la media, nunca la forma: prevenir y contener dan la misma media y colas al triple                                                           |
+| Cada ancla lleva su propio Nivel de Acceso               | Emitir la del insider sobre "acceso nulo" metía su acceso dentro de su fuerza, y lo volvía idéntico al crimen organizado                                    |
+| Dos perfiles no pueden dar el mismo número               | La app ofrecía una elección que el cálculo ignoraba; y ponderar los atributos —la corrección obvia— no lo habría arreglado                                  |
+| Un campo que no gobierna nada no se guarda               | El Horizonte Temporal se capturaba y se imprimía junto a cifras anuales sin entrar en ningún cálculo: un control que no hace nada enseña una creencia falsa |
+| Una Oportunidad no tiene Perfil de Atacante              | Derivar su Probabilidad de Captura de la contienda de Tullock afirma que mientras mejor defendido estés, menos capturas tu propia oportunidad               |
+| Las 9 magnitudes de una Oportunidad son positivas        | El motor las SUMA; una sola redactada como costo en que se incurre convertiría el Beneficio Anual Esperado en una mezcla de gastos y ganancias              |
 
 ---
 
@@ -1309,6 +1312,42 @@ Un riesgo tipo `oportunidad` usa las mismas cifras pero al revés: un valor espe
 deseable. Se clasifica solo por la media (no hay "cola" que temer en un beneficio) en Significativa
 / Moderada / Menor. Y se **excluye** del Pareto, del mapa de calor y de Tratamiento: sumar un
 beneficio a la "exposición total" o preguntarse cómo mitigarlo no tiene sentido.
+
+**Sin adversario, por definición.** Una Oportunidad nunca deriva su Vulnerabilidad del Perfil de
+Atacante: la casilla de "amenaza deliberada" se desmarca y se oculta, y la sección de perfiles no
+aparece. La razón no es de presentación. La Vulnerabilidad de una amenaza sale de la Función de
+Éxito de Contienda de Tullock (§5) entre la capacidad del atacante y tu fuerza de resistencia;
+aplicarla a una Oportunidad afirmaría que **mientras mejor defendido estés, menos probable es que
+captures tu propia oportunidad**. Aquí la Vulnerabilidad es la _Probabilidad de Captura_ y se
+captura a mano, sin fórmula que la derive.
+
+**Las 9 categorías cambian de signo, no solo de nombre.** El motor SUMA las 9 magnitudes para
+formar la del evento, así que en una Oportunidad las 9 tienen que ser cantidades positivas o el
+Beneficio Anual Esperado estaría sumando un gasto con ganancias. Las que no tienen lectura positiva
+directa (respuesta, reemplazo, multas, investigación) se plantean como **costos evitados**, que sí
+son un beneficio y sí se suman sin contradicción:
+
+| #   | Amenaza                        | Oportunidad                      |
+| --- | ------------------------------ | -------------------------------- |
+| 1   | Pérdida de Productividad       | Productividad Ganada             |
+| 2   | Costos de Respuesta            | Costos de Respuesta Evitados     |
+| 3   | Costos de Reemplazo            | Costos de Reposición Evitados    |
+| 4   | Multas y Sanciones             | Multas y Sanciones Evitadas      |
+| 5   | Daño Reputacional              | Ganancia Reputacional            |
+| 6   | Costos de Investigación        | Costos de Investigación Evitados |
+| 7   | Negocio No Capturado           | Negocio Nuevo Capturado          |
+| 8   | Impacto Comunitario/Societario | Beneficio Comunitario/Societario |
+| 9   | Impacto Ambiental              | Beneficio Ambiental              |
+
+Una categoría que no aplique se deja en 0 — el mismo mecanismo que la app ya usa para lo que no
+viene al caso en una amenaza.
+
+**Lo que sigue sin resolver.** `evaluateFairOpportunity` compara el beneficio contra `aleCritico`,
+que es un umbral de **pérdida**. "Cuánto daño me dolería" y "cuánta ganancia justifica perseguir
+algo" son cantidades distintas sin razón para coincidir, así que los tres niveles están anclados a
+un número que significa otra cosa. Hace falta un umbral de beneficio propio en los Criterios de
+Riesgo. Además, `severity` colapsa: "Oportunidad Significativa" y "Oportunidad Menor" devuelven las
+dos `bajo`, y por eso las Oportunidades se excluyen de toda vista que agrupe por severidad.
 
 ### 13.4 La Matriz de Riesgos: dos ejes que no son el mismo número
 
@@ -1561,9 +1600,9 @@ máquina de justificar cualquier inversión.
 fácil ("al insider no lo disuade nada"): con un activo chico y un costo de intento alto, hasta un
 atacante sin alternativas deja de atacar. Pero eso no es disuasión:
 
-| Motivo | Qué pasó | Durabilidad |
-| --- | --- | --- |
-| `alternativa` | Se fue a otro objetivo. Disuasión real. | Dura mientras el vecino siga siendo más barato |
+| Motivo        | Qué pasó                                                      | Durabilidad                                         |
+| ------------- | ------------------------------------------------------------- | --------------------------------------------------- |
+| `alternativa` | Se fue a otro objetivo. Disuasión real.                       | Dura mientras el vecino siga siendo más barato      |
 | `no-rentable` | No se fue a ningún lado; el botín dejó de cubrir el esfuerzo. | Se revierte si sube el valor o se afloja un control |
 
 Por eso el resultado dice **cuál de los dos** es, y por eso la afirmación defendible sobre el
@@ -1611,11 +1650,11 @@ Enchufarlo al TEF haría que el motor le volviera a aplicar la Vulnerabilidad y 
 defensas **dos veces** — a un robo consumado ya le fallaron las cámaras; restárselas otra vez es
 contarlo dos veces:
 
-| V modelada | LEF real | LEF que reportaría la app | Error |
-| --- | --- | --- | --- |
-| 60 % | 0,40 | 0,240 | subestima 1,7× |
-| 30 % | 0,40 | 0,120 | subestima 3,3× |
-| 6,9 % | 0,40 | 0,028 | subestima 14,5× |
+| V modelada | LEF real | LEF que reportaría la app | Error           |
+| ---------- | -------- | ------------------------- | --------------- |
+| 60 %       | 0,40     | 0,240                     | subestima 1,7×  |
+| 30 %       | 0,40     | 0,120                     | subestima 3,3×  |
+| 6,9 %      | 0,40     | 0,028                     | subestima 14,5× |
 
 Siempre hacia abajo, que es el lado en el que no se puede fallar, y **peor cuanto mejor modeladas
 estén las defensas**. Por eso el día que se mezcle, la mezcla va a nivel LEF: el prior es `TEF · V`
@@ -1626,11 +1665,11 @@ falta estimarlos. El motor sigue trabajando para los riesgos sin datos, que van 
 
 #### Tres estados, no dos
 
-| Estado | Significa | Se usa |
-| --- | --- | --- |
-| `sin_datos` | Nadie lo midió. Ausencia de evidencia. | No |
-| `cero` | Se revisó y no pasó. Evidencia de ausencia. | **Sí** |
-| `conteo` | Pasó N veces. | Sí |
+| Estado      | Significa                                   | Se usa |
+| ----------- | ------------------------------------------- | ------ |
+| `sin_datos` | Nadie lo midió. Ausencia de evidencia.      | No     |
+| `cero`      | Se revisó y no pasó. Evidencia de ausencia. | **Sí** |
+| `conteo`    | Pasó N veces.                               | Sí     |
 
 Tratar "no lo llené" como cero tiraría el riesgo al piso para todo lo que nadie midió, así que
 `sin_datos` es el default y `cero` hay que declararlo a propósito. Un cero **por conteo** se rechaza
@@ -1639,14 +1678,14 @@ por inercia.
 
 #### Un cero no siempre dice lo mismo
 
-La **regla de los tres** acota la tasa real a `3/n` con 95 % de confianza. Pero cuánto *informa* ese
+La **regla de los tres** acota la tasa real a `3/n` con 95 % de confianza. Pero cuánto _informa_ ese
 cero depende de lo que el modelo esperaba — `P(0 eventos) = e^{−LEF·n}`:
 
-| LEF del modelo | P(0 en 5 años) | Qué significa el cero |
-| --- | --- | --- |
-| 1,20 /año | 0,2 % | Evidencia demoledora: el modelo exagera |
-| 0,40 /año | 13,5 % | Débil |
-| 0,10 /año | 61 % | No dice nada |
+| LEF del modelo | P(0 en 5 años) | Qué significa el cero                   |
+| -------------- | -------------- | --------------------------------------- |
+| 1,20 /año      | 0,2 %          | Evidencia demoledora: el modelo exagera |
+| 0,40 /año      | 13,5 %         | Débil                                   |
+| 0,10 /año      | 61 %           | No dice nada                            |
 
 O sea que **el cero es fuerte justo donde los eventos son frecuentes, y no dice nada de los raros y
 catastróficos** — que son los que dominan la cola (§8.5). La interfaz muestra las dos cosas para que
@@ -1748,11 +1787,11 @@ Y en paralelo, **sin tocar ninguna cifra de esa ruta** (§10):
 
 En orden de cuánto mueven la aguja, y ninguno depende de escribir más código:
 
-| Falta | Desbloquea | Por qué importa |
-| --- | --- | --- |
-| **Bitácora propia** con fecha, tipo y exposición | Validación (§16.2) y la mezcla por credibilidad | Es lo único que puede contradecir al modelo. Incluye los ceros: "cero robos de carga en 6 años" es un dato, y de los que más bajan un TEF |
-| **Viajes al año** de la operación | Convertir las tasas por viaje del sector a eventos/año | Sin el denominador, una tasa por viaje abarca un rango de 8× |
-| **Factores de escala** al activo propio | Las colas catastróficas de referencia | Las citadas van de \$90 M a \$4,15 mil M; no son trasladables sin ese factor |
+| Falta                                            | Desbloquea                                             | Por qué importa                                                                                                                           |
+| ------------------------------------------------ | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| **Bitácora propia** con fecha, tipo y exposición | Validación (§16.2) y la mezcla por credibilidad        | Es lo único que puede contradecir al modelo. Incluye los ceros: "cero robos de carga en 6 años" es un dato, y de los que más bajan un TEF |
+| **Viajes al año** de la operación                | Convertir las tasas por viaje del sector a eventos/año | Sin el denominador, una tasa por viaje abarca un rango de 8×                                                                              |
+| **Factores de escala** al activo propio          | Las colas catastróficas de referencia                  | Las citadas van de \$90 M a \$4,15 mil M; no son trasladables sin ese factor                                                              |
 
 Cuando llegue lo primero, la mezcla va a nivel **LEF y no TEF** (§16.2): el prior es `TEF · V` —lo
 que la app ya calcula— y la evidencia entra tal cual. Queda escrito acá para que no se decida

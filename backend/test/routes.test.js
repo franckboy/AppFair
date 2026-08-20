@@ -1267,7 +1267,7 @@ test('PUT /api/register/:riskName: inherentALE/inherentCVaR negativos responden 
         .set('X-API-Key', TEST_API_KEY);
 });
 
-test('PUT /api/register/:riskName: persiste inherentEvaluationLevel/inherentEvaluationClasses/inherentSeverity junto con inherentALE', async () => {
+test('PUT /api/register/:riskName: persiste inherentSeverity, y NO el nivel en prosa ni las clases CSS del inherente', async () => {
     const riskName = 'Riesgo con clasificación de inherente';
 
     const res = await request(app)
@@ -1284,18 +1284,18 @@ test('PUT /api/register/:riskName: persiste inherentEvaluationLevel/inherentEval
             inherentSeverity: 'critico',
         });
     assert.strictEqual(res.status, 200);
-    assert.strictEqual(res.body.entry.inherentEvaluationLevel, 'Crítico — Requiere Acción Inmediata');
-    assert.strictEqual(res.body.entry.inherentEvaluationClasses, 'bg-red-50 text-red-700 border-red-500');
     assert.strictEqual(res.body.entry.inherentSeverity, 'critico');
+    // Se mandan y se ignoran: nada los leía nunca, y las dos se derivan de la severidad al pintar.
+    // Guardarlos era arrastrar una copia de la clasificación que podía quedar desincronizada.
+    assert.strictEqual(res.body.entry.inherentEvaluationLevel, undefined);
+    assert.strictEqual(res.body.entry.inherentEvaluationClasses, undefined);
 
-    // Ausentes -> null, mismo criterio que inherentALE/inherentCVaR (riesgos guardados antes de
+    // Ausente -> null, mismo criterio que inherentALE/inherentCVaR (riesgos guardados antes de
     // que existiera esto, u Oportunidad).
     const nullRes = await request(app)
         .put(`/api/register/${encodeURIComponent(riskName)}`)
         .set('X-API-Key', TEST_API_KEY)
         .send({ ale: 10000, cvar95: 15000, evaluationLevel: 'Aceptable' });
-    assert.strictEqual(nullRes.body.entry.inherentEvaluationLevel, null);
-    assert.strictEqual(nullRes.body.entry.inherentEvaluationClasses, null);
     assert.strictEqual(nullRes.body.entry.inherentSeverity, null);
 
     await request(app)
@@ -1856,13 +1856,16 @@ test('PUT /api/register/:riskName sin ale (número) responde 400', async () => {
     assert.strictEqual(res.status, 400);
 });
 
-test('PUT /api/register/:riskName siempre guarda currency USD, ignorando lo que mande el body', async () => {
+test('PUT /api/register/:riskName no guarda ninguna moneda en la entrada, mande lo que mande el body', async () => {
+    // La app calcula solo en USD y lo dice en cada respuesta que muestra dinero (ver
+    // POST /api/simulate). Repetirlo dentro de cada entrada del Registro era un campo constante
+    // que nadie leía; lo que SÍ importa —que un 'EUR' del body nunca se cuele— sigue probado.
     const riskName = 'Riesgo con moneda de prueba HTTP';
     const putRes = await request(app)
         .put(`/api/register/${encodeURIComponent(riskName)}`)
         .set('X-API-Key', TEST_API_KEY)
         .send({ ale: 10000, cvar95: 15000, evaluationLevel: 'Riesgo Bajo', currency: 'EUR' });
-    assert.strictEqual(putRes.body.entry.currency, 'USD');
+    assert.strictEqual(putRes.body.entry.currency, undefined);
 
     await request(app)
         .delete(`/api/register/${encodeURIComponent(riskName)}`)
@@ -2483,17 +2486,22 @@ test('PUT /api/register/:riskName persiste la Curva de Excedencia de Pérdidas y
         { loss: 50000, probability: 50 },
         { loss: 400000, probability: 1 },
     ];
-    const inherentLossExceedanceCurve = [
-        { loss: 3000, probability: 100 },
-        { loss: 150000, probability: 50 },
-    ];
     const putRes = await request(app)
         .put(`/api/register/${encodeURIComponent(riskName)}`)
         .set('X-API-Key', TEST_API_KEY)
-        .send({ ale: 60000, cvar95: 120000, lossExceedanceCurve, inherentLossExceedanceCurve });
+        .send({
+            ale: 60000,
+            cvar95: 120000,
+            lossExceedanceCurve,
+            // Se manda y se ignora: la curva del INHERENTE no se guarda. El detalle del riesgo
+            // vuelve a simular cada vez que se abre (ver openRiskDetail), así que persistirla era
+            // ~34 puntos por riesgo que nadie leía nunca. La del ACTUAL sí se guarda, porque el
+            // backend la usa para el eje de probabilidad de la Matriz (ver lib/register.js).
+            inherentLossExceedanceCurve: [{ loss: 3000, probability: 100 }],
+        });
     assert.strictEqual(putRes.status, 200);
     assert.deepStrictEqual(putRes.body.entry.lossExceedanceCurve, lossExceedanceCurve);
-    assert.deepStrictEqual(putRes.body.entry.inherentLossExceedanceCurve, inherentLossExceedanceCurve);
+    assert.strictEqual(putRes.body.entry.inherentLossExceedanceCurve, undefined);
 
     const getRes = await request(app).get('/api/register').set('X-API-Key', TEST_API_KEY);
     const saved = getRes.body.risks.find((r) => r.riskName === riskName);

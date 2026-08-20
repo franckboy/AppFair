@@ -3,7 +3,7 @@ import { state } from './state.js';
 import { Modal } from './modal.js';
 import {
     LOSS_FORMS_KEYS,
-    LOSS_FORM_LABELS,
+    lossFormLabels,
     classifyPointSeverity,
     formatCurrency,
     sanitizeHTML,
@@ -348,7 +348,7 @@ export const FairExport = {
             ? LOSS_FORMS_KEYS.map((key) => {
                   const f = r.lossMagnitudes[key];
                   if (!f) return '';
-                  return `<tr><td>${LOSS_FORM_LABELS.tecnico[key]}</td><td>${fmt(f.min)}</td><td>${fmt(f.mode)}</td><td>${fmt(f.max)}</td></tr>`;
+                  return `<tr><td>${lossFormLabels(r.riskType, 'tecnico')[key]}</td><td>${fmt(f.min)}</td><td>${fmt(f.mode)}</td><td>${fmt(f.max)}</td></tr>`;
               }).join('')
             : '<tr><td colspan="4">Este riesgo se guardó antes de que se registrara este desglose.</td></tr>';
 

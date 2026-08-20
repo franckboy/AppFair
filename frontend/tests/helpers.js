@@ -88,10 +88,17 @@ async function connectAndBoot(page, { apiKey = 'test-e2e-key', baseUrl = 'http:/
 // "un riesgo ya analizado" como punto de partida, sin repetir los 4 pasos a mano en cada archivo.
 async function runFullFairAnalysis(page, riskName, { attacker = 'organizado', defense = 'basica' } = {}) {
     await page.fill('#fair-riskName', riskName);
+    // Una Oportunidad no tiene Perfil de Atacante: la sección entera se oculta (ver
+    // App.FairWizard.isAdversarialRisk), así que elegir ahí colgaría esperando visibilidad.
+    // Se lee del DOM en vez de recibirlo por parámetro para que las pruebas que ya fijan
+    // #fair-risk-type antes de llamar aquí no tengan que repetir el dato.
+    const esOportunidad = (await page.locator('#fair-risk-type').inputValue()) === 'oportunidad';
     await page.click('#fair-step1-next');
     await page.waitForTimeout(300);
-    await page.selectOption('#fair-attacker-profile', attacker);
-    await page.selectOption('#fair-defense-profile', defense);
+    if (!esOportunidad) {
+        await page.selectOption('#fair-attacker-profile', attacker);
+        await page.selectOption('#fair-defense-profile', defense);
+    }
     await page.waitForTimeout(800);
     await page.click('#fair-step2-next');
     await page.waitForTimeout(500);

@@ -23,6 +23,68 @@ test.describe('Análisis FAIR completo', () => {
         await expect(cells.nth(7)).toContainText('sin tratar');
     });
 
+    test('una Oportunidad no pasa por el Perfil de Atacante y el Paso 3 le pregunta por ganancias, no por pérdidas', async ({
+        page,
+    }) => {
+        await connectAndBoot(page);
+        const riskName = 'E2E — Certificación que abre un contrato nuevo';
+        await page.fill('#fair-riskName', riskName);
+
+        // La casilla del adversario vive en el Paso 2, todavía sin mostrar — así que aquí se mira
+        // su clase `hidden` (lo que el tipo de riesgo controla) y no su visibilidad en pantalla,
+        // que a esta altura depende del panel del paso.
+        const casillaAdversario = page.locator('#fair-deliberate-threat-container');
+        await expect(casillaAdversario).not.toHaveClass(/\bhidden\b/);
+
+        await page.selectOption('#fair-risk-type', 'oportunidad');
+        await page.waitForTimeout(300);
+
+        // Una oportunidad no tiene atacante. Antes esto no se ocultaba y la "Probabilidad de
+        // Captura" podía salir de la Función de Contienda de Tullock — o sea, mientras mejor
+        // defendido estuvieras, menos probable capturar tu propia oportunidad.
+        await expect(casillaAdversario).toHaveClass(/\bhidden\b/);
+        await expect(page.locator('#fair-deliberate-threat')).not.toBeChecked();
+
+        await page.click('#fair-step1-next');
+        await page.waitForTimeout(400);
+        await expect(page.locator('#fair-attacker-defense-section')).toBeHidden();
+        await expect(page.locator('#fair-access-level-container')).toBeHidden();
+        // Sin perfiles, la Vulnerabilidad es siempre manual: es la probabilidad de CAPTURAR la
+        // oportunidad, tecleada a mano. El texto exacto depende del Modo (Simple/Técnico); lo que
+        // no puede pasar es que hable de causar pérdida, que es lo que decía la prosa de "amenaza
+        // no deliberada" cuando pisaba este encabezado.
+        await expect(page.locator('#vuln-header')).toContainText(/aprovecharla|Captura/);
+        await expect(page.locator('#vuln-header')).not.toContainText('pérdida');
+
+        await page.click('#fair-step2-next');
+        await page.waitForTimeout(400);
+        // Las 9 categorías dejan de preguntar por pérdidas. La 7 es la que más chirriaba: era la
+        // pérdida llamada 'oportunidad' preguntada sobre un riesgo de tipo 'oportunidad'.
+        await expect(page.locator('#lm-title-oportunidad')).toContainText('NUEVAS');
+        await expect(page.locator('#lm-title-reemplazo')).toContainText('ahorrarías');
+        await expect(page.locator('#lm-title-productividad')).not.toContainText('perderías');
+
+        // Y se guarda como lo que es: sin adversario declarado.
+        await page.fill('#lm-oportunidad-mode', '90000');
+        await page.waitForTimeout(600);
+        await page.click('#fair-step3-next');
+        await page.waitForTimeout(400);
+        await Promise.all([
+            page.waitForResponse((r) => r.url().includes('/api/simulate'), { timeout: 15000 }),
+            page.click('#run-simulation-btn'),
+        ]);
+        await page.waitForTimeout(1500);
+
+        const entry = await page.evaluate(async (nombre) => {
+            const res = await fetch('http://localhost:3000/api/register', { headers: { 'X-API-Key': 'test-e2e-key' } });
+            const data = await res.json();
+            return data.risks.find((r) => r.riskName === nombre);
+        }, riskName);
+        expect(entry.riskType).toBe('oportunidad');
+        expect(entry.isDeliberate).toBe(false);
+        expect(entry.evaluationLevel).toMatch(/Oportunidad/);
+    });
+
     test('el asistente siempre abre en el Paso 1 al recargar — no salta directo al Paso 4', async ({ page }) => {
         await connectAndBoot(page);
         await runFullFairAnalysis(page, 'E2E — Incendio en Almacén Este');
@@ -277,10 +339,12 @@ test.describe('Curva de Excedencia de Pérdidas (LEC)', () => {
             const entry = data.risks.find((r) => r.riskName === nombre);
             return {
                 puntos: entry.lossExceedanceCurve ? entry.lossExceedanceCurve.length : 0,
-                inherente: entry.inherentLossExceedanceCurve ? entry.inherentLossExceedanceCurve.length : 0,
+                // La del inherente NO se guarda: el detalle vuelve a simular cada vez que se abre,
+                // así que persistirla era peso muerto que nadie leía nunca.
+                inherente: entry.inherentLossExceedanceCurve === undefined,
             };
         }, riskName);
         expect(guardada.puntos).toBeGreaterThan(20);
-        expect(guardada.inherente).toBeGreaterThan(20);
+        expect(guardada.inherente).toBe(true);
     });
 });
