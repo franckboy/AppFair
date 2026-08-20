@@ -660,10 +660,46 @@ Medido, las iteraciones que harían falta para dejar el CVaR en ±2 % van de **1
 **60.314** (raro-severo): un factor de 47 que un tope fijo de 10.000 no puede cubrir en los dos
 extremos. Sirve de más a un riesgo frecuente y de menos a uno raro.
 
-**Se reportan, no se usan para parar.** Un corte dinámico haría que dos corridas con los mismos
-datos terminaran en `n` distintos, y la app fija la semilla a propósito para que un resultado sea
-reproducible y auditable. Un `n` adaptativo es posible, pero exige devolver también el `n` que se
-usó.
+#### El `n` lo decide el motor, no un tope fijo
+
+`POST /api/simulate` tiene dos modos, y manda si el cliente pidió un número:
+
+| `iterations` | Modo | Qué hace |
+| --- | --- | --- |
+| explícito | `fijo` | Corre ese número exacto. Comportamiento de siempre, para reproducir cifras viejas |
+| omitido | `adaptativo` | Corre por lotes hasta bajar del error objetivo del CVaR (2 % por defecto) |
+
+**El primer lote se despeja del LEF**, no es un número redondo: `n = años_útiles_objetivo /
+(1 − e^−LEF)`, apuntando a ~2.000 años en que algo pasó. Después el bucle mide el error real y
+proyecta `n_objetivo = n · (error/meta)²`, creciendo como mucho ×4 por paso para que una estimación
+ruidosa no se coma el presupuesto de una.
+
+Medido, con objetivo ±2 %:
+
+| Perfil | 1.er lote | `n` final | Lotes | Error logrado | Tiempo |
+| --- | --- | --- | --- | --- | --- |
+| raro-severo (LEF 0,05) | 41.009 | 74.862 | 2 | 1,82 % | 299 ms |
+| medio (LEF 0,6) | 5.000 | 5.000 | 1 | 1,98 % | 14 ms |
+| frecuente (LEF 8) | 5.000 | 5.000 | 1 | 0,81 % | 25 ms |
+
+El raro pasó de 4,91 % a 1,82 % de ruido; los otros dos usan **la mitad** que el viejo tope y
+terminan antes.
+
+**Tres cortes, y el resultado dice cuál fue** (`stoppedBy`): `objetivo`, `tiempo` (presupuesto de
+1,2 s) o `techo` (200.000). Los dos últimos entregan una cifra con más ruido del pedido — eso es
+aceptable, no avisarlo no lo es.
+
+El presupuesto de tiempo es la restricción real, no el techo: 200.000 iteraciones van de 0,8 s
+(riesgo raro) a 3,8 s (frecuente con las 9 categorías), y Node corre esto en un solo hilo. Funciona
+por una coincidencia afortunada: **los riesgos que necesitan más iteraciones son los baratos por
+iteración** — un riesgo raro casi no sortea magnitudes porque casi ningún año trae eventos.
+
+**Reproducibilidad.** Cada lote usa una semilla derivada de la original (mezcla con la proporción
+áurea), así que la misma semilla da el mismo resultado **y el mismo `n`**. El primer lote usa la
+semilla tal cual, de modo que el caso normal —un solo lote— es idéntico bit a bit a una corrida fija
+de ese tamaño. Verificado: lotes concatenados y una corrida larga equivalente coinciden dentro del
+error de muestreo. Como `n` deja de conocerse de antemano, la respuesta **siempre** trae
+`usedIterations`: sin eso una cifra guardada no se puede volver a producir.
 
 **Y nunca se muestran solos.** Este error es el numérico, no el de las entradas. Con un TEF que es
 juicio experto con ±50 % de incertidumbre, el ALE hereda ±50 %, y ninguna cantidad de iteraciones lo

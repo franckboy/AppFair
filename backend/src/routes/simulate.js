@@ -8,6 +8,7 @@ const {
     buildLossExceedanceCurve,
     FREQUENCY_MODELS,
 } = require('../lib/simulation');
+const { runAdaptiveSimulation } = require('../lib/adaptiveSimulation');
 const { evaluateFairThreat, evaluateFairOpportunity } = require('../lib/evaluation');
 const {
     sampleVulnerabilityFromProfiles,
@@ -120,6 +121,9 @@ function createSimulateRouter(store) {
             const {
                 iterations = 10000,
                 seed = 0,
+                // Precisión objetivo del CVaR, en %. Ver más abajo: solo se usa en el modo
+                // adaptativo, o sea cuando NO se pidió un número fijo de iteraciones.
+                targetCvarErrorPercent,
                 tef,
                 vuln,
                 lossMagnitudes = {},
@@ -150,21 +154,41 @@ function createSimulateRouter(store) {
             const criteria = normalizeRiskCriteria(riskCriteria || globalCriteria);
             const formatCurrency = makeCurrencyFormatter();
 
-            const {
-                annualLosses,
-                usedSeed,
-                sensitivity,
-                eventCounts,
-                frequencyModel: usedFrequencyModel,
-            } = runMonteCarloSimulation({
-                iterations,
-                seed,
-                tef,
-                vuln,
-                lossMagnitudes,
-                sampleVuln,
-                frequencyModel,
-            });
+            // CUÁNTAS ITERACIONES. Dos modos, y el que manda es si el cliente pidió un número:
+            //
+            //  - `iterations` explícito → corrida fija de ese tamaño, exactamente como siempre.
+            //    Cero cambio de comportamiento para todo lo ya guardado y para quien quiera
+            //    reproducir una cifra vieja.
+            //  - `iterations` omitido → ADAPTATIVO: se corre por lotes hasta alcanzar la precisión
+            //    objetivo del CVaR, o hasta agotar el presupuesto de tiempo o el techo.
+            //
+            // El tope fijo de 10.000 estaba mal en las dos direcciones (ver el encabezado de
+            // lib/adaptiveSimulation.js): sobra 8× en un riesgo frecuente y falta 6× en uno
+            // raro-severo, que son los que dominan la cola del portafolio.
+            const adaptativo = req.body.iterations === undefined;
+            const corrida = adaptativo
+                ? runAdaptiveSimulation({
+                      seed,
+                      tef,
+                      vuln,
+                      lossMagnitudes,
+                      sampleVuln,
+                      frequencyModel,
+                      ...(typeof targetCvarErrorPercent === 'number' ? { targetCvarErrorPercent } : {}),
+                  })
+                : {
+                      ...runMonteCarloSimulation({
+                          iterations,
+                          seed,
+                          tef,
+                          vuln,
+                          lossMagnitudes,
+                          sampleVuln,
+                          frequencyModel,
+                      }),
+                      usedIterations: iterations,
+                  };
+            const { annualLosses, usedSeed, sensitivity, eventCounts, frequencyModel: usedFrequencyModel } = corrida;
 
             const summary = summarizeLosses(annualLosses, criteria.aleUmbralExcedencia);
 
@@ -195,7 +219,22 @@ function createSimulateRouter(store) {
 
             res.json({
                 usedSeed,
-                iterations,
+                // Las que de verdad se corrieron. En modo adaptativo no se conocen de antemano, así
+                // que sin esto una cifra guardada no se podría volver a producir.
+                iterations: corrida.usedIterations,
+                usedIterations: corrida.usedIterations,
+                // Cómo se decidió ese número, y si se llegó al objetivo. `stoppedBy: 'tiempo'` o
+                // `'techo'` significa que el resultado se entrega con MÁS ruido del pedido — es
+                // información, no un fallo, y por eso viaja en vez de quedarse en el servidor.
+                precision: adaptativo
+                    ? {
+                          mode: 'adaptativo',
+                          targetCvarErrorPercent: corrida.targetCvarErrorPercent,
+                          achievedCvarErrorPercent: corrida.achievedCvarErrorPercent,
+                          stoppedBy: corrida.stoppedBy,
+                          batches: corrida.batches,
+                      }
+                    : { mode: 'fijo' },
                 currency: 'USD',
                 riskType,
                 // Modelo de frecuencia que produjo estas cifras (ver frequencyModel en
