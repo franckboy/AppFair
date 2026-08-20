@@ -10,6 +10,7 @@ import {
     severityToHex,
 } from './utils.js';
 import { STRATEGY_LABELS } from './treatment.js';
+import { PROVENANCE_FACTORS, PROVENANCE_ORIGINS } from './provenance.js';
 
 // ============================================================
 // App.FairExport — arma el HTML imprimible y dispara window.print() para el Informe
@@ -329,6 +330,91 @@ export const FairExport = {
     // aparte del Informe Consolidado; ahora es una sección más dentro de ese mismo informe,
     // una por cada riesgo guardado (ver exportConsolidatedReport). Async porque recalcula el
     // Tratamiento (POST /api/treatment/evaluate) y puede regenerar el histograma.
+    /**
+     * De dónde salió cada uno de los tres factores del ALE.
+     *
+     * El reporte es lo ÚNICO que sale de la app y llega a un directorio, y hasta ahora presentaba
+     * un ALE al dólar sin decir en qué se apoya. `ALE = TEF x V x E[M]` es multilineal: los tres
+     * factores pesan exactamente lo mismo, así que un TEF que es una corazonada arrastra la
+     * respuesta entera — y eso no se veía por ningún lado.
+     *
+     * Se marca explícitamente lo que NO está sostenido por datos observados. El catálogo de la app
+     * no cuenta como dato: es una lista curada de escenarios, no una medición.
+     */
+    /**
+     * En qué se apoya el informe ENTERO, por factor.
+     *
+     * Es, en mi opinión, la cifra más importante del documento: dice cuánto de la exposición total
+     * está sostenido por algo observado y cuánto por juicio sin datos detrás. Sin ella, un lector
+     * no tiene forma de calibrar la confianza que merece el resto de las páginas — y el formato de
+     * un informe con tablas y gráficas induce a creerlas más de lo que corresponde.
+     *
+     * Se calcula sobre las amenazas ANALIZADAS, que son las que aportan las cifras de arriba.
+     */
+    buildProvenanceSummarySection(threatRegister) {
+        if (!threatRegister.length) return '';
+        const esDato = (o) => o === 'historico-propio' || o === 'benchmark-sector';
+
+        const filas = PROVENANCE_FACTORS.map(({ key, label }) => {
+            const conDatos = threatRegister.filter((r) =>
+                esDato(((r.factorProvenance || {})[key] || {}).origen),
+            ).length;
+            const pct = Math.round((conDatos / threatRegister.length) * 100);
+            return `<tr><td><strong>${label}</strong></td><td>${conDatos} de ${threatRegister.length} (${pct} %)</td></tr>`;
+        }).join('');
+
+        const conAlguno = threatRegister.filter((r) =>
+            PROVENANCE_FACTORS.some(({ key }) => esDato(((r.factorProvenance || {})[key] || {}).origen)),
+        ).length;
+        const ninguno = threatRegister.length - conAlguno;
+
+        return `
+                <h3>En qué se apoyan estas cifras</h3>
+                <table>
+                    <tr><th>Factor</th><th>Amenazas con datos observados detrás</th></tr>
+                    ${filas}
+                </table>
+                <p style="font-size:9pt">
+                    ${
+                        ninguno === 0
+                            ? 'Todas las amenazas de este informe tienen al menos un factor sostenido por datos observados.'
+                            : `<strong>${ninguno} de ${threatRegister.length}</strong> amenaza${ninguno === 1 ? '' : 's'} de este informe ${ninguno === 1 ? 'no tiene' : 'no tienen'} NINGÚN factor sostenido por datos observados: sus cifras salen enteramente de juicio experto y del catálogo de la app.`
+                    }
+                    Los tres factores del ALE pesan exactamente lo mismo en el resultado, así que la
+                    calidad de la cifra final la marca el más débil de los tres, no el promedio.
+                </p>`;
+    },
+
+    buildProvenanceSection(r) {
+        const p = r.factorProvenance;
+        if (!p) return '';
+        const etiquetaOrigen = (o) => (PROVENANCE_ORIGINS.find((x) => x.value === o) || {}).label || o || '—';
+        const esDato = (o) => o === 'historico-propio' || o === 'benchmark-sector';
+
+        const filas = PROVENANCE_FACTORS.map(({ key, label }) => {
+            const f = p[key] || {};
+            const respaldo =
+                typeof f.observaciones === 'number'
+                    ? `${f.observaciones} ${f.observaciones === 1 ? 'observación' : 'observaciones'}${f.exposicion ? ` en ${f.exposicion}` : ''}`
+                    : '—';
+            return `<tr><td><strong>${label}</strong></td><td>${etiquetaOrigen(f.origen)}${esDato(f.origen) ? '' : ' <em>(sin datos observados detrás)</em>'}</td><td>${respaldo}</td><td>${sanitizeHTML(f.fuente) || '—'}</td></tr>`;
+        }).join('');
+
+        const sinDatos = PROVENANCE_FACTORS.filter(({ key }) => !esDato((p[key] || {}).origen)).map((f) => f.label);
+        const nota =
+            sinDatos.length === 0
+                ? 'Los tres factores se apoyan en algo observado fuera de esta app.'
+                : `<strong>${sinDatos.join(', ')}</strong> ${sinDatos.length === 1 ? 'no se apoya' : 'no se apoyan'} en ningún dato observado. Como los tres factores pesan igual en el resultado, la cifra de este riesgo hereda esa incertidumbre completa — no una fracción de ella.`;
+
+        return `
+                <h3>Procedencia de los Datos (de dónde salió cada factor)</h3>
+                <table>
+                    <tr><th>Factor</th><th>Origen</th><th>Respaldo</th><th>Fuente declarada</th></tr>
+                    ${filas}
+                </table>
+                <p style="font-size:9pt">${nota}</p>`;
+    },
+
     async buildFullRiskReportSection(r, index) {
         const fmt = (v) =>
             new Intl.NumberFormat('en-US', {
@@ -414,6 +500,7 @@ export const FairExport = {
                     <tr><td><strong>Fecha de esta Apreciación</strong></td><td>${r.assessmentDate || '—'}</td></tr>
                     <tr><td><strong>Lugar / Ubicación Apreciada</strong></td><td>${sanitizeHTML(r.assessmentLocation) || '—'}</td></tr>
                 </table>
+                ${this.buildProvenanceSection(r)}
                 ${
                     r.attackerProfileName || r.defenseProfileName
                         ? `
@@ -616,6 +703,7 @@ export const FairExport = {
                     <tr><td><strong>Exposición Total (suma de ALE de las amenazas)</strong></td><td>${exposicionTotalTexto}</td></tr>
                     <tr><td><strong>Amenazas en nivel Crítico</strong></td><td>${criticos}</td></tr>
                 </table>
+                ${this.buildProvenanceSummarySection(threatRegister)}
             </div>
             <div class="print-section">
                 <h2>Registro de Riesgos</h2>

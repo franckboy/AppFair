@@ -131,4 +131,69 @@ test.describe('Procedencia por factor', () => {
             { API, KEY, RIESGO },
         );
     });
+
+    test('la procedencia llega al informe PDF — el entregable dice en qué se apoya cada cifra', async ({ page }) => {
+        // El informe es lo ÚNICO que sale de la app y llega a un directorio, y presentaba un ALE al
+        // dólar sin decir en qué se apoya. Los tres factores del ALE pesan igual, así que un TEF
+        // que es una corazonada arrastra la respuesta entera — y eso no aparecía por ningún lado.
+        await page.addInitScript(() => {
+            window.print = () => {
+                window.__printCalled = (window.__printCalled || 0) + 1;
+            };
+        });
+        await connectAndBoot(page);
+
+        // Un riesgo con procedencias MEZCLADAS: frecuencia medida, magnitud a ojo. Es el caso que
+        // el informe tiene que saber contar — no el que está todo bien ni el que está todo mal.
+        const riskName = 'E2E Procedencia — Informe';
+        await page.evaluate(
+            async ({ API, KEY, riskName }) => {
+                await fetch(`${API}/api/register/${encodeURIComponent(riskName)}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'X-API-Key': KEY },
+                    body: JSON.stringify({
+                        ale: 90000,
+                        cvar95: 260000,
+                        evaluationLevel: 'Alto — Requiere Tratamiento',
+                        severity: 'alto',
+                        factorProvenance: {
+                            tef: {
+                                origen: 'historico-propio',
+                                observaciones: 7,
+                                exposicion: 3,
+                                fuente: 'Bitácora de la planta 2023-2025',
+                            },
+                            vulnerabilidad: { origen: 'juicio-experto' },
+                            magnitud: { origen: 'juicio-experto' },
+                        },
+                    }),
+                });
+            },
+            { API, KEY, riskName },
+        );
+
+        // Recarga obligatoria: el riesgo se creó por API, y el informe se arma desde el Registro
+        // que la app tiene EN MEMORIA. Sin esto la prueba pasaría o fallaría según qué dejaron
+        // otros specs, no según lo que este acaba de crear.
+        await page.reload({ waitUntil: 'networkidle' });
+        await page.click('#nav-dashboard');
+        await page.waitForTimeout(1000);
+        await page.click('#fair-export-consolidated-btn');
+        await expect.poll(() => page.evaluate(() => window.__printCalled || 0), { timeout: 30000 }).toBeGreaterThan(0);
+
+        const html = await page.locator('#fair-print-report').innerHTML();
+        expect(html).toContain('Procedencia de los Datos');
+        // El origen, el respaldo y la fuente declarada, no solo el título de la sección.
+        expect(html).toContain('Histórico propio');
+        expect(html).toContain('7 observaciones en 3');
+        expect(html).toContain('Bitácora de la planta 2023-2025');
+        // Y lo que NO está sostenido se marca, en vez de pasar como si fuera igual de sólido.
+        expect(html).toContain('sin datos observados detrás');
+
+        // La cifra consolidada: en qué se apoya el informe entero.
+        expect(html).toContain('En qué se apoyan estas cifras');
+        expect(html).toMatch(/de \d+ \(\d+ %\)/);
+        // El encuadre que impide leer el informe como si todo pesara lo mismo.
+        expect(html).toContain('la marca el más débil de los tres');
+    });
 });

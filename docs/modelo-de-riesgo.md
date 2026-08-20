@@ -1218,6 +1218,7 @@ Decisiones tomadas con su razón, para que quien retome esto no las revierta por
 | Se divide por la MODA de V, no por su media                   | La moda cancela el sesgo de Jensen de dividir por una distribución; cambiarla por la media multiplica el error por hasta 13× (medido)                                       |
 | Todo lo que se pinta por severidad se clasifica en el backend | La copia local solo recibía el ALE, así que era ciega al "Crítico por cola": dos tarjetas pegadas podían contradecirse sobre el mismo portafolio                            |
 | Sin CVaR conocido se usa el ALE como piso de cola             | El promedio del peor 5 % nunca es menor que el de todos los años; ignorar esas amenazas dejaría el total de cola cubriendo menos riesgos que el de promedio, y subestimaría |
+| La procedencia viaja al informe, no solo a la pantalla        | El PDF es lo único que sale de la app y llega a un directorio; presentar un ALE al dólar sin decir en qué se apoya lo hace más seguro de sí mismo que la app                |
 
 ---
 
