@@ -219,6 +219,49 @@ test.describe('Modelo de frecuencia: comparador en el detalle del riesgo', () =>
         expect(jerga, `el conteo muestra jerga en Modo Simple: "${jerga ? jerga[0] : ''}"`).toBeNull();
     });
 
+    test('la pantalla dice cuánto ruido de simulación traen sus propias cifras', async ({ page }) => {
+        // El motor calculaba estos errores y no salían de la librería. Sin mostrarlos, volver a
+        // simular un riesgo raro con otra semilla movía el año malo un 5 % y parecía un bug.
+        const riskName = 'E2E Ruido de Simulación';
+        await connectAndBoot(page);
+        await page.evaluate(
+            async ({ API, KEY, riskName }) => {
+                await fetch(`${API}/api/register/${encodeURIComponent(riskName)}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'X-API-Key': KEY },
+                    // Raro-severo a propósito: es donde 10.000 escenarios NO alcanzan, así que la
+                    // nota tiene que salir en su versión de advertencia.
+                    body: JSON.stringify({
+                        riskType: 'amenaza',
+                        vulnManualOverride: true,
+                        tef: { min: 0.08, mode: 0.1, max: 0.12 },
+                        vuln: { min: 45, mode: 50, max: 55 },
+                        lossMagnitudes: { respuesta: { min: 200000, mode: 500000, max: 2000000 } },
+                        seed: 7,
+                        ale: 25000,
+                        cvar95: 400000,
+                    }),
+                });
+            },
+            { API, KEY, riskName },
+        );
+
+        await page.click('#nav-dashboard');
+        await page.waitForTimeout(1500);
+        await page.click(`[data-simulate-risk="${riskName}"]`);
+
+        const nota = page.locator('#fair-mc-error-note');
+        await expect(nota).toBeVisible({ timeout: 20000 });
+        const texto = await nota.innerText();
+
+        // Los DOS errores, no solo el del promedio: el que decide es el del año malo.
+        expect(texto).toMatch(/±[\d.,]+ ?% en el promedio/);
+        expect(texto).toMatch(/±[\d.,]+ ?% en el año malo/);
+        // Y nunca el ruido a secas: al lado tiene que estar de qué está hecha la entrada, o se lee
+        // como si la cifra fuera precisa al decimal.
+        expect(texto).toMatch(/no mide|no si los datos|incertidumbre de las entradas|ruido del cálculo/i);
+    });
+
     // El detalle del riesgo vive en un modal y solo existe tras un clic, así que queda fuera del
     // alcance de simple-mode-no-jargon.spec.js (que recorre páginas). Este comparador es texto
     // nuevo visible para el usuario: su Modo Simple se verifica aquí, con la misma red de jerga.

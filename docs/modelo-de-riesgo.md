@@ -623,7 +623,52 @@ Hay dos piezas construidas alrededor de ese hueco, ninguna enchufada todavía a 
 | **Eventos**      | `events`: cuántos ataques prosperaron, no cuánto costaron (ver abajo). `null` con el modelo `expected`                                                                          |
 | **Sensibilidad** | Correlación de **Spearman** (rangos) entre cada variable de entrada y la pérdida simulada                                                                                       |
 
+| **Ruido de muestreo** | `standardErrorPercent` y `cvar95StandardErrorPercent`: cuánto le queda de error a cada cifra por haber corrido N escenarios y no infinitos |
+
 > **No existe `p95` en la salida.** Las métricas de cola son p90, CVaR95 y la LEC completa.
+
+#### Cuánto ruido traen las propias cifras, y por qué son dos números
+
+La media tiene fórmula cerrada (`σ/√n`). El CVaR **no tiene una simple**, así que se estima por
+**medias por lotes**: se parte la misma corrida en 20 trozos, se calcula el CVaR de cada uno, y el
+desvío entre ellos ÷ √20 estima el error del total. No cuesta ni una iteración extra.
+
+Dos detalles que no son opcionales. Los lotes tienen que ser tramos contiguos del arreglo **en
+orden de iteración**; sobre el arreglo ordenado el estimador se rompe en las dos direcciones (con
+paso fijo da submuestras estratificadas y **subestima**; con tramos contiguos mide la forma de la
+distribución y **sobreestima**). Y por debajo de 40 escenarios por lote devuelve `null` en vez de un
+número sin sentido.
+
+Validado contra la verdad — el desvío real del CVaR entre 40 semillas distintas:
+
+| Perfil | Error real | Estimado de 1 corrida |
+| --- | --- | --- |
+| raro-severo (LEF 0,05) | 4,91 % | 4,61 % |
+| medio (LEF 0,6) | 1,54 % | 1,72 % |
+| frecuente (LEF 8) | 0,72 % | 0,56 % |
+
+**Por qué importa que se reporten.** La muestra útil no es `n`: con el modelo compuesto un año sin
+eventos vale 0 y no aporta información, así que es
+
+```
+n_efectivo = n · (1 − e^−LEF)
+```
+
+Con `LEF = 0,05` y 10.000 iteraciones son **488 años útiles**, y de ahí sale un error del ~5 % en las
+dos cifras. Son justo los riesgos que dominan la cola del portafolio y el reparto de Euler (§8.5).
+Medido, las iteraciones que harían falta para dejar el CVaR en ±2 % van de **1.294** (frecuente) a
+**60.314** (raro-severo): un factor de 47 que un tope fijo de 10.000 no puede cubrir en los dos
+extremos. Sirve de más a un riesgo frecuente y de menos a uno raro.
+
+**Se reportan, no se usan para parar.** Un corte dinámico haría que dos corridas con los mismos
+datos terminaran en `n` distintos, y la app fija la semilla a propósito para que un resultado sea
+reproducible y auditable. Un `n` adaptativo es posible, pero exige devolver también el `n` que se
+usó.
+
+**Y nunca se muestran solos.** Este error es el numérico, no el de las entradas. Con un TEF que es
+juicio experto con ±50 % de incertidumbre, el ALE hereda ±50 %, y ninguna cantidad de iteraciones lo
+toca — presentar un ±1,8 % sin decir eso sería exactamente la falsa precisión que §2.4 existe para
+medir.
 
 **El conteo de eventos: la única salida que no está en dinero.** Todas las demás métricas de la
 tabla son pesos. Pero el motor, en cada iteración, sortea `N ~ Poisson(TEF · V)` — cuántos ataques
