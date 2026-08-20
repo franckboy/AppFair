@@ -27,6 +27,11 @@ export const LOSS_FORMS_KEYS = [
 // generan dinámicamente en App.FairWizard.populateLossMagnitudeForms() en vez de existir
 // ya en el HTML. Técnico usa el nombre FAIR/contable de cada forma de pérdida; Simple lo
 // convierte en la pregunta que de verdad hay que responder.
+//
+// Las preguntas se redactan para cubrir CUALQUIER amenaza, no solo robo/intrusión: un
+// incendio, una crecida, una falla de equipo o un fraude interno pasan por las mismas 9
+// categorías. Una categoría que no aplique se deja en 0 — es el mecanismo que la app ya usa
+// para lo que no viene al caso, y no hace falta ninguno nuevo.
 export const LOSS_FORM_LABELS = {
     tecnico: {
         productividad: '1. Pérdida de Productividad',
@@ -41,8 +46,8 @@ export const LOSS_FORM_LABELS = {
     },
     simple: {
         productividad: '1. ¿Cuánto perderías por gente que no puede trabajar mientras pasa esto?',
-        respuesta: '2. ¿Cuánto costaría responder de inmediato (investigar, contener, avisar)?',
-        reemplazo: '3. ¿Cuánto costaría reemplazar o reparar lo dañado o robado?',
+        respuesta: '2. ¿Cuánto costaría responder de inmediato (contener, investigar, avisar)?',
+        reemplazo: '3. ¿Cuánto costaría reponer o reparar lo que se dañe, se pierda o te roben?',
         multas: '4. ¿Tendrías que pagar alguna multa o sanción legal?',
         reputacion: '5. ¿Cuánto te costaría recuperar tu imagen o la confianza de tus clientes?',
         investigacion: '6. ¿Cuánto costaría investigar a fondo qué pasó?',
@@ -51,6 +56,55 @@ export const LOSS_FORM_LABELS = {
         ambiental: '9. ¿Habría algún costo ambiental (limpieza, remediación, multas)?',
     },
 };
+
+// Las MISMAS 9 categorías cuando el riesgo es una Oportunidad (riesgo positivo).
+//
+// No es cosmético: el motor SUMA las 9 categorías para formar la magnitud del evento, así que
+// en una Oportunidad las 9 tienen que ser cantidades POSITIVAS o el "Beneficio Anual Esperado"
+// estaría sumando peras con manzanas. Por eso las que no tienen lectura positiva directa
+// (respuesta, reemplazo, multas, investigación) se plantean como costos EVITADOS — que sí son
+// un beneficio y sí se suman con los demás sin contradicción.
+//
+// Antes esto no existía y una Oportunidad heredaba las preguntas de pérdida tal cual: la app
+// preguntaba "¿cuánto costaría reparar lo dañado?" sobre algo que el usuario QUIERE que pase, y
+// la categoría 7 ("¿cuánto negocio perderías?") era la pérdida llamada 'oportunidad' dentro de
+// un riesgo de tipo 'oportunidad'. Nadie puede contestar eso sin invertirlo mentalmente.
+export const GAIN_FORM_LABELS = {
+    tecnico: {
+        productividad: '1. Productividad Ganada',
+        respuesta: '2. Costos de Respuesta Evitados',
+        reemplazo: '3. Costos de Reposición Evitados',
+        multas: '4. Multas y Sanciones Evitadas',
+        reputacion: '5. Ganancia Reputacional',
+        investigacion: '6. Costos de Investigación Evitados',
+        oportunidad: '7. Negocio Nuevo Capturado (Ventaja Competitiva)',
+        comunitario: '8. Beneficio Comunitario/Societario',
+        ambiental: '9. Beneficio Ambiental',
+    },
+    simple: {
+        productividad: '1. ¿Cuánto más podría producir tu gente si esto se da?',
+        respuesta: '2. ¿Cuánto te ahorrarías en atender emergencias que ya no ocurrirían?',
+        reemplazo: '3. ¿Cuánto te ahorrarías en reponer o reparar cosas?',
+        multas: '4. ¿Te ahorrarías alguna multa o sanción legal?',
+        reputacion: '5. ¿Cuánto vale la imagen o la confianza que ganarías?',
+        investigacion: '6. ¿Cuánto te ahorrarías en investigar incidentes?',
+        oportunidad: '7. ¿Cuánto negocio o ventas NUEVAS te traería?',
+        comunitario: '8. ¿Traería algún beneficio a la comunidad que se pueda valorar en dinero?',
+        ambiental: '9. ¿Habría algún beneficio ambiental que se pueda valorar en dinero?',
+    },
+};
+
+/**
+ * Etiquetas de las 9 categorías para el tipo de riesgo y el modo dados. Un solo lugar donde se
+ * decide, en vez de que cada pantalla (Paso 3, detalle del Registro, reporte PDF, redistribución
+ * de magnitud) elija su diccionario a mano y se olvide de Oportunidad — que fue justo lo que pasó.
+ * @param {string} riskType 'amenaza' | 'oportunidad'
+ * @param {string} mode 'simple' | 'tecnico'
+ */
+export function lossFormLabels(riskType, mode) {
+    const dic = riskType === 'oportunidad' ? GAIN_FORM_LABELS : LOSS_FORM_LABELS;
+    return mode === 'simple' ? dic.simple : dic.tecnico;
+}
 export const LOSS_FIELD_LABELS = {
     tecnico: { min: 'Costo (min) — calculado', mode: 'Costo (Más Probable)', max: 'Costo (max) — calculado' },
     simple: {
@@ -77,9 +131,32 @@ export const SENSITIVITY_LABELS_SIMPLE = {
     'lm:comunitario': 'Impacto en la comunidad',
     'lm:ambiental': 'Impacto ambiental',
 };
-export function sensitivityLabel(factor) {
-    if (App.UIMode.mode === 'simple' && factor.key && SENSITIVITY_LABELS_SIMPLE[factor.key]) {
-        return SENSITIVITY_LABELS_SIMPLE[factor.key];
+
+// Los mismos impulsores en una Oportunidad. El backend manda las mismas claves (no sabe de tipos
+// de riesgo, ver lib/simulation.js); lo único que cambia es cómo se nombran en pantalla.
+export const SENSITIVITY_LABELS_SIMPLE_OPORTUNIDAD = {
+    tef: 'Qué tan seguido se presenta',
+    vulnerabilidad: 'Qué tan probable es aprovecharla',
+    'lm:productividad': 'Productividad ganada',
+    'lm:respuesta': 'Respuesta que te ahorras',
+    'lm:reemplazo': 'Reposición que te ahorras',
+    'lm:multas': 'Multas que te ahorras',
+    'lm:reputacion': 'Imagen ganada',
+    'lm:investigacion': 'Investigación que te ahorras',
+    'lm:oportunidad': 'Negocio nuevo',
+    'lm:comunitario': 'Beneficio a la comunidad',
+    'lm:ambiental': 'Beneficio ambiental',
+};
+
+/**
+ * @param {{key?:string, name:string}} factor
+ * @param {string} [riskType] 'oportunidad' invierte el sentido de las etiquetas. Se omite en las
+ *   vistas consolidadas del Registro, que ya excluyen las Oportunidades del agregado.
+ */
+export function sensitivityLabel(factor, riskType) {
+    const dic = riskType === 'oportunidad' ? SENSITIVITY_LABELS_SIMPLE_OPORTUNIDAD : SENSITIVITY_LABELS_SIMPLE;
+    if (App.UIMode.mode === 'simple' && factor.key && dic[factor.key]) {
+        return dic[factor.key];
     }
     return factor.name;
 }

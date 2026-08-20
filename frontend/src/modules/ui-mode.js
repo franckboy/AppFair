@@ -1,6 +1,6 @@
 import { App } from './app-namespace.js';
 import { state } from './state.js';
-import { LOSS_FORMS_KEYS, LOSS_FORM_LABELS, LOSS_FIELD_LABELS, showToast } from './utils.js';
+import { LOSS_FORMS_KEYS, LOSS_FIELD_LABELS, lossFormLabels, showToast } from './utils.js';
 
 // --- Modo Simple / Modo Técnico ---
 // Cambia SOLO el lenguaje que ve el usuario — nunca el cálculo. Los mismos campos, las
@@ -317,7 +317,7 @@ export const UIMode = {
         // Categorías de Magnitud de Pérdida (Paso 3): solo cambia el texto de sus
         // etiquetas, nunca se re-renderiza el formulario completo — así no se pierde lo
         // que el usuario ya haya escrito al cambiar de Modo Simple/Técnico.
-        const lossTitles = isSimple ? LOSS_FORM_LABELS.simple : LOSS_FORM_LABELS.tecnico;
+        const lossTitles = lossFormLabels(state.fair.riskType, isSimple ? 'simple' : 'tecnico');
         const lossFields = isSimple ? LOSS_FIELD_LABELS.simple : LOSS_FIELD_LABELS.tecnico;
         LOSS_FORMS_KEYS.forEach((key) => {
             const titleEl = document.getElementById(`lm-title-${key}`);

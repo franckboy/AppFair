@@ -3,6 +3,7 @@ import { App } from './app-namespace.js';
 import {
     LOSS_FORMS_KEYS,
     LOSS_FORM_LABELS,
+    lossFormLabels,
     classifyPointSeverity,
     computeCoveredIsoClauses,
     debounce,
@@ -244,6 +245,55 @@ describe('sensitivityLabel', () => {
     it('usa el nombre técnico si la key no tiene etiqueta corta (o no hay key)', () => {
         expect(sensitivityLabel({ name: 'Algo sin key' })).toBe('Algo sin key');
         expect(sensitivityLabel({ key: 'no-existe', name: 'Fallback' })).toBe('Fallback');
+    });
+
+    it('en una Oportunidad invierte el sentido: el mismo impulsor deja de nombrarse como pérdida', () => {
+        const factor = { key: 'lm:oportunidad', name: 'Negocio No Capturado (Ventaja Competitiva)' };
+        expect(sensitivityLabel(factor, 'amenaza')).toBe('Negocio perdido');
+        expect(sensitivityLabel(factor, 'oportunidad')).toBe('Negocio nuevo');
+    });
+
+    it('sin riskType se comporta como Amenaza — es lo que usan las vistas consolidadas', () => {
+        expect(sensitivityLabel({ key: 'vulnerabilidad', name: 'Vulnerabilidad' })).toBe(
+            'Qué tan probable es que funcione',
+        );
+    });
+});
+
+describe('lossFormLabels', () => {
+    it('una Amenaza pregunta por costos; una Oportunidad, por lo que ganas o te ahorras', () => {
+        expect(lossFormLabels('amenaza', 'simple').reemplazo).toMatch(/costaría reponer o reparar/);
+        expect(lossFormLabels('oportunidad', 'simple').reemplazo).toMatch(/te ahorrarías/);
+    });
+
+    it('la categoría 7 deja de ser "negocio perdido" dentro de un riesgo de tipo oportunidad', () => {
+        // El absurdo que esto corrige: la pérdida llamada 'oportunidad' preguntada sobre un riesgo
+        // de tipo 'oportunidad' — "¿cuánto negocio perderías?" sobre algo que el usuario QUIERE.
+        expect(lossFormLabels('amenaza', 'simple').oportunidad).toMatch(/perderías/);
+        expect(lossFormLabels('oportunidad', 'simple').oportunidad).toMatch(/NUEVAS te traería/);
+    });
+
+    it('las 9 categorías existen en los cuatro diccionarios, o el Paso 3 quedaría con huecos', () => {
+        ['amenaza', 'oportunidad'].forEach((tipo) => {
+            ['simple', 'tecnico'].forEach((modo) => {
+                const dic = lossFormLabels(tipo, modo);
+                LOSS_FORMS_KEYS.forEach((k) => expect(typeof dic[k]).toBe('string'));
+            });
+        });
+    });
+
+    it('en una Oportunidad las 9 son cantidades positivas — el motor las SUMA para formar la magnitud', () => {
+        // Si alguna se redactara como un costo en que se INCURRE al capturar la oportunidad, el
+        // "Beneficio Anual Esperado" estaría sumando un gasto junto con ganancias.
+        const dic = lossFormLabels('oportunidad', 'tecnico');
+        expect(dic.respuesta).toMatch(/Evitados/);
+        expect(dic.reemplazo).toMatch(/Evitados/);
+        expect(dic.multas).toMatch(/Evitadas/);
+        expect(dic.investigacion).toMatch(/Evitados/);
+    });
+
+    it('un tipo desconocido cae a Amenaza, no a undefined', () => {
+        expect(lossFormLabels(undefined, 'tecnico').multas).toBe(LOSS_FORM_LABELS.tecnico.multas);
     });
 });
 

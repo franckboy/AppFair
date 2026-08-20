@@ -4,7 +4,7 @@ import { renderProvenanceRows, readProvenanceRows, emptyProvenance } from './pro
 import { Modal } from './modal.js';
 import {
     LOSS_FORMS_KEYS,
-    LOSS_FORM_LABELS,
+    lossFormLabels,
     LOSS_FIELD_LABELS,
     buildHistogramBins,
     computeSuggestedTef,
@@ -578,7 +578,11 @@ export const FairWizard = {
     toggleRiskTypeLabels() {
         const isOpportunity = document.getElementById('fair-risk-type').value === 'oportunidad';
         state.fair.riskType = isOpportunity ? 'oportunidad' : 'amenaza';
-        App.UIMode.applyLabels();
+        // applyDeliberateThreatMode ya llama a applyLabels() al final, y además es quien decide si
+        // hay adversario — que ahora depende del tipo de riesgo. Pasar por ahí (en vez de llamar a
+        // applyLabels directo) es lo que hace que elegir "Oportunidad" esconda el Perfil de
+        // Atacante en el acto, sin esperar a que el usuario llegue al Paso 2.
+        this.applyDeliberateThreatMode();
     },
 
     // ¿Este dato guardado corresponde a una amenaza deliberada? No basta con leer la bandera:
@@ -640,11 +644,36 @@ export const FairWizard = {
                 : `Solo el ${restante}% de tu defensa alcanza a interponerse — el resto se lo salta por estar ya adentro.`;
     },
 
+    // ¿Este riesgo tiene un adversario que lo provoca a propósito? Dos cosas lo niegan:
+    //   - La casilla "¿Es una amenaza deliberada?" desmarcada (sismo, incendio accidental, falla).
+    //   - Que el riesgo sea una OPORTUNIDAD. Una oportunidad no tiene atacante por definición, y
+    //     derivar su "Probabilidad de Captura" de la Función de Contienda de Tullock afirmaría un
+    //     disparate: que mientras MEJOR defendido estés, MENOS probable es que captures tu propia
+    //     oportunidad. La etiqueta decía "Probabilidad de Captura" y el generador de abajo era
+    //     adversarial — el mismo patrón de etiqueta-correcta-sobre-mecanismo-equivocado que ya
+    //     costó el Horizonte Temporal.
+    isAdversarialRisk() {
+        const tipo = document.getElementById('fair-risk-type');
+        if (tipo && tipo.value === 'oportunidad') return false;
+        const casilla = document.getElementById('fair-deliberate-threat');
+        return !!(casilla && casilla.checked);
+    },
+
     applyDeliberateThreatMode() {
         // El catálogo de niveles llega en el arranque (App.Api.bootstrap), después de init() —
         // poblar aquí cubre tanto el primer render como retomar un riesgo, sin un hook aparte.
         this.populateAccessLevels();
-        const deliberada = document.getElementById('fair-deliberate-threat').checked;
+        const esOportunidad = document.getElementById('fair-risk-type').value === 'oportunidad';
+        // La casilla se desmarca de verdad, no solo se esconde: es lo que se persiste como
+        // `isDeliberate`, así que dejarla marcada bajo un contenedor oculto guardaría "esta
+        // oportunidad tiene un atacante deliberado". Cubre también las oportunidades ya guardadas
+        // con isDeliberate=true, que al retomarse quedan corregidas.
+        const casilla = document.getElementById('fair-deliberate-threat');
+        if (esOportunidad && casilla) casilla.checked = false;
+        const contenedorCasilla = document.getElementById('fair-deliberate-threat-container');
+        if (contenedorCasilla) contenedorCasilla.classList.toggle('hidden', esOportunidad);
+
+        const deliberada = this.isAdversarialRisk();
         const seccionPerfiles = document.getElementById('fair-attacker-defense-section');
         if (seccionPerfiles) seccionPerfiles.classList.toggle('hidden', !deliberada);
         // Sin adversario no hay "acceso del atacante" que declarar: un incendio no tiene
@@ -678,6 +707,11 @@ export const FairWizard = {
     applyDeliberateThreatLabels() {
         const casilla = document.getElementById('fair-deliberate-threat');
         if (!casilla) return;
+        // Una Oportunidad ya trae su propio texto de Vulnerabilidad desde el diccionario de
+        // App.UIMode ("Probabilidad de Captura"). Pisarlo aquí con la prosa de "no deliberada"
+        // ("¿qué tan probable es que te cause pérdida?") lo devolvería al idioma de las amenazas,
+        // que es justo lo que este bloque de cambios corrige.
+        if (document.getElementById('fair-risk-type').value === 'oportunidad') return;
         const deliberada = casilla.checked;
         const simple = App.UIMode.mode === 'simple';
 
@@ -1105,7 +1139,7 @@ export const FairWizard = {
             const row = document.createElement('div');
             row.className = 'flex items-center gap-2';
             row.innerHTML = `
-                <label for="lm-redistribute-${k}" class="text-sm" style="flex:1">${sanitizeHTML(LOSS_FORM_LABELS.tecnico[k])}</label>
+                <label for="lm-redistribute-${k}" class="text-sm" style="flex:1">${sanitizeHTML(lossFormLabels(state.fair.riskType, 'tecnico')[k])}</label>
                 <input type="number" id="lm-redistribute-${k}" class="form-input" style="width:70px" min="0" max="100" value="${defaultPct[k]}">
                 <span class="text-sm">%</span>
                 <span id="lm-redistribute-${k}-amount" class="text-sm text-gray-500" style="width:90px; text-align:right">${fmt((total.mode * defaultPct[k]) / 100)}</span>
@@ -1296,7 +1330,7 @@ export const FairWizard = {
     populateLossMagnitudeForms() {
         const container = document.getElementById('loss-magnitude-forms');
         const isSimple = App.UIMode.mode === 'simple';
-        const titles = isSimple ? LOSS_FORM_LABELS.simple : LOSS_FORM_LABELS.tecnico;
+        const titles = lossFormLabels(state.fair.riskType, isSimple ? 'simple' : 'tecnico');
         const fieldLabels = isSimple ? LOSS_FIELD_LABELS.simple : LOSS_FIELD_LABELS.tecnico;
         container.innerHTML = LOSS_FORMS_KEYS.map(
             (key) => `
@@ -1710,7 +1744,7 @@ export const FairWizard = {
                 const color = s.correlation >= 0 ? '#3B82F6' : '#EF4444';
                 return `
                 <div class="mb-2">
-                    <div class="flex justify-between text-sm"><span>${sensitivityLabel(s)}</span><span>${(s.correlation * 100).toFixed(1)}%</span></div>
+                    <div class="flex justify-between text-sm"><span>${sensitivityLabel(s, state.fair.riskType)}</span><span>${(s.correlation * 100).toFixed(1)}%</span></div>
                     <div class="w-full bg-gray-200 rounded h-2"><div class="h-2 rounded" style="width:${pct}%; background-color:${color};"></div></div>
                 </div>`;
             })

@@ -265,14 +265,15 @@ function createRegisterRouter(store) {
                 // vulnManualOverride).
                 inherentALE = null,
                 inherentCVaR = null,
-                // Clasificación (Bajo/Medio/Alto/Crítico) del Riesgo Inherente — ver
-                // POST /api/simulate, que ya la calcula (evaluateFairThreat) y manda dentro de
-                // inherentEvaluation. Mismo criterio que inherentALE/inherentCVaR arriba: null
-                // para Oportunidad, o para riesgos guardados antes de que existiera esto. Antes
-                // el frontend reimplementaba este banding a mano (solo mirando inherentALE, nunca
-                // inherentCVaR) — se persiste aquí para que nunca tenga que volver a hacerlo.
-                inherentEvaluationLevel = null,
-                inherentEvaluationClasses = null,
+                // Severidad (bajo/medio/alto/critico) del Riesgo Inherente — ver POST /api/simulate,
+                // que ya la calcula (evaluateFairThreat) y la manda dentro de inherentEvaluation.
+                // Mismo criterio que inherentALE/inherentCVaR arriba: null para Oportunidad, o para
+                // riesgos guardados antes de que existiera esto. Antes el frontend reimplementaba
+                // este banding a mano (solo mirando inherentALE, nunca inherentCVaR) — se persiste
+                // aquí para que nunca tenga que volver a hacerlo (ver computeFairRiskEquivalents).
+                //
+                // El nivel en prosa y las clases CSS del inherente NO se guardan: nada las leía
+                // nunca, y las dos se derivan de esta severidad en el momento de pintar.
                 inherentSeverity = null,
                 securityPlan = '—',
                 // tef/vuln/lossMagnitudes/seed son opcionales (un riesgo guardado antes de que
@@ -398,7 +399,6 @@ function createRegisterRouter(store) {
                 // esto la recalcula la próxima vez que se simule, y la vista se oculta mientras
                 // tanto (mismo patrón que inherentALE).
                 lossExceedanceCurve = null,
-                inherentLossExceedanceCurve = null,
                 // Sello del modelo de Vulnerabilidad con el que se calculó este riesgo (ver
                 // CALIBRATION_VERSION en lib/autocalc.js). Llega desde la respuesta
                 // de POST /api/simulate, vía el frontend. `null` = guardado antes de que existiera
@@ -547,7 +547,6 @@ function createRegisterRouter(store) {
             // para los riesgos que todavía no la traen.
             for (const [nombre, curva] of [
                 ['lossExceedanceCurve', lossExceedanceCurve],
-                ['inherentLossExceedanceCurve', inherentLossExceedanceCurve],
                 // La del RESIDUAL viaja dentro de la Decisión de Tratamiento (no como campo suelto
                 // de la entrada) porque pertenece a ESA decisión: quitar la decisión debe llevarse
                 // la curva con ella, sin dejar una curva huérfana que ya no describe nada.
@@ -593,7 +592,6 @@ function createRegisterRouter(store) {
                 asset,
                 assetId,
                 owner,
-                currency: 'USD',
                 ale,
                 cvar95,
                 median,
@@ -602,8 +600,6 @@ function createRegisterRouter(store) {
                 p90,
                 inherentALE,
                 inherentCVaR,
-                inherentEvaluationLevel,
-                inherentEvaluationClasses,
                 inherentSeverity,
                 riskType,
                 evaluationLevel,
@@ -653,7 +649,6 @@ function createRegisterRouter(store) {
                 chartLabels,
                 chartData,
                 lossExceedanceCurve,
-                inherentLossExceedanceCurve,
                 calibrationVersion,
                 isDeliberate,
                 accessLevel,
