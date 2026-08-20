@@ -483,6 +483,9 @@ export const FairRegister = {
                     calibrationVersion: state.fair.lastCalibrationVersion ?? null,
                     isDeliberate: deliberada,
                     accessLevel: deliberada ? document.getElementById('fair-access-level').value : 'nulo',
+                    // Unidad en la que se mide el riesgo (ver backend/src/lib/exposure.js).
+                    // null = años, o sea el comportamiento de todo riesgo anterior a esto.
+                    exposure: App.FairWizard.readExposure(),
                     chartLabels: chart ? chart.data.labels : null,
                     chartData: chart ? chart.data.datasets[0].data : null,
                 },

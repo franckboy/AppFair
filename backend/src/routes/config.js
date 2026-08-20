@@ -14,12 +14,8 @@ const { hazardStandards, isoProcessClauses, rimsClauses } = require('../data/sta
 const { normalizeRiskCriteria } = require('../lib/riskCriteria');
 const { CALIBRATION_VERSION, ACCESS_LEVELS } = require('../lib/autocalc');
 const { DEFAULT_OUTSIDE_OPTION_FRACTION } = require('../lib/stackelbergDeterrence');
-const {
-    EXPOSURE_UNITS,
-    normalizeIncidentLog,
-    validateIncidentLog,
-    summarizeIncidentLog,
-} = require('../lib/incidentLog');
+const { EXPOSURE_UNITS } = require('../lib/exposure');
+const { normalizeIncidentLog, validateIncidentLog, summarizeIncidentLog } = require('../lib/incidentLog');
 const { asyncHandler } = require('../middleware/asyncHandler');
 
 function createConfigRouter(store) {
@@ -52,6 +48,9 @@ function createConfigRouter(store) {
             // calibrationVersion: dos copias del mismo juicio se desincronizan sin que nadie se
             // entere, y esta manda sobre un número que después se lleva a un comité.
             outsideOptionFractions: DEFAULT_OUTSIDE_OPTION_FRACTION,
+            // Las unidades de exposición las necesita el wizard (Paso 2), no solo la bitácora:
+            // ahora el RIESGO también declara en cuál se mide (ver lib/exposure.js).
+            exposureUnits: EXPOSURE_UNITS,
             // Niveles de Acceso / Proximidad, para poblar el selector del Paso 2 sin duplicar la
             // tabla en el frontend (misma razón que calibrationVersion).
             accessLevels: ACCESS_LEVELS,

@@ -13,6 +13,8 @@ const {
     calculateResidualFromSimulation,
 } = require('../lib/autocalc');
 const { solveNashEquilibrium } = require('../lib/nashEquilibrium');
+const { calibrateFrequency } = require('../lib/frequencyCalibration');
+const { validateExposure } = require('../lib/exposure');
 const {
     DEFAULT_OUTSIDE_OPTION_FRACTION,
     deterrenceThreshold,
@@ -68,6 +70,30 @@ function createAutocalcRouter() {
     // el resultado real de esa simulación (no una escala proporcional de un ALE/CVaR ya
     // conocido). Sin ellos, cae al camino de siempre (comparación por moda, sin residualALE/
     // residualCVaR) — retrocompatible con cualquier otro consumidor de esta ruta.
+    // El único de los tres factores del ALE que no tenía autocálculo. Existían /vulnerability,
+    // /loss-magnitude, /reduccion-ale, /nash-equilibrium y /deterrence — el TEF salía de una
+    // corazonada, pese a que su elasticidad es 1, la misma que la de la Vulnerabilidad.
+    //
+    // A diferencia de los demás autocálculos, éste NO deriva de perfiles: mezcla el triángulo que
+    // el usuario ya declaró (prior) con un conteo de incidentes propio (evidencia), vía
+    // Poisson-Gamma. Los dos pasos que no se pueden saltar —invertir de pérdidas a intentos, y
+    // convertir de la unidad de exposición a años— viven en lib/frequencyCalibration.js.
+    router.post('/frequency', (req, res) => {
+        const { tef, vuln, observedEvents, observedExposure, exposure = null } = req.body;
+
+        const tefError = validateTriangularRange(tef, 'tef');
+        if (tefError) return res.status(400).json({ error: tefError });
+        const exposureError = validateExposure(exposure);
+        if (exposureError) return res.status(400).json({ error: exposureError });
+
+        const resultado = calibrateFrequency({ tef, vuln, observedEvents, observedExposure, exposure });
+        // calibrateFrequency valida lo suyo (Vulnerabilidad utilizable, exposición > 0) y devuelve
+        // el motivo en vez de un número mal: se traduce a 400 tal cual, sin reescribirlo, para que
+        // el mensaje que ve el usuario sea el mismo que explica el rechazo en el código.
+        if (resultado.error) return res.status(400).json({ error: resultado.error });
+        res.json(resultado);
+    });
+
     router.post('/reduccion-ale', (req, res) => {
         const {
             attackerKey,

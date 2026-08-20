@@ -85,6 +85,90 @@ test.describe('Análisis FAIR completo', () => {
         expect(entry.evaluationLevel).toMatch(/Oportunidad/);
     });
 
+    test('un riesgo medido por viaje declara su exposición, la persiste, y calibra su Frecuencia con un histórico propio', async ({
+        page,
+    }) => {
+        await connectAndBoot(page);
+        const riskName = 'E2E — Robo de carga en tránsito';
+        await page.fill('#fair-riskName', riskName);
+        await page.click('#fair-step1-next');
+        await page.waitForTimeout(300);
+        await page.selectOption('#fair-attacker-profile', 'organizado');
+        await page.selectOption('#fair-defense-profile', 'basica');
+        await page.waitForTimeout(800);
+
+        // Por defecto: años, y el campo "cuántas al año" no aparece — comportamiento de siempre.
+        await expect(page.locator('#fair-exposure-annual-container')).toBeHidden();
+
+        await page.selectOption('#fair-exposure-unit', 'viajes');
+        await page.waitForTimeout(200);
+        await expect(page.locator('#fair-exposure-annual-container')).toBeVisible();
+        await page.fill('#fair-exposure-annual', '1200');
+        await page.dispatchEvent('#fair-exposure-annual', 'input');
+        await page.waitForTimeout(200);
+        // La app dice el MISMO riesgo en las dos unidades: es lo que evita teclear 12 pensando en
+        // viajes cuando el campo pide intentos al año.
+        await expect(page.locator('#fair-exposure-explanation')).toContainText('por viaje');
+
+        // Calibrar con el histórico: 3 pérdidas en 1.200 viajes.
+        await page.fill('#tef-min', '5');
+        await page.fill('#tef-mode', '10');
+        await page.fill('#tef-max', '18');
+        await page.click('#fair-calibrate-frequency-btn');
+        await page.waitForTimeout(300);
+        await page.fill('#freq-cal-events', '3');
+        await page.fill('#freq-cal-exposure', '1200');
+        await Promise.all([
+            page.waitForResponse((r) => r.url().includes('/api/autocalc/frequency'), { timeout: 15000 }),
+            page.click('#freq-cal-run-btn'),
+        ]);
+        await page.waitForTimeout(400);
+        // El peso del dato propio sale del ancho del rango declarado, no de una constante a dedo.
+        await expect(page.locator('#freq-cal-result')).toContainText('Peso de tu dato');
+        await expect(page.locator('#freq-cal-result')).toContainText('años');
+
+        const tefAntes = await page.locator('#tef-mode').inputValue();
+        await page.click('#freq-cal-adopt-btn');
+        await page.waitForTimeout(400);
+        const tefDespues = await page.locator('#tef-mode').inputValue();
+        expect(Number(tefDespues)).not.toBe(Number(tefAntes));
+        // El histórico implica MÁS intentos que la estimación (3 pérdidas pese a los controles),
+        // así que la calibración sube la frecuencia, no la baja.
+        expect(Number(tefDespues)).toBeGreaterThan(Number(tefAntes));
+
+        await page.click('#fair-step2-next');
+        await page.waitForTimeout(400);
+        await page.fill('#lm-reemplazo-mode', '80000');
+        await page.waitForTimeout(600);
+        await page.click('#fair-step3-next');
+        await page.waitForTimeout(400);
+        await Promise.all([
+            page.waitForResponse((r) => r.url().includes('/api/simulate'), { timeout: 15000 }),
+            page.click('#run-simulation-btn'),
+        ]);
+        await page.waitForTimeout(1500);
+
+        const entry = await page.evaluate(async (nombre) => {
+            const res = await fetch('http://localhost:3000/api/register', { headers: { 'X-API-Key': 'test-e2e-key' } });
+            const data = await res.json();
+            return data.risks.find((r) => r.riskName === nombre);
+        }, riskName);
+        expect(entry.exposure).toEqual({ unit: 'viajes', annual: 1200 });
+        // El TEF sigue siendo ANUAL y canónico: la exposición es cómo se llega a él, no una unidad
+        // alternativa en la que el motor trabaje.
+        expect(entry.tef.mode).toBeCloseTo(Number(tefDespues), 2);
+
+        // Y al retomarlo, la exposición vuelve tal cual.
+        await page.reload({ waitUntil: 'networkidle' });
+        await page.click('#nav-dashboard');
+        await page.waitForTimeout(500);
+        const row = page.locator('#quick-concentrated-table-body tr', { hasText: riskName });
+        await row.locator('[data-analyze-fair]').click();
+        await page.waitForTimeout(800);
+        await expect(page.locator('#fair-exposure-unit')).toHaveValue('viajes');
+        await expect(page.locator('#fair-exposure-annual')).toHaveValue('1200');
+    });
+
     test('el asistente siempre abre en el Paso 1 al recargar — no salta directo al Paso 4', async ({ page }) => {
         await connectAndBoot(page);
         await runFullFairAnalysis(page, 'E2E — Incendio en Almacén Este');
