@@ -962,6 +962,19 @@ export const Treatment = {
         }`;
         this.renderInvestmentVerdict('fair-seguro-rosi', 'fair-seguro-verdict', result.transferir.verdict);
 
+        // Un botón "Adoptar" que al pulsarse no puede hacer nada es peor que un botón apagado: el
+        // usuario no tiene forma de saber que le falta un paso. Se deshabilita mientras Transferir
+        // no esté cotizado, y el título dice por qué.
+        const adoptarSeguro = document.getElementById('treatment-adopt-transferir-btn');
+        if (adoptarSeguro) {
+            adoptarSeguro.disabled = !transferirCalculable;
+            adoptarSeguro.classList.toggle('opacity-50', !transferirCalculable);
+            adoptarSeguro.classList.toggle('cursor-not-allowed', !transferirCalculable);
+            adoptarSeguro.title = transferirCalculable
+                ? ''
+                : 'Primero usa "Cotizar con simulación": sin la cotización no hay pérdida residual que registrar.';
+        }
+
         document.getElementById('fair-evitar-costo-display').textContent = formatCurrency(result.evitar.cost);
         document.getElementById('fair-evitar-evitada').textContent = formatCurrency(result.evitar.avoidedLoss);
         const evitarEl = document.getElementById('fair-evitar-beneficio');
@@ -1117,6 +1130,18 @@ export const Treatment = {
         const entry = state.treatment.currentEntry;
         const result = state.treatment.lastResult;
         if (!entry || !result || !result[strategyKey]) return;
+        // Sin residual no hay decisión que registrar. Pasa con Transferir mientras no se haya
+        // cotizado: un deducible se aplica escenario por escenario y el Registro no los guarda, así
+        // que residualALE viene null. Antes esto salía igual y el servidor lo rechazaba con un 400
+        // que nadie veía — el usuario clicaba "Adoptar", leía "Se adoptó" y no cambiaba nada.
+        if (typeof result[strategyKey].residualALE !== 'number') {
+            showToast(
+                strategyKey === 'transferir'
+                    ? 'Primero usa "Cotizar con simulación": sin la cotización no hay pérdida residual que registrar.'
+                    : `"${STRATEGY_LABELS[strategyKey]}" todavía no tiene una pérdida residual calculada.`,
+            );
+            return;
+        }
         // residualCVaR es null para Transferir (fuera de alcance, ver evaluateTreatmentStrategies)
         // o si este riesgo no tiene un CVaR95 conocido — se omite del todo en vez de mandar
         // `null` explícito, así register.js no tiene que distinguir "nunca vino" de "vino null".
@@ -1166,19 +1191,26 @@ export const Treatment = {
             if (tope) receta.damageCap = tope;
             decision.residualInputs = receta;
         }
-        await this._persistDecision(entry, decision);
-        showToast(`Se adoptó "${STRATEGY_LABELS[strategyKey]}" como la decisión de tratamiento de este riesgo.`);
+        if (await this._persistDecision(entry, decision)) {
+            showToast(`Se adoptó "${STRATEGY_LABELS[strategyKey]}" como la decisión de tratamiento de este riesgo.`);
+        }
     },
 
     async clearDecision() {
         const entry = state.treatment.currentEntry;
         if (!entry) return;
-        await this._persistDecision(entry, null);
-        showToast('Se quitó la decisión de tratamiento — el riesgo vuelve a estar sin decidir.');
+        if (await this._persistDecision(entry, null)) {
+            showToast('Se quitó la decisión de tratamiento — el riesgo vuelve a estar sin decidir.');
+        }
     },
 
     // Mismo patrón que persistTreatment: PUT reemplaza la entrada completa, así que se manda
     // spread (...entry) y solo se pisa treatmentDecision, para no perder el resto de sus datos.
+    /**
+     * @returns {Promise<boolean>} si de verdad se guardó. Bug real: antes no devolvía nada y
+     * adoptStrategy anunciaba "Se adoptó ..." pase lo que pase — con el PUT rechazado por el
+     * servidor, el usuario veía el mensaje de éxito y ningún cambio. Silencioso y engañoso a la vez.
+     */
     async _persistDecision(entry, decision) {
         let res;
         try {
@@ -1188,7 +1220,7 @@ export const Treatment = {
             });
         } catch (e) {
             showToast(e.userMessage || 'No se pudo guardar la decisión de tratamiento.');
-            return;
+            return false;
         }
         if (state.treatment.currentEntry && state.treatment.currentEntry.id === entry.id) {
             state.treatment.currentEntry = res.entry;
@@ -1196,6 +1228,7 @@ export const Treatment = {
         const idx = (state.fair.riskRegister || []).findIndex((r) => r.id === entry.id);
         if (idx !== -1) state.fair.riskRegister[idx] = res.entry;
         this.renderTreatmentDecision();
+        return true;
     },
 };
 
