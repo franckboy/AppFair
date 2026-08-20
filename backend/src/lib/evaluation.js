@@ -66,10 +66,41 @@ function evaluateResidualRisk(value, rrtBands, hardCap = null) {
  * @param {{aleAceptablePercent:number, aleCritico:number}} criteria
  * @param {(n:number) => string} formatCurrency
  */
-function evaluateFairThreat(ale, cvar95, criteria, formatCurrency) {
+/**
+ * Los tres cortes en dinero que definen las bandas, derivados de los Criterios de Riesgo. En un
+ * solo lugar porque los usan dos cosas distintas: evaluar un RIESGO (que mira promedio y cola) y
+ * ubicar un MONTO suelto en su banda (ver classifyAmountSeverity).
+ */
+function riskBands(criteria) {
     const { aleAceptablePercent, aleCritico } = criteria;
     const aleAceptable = aleCritico * (aleAceptablePercent / 100);
-    const aleMedio = aleAceptable + (aleCritico - aleAceptable) / 2;
+    return { aleAceptable, aleMedio: aleAceptable + (aleCritico - aleAceptable) / 2, aleCritico };
+}
+
+/**
+ * En qué banda cae un MONTO, sin más contexto. No es lo mismo que evaluar un riesgo:
+ * evaluateFairThreat mira promedio Y cola, y escala a Crítico cuando la cola se pasa aunque el
+ * promedio esté dentro del apetito. Esto responde algo más chico y más literal — "¿dónde cae esta
+ * cifra?" — y existe para que un indicador pueda colorearse por EL NÚMERO QUE MUESTRA.
+ *
+ * Ésa es la regla que separa a los dos, y fusionarlos fue un error real: la tarjeta de Riesgo
+ * Residual mostraba un promedio dentro del apetito y lo pintaba de rojo por una cola que no estaba
+ * en pantalla. Además ese rojo era AMBIGUO — no se distinguía de "tu promedio se pasó", que pide
+ * un tratamiento distinto: reducir frecuencia en vez de contener el daño.
+ *
+ * @returns {'bajo'|'medio'|'alto'|'critico'|null}
+ */
+function classifyAmountSeverity(amount, criteria) {
+    if (typeof amount !== 'number' || !Number.isFinite(amount)) return null;
+    const { aleAceptable, aleMedio, aleCritico } = riskBands(criteria);
+    if (amount > aleCritico) return 'critico';
+    if (amount > aleMedio) return 'alto';
+    if (amount > aleAceptable) return 'medio';
+    return 'bajo';
+}
+
+function evaluateFairThreat(ale, cvar95, criteria, formatCurrency) {
+    const { aleAceptable, aleMedio, aleCritico } = riskBands(criteria);
 
     if (ale > aleCritico) {
         return {
@@ -139,4 +170,10 @@ function evaluateFairOpportunity(benefit, criteria, formatCurrency) {
     };
 }
 
-module.exports = { evaluateResidualRisk, evaluateFairThreat, evaluateFairOpportunity };
+module.exports = {
+    riskBands,
+    classifyAmountSeverity,
+    evaluateResidualRisk,
+    evaluateFairThreat,
+    evaluateFairOpportunity,
+};

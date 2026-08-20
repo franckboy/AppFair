@@ -55,7 +55,7 @@ const {
     RELIABILITY_TO_PROBABILITY,
     evaluateTreatmentStrategies,
 } = require('../src/lib/treatment');
-const { evaluateFairThreat } = require('../src/lib/evaluation');
+const { evaluateFairThreat, classifyAmountSeverity } = require('../src/lib/evaluation');
 const { normalizeRiskCriteria, validateRiskCriteriaOverride } = require('../src/lib/riskCriteria');
 const {
     calculateParetoAnalysis,
@@ -4900,4 +4900,27 @@ test('residualPair: sin decisión usa el riesgo tal cual; con decisión, su resi
     // piso cae al ALE residual en vez de desaparecer del total.
     const sinCola = { ale: 1000, cvar95: 4000, treatmentDecision: { residualALE: 200 } };
     assert.deepStrictEqual(residualPair(sinCola), { ale: 200, cvar: null, cvarFloor: 200 });
+});
+
+test('classifyAmountSeverity ubica un MONTO en su banda, sin la regla de cola', () => {
+    // Distinta de evaluateFairThreat a propósito: ésa evalúa un RIESGO y escala a Crítico cuando
+    // la cola se pasa aunque el promedio esté bien. Ésta responde algo más literal, y existe para
+    // que un indicador pueda colorearse por LA CIFRA QUE MUESTRA.
+    const criteria = { aleAceptablePercent: 20, aleCritico: 500000 };
+    // aleAceptable = 100.000; aleMedio = 300.000.
+    assert.strictEqual(classifyAmountSeverity(50000, criteria), 'bajo');
+    assert.strictEqual(classifyAmountSeverity(200418, criteria), 'medio');
+    assert.strictEqual(classifyAmountSeverity(400000, criteria), 'alto');
+    assert.strictEqual(classifyAmountSeverity(600000, criteria), 'critico');
+    assert.strictEqual(classifyAmountSeverity(null, criteria), null);
+});
+
+test('classifyAmountSeverity NO escala por cola — ésa es toda la diferencia con evaluateFairThreat', () => {
+    const criteria = { aleAceptablePercent: 20, aleCritico: 500000 };
+    // Mismo promedio, dentro del apetito. El RIESGO es Crítico por su cola...
+    const riesgo = evaluateFairThreat(200418, 3183724, criteria, (n) => `$${n}`);
+    assert.strictEqual(riesgo.severity, 'critico');
+    assert.match(riesgo.level, /cola/);
+    // ...pero ESE MONTO sigue cayendo en Medio, que es lo que el mosaico del promedio debe pintar.
+    assert.strictEqual(classifyAmountSeverity(200418, criteria), 'medio');
 });
