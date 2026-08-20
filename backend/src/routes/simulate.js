@@ -219,6 +219,17 @@ function createSimulateRouter(store) {
                     // esto, un P90 de $0 (normal en un riesgo raro con el modelo compuesto) se ve
                     // como un error de la app en vez de como la respuesta que es.
                     zeroLossYearsPercent: summary.zeroLossYearsPercent,
+                    // Cuánto ruido de MUESTREO le queda a cada cifra por haber corrido N escenarios
+                    // en vez de infinitos (ver summarizeLosses). El motor los calculaba desde hacía
+                    // tiempo y no salían de la librería: dos corridas del mismo riesgo con semillas
+                    // distintas podían mover el CVaR un 5 % y eso se leía como un bug de la app en
+                    // vez de como lo que es. El del CVaR va aparte porque no es el mismo número: en
+                    // un riesgo raro casi todos los años valen 0 y no aportan, así que la muestra
+                    // útil es n·(1−e^−LEF) y no n.
+                    standardError: summary.standardError,
+                    standardErrorPercent: summary.standardErrorPercent,
+                    cvar95StandardError: summary.cvar95StandardError,
+                    cvar95StandardErrorPercent: summary.cvar95StandardErrorPercent,
                     exceedanceThreshold: criteria.aleUmbralExcedencia,
                     inherentALE: inherent.inherentALE,
                     inherentCVaR: inherent.inherentCVaR,

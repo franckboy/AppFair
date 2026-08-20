@@ -18,6 +18,7 @@ const {
     runMonteCarloSimulation,
     summarizeLosses,
     summarizeEventCounts,
+    estimateTailStandardError,
     pearsonCorrelation,
     buildLossExceedanceCurve,
     LEC_EXCEEDANCE_PROBABILITIES,
@@ -4346,4 +4347,102 @@ test('bitácora: rechaza lo que no se podría usar después', () => {
         }),
         null,
     );
+});
+
+test('estimateTailStandardError: acierta el error REAL del CVaR, medido contra 40 semillas', () => {
+    // El CVaR no tiene una fórmula de error estándar simple como la media, así que se estima por
+    // medias por lotes. Esta prueba no verifica la aritmética del estimador sino que ACIERTE: se
+    // calcula la verdad (el desvío del CVaR entre semillas distintas) y se compara con lo que el
+    // estimador saca de UNA sola corrida.
+    const perfil = {
+        tef: { min: 0.08, mode: 0.1, max: 0.12 },
+        vuln: { min: 45, mode: 50, max: 55 },
+        lossMagnitudes: { respuesta: { min: 200000, mode: 500000, max: 2000000 } },
+    };
+    const cvars = [];
+    for (let seed = 1; seed <= 40; seed++) {
+        cvars.push(
+            summarizeLosses(runMonteCarloSimulation({ ...perfil, iterations: 10000, seed }).annualLosses).cvar95,
+        );
+    }
+    const media = cvars.reduce((a, b) => a + b, 0) / cvars.length;
+    const verdad = (100 * Math.sqrt(cvars.reduce((a, c) => a + (c - media) ** 2, 0) / (cvars.length - 1))) / media;
+
+    const estimado = summarizeLosses(
+        runMonteCarloSimulation({ ...perfil, iterations: 10000, seed: 7 }).annualLosses,
+    ).cvar95StandardErrorPercent;
+
+    // Dentro del 40 % de la verdad. No se pide más: el estimador sale de una sola corrida y la
+    // decisión que sustenta ("¿alcanzan las iteraciones?") no necesita más precisión que esa.
+    assert.ok(
+        Math.abs(estimado - verdad) / verdad < 0.4,
+        `estimado ${estimado.toFixed(2)} % contra verdad ${verdad.toFixed(2)} %`,
+    );
+    // Y tiene que ser grande: es el perfil raro-severo, donde 10.000 iteraciones NO alcanzan.
+    assert.ok(estimado > 3, `un riesgo raro-severo debería acusar ruido alto, dio ${estimado}`);
+});
+
+test('estimateTailStandardError: el orden de las pérdidas importa, y en las dos direcciones', () => {
+    // Dos errores REALES cometidos al construir esto, los dos por darle al estimador un arreglo
+    // ordenado. Los lotes tienen que ser tramos contiguos del arreglo EN ORDEN DE ITERACIÓN, que es
+    // lo único que produce submuestras independientes.
+    const perfil = {
+        tef: { min: 0.08, mode: 0.1, max: 0.12 },
+        vuln: { min: 45, mode: 50, max: 55 },
+        lossMagnitudes: { respuesta: { min: 200000, mode: 500000, max: 2000000 } },
+    };
+    const perdidas = runMonteCarloSimulation({ ...perfil, iterations: 10000, seed: 7 }).annualLosses;
+    const cvar = summarizeLosses(perdidas).cvar95;
+    const correcto = estimateTailStandardError(perdidas, cvar);
+
+    // (a) Con PASO FIJO sobre el arreglo ordenado —el primer intento— cada lote queda como una
+    // muestra estratificada de la distribución entera: mucha menos varianza que una muestra real y
+    // el error sale hundido. Medido en su momento: 0,98 % contra un 4,91 % verdadero.
+    const ordenadas = [...perdidas].sort((a, b) => a - b);
+    const conPaso = [];
+    for (let i = 0; i < 20; i++) {
+        const lote = [];
+        for (let j = i; j < ordenadas.length; j += 20) lote.push(ordenadas[j]);
+        const cola = lote.slice(Math.floor(lote.length * 0.95));
+        conPaso.push(cola.reduce((a, b) => a + b, 0) / cola.length);
+    }
+    const mediaPaso = conPaso.reduce((a, b) => a + b, 0) / conPaso.length;
+    const errPaso = Math.sqrt(conPaso.reduce((a, c) => a + (c - mediaPaso) ** 2, 0) / 19) / Math.sqrt(20);
+    assert.ok(errPaso < correcto / 2, `el muestreo estratificado debería subestimar: ${errPaso} vs ${correcto}`);
+
+    // (b) Con tramos CONTIGUOS sobre el arreglo ordenado el error va al revés: el primer lote son
+    // todas las pérdidas chicas y el último todas las grandes, así que el desvío entre lotes mide
+    // la forma de la distribución y no el ruido de muestreo. Sale disparado hacia arriba.
+    const contiguoOrdenado = estimateTailStandardError(ordenadas, cvar);
+    assert.ok(
+        contiguoOrdenado > correcto * 2,
+        `partir la distribución en tramos debería inflar el error: ${contiguoOrdenado} vs ${correcto}`,
+    );
+});
+
+test('estimateTailStandardError: sin muestra suficiente devuelve null, no un número inventado', () => {
+    // Con lotes de menos de 40 escenarios, el desvío entre lotes mide el ruido del propio estimador
+    // y no el del CVaR. Decir "no se puede estimar" es la respuesta correcta.
+    const chica = runMonteCarloSimulation({
+        iterations: 200,
+        seed: 3,
+        tef: { min: 1, mode: 2, max: 3 },
+        vuln: { min: 20, mode: 40, max: 60 },
+        lossMagnitudes: { respuesta: { min: 1000, mode: 5000, max: 20000 } },
+    }).annualLosses;
+    assert.strictEqual(summarizeLosses(chica).cvar95StandardErrorPercent, null);
+});
+
+test('el error del CVaR baja como 1/raíz(N), igual que el de la media', () => {
+    const perfil = {
+        tef: { min: 1.6, mode: 2, max: 2.4 },
+        vuln: { min: 28, mode: 30, max: 32 },
+        lossMagnitudes: { respuesta: { min: 50000, mode: 120000, max: 400000 } },
+    };
+    const a = summarizeLosses(runMonteCarloSimulation({ ...perfil, iterations: 2500, seed: 11 }).annualLosses);
+    const b = summarizeLosses(runMonteCarloSimulation({ ...perfil, iterations: 10000, seed: 11 }).annualLosses);
+    // Cuadruplicar N debería reducir el error a la mitad. Se acepta un margen ancho porque el
+    // estimador es ruidoso por construcción.
+    const razon = a.cvar95StandardErrorPercent / b.cvar95StandardErrorPercent;
+    assert.ok(razon > 1.3 && razon < 3.2, `razón ${razon} fuera de lo esperable para un 1/raíz(N)`);
 });

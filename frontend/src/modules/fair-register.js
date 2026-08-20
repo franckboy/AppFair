@@ -2574,6 +2574,48 @@ export const FairRegister = {
             notaEventos.classList.add('hidden');
         }
 
+        // RUIDO DE SIMULACIÓN. El motor calculaba estos dos errores desde hacía tiempo y no salían
+        // de la librería — mismo caso que el conteo de eventos. Sin mostrarlos, volver a simular el
+        // mismo riesgo con otra semilla movía el año malo hasta un 5 % y eso se leía como un bug de
+        // la app en vez de como lo que es: la muestra útil de un riesgo raro no es 10.000 años sino
+        // los ~500 en que pasó algo.
+        //
+        // Se muestran los DOS porque no son el mismo número, y el que decide es el del año malo
+        // (alimenta los Criterios de Riesgo y el reparto del portafolio).
+        const notaError = document.getElementById('fair-mc-error-note');
+        const errAle = summary.standardErrorPercent;
+        const errCvar = summary.cvar95StandardErrorPercent;
+        if (notaError && typeof errAle === 'number') {
+            const simple = App.UIMode.mode === 'simple';
+            // El umbral no es estético: por debajo del 1 % el ruido es irrelevante para decidir,
+            // por encima del 3 % el número todavía baila lo bastante como para no apoyar una
+            // decisión de inversión sin volver a simular con más escenarios.
+            const peor = Math.max(errAle, typeof errCvar === 'number' ? errCvar : 0);
+            const alto = peor > 3;
+            notaError.className = alto
+                ? 'mt-2 p-2 rounded text-sm bg-amber-50 border-l-4 border-amber-400 text-amber-900'
+                : 'mt-2 p-2 rounded text-sm bg-gray-100 text-gray-700';
+            const cifras =
+                typeof errCvar === 'number'
+                    ? `±${errAle.toFixed(1)} % en el promedio y ±${errCvar.toFixed(1)} % en el año malo`
+                    : `±${errAle.toFixed(1)} % en el promedio`;
+            const base = simple
+                ? `Estas cifras salen de simular ${(result.iterations || 0).toLocaleString('es-MX')} años al azar, así que traen algo de ruido propio: ${cifras}. Volver a calcular da números un poco distintos, y eso es normal.`
+                : `Ruido de muestreo por usar ${(result.iterations || 0).toLocaleString('es-MX')} escenarios en vez de infinitos: ${cifras}.`;
+            const aviso = alto
+                ? ' Es bastante: en un riesgo poco frecuente la mayoría de los años no pasa nada y no aportan información, así que la muestra útil es mucho más chica de lo que parece. Conviene tomar estas cifras como aproximadas.'
+                : '';
+            // Nunca el ruido a secas: al lado del error de simulación tiene que estar de qué está
+            // hecha la entrada, o se lee como si el número fuera preciso al decimal.
+            const encuadre = simple
+                ? ' Ojo: esto solo mide el ruido del cálculo, no si los datos que le diste son buenos.'
+                : ' Mide solo el error numérico, no la incertidumbre de las entradas (ver Calidad de la Información).';
+            notaError.textContent = base + aviso + encuadre;
+            notaError.classList.remove('hidden');
+        } else if (notaError) {
+            notaError.classList.add('hidden');
+        }
+
         // Riesgo Inherente: solo lo trae Amenaza (ver calculateInherentRiskFromSimulation en el
         // backend). Se oculta la línea entera en vez de mostrar "$NaN".
         const inherenteLine = document.getElementById('fair-inherente-line');
