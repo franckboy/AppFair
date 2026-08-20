@@ -1535,8 +1535,27 @@ punto y difieren en el resto, así que hacen falta los dos.
 
 De aquí sale una limitación que se propaga a toda la app: como esto es una **truncación** y no un
 escalado, no existe ningún `k` que la represente. Por eso Transferir no tiene punto residual en la
-Matriz (§13.4), no se escala en el portafolio (§8.2), y su residual se marca como no calculable en
-vez de inventarse.
+Matriz (§13.4) ni se escala en el portafolio (§8.2).
+
+**Y de aquí salía también un hueco operativo, ya cerrado.** El Registro persiste un histograma de
+20 barras, no las pérdidas una por una. Fuera del wizard —o sea en toda la página de Tratamiento—
+no había con qué aplicar el deducible escenario por escenario, así que Transferir se declaraba
+**no calculable** y para cotizar una póliza había que volver al Análisis FAIR y re-simular el
+riesgo entero.
+
+Ahora la propia página de Tratamiento puede pedir esa corrida: `simulateForTransfer` en
+`POST /api/treatment/evaluate` vuelve a correr Monte Carlo con el `tef`/`vuln`/`lossMagnitudes` y
+la **semilla original** del riesgo, que es lo que parea las dos corridas y hace que la Pérdida
+Evitada sea el efecto de la póliza y no el ruido de muestreo. Va detrás de un botón explícito y no
+automático porque esa ruta se llama con debounce en cada tecla del formulario.
+
+Con los escenarios en la mano aparece además el **CVaR residual de Transferir**, que antes no
+existía. No es un descuido que faltara: a diferencia de Mitigar —donde el residual es la
+distribución entera escalada por una constante, así que todas sus estadísticas escalan igual— una
+póliza deja intactos los años baratos y corta los caros, de modo que el CVaR retenido **no se
+puede derivar del ALE retenido**. Hay que sacarlo del arreglo. Verificado en la suite: con una
+cola de 500.000 y deducible de 10.000 con cobertura ilimitada, el CVaR retenido es exactamente
+10.000, y escalarlo proporcionalmente al ALE habría dado un número completamente distinto.
 
 ### 14.3 Mitigar + Transferir: inducción hacia atrás
 
