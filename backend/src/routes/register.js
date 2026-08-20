@@ -18,6 +18,7 @@ const { defaultRiskCriteria, defenseProfiles } = require('../data/profiles');
 const { normalizeRiskCriteria, validateRiskCriteriaOverride } = require('../lib/riskCriteria');
 const { asyncHandler } = require('../middleware/asyncHandler');
 const { ACCESS_LEVELS, DEFAULT_ACCESS_LEVEL } = require('../lib/autocalc');
+const { validateExposure, normalizeExposure } = require('../lib/exposure');
 const { simulatePortfolio, simulateResidualPortfolio, PORTFOLIO_ITERATIONS } = require('../lib/portfolioSimulation');
 const { validateFactorProvenance, normalizeFactorProvenance, summarizeProvenance } = require('../lib/provenance');
 
@@ -415,6 +416,12 @@ function createRegisterRouter(store) {
                 // del RIESGO, no del Perfil de Atacante: el mismo empleado desleal tiene acceso
                 // total a su bodega y ninguno al centro de datos.
                 accessLevel = DEFAULT_ACCESS_LEVEL,
+                // En qué unidad se mide este riesgo y cuánta exposición hay al año (ver
+                // lib/exposure.js). `null` = la unidad neutra (años, factor 1), o sea el
+                // comportamiento de todo riesgo guardado antes de que esto existiera. El `tef`
+                // sigue siendo anual y canónico: esto es cómo se LLEGA a él y el diccionario que
+                // permite comparar una observación en viajes contra un modelo anual.
+                exposure = null,
             } = req.body;
 
             if (calibrationVersion !== null && (!Number.isInteger(calibrationVersion) || calibrationVersion < 1)) {
@@ -422,6 +429,10 @@ function createRegisterRouter(store) {
             }
             if (typeof isDeliberate !== 'boolean') {
                 return res.status(400).json({ error: 'isDeliberate debe ser booleano.' });
+            }
+            const errorExposicion = validateExposure(exposure);
+            if (errorExposicion) {
+                return res.status(400).json({ error: errorExposicion });
             }
             if (!Object.prototype.hasOwnProperty.call(ACCESS_LEVELS, accessLevel)) {
                 return res
@@ -652,6 +663,7 @@ function createRegisterRouter(store) {
                 calibrationVersion,
                 isDeliberate,
                 accessLevel,
+                exposure: exposure ? normalizeExposure(exposure) : null,
                 date: new Date().toISOString(),
             };
 

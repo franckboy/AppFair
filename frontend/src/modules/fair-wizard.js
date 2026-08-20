@@ -95,6 +95,7 @@ export const FairWizard = {
         renderProvenanceRows(this.provenanceBody(), data.factorProvenance);
         if (data.attackerKey) document.getElementById('fair-attacker-profile').value = data.attackerKey;
         if (data.defenseKey) document.getElementById('fair-defense-profile').value = data.defenseKey;
+        this.loadExposure(data.exposure);
         const esDeliberada = this.inferDeliberateThreat(data);
         document.getElementById('fair-deliberate-threat').checked = esDeliberada;
         document.getElementById('fair-deliberate-ponderation-container').classList.toggle('hidden', !esDeliberada);
@@ -333,6 +334,11 @@ export const FairWizard = {
         document.getElementById('fair-step3-next').addEventListener('click', () => this.navigateWizard(4));
         document.getElementById('fair-step4-back').addEventListener('click', () => this.navigateWizard(3));
         document.getElementById('run-simulation-btn').addEventListener('click', () => this.runMonteCarloSimulation());
+        document.getElementById('fair-exposure-unit').addEventListener('change', () => this.renderExposureEffect());
+        document.getElementById('fair-exposure-annual').addEventListener('input', () => this.renderExposureEffect());
+        document
+            .getElementById('fair-calibrate-frequency-btn')
+            .addEventListener('click', () => this.openFrequencyCalibrationModal());
         document.getElementById('fair-access-level').addEventListener('change', () => {
             state.fair.accessLevel = document.getElementById('fair-access-level').value;
             this.renderAccessLevelEffect();
@@ -550,6 +556,7 @@ export const FairWizard = {
                     defenseKey: state.fair.defenseKey,
                     confidence,
                     accessLevel: document.getElementById('fair-access-level').value,
+                    exposure: this.readExposure(),
                 },
             });
         } catch (err) {
@@ -630,6 +637,201 @@ export const FairWizard = {
         this.renderAccessLevelEffect();
     },
 
+    // --- Exposición: el denominador del TEF ------------------------------------------------
+
+    populateExposureUnits() {
+        const select = document.getElementById('fair-exposure-unit');
+        const unidades = state.config.exposureUnits;
+        if (!select || !unidades) return;
+        const previo = select.value || 'anios';
+        select.innerHTML = Object.entries(unidades)
+            .map(([key, u]) => `<option value="${key}">${u.label}</option>`)
+            .join('');
+        select.value = unidades[previo] ? previo : 'anios';
+        this.renderExposureEffect();
+    },
+
+    /**
+     * Muestra qué significa el TEF en la unidad elegida. Es la mitad del valor de esta función:
+     * "12 intentos al año" y "0,01 intentos por viaje" son el mismo riesgo, y verlo escrito es lo
+     * que evita que alguien teclee 12 pensando en viajes.
+     */
+    renderExposureEffect() {
+        const select = document.getElementById('fair-exposure-unit');
+        const contenedor = document.getElementById('fair-exposure-annual-container');
+        const anual = document.getElementById('fair-exposure-annual');
+        const desc = document.getElementById('fair-exposure-explanation');
+        const unidades = state.config.exposureUnits;
+        if (!select || !contenedor || !anual || !desc || !unidades) return;
+
+        const unidad = unidades[select.value];
+        const esNeutra = !unidad || unidad.neutro;
+        contenedor.classList.toggle('hidden', esNeutra);
+        if (esNeutra) {
+            desc.textContent =
+                'El riesgo se mide por año, como siempre. La Frecuencia de arriba ya está en intentos por año.';
+            return;
+        }
+        // Punto de partida para no arrancar de una caja vacía — nunca un dato que se use sin que
+        // el usuario lo confirme, por eso solo se escribe cuando está en 0.
+        if (getSafeNumber(anual) <= 0) anual.value = unidad.porAnio;
+
+        const porAnio = getSafeNumber(anual);
+        const etiqueta = document.getElementById('fair-exposure-annual-label');
+        if (etiqueta) etiqueta.textContent = `¿Cuántas ${unidad.label.toLowerCase()} al año?`;
+        const tefAnual = getSafeNumber(document.getElementById('tef-mode'));
+        if (porAnio > 0 && tefAnual > 0) {
+            const porUnidad = tefAnual / porAnio;
+            desc.textContent = `La Frecuencia de arriba sigue siendo anual: ${tefAnual} intentos al año repartidos en ${porAnio} ${unidad.label.toLowerCase()} son ${porUnidad.toPrecision(3)} por ${unidad.singular}. Con esto, un histórico contado en ${unidad.label.toLowerCase()} se puede comparar contra el modelo.`;
+        } else {
+            desc.textContent = `Declara cuántas ${unidad.label.toLowerCase()} hay al año: es lo que permite pasar de "intentos por ${unidad.singular}" a "intentos por año", que es la unidad en la que trabaja el motor.`;
+        }
+    },
+
+    /** Lo que viaja al Registro. `null` = unidad neutra, o sea el comportamiento de siempre. */
+    readExposure() {
+        const select = document.getElementById('fair-exposure-unit');
+        if (!select || !select.value || select.value === 'anios') return null;
+        const annual = getSafeNumber(document.getElementById('fair-exposure-annual'));
+        if (!(annual > 0)) return null;
+        return { unit: select.value, annual };
+    },
+
+    loadExposure(exposure) {
+        const select = document.getElementById('fair-exposure-unit');
+        const anual = document.getElementById('fair-exposure-annual');
+        if (!select || !anual) return;
+        const unidades = state.config.exposureUnits || {};
+        const valida = exposure && unidades[exposure.unit] ? exposure : null;
+        select.value = valida ? valida.unit : 'anios';
+        anual.value = valida ? valida.annual : 0;
+        this.renderExposureEffect();
+    },
+
+    /**
+     * Calibra la Frecuencia con un conteo de incidentes propio. Es el único de los tres factores
+     * del ALE que no tenía autocálculo, pese a que su elasticidad es 1 — la misma que la de la
+     * Vulnerabilidad, que sí se deriva de perfiles calibrados.
+     *
+     * La cuenta vive en el backend (POST /api/autocalc/frequency, Poisson-Gamma): acá solo se
+     * pregunta cuántas pérdidas y en cuánta exposición, y se muestra el resultado para que el
+     * usuario decida si lo adopta. Igual que el resto de los autocálculos, el número final es suyo.
+     */
+    openFrequencyCalibrationModal() {
+        const unidades = state.config.exposureUnits || {};
+        const exposicion = this.readExposure();
+        const unidad = unidades[exposicion ? exposicion.unit : 'anios'] || { label: 'Años', singular: 'año' };
+        const etiqueta = unidad.label.toLowerCase();
+
+        const render = (resultado, error) => {
+            Modal.setSize('wide');
+            Modal.title.textContent = 'Calibrar la Frecuencia con tu histórico';
+            Modal.body.innerHTML = `
+                <p class="description-text mb-3">
+                    Cuántas <strong>pérdidas que de verdad ocurrieron</strong> registraste, y en cuánta
+                    exposición. No cuentes intentos fallidos: la app los deduce sola dividiendo por tu
+                    Vulnerabilidad — un robo consumado ya pasó tus controles, así que implica más
+                    intentos de los que se ven.
+                </p>
+                <p class="description-text mb-3">
+                    Este riesgo se mide en <strong>${sanitizeHTML(unidad.label)}</strong>.
+                </p>
+                ${error ? `<p class="text-red-600 text-sm mb-3">${sanitizeHTML(error)}</p>` : ''}
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="input-group">
+                        <label for="freq-cal-events">Pérdidas observadas</label>
+                        <input type="number" id="freq-cal-events" class="form-input" value="0" min="0" step="any">
+                    </div>
+                    <div class="input-group">
+                        <label for="freq-cal-exposure">Exposición observada (${sanitizeHTML(etiqueta)})</label>
+                        <input type="number" id="freq-cal-exposure" class="form-input" value="1" min="0" step="any">
+                    </div>
+                </div>
+                <div id="freq-cal-result" class="mt-3">${resultado || ''}</div>
+            `;
+            Modal.footer.innerHTML = `
+                <button id="freq-cal-cancel-btn" class="btn btn-secondary">Cerrar</button>
+                <button id="freq-cal-run-btn" class="btn btn-secondary">Calcular</button>
+                <button id="freq-cal-adopt-btn" class="btn btn-primary ${resultado ? '' : 'hidden'}">Adoptar esta Frecuencia</button>
+            `;
+            Modal.modal.classList.remove('hidden');
+
+            document.getElementById('freq-cal-cancel-btn').addEventListener('click', () => Modal.hide());
+            document.getElementById('freq-cal-run-btn').addEventListener('click', async () => {
+                const cuerpo = {
+                    tef: {
+                        min: getSafeNumber(document.getElementById('tef-min')),
+                        mode: getSafeNumber(document.getElementById('tef-mode')),
+                        max: getSafeNumber(document.getElementById('tef-max')),
+                    },
+                    vuln: {
+                        min: getSafeNumber(document.getElementById('vuln-min')),
+                        mode: getSafeNumber(document.getElementById('vuln-mode')),
+                        max: getSafeNumber(document.getElementById('vuln-max')),
+                    },
+                    observedEvents: getSafeNumber(document.getElementById('freq-cal-events')),
+                    observedExposure: getSafeNumber(document.getElementById('freq-cal-exposure')),
+                    exposure: exposicion,
+                };
+                try {
+                    const r = await App.Api.request('/api/autocalc/frequency', { method: 'POST', body: cuerpo });
+                    state.fair.lastFrequencyCalibration = r;
+                    render(this.renderFrequencyCalibrationResult(r, unidad), null);
+                } catch (e) {
+                    state.fair.lastFrequencyCalibration = null;
+                    render(null, e.userMessage || 'No se pudo calibrar la Frecuencia.');
+                }
+            });
+            const adoptar = document.getElementById('freq-cal-adopt-btn');
+            if (adoptar) {
+                adoptar.addEventListener('click', () => {
+                    const r = state.fair.lastFrequencyCalibration;
+                    if (!r) return;
+                    document.getElementById('tef-min').value = r.tef.min.toPrecision(4);
+                    document.getElementById('tef-mode').value = r.tef.mode.toPrecision(4);
+                    document.getElementById('tef-max').value = r.tef.max.toPrecision(4);
+                    // Deja de ser una sugerencia del perfil de atacante: es un dato propio, y
+                    // suggestTefRange no debe volver a pisarlo.
+                    state.fair.tefManuallyEdited = true;
+                    this.validateAndFixRange('tef');
+                    this.renderExposureEffect();
+                    Modal.hide();
+                });
+            }
+        };
+        render(null, null);
+    },
+
+    renderFrequencyCalibrationResult(r, unidad) {
+        const n = (v) => (typeof v === 'number' ? v.toPrecision(3) : '—');
+        const pct = (v) => `${(v * 100).toFixed(0)} %`;
+        // La credibilidad es la cifra que de verdad importa: dice cuánto de la respuesta lo pone tu
+        // dato y cuánto lo sigue poniendo la corazonada declarada.
+        return `
+            <div class="fair-section bg-gray-50">
+                <p class="text-sm mb-2">
+                    Tu histórico implica <strong>${n(r.tefObservadoAnual)} intentos al año</strong>;
+                    tu estimación decía <strong>${n(r.tefPriorAnual)}</strong>.
+                </p>
+                <p class="text-sm mb-2">
+                    Peso de tu dato: <strong>${pct(r.credibilidad)}</strong>. Tu estimación declarada
+                    vale como <strong>${n(r.exposicionEquivalentePrior)} años</strong> de observación
+                    propia — sale del ancho del rango que escribiste, así que un rango angosto se
+                    resiste al dato y uno ancho se deja mover.
+                </p>
+                <p class="text-sm mb-2">
+                    Frecuencia calibrada: <strong>${n(r.tef.min)} / ${n(r.tef.mode)} / ${n(r.tef.max)}</strong>
+                    intentos al año (mín / más probable / máx).
+                </p>
+                <p class="text-xs text-gray-600">
+                    Observaste ${n(r.tasaLefObservada)} pérdidas por ${sanitizeHTML(unidad.singular)}, que
+                    con una Vulnerabilidad de ${n(r.vulnerabilidadUsada)} % implican ${n(r.tasaTefObservada)}
+                    intentos por ${sanitizeHTML(unidad.singular)}. Esa división es lo que evita descontar
+                    tus defensas dos veces.
+                </p>
+            </div>`;
+    },
+
     renderAccessLevelEffect() {
         const select = document.getElementById('fair-access-level');
         const desc = document.getElementById('fair-access-level-desc');
@@ -663,6 +865,7 @@ export const FairWizard = {
         // El catálogo de niveles llega en el arranque (App.Api.bootstrap), después de init() —
         // poblar aquí cubre tanto el primer render como retomar un riesgo, sin un hook aparte.
         this.populateAccessLevels();
+        this.populateExposureUnits();
         const esOportunidad = document.getElementById('fair-risk-type').value === 'oportunidad';
         // La casilla se desmarca de verdad, no solo se esconde: es lo que se persiste como
         // `isDeliberate`, así que dejarla marcada bajo un contenedor oculto guardaría "esta
@@ -852,6 +1055,7 @@ export const FairWizard = {
 
         if (data.attackerKey) document.getElementById('fair-attacker-profile').value = data.attackerKey;
         if (data.defenseKey) document.getElementById('fair-defense-profile').value = data.defenseKey;
+        this.loadExposure(data.exposure);
         const esDeliberada = this.inferDeliberateThreat(data);
         document.getElementById('fair-deliberate-threat').checked = esDeliberada;
         document.getElementById('fair-deliberate-ponderation-container').classList.toggle('hidden', !esDeliberada);
@@ -1051,6 +1255,7 @@ export const FairWizard = {
         // analizó. El checkbox no se restauraba en ningún punto de esta función.
         state.fair.accessLevel = entry.accessLevel || 'nulo';
         this.populateAccessLevels();
+        this.loadExposure(entry.exposure);
         const esDeliberada = this.inferDeliberateThreat(entry);
         document.getElementById('fair-deliberate-threat').checked = esDeliberada;
         document.getElementById('fair-deliberate-ponderation-container').classList.toggle('hidden', !esDeliberada);
@@ -1594,6 +1799,7 @@ export const FairWizard = {
             document.getElementById('fair-attacker-profile').value = 'empleado-desleal';
             document.getElementById('fair-defense-profile').value = App.OrgDefaults.defaults.defenseKey;
             document.getElementById('fair-deliberate-threat').checked = false;
+            this.loadExposure(null);
             document.getElementById('fair-deliberate-ponderation').value = '0.7';
             document.getElementById('fair-deliberate-ponderation-value').textContent = 'x0.70';
             document.getElementById('fair-deliberate-ponderation-container').classList.add('hidden');
@@ -1701,6 +1907,7 @@ export const FairWizard = {
                     // interpreta como "no vienen" — mandar null daría 400.
                     attackerKey: deliberada ? state.fair.attackerKey : undefined,
                     accessLevel: deliberada ? document.getElementById('fair-access-level').value : undefined,
+                    exposure: this.readExposure(),
                     defenseKey: deliberada ? state.fair.defenseKey : undefined,
                     confidence: document.getElementById('fair-data-confidence').value,
                     vulnManualOverride: !deliberada || document.getElementById('vuln-manual-override').checked,
@@ -2216,6 +2423,7 @@ export const FairWizard = {
             renderProvenanceRows(this.provenanceBody(), data.factorProvenance);
             document.getElementById('fair-attacker-profile').value = data.attackerKey || 'empleado-desleal';
             document.getElementById('fair-defense-profile').value = data.defenseKey || 'estandar';
+            this.loadExposure(data.exposure);
             const esDeliberada = this.inferDeliberateThreat(data);
             document.getElementById('fair-deliberate-threat').checked = esDeliberada;
             document.getElementById('fair-deliberate-ponderation-container').classList.toggle('hidden', !esDeliberada);

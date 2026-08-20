@@ -2981,3 +2981,131 @@ test('PUT /api/config/incident-log rechaza evidencia que no se podría usar', as
         assert.strictEqual(res.status, 400, motivo);
     }
 });
+
+// --- Exposición y calibración del TEF -----------------------------------------------------------
+
+test('PUT /api/register/:riskName persiste la exposición del riesgo, y sin ella queda null', async () => {
+    const riskName = 'Robo en carretera HTTP (exposición)';
+    const conExposicion = await request(app)
+        .put(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ale: 50000, cvar95: 90000, exposure: { unit: 'viajes', annual: 1200 } });
+    assert.strictEqual(conExposicion.status, 200);
+    assert.deepStrictEqual(conExposicion.body.entry.exposure, { unit: 'viajes', annual: 1200 });
+
+    // Sin declararla: la unidad neutra, o sea el comportamiento de todo riesgo anterior a esto.
+    const sinExposicion = await request(app)
+        .put(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ale: 50000, cvar95: 90000 });
+    assert.strictEqual(sinExposicion.body.entry.exposure, null);
+
+    await request(app)
+        .delete(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY);
+});
+
+test('PUT /api/register/:riskName rechaza una unidad no neutra sin decir cuántas hay al año', async () => {
+    // Tragárselo convertiría un riesgo por viaje en uno por año con el mismo número.
+    const res = await request(app)
+        .put('/api/register/Riesgo%20con%20exposici%C3%B3n%20incompleta')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ ale: 1000, cvar95: 2000, exposure: { unit: 'viajes' } });
+    assert.strictEqual(res.status, 400);
+    assert.match(res.body.error, /annual/);
+});
+
+test('POST /api/autocalc/frequency calibra el TEF con un conteo propio, invirtiendo pérdidas a intentos', async () => {
+    const res = await request(app)
+        .post('/api/autocalc/frequency')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            tef: { min: 5, mode: 10, max: 18 },
+            vuln: { min: 10, mode: 20, max: 30 },
+            observedEvents: 3,
+            observedExposure: 1200,
+            exposure: { unit: 'viajes', annual: 1200 },
+        });
+    assert.strictEqual(res.status, 200);
+    // 3 pérdidas / 1.200 viajes = 0,0025; / 0,20 = 0,0125 intentos por viaje; x 1.200 = 15 al año.
+    assert.ok(Math.abs(res.body.tefObservadoAnual - 15) < 1e-9);
+    // El resultado queda ENTRE el prior (10,5) y lo observado (15).
+    assert.ok(res.body.tef.mode > res.body.tefPriorAnual && res.body.tef.mode < res.body.tefObservadoAnual);
+    assert.ok(res.body.credibilidad > 0 && res.body.credibilidad < 1);
+    assert.strictEqual(res.body.unidad, 'viajes');
+});
+
+test('POST /api/autocalc/frequency se niega sin Vulnerabilidad, en vez de devolver un número mal', async () => {
+    // Sin V el resultado estaría equivocado por un factor de 1/V, en silencio.
+    const res = await request(app)
+        .post('/api/autocalc/frequency')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ tef: { min: 5, mode: 10, max: 18 }, observedEvents: 3, observedExposure: 10 });
+    assert.strictEqual(res.status, 400);
+    assert.match(res.body.error, /Vulnerabilidad/);
+});
+
+test('POST /api/autocalc/frequency valida el triángulo y la exposición antes de calcular', async () => {
+    const malTef = await request(app)
+        .post('/api/autocalc/frequency')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({ tef: { min: 10, mode: 5, max: 1 }, vuln: 20, observedEvents: 1, observedExposure: 5 });
+    assert.strictEqual(malTef.status, 400);
+
+    const malExp = await request(app)
+        .post('/api/autocalc/frequency')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            tef: { min: 5, mode: 10, max: 18 },
+            vuln: 20,
+            observedEvents: 1,
+            observedExposure: 5,
+            exposure: { unit: 'viajes' },
+        });
+    assert.strictEqual(malExp.status, 400);
+    assert.match(malExp.body.error, /annual/);
+});
+
+test('GET /api/config/incident-log: una entrada en viajes se vuelve comparable cuando el riesgo declara su exposición', async () => {
+    // El arreglo de fondo: antes esta entrada se guardaba y no se podía usar para nada.
+    const riskName = 'Robo de carga en tránsito HTTP';
+    await request(app)
+        .put(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            ale: 100000,
+            cvar95: 200000,
+            tef: { min: 8, mode: 12, max: 20 },
+            vuln: { min: 15, mode: 20, max: 25 },
+            exposure: { unit: 'viajes', annual: 1200 },
+        });
+    await request(app)
+        .put('/api/config/incident-log')
+        .set('X-API-Key', TEST_API_KEY)
+        .send({
+            entries: [
+                {
+                    tipoEvento: 'Robo de carga',
+                    riskName,
+                    estado: 'conteo',
+                    conteo: 3,
+                    exposicion: { cantidad: 1200, unidad: 'viajes' },
+                },
+            ],
+        });
+
+    const res = await request(app).get('/api/config/incident-log').set('X-API-Key', TEST_API_KEY);
+    assert.strictEqual(res.status, 200);
+    const d = res.body.summary.diagnostics[0];
+    assert.strictEqual(d.comparableConModelo, true);
+    assert.strictEqual(res.body.summary.comparables, 1, 'deja de ser 0: hay algo que contrastar');
+    // Las dos tasas quedan en la MISMA unidad (por viaje), que es lo que permite compararlas.
+    assert.ok(Math.abs(d.tasaObservada - 0.0025) < 1e-12);
+    assert.ok(Math.abs(d.lefModelo - (12 * 0.2) / 1200) < 1e-12);
+    assert.strictEqual(d.unidadDelModelo, 'viajes');
+
+    await request(app).put('/api/config/incident-log').set('X-API-Key', TEST_API_KEY).send({ entries: [] });
+    await request(app)
+        .delete(`/api/register/${encodeURIComponent(riskName)}`)
+        .set('X-API-Key', TEST_API_KEY);
+});

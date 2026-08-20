@@ -396,6 +396,28 @@
                                     </div>
                                 </div>
                                 <p id="tef-auto-explanation" class="description-text mt-2"></p>
+
+                                <!-- Unidad de exposición: el denominador que le faltaba al modelo.
+                                     Con "años" (el default) todo se comporta como siempre; con
+                                     cualquier otra, el TEF anual se deriva de la tasa por unidad y
+                                     una bitácora en esa misma unidad se vuelve comparable
+                                     (ver backend/src/lib/exposure.js). -->
+                                <div class="mt-4 pt-3 border-t border-gray-200">
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div class="input-group">
+                                            <label for="fair-exposure-unit" id="fair-exposure-unit-label">¿En qué unidad se mide este riesgo?
+                                                <i class="fas fa-info-circle text-blue-500 cursor-pointer ml-1" title="Un robo en carretera se mide por viaje; un incendio de bodega por bodega-año; un robo de remolque por noche estacionado. Si lo dejas en años, todo funciona como siempre. Si eliges otra, podrás capturar tu histórico en ESA unidad y compararlo con el modelo."></i>
+                                            </label>
+                                            <select id="fair-exposure-unit" class="form-select"></select>
+                                        </div>
+                                        <div class="input-group hidden" id="fair-exposure-annual-container">
+                                            <label for="fair-exposure-annual" id="fair-exposure-annual-label">¿Cuántas al año?</label>
+                                            <input type="number" id="fair-exposure-annual" class="form-input" value="0" min="0" step="any" oninput="validity.valid||(value='');">
+                                        </div>
+                                    </div>
+                                    <p id="fair-exposure-explanation" class="description-text mt-2"></p>
+                                    <button type="button" id="fair-calibrate-frequency-btn" class="btn btn-secondary text-sm mt-2">📊 Calibrar con mi histórico de incidentes</button>
+                                </div>
                             </div>
 
                             <div class="fair-section">

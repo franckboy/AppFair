@@ -596,11 +596,75 @@ y qué tan indiscriminados son**, no el empeño de cada uno — el empeño deter
 No hay piso en 1 evento/año. El modelo anterior lo tenía y hacía imposible expresar una amenaza de
 baja frecuencia y alto impacto.
 
-**El estado real de este factor, dicho sin adornos.** No hay motor de autocálculo para la
-frecuencia: `/api/autocalc/vulnerability` existe, `/loss-magnitude` existe, `/reduccion-ale` existe
-— **frecuencia no**. Estas tres anclas son una sugerencia que el usuario pisa a mano, y pesan lo
-mismo en el ALE que las 8 anclas y las 7 calibraciones de la Vulnerabilidad (§2.4). Es el eslabón
-más flojo del modelo y conviene tenerlo presente al leer cualquier cifra.
+**El estado de este factor.** Hasta la incorporación de `/api/autocalc/frequency`, éste era el
+único de los tres factores del ALE sin ningún motor de autocálculo: existían `/vulnerability`,
+`/loss-magnitude`, `/reduccion-ale`, `/nash-equilibrium` y `/deterrence` — frecuencia no. Estas tres
+anclas eran una sugerencia que el usuario pisaba a mano, y pesan lo mismo en el ALE que las 8 anclas
+y las 7 calibraciones de la Vulnerabilidad (§2.4).
+
+Sigue siendo el eslabón más flojo **mientras no haya un histórico propio**: la sugerencia por perfil
+no cambió, y sin datos la calibración de §7.2.1 no tiene con qué correr. Lo que cambió es que ahora
+existe el camino para cerrarlo con evidencia real.
+
+### 7.2.1 Exposición y calibración con histórico propio
+
+**El denominador que faltaba.** El TEF se define en intentos/AÑO. Una empresa de transporte no habla
+así: dice "3 robos en 1.200 viajes". La bitácora (§16.2) ya sabía capturar eso y no podía compararlo
+con nada — seis de sus siete unidades estaban muertas, o sea que la app pedía un dato que después no
+podía consumir. La pieza que faltaba es un número por riesgo: **cuánta exposición hay al año**.
+
+```
+TEF_anual = tasa_por_unidad · exposicion_anual
+```
+
+Con 1.200 viajes/año, "0,01 intentos por viaje" y "12 intentos al año" son el mismo riesgo dicho de
+dos maneras. Sin ese 1.200 no hay forma de pasar de una a la otra.
+
+**El TEF sigue siendo anual y canónico.** La exposición es cómo se LLEGA a él y el diccionario que
+permite comparar una observación en viajes contra un modelo anual — no una unidad alternativa en la
+que el motor trabaje. Hacer canónica la tasa obligaría a que todo consumidor del TEF (Monte Carlo,
+portafolio, Euler, Criterios de Riesgo, cascadas) conociera la exposición para interpretarlo, y un
+riesgo con exposición rota produciría basura en silencio en vez de un error visible. Un riesgo que
+no declara exposición es el caso neutro (años, factor 1): exactamente el comportamiento anterior.
+
+**Comparable pasa a ser propiedad del par observación-riesgo**, no de la unidad. La unidad neutra
+siempre compara porque el modelo es anual; cualquier otra compara si el riesgo declaró SU exposición
+en esa misma unidad. Viajes contra bodegas-año sigue sin tener sentido.
+
+**La calibración (`POST /api/autocalc/frequency`).** Mezcla el triángulo declarado (prior) con un
+conteo propio (evidencia). Dos pasos que no se pueden saltar:
+
+1. **Invertir de pérdidas a intentos: `TEF = LEF / V`.** Una bitácora cuenta robos consumados.
+   Enchufarlos directo al TEF haría que el motor volviera a aplicar la Vulnerabilidad y descontara
+   las defensas dos veces (§16.2). Por eso este cálculo NECESITA la Vulnerabilidad, y se niega a
+   correr sin ella en vez de devolver un número mal por un factor de 1/V.
+2. **Convertir de la unidad de exposición a años**, con el factor de arriba.
+
+La mezcla es Poisson-Gamma exacto, que da la credibilidad en forma cerrada **sin constantes
+inventadas**:
+
+```
+prior λ ~ Gamma(α, β),  media = α/β,  CV² = 1/α
+posterior tras c eventos en exposición E:  Gamma(α + c, β + E)
+credibilidad de lo observado:  Z = E / (β + E)
+```
+
+`α` sale del **ancho del triángulo que el usuario ya declaró**: `SD ≈ (max − min)/6`, `α = 1/CV²`.
+Un rango ancho (mucha duda) se deja mover por poca evidencia; uno angosto se resiste. Y `β = α/λ`
+es la **exposición equivalente del prior**: cuántos años de observación propia vale la corazonada —
+la cifra que de verdad responde "¿cuánto pesa mi dato contra lo que el modelo ya creía?".
+
+Medido con TEF 5/10/18 (prior de 10,5 intentos/año, equivalente a 2,24 años de observación) y 3
+pérdidas en 1.200 viajes con V = 20 %:
+
+| Triángulo declarado   | Vale como | Z     | TEF calibrado |
+| --------------------- | --------- | ----- | ------------- |
+| 5 / 10 / 18           | 2,24 años | 0,309 | 11,9          |
+| 2 / 10 / 40 (ancho)   | 0,34 años | 0,746 | 14,7          |
+| 9 / 10 / 11 (angosto) | 90 años   | 0,011 | 10,05         |
+
+Con la misma tasa observada durante 10 años en vez de 1, Z sube a 0,817 y el TEF a 14,2. El
+resultado siempre queda **entre** el prior y lo observado, y nunca lo adopta entero.
 
 Hay dos piezas construidas alrededor de ese hueco, ninguna enchufada todavía a la ruta crítica:
 

@@ -4577,3 +4577,187 @@ test('adaptativo: los lotes concatenados dan lo mismo que una corrida larga equi
     assert.ok(Math.abs(porLotes.average / largo.average - 1) < 0.03, `ALE ${porLotes.average} vs ${largo.average}`);
     assert.ok(Math.abs(porLotes.cvar95 / largo.cvar95 - 1) < 0.05, `CVaR ${porLotes.cvar95} vs ${largo.cvar95}`);
 });
+
+// --- Exposición: el denominador que le faltaba al modelo ----------------------------------------
+
+const {
+    normalizeExposure,
+    validateExposure,
+    perUnitRate,
+    annualRate: exposureAnnualRate,
+    isComparable,
+    EXPOSURE_UNITS,
+} = require('../src/lib/exposure');
+
+test('exposición: sin declarar nada, un riesgo se comporta EXACTAMENTE como antes (años, factor 1)', () => {
+    // Es la propiedad que hace que esto no sea una migración: todo riesgo ya guardado cae acá.
+    for (const entrada of [null, undefined, {}, { unit: 'inventada' }, { unit: 'viajes' }]) {
+        assert.deepStrictEqual(normalizeExposure(entrada), { unit: 'anios', annual: 1 });
+    }
+    assert.strictEqual(perUnitRate(12, null), 12);
+    assert.strictEqual(exposureAnnualRate(12, null), 12);
+});
+
+test('exposición: "años" ignora cualquier annual que llegue — "3 años al año" no significa nada', () => {
+    // Aceptarlo dejaría entrar un factor de escala silencioso sobre el TEF.
+    assert.deepStrictEqual(normalizeExposure({ unit: 'anios', annual: 3 }), { unit: 'anios', annual: 1 });
+});
+
+test('exposición: convertir anual <-> por unidad es exactamente invertible', () => {
+    const exp = { unit: 'viajes', annual: 1200 };
+    assert.strictEqual(perUnitRate(12, exp), 0.01);
+    assert.strictEqual(exposureAnnualRate(0.01, exp), 12);
+    assert.ok(Math.abs(exposureAnnualRate(perUnitRate(7.3, exp), exp) - 7.3) < 1e-12);
+});
+
+test('exposición: una unidad no neutra SIN annual se rechaza, no se traga en silencio', () => {
+    // Elegir "viajes" y no decir cuántos hay al año convertiría un riesgo por viaje en uno por año
+    // con el mismo número: un error de escala de tres órdenes de magnitud que nadie vería.
+    assert.match(validateExposure({ unit: 'viajes' }), /annual/);
+    assert.match(validateExposure({ unit: 'viajes', annual: 0 }), /mayor que 0/);
+    assert.match(validateExposure({ unit: 'no-existe', annual: 5 }), /exposure.unit/);
+    assert.strictEqual(validateExposure({ unit: 'viajes', annual: 1200 }), null);
+    assert.strictEqual(validateExposure({ unit: 'anios' }), null);
+    assert.strictEqual(validateExposure(null), null);
+});
+
+test('exposición: comparable es propiedad del PAR observación-riesgo, no de la unidad', () => {
+    // El arreglo de fondo: antes 6 de las 7 unidades eran incomparables SIEMPRE, así que la app
+    // pedía un dato que después no podía consumir.
+    const enViajes = { unit: 'viajes', annual: 1200 };
+    assert.strictEqual(isComparable('viajes', enViajes), true);
+    assert.strictEqual(isComparable('anios', enViajes), true, 'la unidad neutra siempre compara');
+    assert.strictEqual(isComparable('bodega-anio', enViajes), false, 'viajes contra bodegas sigue sin sentido');
+    // Un riesgo sin exposición declarada solo compara contra años, como antes.
+    assert.strictEqual(isComparable('viajes', null), false);
+    assert.strictEqual(isComparable('anios', null), true);
+});
+
+test('exposición: las 7 unidades siguen existiendo y solo "anios" es la neutra', () => {
+    const neutras = Object.entries(EXPOSURE_UNITS).filter(([, u]) => u.neutro);
+    assert.strictEqual(Object.keys(EXPOSURE_UNITS).length, 7);
+    assert.deepStrictEqual(
+        neutras.map(([k]) => k),
+        ['anios'],
+    );
+});
+
+// --- Calibración del TEF con datos propios ------------------------------------------------------
+
+const { gammaFromTriangle, triangleFromGamma, calibrateFrequency } = require('../src/lib/frequencyCalibration');
+
+test('calibración: el peso del prior sale del ANCHO del triángulo, no de una constante a dedo', () => {
+    // Un triángulo ancho (mucha duda) vale poca exposición y se deja mover; uno angosto vale mucha
+    // y se resiste. Es la propiedad que hace que no haya que elegir una credibilidad a mano.
+    const ancho = gammaFromTriangle({ min: 2, mode: 10, max: 40 });
+    const angosto = gammaFromTriangle({ min: 9, mode: 10, max: 11 });
+    assert.ok(ancho.beta < 1, `ancho vale ${ancho.beta} años`);
+    assert.ok(angosto.beta > 50, `angosto vale ${angosto.beta} años`);
+    assert.ok(angosto.beta > ancho.beta * 100);
+});
+
+test('calibración: triángulo -> Gamma -> triángulo conserva la media', () => {
+    const original = { min: 5, mode: 10, max: 18 };
+    const g = gammaFromTriangle(original);
+    const vuelta = triangleFromGamma(g.alpha, g.beta);
+    // La moda del triángulo devuelto es la MEDIA del Gamma a propósito: es la media la que el PERT
+    // reproduce, así que usar la moda del Gamma metería un sesgo contra lo que el motor simula.
+    assert.ok(Math.abs(vuelta.mode - g.mean) < 1e-9);
+});
+
+test('calibración: un triángulo degenerado no produce un prior infinito', () => {
+    // min = moda = max implica CV = 0 y alpha = infinito: un prior que ninguna evidencia movería.
+    // Casi siempre es un descuido de captura, no una certeza real.
+    const g = gammaFromTriangle({ min: 10, mode: 10, max: 10 });
+    assert.ok(Number.isFinite(g.alpha) && Number.isFinite(g.beta));
+    assert.strictEqual(g.alpha, 10000);
+});
+
+test('calibración: invierte de PÉRDIDAS observadas a INTENTOS — el error de doble descuento', () => {
+    // La trampa: una bitácora cuenta robos consumados (LEF). Enchufarlos al TEF haría que el motor
+    // volviera a aplicar la Vulnerabilidad y descontara las defensas dos veces.
+    const base = {
+        tef: { min: 5, mode: 10, max: 18 },
+        observedEvents: 3,
+        observedExposure: 1200,
+        exposure: { unit: 'viajes', annual: 1200 },
+    };
+    const r = calibrateFrequency({ ...base, vuln: 20 });
+    assert.ok(Math.abs(r.tasaLefObservada - 0.0025) < 1e-12, 'pérdidas por viaje');
+    assert.ok(Math.abs(r.tasaTefObservada - 0.0125) < 1e-12, 'intentos por viaje = pérdidas / V');
+    assert.ok(Math.abs(r.tefObservadoAnual - 15) < 1e-9, '0,0125 intentos/viaje x 1.200 viajes/año');
+
+    // Sin la inversión el TEF observado habría sido 3 (las pérdidas tal cual), o sea 5 veces menos
+    // con V = 20 %. Siempre hacia abajo, que es el lado en el que no se puede fallar.
+    assert.ok(r.tefObservadoAnual / 3 > 4.9);
+
+    // Y con una defensa mejor (V más baja) los MISMOS 3 robos implican MÁS intentos: si pasaron 3
+    // pese a controles fuertes, es que lo intentaron mucho más.
+    const conDefensaMejor = calibrateFrequency({ ...base, vuln: 5 });
+    assert.ok(conDefensaMejor.tefObservadoAnual > r.tefObservadoAnual);
+});
+
+test('calibración: más exposición observada pesa más, y el resultado queda ENTRE prior y evidencia', () => {
+    const comun = {
+        tef: { min: 5, mode: 10, max: 18 },
+        vuln: 20,
+        exposure: { unit: 'viajes', annual: 1200 },
+    };
+    const unAnio = calibrateFrequency({ ...comun, observedEvents: 3, observedExposure: 1200 });
+    const diezAnios = calibrateFrequency({ ...comun, observedEvents: 30, observedExposure: 12000 });
+
+    assert.ok(diezAnios.credibilidad > unAnio.credibilidad, 'diez años pesan más que uno');
+    for (const r of [unAnio, diezAnios]) {
+        assert.ok(r.tef.mode > r.tefPriorAnual, 'se mueve hacia la evidencia');
+        assert.ok(r.tef.mode < r.tefObservadoAnual, 'pero no la adopta entera');
+    }
+    assert.ok(diezAnios.tef.mode > unAnio.tef.mode, 'más evidencia, más cerca de lo observado');
+});
+
+test('calibración: cero eventos observados baja el TEF en vez de romperse', () => {
+    // "Se revisó y no pasó" es evidencia real, no ausencia de dato — el caso `cero` de la bitácora.
+    const r = calibrateFrequency({
+        tef: { min: 5, mode: 10, max: 18 },
+        vuln: 20,
+        observedEvents: 0,
+        observedExposure: 5,
+    });
+    assert.ok(r.tef.mode < r.tefPriorAnual, 'un cero observado empuja hacia abajo');
+    assert.ok(r.tef.min >= 0, 'y nunca produce una frecuencia negativa');
+    assert.strictEqual(r.tefObservadoAnual, 0);
+});
+
+test('calibración: sin Vulnerabilidad utilizable se niega a calcular en vez de devolver un número mal', () => {
+    // Devolver algo sin V sería devolverlo equivocado por un factor de 1/V, en silencio.
+    const base = { tef: { min: 5, mode: 10, max: 18 }, observedEvents: 3, observedExposure: 10 };
+    assert.match(calibrateFrequency({ ...base, vuln: 0 }).error, /Vulnerabilidad/);
+    assert.match(calibrateFrequency({ ...base, vuln: 120 }).error, /Vulnerabilidad/);
+    assert.match(calibrateFrequency({ ...base, vuln: null }).error, /Vulnerabilidad/);
+    // Acepta el triángulo completo, no solo el porcentaje suelto.
+    assert.ok(calibrateFrequency({ ...base, vuln: { min: 10, mode: 20, max: 30 } }).tef);
+});
+
+test('calibración: exposición observada invalida o TEF sin forma se rechazan con mensaje', () => {
+    const base = { tef: { min: 5, mode: 10, max: 18 }, vuln: 20, observedEvents: 3 };
+    assert.match(calibrateFrequency({ ...base, observedExposure: 0 }).error, /observedExposure/);
+    assert.match(calibrateFrequency({ ...base, observedExposure: -5 }).error, /observedExposure/);
+    assert.match(calibrateFrequency({ ...base, observedEvents: -1, observedExposure: 5 }).error, /observedEvents/);
+    assert.match(
+        calibrateFrequency({ tef: { min: 5, mode: 1 }, vuln: 20, observedEvents: 1, observedExposure: 5 }).error,
+        /triángulo/,
+    );
+});
+
+test('calibración: sin exposición declarada la unidad es años y el factor 1 — comportamiento de siempre', () => {
+    const enAnios = calibrateFrequency({
+        tef: { min: 5, mode: 10, max: 18 },
+        vuln: 20,
+        observedEvents: 4,
+        observedExposure: 2,
+    });
+    assert.strictEqual(enAnios.unidad, 'anios');
+    assert.strictEqual(enAnios.exposicionAnualDelRiesgo, 1);
+    // 4 pérdidas en 2 años = 2/año; /0,2 = 10 intentos/año.
+    assert.ok(Math.abs(enAnios.tefObservadoAnual - 10) < 1e-9);
+    assert.strictEqual(enAnios.exposicionObservadaEnAnios, 2);
+});

@@ -56,20 +56,12 @@
  */
 
 /**
- * Denominadores posibles. `anios` es especial: es el único directamente comparable contra el LEF
- * del modelo, que está en eventos por AÑO. Los demás necesitan una conversión (viajes por año,
- * bodegas, unidades) que la app todavía no pide — y mientras no la tenga, el diagnóstico dice la
- * tasa en su propia unidad y se abstiene de comparar, en vez de inventar el factor.
+ * Los denominadores viven en lib/exposure.js, porque ahora no son solo de la bitácora: el RIESGO
+ * también declara en qué unidad se mide. Ésa es justamente la conversión que faltaba — antes seis
+ * de las siete unidades eran incomparables SIEMPRE, así que la app pedía un dato que después no
+ * podía consumir.
  */
-const EXPOSURE_UNITS = {
-    anios: { label: 'Años observados', comparableConModelo: true },
-    viajes: { label: 'Viajes', comparableConModelo: false },
-    'unidad-anio': { label: 'Unidades × año', comparableConModelo: false },
-    'bodega-anio': { label: 'Bodegas × año', comparableConModelo: false },
-    'noche-estacionado': { label: 'Noches estacionado', comparableConModelo: false },
-    cruces: { label: 'Cruces fronterizos', comparableConModelo: false },
-    recolecciones: { label: 'Recolecciones', comparableConModelo: false },
-};
+const { EXPOSURE_UNITS, isComparable, perUnitRate } = require('./exposure');
 
 const ESTADOS = ['sin_datos', 'cero', 'conteo'];
 
@@ -178,7 +170,10 @@ function summarizeIncidentLog(log, register) {
         const riesgo = e.riskName ? porNombre.get(e.riskName) : null;
         const vinculoRoto = !!e.riskName && !riesgo;
         const unidad = e.exposicion ? e.exposicion.unidad : null;
-        const comparable = !!unidad && EXPOSURE_UNITS[unidad].comparableConModelo;
+        // Comparable es propiedad del PAR observación-riesgo: la unidad neutra (años) siempre
+        // compara porque el modelo es anual, y cualquier otra compara si el riesgo declaró SU
+        // exposición en esa misma unidad. Comparar viajes contra bodegas-año sigue sin sentido.
+        const comparable = !!unidad && !!riesgo && isComparable(unidad, riesgo.exposure);
 
         const base = {
             tipoEvento: e.tipoEvento,
@@ -189,6 +184,7 @@ function summarizeIncidentLog(log, register) {
             tasaObservada: null,
             cotaSuperior95: null,
             lefModelo: null,
+            unidadDelModelo: null,
             probabilidadDeEseCero: null,
             comparableConModelo: comparable,
         };
@@ -205,7 +201,12 @@ function summarizeIncidentLog(log, register) {
         // la misma magnitud que cuenta la bitácora. Comparar contra el TEF sería comparar
         // intentos contra consumados.
         if (riesgo && riesgo.tef && riesgo.vuln && comparable) {
-            base.lefModelo = riesgo.tef.mode * (riesgo.vuln.mode / 100);
+            const lefAnual = riesgo.tef.mode * (riesgo.vuln.mode / 100);
+            // Se baja a la unidad de LA OBSERVACIÓN, no al revés: es lo que permite poner
+            // "0,0025 pérdidas por viaje" al lado de "el modelo esperaba 0,002 por viaje". Con la
+            // unidad neutra el divisor es 1 y esto devuelve el LEF anual de siempre.
+            base.lefModelo = unidad === 'anios' ? lefAnual : perUnitRate(lefAnual, riesgo.exposure);
+            base.unidadDelModelo = unidad;
             if (e.estado === 'cero' && base.lefModelo > 0) {
                 // Qué tan sorprendente es ese cero SI el modelo tuviera razón. Es lo que separa
                 // "los controles funcionan" de "no pasó nada y tampoco tenía por qué pasar".

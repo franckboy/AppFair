@@ -14,6 +14,9 @@ export const state = {
         // Catálogo de Niveles de Acceso / Proximidad servido por el backend en el arranque, para
         // poblar el selector del Paso 2 sin duplicar los factores en el frontend.
         accessLevels: null,
+        // Unidades de exposición (viajes, bodega-año, ...) servidas por el backend. El RIESGO
+        // declara en cuál se mide, no solo la bitácora — ver backend/src/lib/exposure.js.
+        exposureUnits: null,
         // Alternativa del atacante por perfil, para el análisis de disuasión (ver
         // backend/src/lib/stackelbergDeterrence.js). Llega del backend en el bootstrap en vez de
         // vivir duplicada acá: es juicio declarado y una copia desincronizada movería en silencio
@@ -131,6 +134,9 @@ export const state = {
         // Curvas de Excedencia de Pérdidas de la última simulación (Actual e Inherente) — se
         // guardan para poder mandarlas al Registro en saveToRiskRegister y para redibujarlas al
         // cambiar de Modo Simple/Técnico sin volver a simular.
+        // Último resultado de POST /api/autocalc/frequency, para que "Adoptar" no tenga que
+        // recalcular ni leerlo del DOM ya renderizado.
+        lastFrequencyCalibration: null,
         lastLossExceedanceCurve: null,
         lastInherentLossExceedanceCurve: null,
         // Sello del modelo de Vulnerabilidad que produjo la última simulación (lo emite

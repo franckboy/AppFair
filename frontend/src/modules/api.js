@@ -99,6 +99,7 @@ export const Api = {
             state.quick.isoProcessClauses = profiles.isoProcessClauses;
             state.config.calibrationVersion = profiles.calibrationVersion ?? null;
             state.config.accessLevels = profiles.accessLevels || null;
+            state.config.exposureUnits = profiles.exposureUnits || null;
             state.config.outsideOptionFractions = profiles.outsideOptionFractions || null;
             state.quick.assets = assetsRes.assets;
             state.config.riskCriteria = criteria;
