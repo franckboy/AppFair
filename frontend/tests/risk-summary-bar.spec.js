@@ -69,6 +69,60 @@ test.describe('Barra persistente de riesgo (Actual/Residual del portafolio + rie
         await expect(page.locator('#risk-summary-bar')).toBeVisible();
     });
 
+    test('el promedio y la cola son mosaicos SEPARADOS: cada color describe su propia cifra', async ({ page }) => {
+        // Lo que esto corrige: un promedio residual DENTRO del apetito se pintaba de rojo por una
+        // cola que no estaba en pantalla. Peor, ese rojo era ambiguo — no se distinguía de "tu
+        // promedio se pasó", que pide reducir frecuencia en vez de contener el daño.
+        await connectAndBoot(page);
+        await runFullFairAnalysis(page, 'E2E Barra — Promedio y cola separados');
+        await page.click('#nav-dashboard');
+        await page.waitForTimeout(800);
+
+        const backend = await page.evaluate(async () => {
+            const res = await fetch('http://localhost:3000/api/register', { headers: { 'X-API-Key': 'test-e2e-key' } });
+            return (await res.json()).residualPortfolio;
+        });
+        expect(typeof backend.tailAmount).toBe('number');
+        expect(backend.tailSeverity).toBeTruthy();
+
+        // El mosaico nuevo existe y muestra la cola.
+        await expect(page.locator('#risk-summary-tail')).toBeVisible();
+        const clases = { critico: 'bg-red-50', alto: 'bg-orange-50', medio: 'bg-yellow-50', bajo: 'bg-green-50' };
+        await expect(page.locator('#risk-summary-tail')).toHaveClass(new RegExp(clases[backend.tailSeverity]));
+
+        // Y el del promedio se colorea por SU cifra, no por la del riesgo entero.
+        const claseEsperadaPromedio = await page.evaluate(async (totalALE) => {
+            const res = await fetch('http://localhost:3000/api/config/criteria', {
+                headers: { 'X-API-Key': 'test-e2e-key' },
+            });
+            const c = await res.json();
+            const aceptable = c.aleCritico * (c.aleAceptablePercent / 100);
+            const medio = aceptable + (c.aleCritico - aceptable) / 2;
+            if (totalALE > c.aleCritico) return 'bg-red-50';
+            if (totalALE > medio) return 'bg-orange-50';
+            if (totalALE > aceptable) return 'bg-yellow-50';
+            return 'bg-green-50';
+        }, backend.totalResidualALE);
+        await expect(page.locator('#risk-summary-residual')).toHaveClass(new RegExp(claseEsperadaPromedio));
+
+        // El aviso: cuando la cola es PEOR que el promedio, el mosaico del promedio lo dice. Un
+        // verde no puede ser un "todo bien" silencioso — la cola es lo que quiebra empresas.
+        const orden = { bajo: 0, medio: 1, alto: 2, critico: 3 };
+        const severidadDelPromedio = {
+            'bg-green-50': 'bajo',
+            'bg-yellow-50': 'medio',
+            'bg-orange-50': 'alto',
+            'bg-red-50': 'critico',
+        }[claseEsperadaPromedio];
+        const aviso = page.locator('#risk-summary-residual-tail-warning');
+        if (orden[backend.tailSeverity] > orden[severidadDelPromedio]) {
+            await expect(aviso).toBeVisible();
+            await expect(aviso).toContainText('Año Malo');
+        } else {
+            await expect(aviso).toBeHidden();
+        }
+    });
+
     test('el color del tile "Riesgo Actual" viene del backend, no de un clasificador propio ciego a la cola', async ({
         page,
     }) => {

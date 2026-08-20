@@ -14,7 +14,7 @@ const {
     calculateInherentPortfolio,
     residualPair,
 } = require('../lib/register');
-const { evaluateFairThreat } = require('../lib/evaluation');
+const { evaluateFairThreat, classifyAmountSeverity } = require('../lib/evaluation');
 const { defaultRiskCriteria, defenseProfiles } = require('../data/profiles');
 const { normalizeRiskCriteria, validateRiskCriteriaOverride } = require('../lib/riskCriteria');
 const { asyncHandler } = require('../middleware/asyncHandler');
@@ -138,6 +138,25 @@ function createRegisterRouter(store) {
             } else {
                 residualPortfolio.evaluation = null;
             }
+            // La COLA como indicador propio, aparte del promedio. Un solo color no puede cargar dos
+            // hechos distintos: "tu promedio se pasó del apetito" pide reducir frecuencia, y "tu
+            // promedio está bien pero un mal año te destruye" pide contener el daño (tope por
+            // evento, seguro, límites). Fusionados en un rojo, el usuario no puede saber cuál es.
+            //
+            // Se publica el MONTO junto a su severidad, y la severidad es la de ESE monto (ver
+            // classifyAmountSeverity) — no la del riesgo entero. Ésa es la regla que evita repetir
+            // el error: el color de un mosaico describe la cifra que el mosaico muestra.
+            //
+            // Cuando alguna amenaza no aporta CVaR residual se publica el PISO en su lugar, y se
+            // dice con `tailIsFloor`: así el número y su color siguen concordando, y la etiqueta
+            // puede aclarar que es una cota inferior en vez de fingir un total exacto.
+            const colaCompleta =
+                residualPortfolio.cvarSkippedCount === 0 && residualPortfolio.totalResidualCVaR !== null;
+            residualPortfolio.tailAmount = colaCompleta
+                ? residualPortfolio.totalResidualCVaR
+                : residualPortfolio.totalResidualCVaRFloor;
+            residualPortfolio.tailIsFloor = !colaCompleta;
+            residualPortfolio.tailSeverity = classifyAmountSeverity(residualPortfolio.tailAmount, criteria);
             const residualPareto = calculateResidualParetoAnalysis(risks);
 
             const inherentPortfolio = calculateInherentPortfolio(risks);

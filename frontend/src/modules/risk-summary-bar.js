@@ -18,6 +18,10 @@ export const RiskSummaryBar = {
             App.Navigation.switchPage('riskmgmt');
             App.RiskManagement.load();
         });
+        document.getElementById('risk-summary-tail').addEventListener('click', () => {
+            App.Navigation.switchPage('riskmgmt');
+            App.RiskManagement.load();
+        });
         document.getElementById('risk-summary-current').addEventListener('click', () => {
             App.Navigation.switchPage('fair');
             App.FairWizard.navigateWizard(4, true);
@@ -64,18 +68,45 @@ export const RiskSummaryBar = {
 
         const residualEl = document.getElementById('risk-summary-residual');
         if (hasResidual) {
-            const severity = residual.evaluation ? residual.evaluation.severity : null;
+            // Por el PROMEDIO que este mosaico muestra, no por la evaluación del riesgo entero:
+            // ésa escala a Crítico cuando la cola se pasa, y pintaba de rojo un promedio que estaba
+            // dentro del apetito. La cola tiene su propio mosaico (ver más abajo), y cuando es peor
+            // que el promedio se avisa acá mismo — un verde no puede ser un "todo bien" silencioso.
+            // classifyAleAgainstCriteria es exactamente "en qué banda cae este monto", y ACÁ eso
+            // es lo correcto: la cifra que el mosaico muestra ES un ALE. El error de ayer no era
+            // usar esta función, era usarla donde hacía falta evaluar el RIESGO entero (promedio y
+            // cola) — ahí gana la evaluación del backend, como en el mosaico de Riesgo Actual.
+            const severity = App.FairRegister.classifyAleAgainstCriteria(residual.totalResidualALE);
             residualEl.className = `p-3 rounded-lg border-l-4 shadow-sm cursor-pointer ${severityToClasses(severity)}`;
             document.getElementById('risk-summary-residual-value').textContent = formatCurrency(
                 residual.totalResidualALE,
             );
             document.getElementById('risk-summary-residual-detail').textContent =
                 `${residual.treatedCount} de ${residual.totalRiskCount} con tratamiento adoptado`;
+            this.renderTailWarning(severity, residual.tailSeverity);
         } else {
             residualEl.className =
                 'p-3 rounded-lg border-l-4 shadow-sm cursor-pointer bg-gray-50 border-gray-400 text-gray-700';
             document.getElementById('risk-summary-residual-value').textContent = '—';
             document.getElementById('risk-summary-residual-detail').textContent = 'Sin riesgos analizados todavía';
+            this.renderTailWarning(null, null);
+        }
+
+        // Mosaico de la COLA: cuánto cuesta un año malo, con su propio color.
+        const tailEl = document.getElementById('risk-summary-tail');
+        const hasTail = !!(residual && typeof residual.tailAmount === 'number' && residual.totalRiskCount > 0);
+        if (hasTail) {
+            tailEl.className = `p-3 rounded-lg border-l-4 shadow-sm cursor-pointer ${severityToClasses(residual.tailSeverity)}`;
+            document.getElementById('risk-summary-tail-value').textContent =
+                (residual.tailIsFloor ? 'al menos ' : '') + formatCurrency(residual.tailAmount);
+            document.getElementById('risk-summary-tail-detail').textContent = residual.tailIsFloor
+                ? `${residual.cvarSkippedCount} riesgo(s) sin cola conocida — es una cota inferior`
+                : 'Promedio del 5% de años peores, ya tratado';
+        } else {
+            tailEl.className =
+                'p-3 rounded-lg border-l-4 shadow-sm cursor-pointer bg-gray-50 border-gray-400 text-gray-700';
+            document.getElementById('risk-summary-tail-value').textContent = '—';
+            document.getElementById('risk-summary-tail-detail').textContent = 'Sin riesgos analizados todavía';
         }
 
         const currentEl = document.getElementById('risk-summary-current');
@@ -87,6 +118,27 @@ export const RiskSummaryBar = {
         }
 
         bar.classList.toggle('hidden', !hasActual && !hasResidual && !hasCurrent);
+    },
+
+    /**
+     * El aviso que impide que el verde se lea como "todo bien". Separar promedio y cola recupera
+     * información, pero abre un riesgo nuevo: que alguien vea el promedio en verde y deje de leer.
+     * La cola es lo que quiebra empresas, así que cuando es PEOR que el promedio, el mosaico del
+     * promedio lo dice — no cambiando de color (eso volvería a fusionar los dos hechos), sino con
+     * una línea que apunta al otro mosaico.
+     */
+    renderTailWarning(severityPromedio, severityCola) {
+        const el = document.getElementById('risk-summary-residual-tail-warning');
+        if (!el) return;
+        const orden = { bajo: 0, medio: 1, alto: 2, critico: 3 };
+        const peor = orden[severityCola] > orden[severityPromedio];
+        el.classList.toggle('hidden', !peor);
+        if (peor) {
+            el.textContent =
+                severityCola === 'critico'
+                    ? '⚠ El promedio está dentro de lo que toleras, pero un año malo NO — mira "Año Malo".'
+                    : '⚠ Un año malo pesa más que el promedio — mira "Año Malo".';
+        }
     },
 };
 
